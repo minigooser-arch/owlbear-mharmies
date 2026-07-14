@@ -17,7 +17,6 @@ export interface ArmyView {
   sideName: string;
   status: ArmyStatus;
   route: Vector2[];
-  directOwnerPlayerId?: string;
 }
 
 export interface PartyPlayerView {
