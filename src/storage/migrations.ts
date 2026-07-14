@@ -22,11 +22,17 @@ function versionOf(raw: unknown): number | undefined {
 
 export function migrateSceneState(raw: unknown): ValidationResult<SceneState> {
   const version = versionOf(raw);
-  if (version !== undefined && version > 1) {
+  if (version !== undefined && version > 2) {
     return { ok: false, issue: { code: "FUTURE_VERSION", version } };
   }
-  if (version === 0 && isRecord(raw)) {
-    return normalizeSceneState({ ...raw, version: 1 });
+  if (!isRecord(raw)) return normalizeSceneState(raw);
+  if (version === 0 || version === 1 || version === undefined) {
+    const sides = Array.isArray(raw.sides)
+      ? raw.sides.map((side) =>
+          isRecord(side) ? { ...side, leaderPlayerIds: [] } : side
+        )
+      : [];
+    return normalizeSceneState({ ...raw, version: 2, sides });
   }
   return normalizeSceneState(raw);
 }

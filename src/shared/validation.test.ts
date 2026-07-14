@@ -25,8 +25,41 @@ describe("metadata validation", () => {
   });
 
   it("uses the five-cell scene route limit", () => {
-    const scene = normalizeSceneState({ version: 1 });
+    const scene = normalizeSceneState({ version: 2 });
     expect(scene.ok).toBe(true);
     if (scene.ok) expect(scene.value.settings).toEqual(DEFAULT_SETTINGS);
+  });
+
+  it("normalizes leaders as unique members without crossing side boundaries", () => {
+    const scene = normalizeSceneState({
+      version: 2,
+      sides: [
+        {
+          id: "red",
+          name: "Красные",
+          color: "#f00",
+          playerIds: ["member"],
+          leaderPlayerIds: ["leader", "leader"]
+        },
+        {
+          id: "blue",
+          name: "Синие",
+          color: "#00f",
+          playerIds: [],
+          leaderPlayerIds: ["leader"]
+        }
+      ]
+    });
+
+    expect(scene).toMatchObject({
+      ok: true,
+      value: {
+        version: 2,
+        sides: [
+          { id: "red", playerIds: ["member", "leader"], leaderPlayerIds: ["leader"] },
+          { id: "blue", playerIds: ["leader"], leaderPlayerIds: ["leader"] }
+        ]
+      }
+    });
   });
 });

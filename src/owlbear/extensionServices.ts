@@ -113,7 +113,7 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
       return;
     }
     const metadata = await adapter.getSceneMetadata();
-    const rawScene = metadata[METADATA_KEYS.scene] ?? { version: 1 };
+    const rawScene = metadata[METADATA_KEYS.scene] ?? { version: 2 };
     const migrated = migrateSceneState(rawScene);
     if (!migrated.ok) {
       publish({

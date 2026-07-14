@@ -5,10 +5,10 @@ import { CommandProcessor, type CommandState } from "./commandProcessor";
 
 function state(): CommandState {
   const scene: SceneState = {
-    version: 1,
+    version: 2,
     revision: 2,
     settings: { ...DEFAULT_SETTINGS },
-    sides: [{ id: "red", name: "Красные", color: "#f00", playerIds: ["owner"] }],
+    sides: [{ id: "red", name: "Красные", color: "#f00", playerIds: ["owner"], leaderPlayerIds: [] }],
     relations: {},
     battleGroups: []
   };
@@ -35,7 +35,7 @@ describe("CommandProcessor", () => {
         connectedPlayerIds: new Set(["gm"]),
         state: state()
       },
-      command({ type: "CREATE_SIDE", side: { id: "blue", name: "Синие", color: "#00f", playerIds: [] } })
+      command({ type: "CREATE_SIDE", side: { id: "blue", name: "Синие", color: "#00f", playerIds: [], leaderPlayerIds: [] } })
     );
     expect(result).toEqual({ status: "REJECTED", reason: "FORGED_CONNECTION" });
   });
@@ -63,7 +63,7 @@ describe("CommandProcessor", () => {
         connectedPlayerIds: new Set(["gm"]),
         state: state()
       },
-      command({ type: "CREATE_SIDE", side: { id: "blue", name: "Синие", color: "#00f", playerIds: [] } })
+      command({ type: "CREATE_SIDE", side: { id: "blue", name: "Синие", color: "#00f", playerIds: [], leaderPlayerIds: [] } })
     );
     expect(result.status).toBe("ACCEPTED");
     if (result.status === "ACCEPTED") {

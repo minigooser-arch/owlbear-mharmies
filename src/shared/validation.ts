@@ -101,11 +101,14 @@ function normalizeSettings(value: unknown): SceneSettings {
 
 function normalizeSide(value: unknown): Side | undefined {
   if (!isRecord(value) || !nonEmptyString(value.id) || !nonEmptyString(value.name)) return undefined;
+  const playerIds = uniqueStrings(value.playerIds);
+  const leaderPlayerIds = uniqueStrings(value.leaderPlayerIds);
   return {
     id: value.id,
     name: value.name,
     color: nonEmptyString(value.color) ? value.color : "#607d8b",
-    playerIds: uniqueStrings(value.playerIds)
+    playerIds: [...new Set([...playerIds, ...leaderPlayerIds])],
+    leaderPlayerIds
   };
 }
 
@@ -146,10 +149,10 @@ function normalizeOverrides(value: unknown): ArmyOverrides {
 
 export function normalizeSceneState(raw: unknown): ValidationResult<SceneState> {
   if (!isRecord(raw)) return { ok: false, issue: { code: "INVALID_VALUE", path: "scene" } };
-  if (finiteNumber(raw.version) && raw.version > 1) {
+  if (finiteNumber(raw.version) && raw.version > 2) {
     return { ok: false, issue: { code: "FUTURE_VERSION", version: raw.version } };
   }
-  if (raw.version !== undefined && raw.version !== 1) {
+  if (raw.version !== 2) {
     return { ok: false, issue: { code: "INVALID_VALUE", path: "version" } };
   }
   const sides = Array.isArray(raw.sides)
@@ -161,7 +164,7 @@ export function normalizeSceneState(raw: unknown): ValidationResult<SceneState> 
         .filter((group): group is BattleGroup => group !== undefined)
     : [];
   const state: SceneState = {
-    version: 1,
+    version: 2,
     revision: nonNegative(raw.revision) ? Math.floor(raw.revision) : 0,
     settings: normalizeSettings(raw.settings),
     sides: [...new Map(sides.map((side) => [side.id, side])).values()],

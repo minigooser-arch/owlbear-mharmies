@@ -28,6 +28,7 @@ export interface Side {
   name: string;
   color: string;
   playerIds: string[];
+  leaderPlayerIds: string[];
 }
 
 export interface BattleGroup {
@@ -43,7 +44,7 @@ export interface CoordinatorLease {
 }
 
 export interface SceneState {
-  version: 1;
+  version: 2;
   revision: number;
   settings: SceneSettings;
   sides: Side[];

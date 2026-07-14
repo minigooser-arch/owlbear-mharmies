@@ -67,13 +67,13 @@ export class MetadataRepository {
 
   async readScene(): Promise<SceneState> {
     const metadata = await this.port.getSceneMetadata();
-    const raw = metadata[METADATA_KEYS.scene] ?? { version: 1 };
+    const raw = metadata[METADATA_KEYS.scene] ?? { version: 2 };
     return requireValid(migrateSceneState(raw), METADATA_KEYS.scene);
   }
 
   async writeScene(state: SceneState, expectedRevision: number): Promise<void> {
     const metadata = await this.port.getSceneMetadata();
-    const raw = metadata[METADATA_KEYS.scene] ?? { version: 1 };
+    const raw = metadata[METADATA_KEYS.scene] ?? { version: 2 };
     const current = requireValid(migrateSceneState(raw), METADATA_KEYS.scene);
     assertRevision(current.revision, expectedRevision);
     await this.port.patchSceneMetadata({ [METADATA_KEYS.scene]: state });

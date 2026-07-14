@@ -10,10 +10,10 @@ const armyState = (sideId: string): ArmyState => ({
 
 it("builds a player snapshot whose visible IDs come from own side and local clones", () => {
   const scene: SceneState = {
-    version: 1, revision: 1, settings: DEFAULT_SETTINGS,
+    version: 2, revision: 1, settings: DEFAULT_SETTINGS,
     sides: [
-      { id: "A", name: "Красные", color: "#f00", playerIds: ["player"] },
-      { id: "B", name: "Синие", color: "#00f", playerIds: [] }
+      { id: "A", name: "Красные", color: "#f00", playerIds: ["player"], leaderPlayerIds: [] },
+      { id: "B", name: "Синие", color: "#00f", playerIds: [], leaderPlayerIds: [] }
     ], relations: {}, battleGroups: []
   };
   const sourceA: SceneItemRecord = { id: "a", type: "IMAGE", name: "A", position: { x: 0, y: 0 }, metadata: {} };

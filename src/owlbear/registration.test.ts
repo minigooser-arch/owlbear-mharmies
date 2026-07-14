@@ -8,10 +8,10 @@ class MemoryRegistrationPort implements RegistrationPort {
   role: "GM" | "PLAYER" = "GM";
   item: SceneItemRecord = { id: "army", type: "IMAGE", position: { x: 0, y: 0 }, metadata: {} };
   scene: SceneState = {
-    version: 1,
+    version: 2,
     revision: 0,
     settings: DEFAULT_SETTINGS,
-    sides: [{ id: "red", name: "Красные", color: "#f00", playerIds: [] }],
+    sides: [{ id: "red", name: "Красные", color: "#f00", playerIds: [], leaderPlayerIds: [] }],
     relations: {},
     battleGroups: []
   };

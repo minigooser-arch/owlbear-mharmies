@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { DEFAULT_SETTINGS } from "../shared/constants";
 import { migrateArmyState, migrateBarrierState, migrateSceneState } from "./migrations";
 
 describe("metadata migrations", () => {
@@ -26,6 +27,41 @@ describe("metadata migrations", () => {
     expect(migrateSceneState({ version: 99 })).toEqual({
       ok: false,
       issue: { code: "FUTURE_VERSION", version: 99 }
+    });
+  });
+
+  it("migrates v1 sides to v2 without losing memberships", () => {
+    const result = migrateSceneState({
+      version: 1,
+      revision: 7,
+      settings: DEFAULT_SETTINGS,
+      sides: [
+        {
+          id: "red",
+          name: "Красные",
+          color: "#f00",
+          playerIds: ["player-1", "player-1"]
+        }
+      ],
+      relations: {},
+      battleGroups: []
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      value: {
+        version: 2,
+        revision: 7,
+        sides: [
+          {
+            id: "red",
+            name: "Красные",
+            color: "#f00",
+            playerIds: ["player-1"],
+            leaderPlayerIds: []
+          }
+        ]
+      }
     });
   });
 

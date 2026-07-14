@@ -115,7 +115,7 @@ export function createOwlbearAdapter(
     getRole: () => sdk.player.getRole(),
     getItem: async (itemId) => (await allSceneItems()).find((item) => item.id === itemId),
     getSceneState: async (): Promise<SceneState> => {
-      const raw = (await sdk.scene.getMetadata())[METADATA_KEYS.scene] ?? { version: 1 };
+      const raw = (await sdk.scene.getMetadata())[METADATA_KEYS.scene] ?? { version: 2 };
       const result = migrateSceneState(raw);
       if (!result.ok) throw new Error(`Invalid scene metadata: ${result.issue.code}`);
       return result.value;
