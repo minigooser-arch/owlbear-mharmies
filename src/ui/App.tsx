@@ -22,7 +22,9 @@ export function App({ services }: { services: ExtensionServices }) {
 
   const tabs: Tab[] = state.role === "GM"
     ? ["ARMIES", "SIDES", "RELATIONS", "MOVEMENT", "BATTLES", "SETTINGS", "DIAGNOSTICS"]
-    : ["ARMIES", "MOVEMENT", "BATTLES", "DIAGNOSTICS"];
+    : state.leaderSideIds.size > 0
+      ? ["ARMIES", "SIDES", "MOVEMENT", "BATTLES", "DIAGNOSTICS"]
+      : ["ARMIES", "MOVEMENT", "BATTLES", "DIAGNOSTICS"];
   const send = (command: UiCommand) => {
     if (["DELETE_SIDE", "STOP_ALL", "RELEASE_BATTLE_GROUP"].includes(command.type)) setDangerous(command);
     else void state.send(command);
@@ -33,7 +35,16 @@ export function App({ services }: { services: ExtensionServices }) {
       <nav className="tabs" aria-label="Разделы">{tabs.map((item) => <button type="button" key={item} className={tab === item ? "active" : ""} onClick={() => setTab(item)}>{LABELS[item]}</button>)}</nav>
       <div className="content">
         {tab === "ARMIES" && <ArmiesPage armies={state.armies} role={state.role} playerId={state.playerId} onAction={send} />}
-        {tab === "SIDES" && <SidesPage sides={state.sides} onAction={send} />}
+        {tab === "SIDES" && (
+          <SidesPage
+            role={state.role}
+            playerId={state.playerId}
+            sides={state.sides}
+            players={state.players}
+            leaderSideIds={state.leaderSideIds}
+            onAction={send}
+          />
+        )}
         {tab === "RELATIONS" && <RelationsPage sides={state.sides} relations={state.relations} onAction={send} />}
         {tab === "MOVEMENT" && <MovementPage armies={state.armies} isGM={state.role === "GM"} onAction={send} />}
         {tab === "BATTLES" && <BattlesPage battles={state.battleGroups} isGM={state.role === "GM"} onAction={send} />}

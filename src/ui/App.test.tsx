@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react";
-import { expect, it } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, expect, it } from "vitest";
 import { DEFAULT_SETTINGS } from "../shared/constants";
 import { App } from "./App";
 import type { ExtensionServices, RawExtensionSnapshot } from "./state/useExtensionState";
+
+afterEach(cleanup);
 
 function services(overrides: Partial<RawExtensionSnapshot> = {}): ExtensionServices {
   const snapshot: RawExtensionSnapshot = {
@@ -13,9 +15,12 @@ function services(overrides: Partial<RawExtensionSnapshot> = {}): ExtensionServi
     futureSchema: false,
     role: "PLAYER",
     playerId: "owner",
+    players: [],
+    memberSideIds: new Set(["A"]),
+    leaderSideIds: new Set(),
     visibleSourceIds: new Set(["own-a"]),
     armies: [
-      { id: "own-a", name: "Своя армия", sideId: "A", sideName: "Красные", status: "READY", directOwnerPlayerId: "owner", route: [] },
+      { id: "own-a", name: "Своя армия", sideId: "A", sideName: "Красные", status: "READY", route: [] },
       { id: "hidden-b", name: "Скрытая армия", sideId: "B", sideName: "Синие", status: "MOVING", route: [] }
     ],
     sides: [],
@@ -46,6 +51,11 @@ it("shows GM management tabs but hides them from a player", () => {
   render(<App services={services({ role: "GM", visibleSourceIds: new Set() })} />);
   expect(screen.getByRole("button", { name: "Стороны" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Настройки" })).toBeInTheDocument();
+});
+
+it("shows side management to a side leader", () => {
+  render(<App services={services({ playerId: "leader", leaderSideIds: new Set(["A"]) })} />);
+  expect(screen.getByRole("button", { name: "Стороны" })).toBeInTheDocument();
 });
 
 it("renders loading, no-scene, and future-schema states", () => {

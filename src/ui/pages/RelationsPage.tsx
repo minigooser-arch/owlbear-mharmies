@@ -8,7 +8,7 @@ export function RelationsPage({ sides, relations, onAction }: { sides: readonly 
         {sides.flatMap((left, index) => sides.slice(index + 1).map((right) => (
           <article className="relation-row" key={`${left.id}-${right.id}`}>
             <span>{left.name}</span><span>↔</span><span>{right.name}</span>
-            <select aria-label={`${left.name} и ${right.name}`} value={relations[left.id]?.[right.id] ?? "NEUTRAL"} onChange={(event) => onAction({ type: "SET_RELATION", leftSideId: left.id, rightSideId: right.id, relation: event.target.value })}>
+            <select aria-label={`${left.name} и ${right.name}`} value={relations[left.id]?.[right.id] ?? "NEUTRAL"} onChange={(event) => onAction({ type: "SET_RELATION", leftSideId: left.id, rightSideId: right.id, relation: event.target.value as SideRelation })}>
               <option value="ALLY">Союз</option><option value="NEUTRAL">Нейтралитет</option><option value="ENEMY">Война</option>
             </select>
           </article>

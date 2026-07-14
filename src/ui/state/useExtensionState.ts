@@ -1,5 +1,6 @@
 import { useMemo, useSyncExternalStore } from "react";
 import type {
+  ArmyCommandPayload,
   ArmyStatus,
   BattleGroup,
   SceneSettings,
@@ -19,12 +20,23 @@ export interface ArmyView {
   directOwnerPlayerId?: string;
 }
 
+export interface PartyPlayerView {
+  id: string;
+  name: string;
+  color: string;
+  role: "GM" | "PLAYER";
+  connected: boolean;
+}
+
 export interface RawExtensionSnapshot {
   ready: boolean;
   sceneReady: boolean;
   futureSchema: boolean;
   role: "GM" | "PLAYER";
   playerId: string;
+  players: readonly PartyPlayerView[];
+  memberSideIds: ReadonlySet<string>;
+  leaderSideIds: ReadonlySet<string>;
   visibleSourceIds: ReadonlySet<string>;
   armies: readonly ArmyView[];
   sides: readonly Side[];
@@ -33,10 +45,10 @@ export interface RawExtensionSnapshot {
   settings: SceneSettings;
 }
 
-export interface UiCommand {
-  type: string;
-  [key: string]: unknown;
-}
+export type UiCommand =
+  | ArmyCommandPayload
+  | { type: "REGISTER_SELECTED_ARMY"; sideId: string }
+  | { type: "EDIT_ROUTE"; armyId: string };
 
 export interface ExtensionServices {
   getSnapshot(): RawExtensionSnapshot;

@@ -12,6 +12,9 @@ it("constructs counters only from role-visible armies", () => {
     futureSchema: false,
     role: "PLAYER" as const,
     playerId: "p",
+    players: [],
+    memberSideIds: new Set(["A"]),
+    leaderSideIds: new Set<string>(),
     visibleSourceIds: new Set(["a"]),
     armies: [
       { id: "a", name: "A", sideId: "A", sideName: "A", status: "READY" as const, route: [] },

@@ -6,6 +6,7 @@ import { MetadataRepository, type ArmyRecord } from "../storage/metadataReposito
 import type {
   ArmyView,
   ExtensionServices,
+  PartyPlayerView,
   RawExtensionSnapshot,
   UiCommand
 } from "../ui/state/useExtensionState";
@@ -15,21 +16,27 @@ export interface SnapshotInput {
   role: "GM" | "PLAYER";
   playerId: string;
   scene: SceneState;
+  players: readonly PartyPlayerView[];
   armies: readonly ArmyRecord[];
   localCloneSourceIds: ReadonlySet<string>;
 }
 
 export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapshot {
-  const ownSideIds = new Set(
+  const memberSideIds = new Set(
     input.scene.sides.filter((side) => side.playerIds.includes(input.playerId)).map((side) => side.id)
+  );
+  const leaderSideIds = new Set(
+    input.scene.sides
+      .filter((side) => side.leaderPlayerIds.includes(input.playerId))
+      .map((side) => side.id)
   );
   const visibleSourceIds = new Set(input.localCloneSourceIds);
   for (const army of input.armies) {
-    if (input.role === "GM" || ownSideIds.has(army.state.sideId)) visibleSourceIds.add(army.item.id);
+    if (input.role === "GM" || memberSideIds.has(army.state.sideId)) visibleSourceIds.add(army.item.id);
   }
   const sideNames = new Map(input.scene.sides.map((side) => [side.id, side.name]));
   const armies: ArmyView[] = input.armies.map(({ item, state }) => {
-    const view: ArmyView = {
+    return {
       id: item.id,
       name: item.name ?? "Безымянная армия",
       sideId: state.sideId,
@@ -37,8 +44,6 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
       status: state.status,
       route: state.route.map((point) => ({ ...point }))
     };
-    if (state.directOwnerPlayerId) view.directOwnerPlayerId = state.directOwnerPlayerId;
-    return view;
   });
   return {
     ready: true,
@@ -46,6 +51,9 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
     futureSchema: false,
     role: input.role,
     playerId: input.playerId,
+    players: input.players,
+    memberSideIds,
+    leaderSideIds,
     visibleSourceIds,
     armies,
     sides: input.scene.sides,
@@ -65,6 +73,9 @@ const LOADING_SNAPSHOT: RawExtensionSnapshot = {
   futureSchema: false,
   role: "PLAYER",
   playerId: "",
+  players: [],
+  memberSideIds: new Set(),
+  leaderSideIds: new Set(),
   visibleSourceIds: new Set(),
   armies: [],
   sides: [],
@@ -103,13 +114,28 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
   };
 
   const refresh = async () => {
-    const [sceneReady, role, playerId] = await Promise.all([
+    const [sceneReady, role, playerId, playerName, playerColor, party] = await Promise.all([
       OBR.scene.isReady(),
       OBR.player.getRole(),
-      OBR.player.getId()
+      OBR.player.getId(),
+      OBR.player.getName(),
+      OBR.player.getColor(),
+      OBR.party.getPlayers()
     ]);
+    const players: PartyPlayerView[] = [
+      ...party
+        .filter((player) => player.id !== playerId)
+        .map((player) => ({
+          id: player.id,
+          name: player.name,
+          color: player.color,
+          role: player.role,
+          connected: true
+        })),
+      { id: playerId, name: playerName, color: playerColor, role, connected: true }
+    ];
     if (!sceneReady) {
-      publish({ ...LOADING_SNAPSHOT, ready: true, role, playerId });
+      publish({ ...LOADING_SNAPSHOT, ready: true, role, playerId, players });
       return;
     }
     const metadata = await adapter.getSceneMetadata();
@@ -122,7 +148,8 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
         sceneReady: true,
         futureSchema: migrated.issue.code === "FUTURE_VERSION",
         role,
-        playerId
+        playerId,
+        players
       });
       return;
     }
@@ -134,6 +161,7 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
       role,
       playerId,
       scene: migrated.value,
+      players,
       armies,
       localCloneSourceIds: localCloneSourceIds(localItems)
     }));
