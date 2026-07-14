@@ -51,6 +51,17 @@ describe("validateArmyCommand", () => {
     });
   });
 
+  it.each(["__proto__", "constructor", "toString"])(
+    "rejects inherited parser-map key %s without throwing",
+    (type) => {
+      expect(() => validateArmyCommand(envelope({ type }))).not.toThrow();
+      expect(validateArmyCommand(envelope({ type }))).toMatchObject({
+        ok: false,
+        reason: "INVALID_COMMAND"
+      });
+    }
+  );
+
   it.each([
     envelope({ type: "SET_ROUTE", armyId: "army", route: [{ x: Number.NaN, y: 0 }] }),
     envelope({ type: "SET_ROUTE", armyId: "army", route: new Array(1) }),

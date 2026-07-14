@@ -241,4 +241,41 @@ describe("CommandProcessor", () => {
       )
     ).toEqual({ status: "REJECTED", reason: "GM_ONLY" });
   });
+
+  it("rejects reassigning a deleted side's armies back to the same side", () => {
+    expect(processor.execute(
+      context("GM", "gm"),
+      command({
+        type: "DELETE_SIDE",
+        sideId: "red",
+        strategy: "REASSIGN_ARMIES",
+        targetSideId: "red"
+      })
+    )).toEqual({ status: "REJECTED", reason: "TARGET_SIDE_SAME" });
+  });
+
+  it("removes unregistered side armies from battle groups", () => {
+    const commandState = state();
+    commandState.armies["army-blue"] = army("blue");
+    commandState.scene.battleGroups = [{
+      battleId: "battle",
+      participantIds: ["army-red", "army-blue"],
+      revision: 1
+    }];
+
+    const result = processor.execute(
+      context("GM", "gm", commandState),
+      command({
+        type: "DELETE_SIDE",
+        sideId: "red",
+        strategy: "UNREGISTER_ARMIES"
+      })
+    );
+    expect(result.status).toBe("ACCEPTED");
+    if (result.status === "ACCEPTED") {
+      expect(result.state.scene.battleGroups).toEqual([]);
+      expect(result.state.armies["army-red"]).toBeUndefined();
+      expect(result.state.armies["army-blue"]).toBeDefined();
+    }
+  });
 });

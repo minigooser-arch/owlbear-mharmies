@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CommandGateway } from "../commands/commandGateway";
 import { DEFAULT_SETTINGS, METADATA_KEYS } from "../shared/constants";
-import type { SceneState } from "../shared/types";
+import type { SceneItemRecord, SceneState } from "../shared/types";
 import type { BarrierRecord } from "../storage/metadataRepository";
 import type { OwlbearPort } from "../owlbear/sdkAdapter";
 import { extractBarrierSegments, mergeCurrentParticipant, ProductionEngine } from "./application";
@@ -30,9 +30,10 @@ it("extracts only requested blocking polylines into barrier segments", () => {
   expect(extractBarrierSegments(records, "vision")).toEqual([]);
 });
 
-function commandPort() {
+function commandPort(initialItems: SceneItemRecord[] = []) {
   const sent: Array<{ channel: string; data: unknown }> = [];
-  const scene: SceneState = {
+  const items = structuredClone(initialItems);
+  let scene: SceneState = {
     version: 2,
     revision: 2,
     settings: { ...DEFAULT_SETTINGS },
@@ -42,10 +43,18 @@ function commandPort() {
     coordinatorLease: { connectionId: "coordinator", epoch: 1, expiresAt: Date.now() + 10_000 }
   };
   const port = {
-    getSceneMetadata: async () => ({ [METADATA_KEYS.scene]: scene }),
-    patchSceneMetadata: async () => undefined,
-    getSceneItems: async () => [],
-    updateSceneItem: async () => undefined,
+    getSceneMetadata: async () => ({ [METADATA_KEYS.scene]: structuredClone(scene) }),
+    patchSceneMetadata: async (update: Record<string, unknown>) => {
+      if (update[METADATA_KEYS.scene]) {
+        scene = structuredClone(update[METADATA_KEYS.scene]) as SceneState;
+      }
+    },
+    getSceneItems: async () => structuredClone(items),
+    updateSceneItem: async (id: string, update: Record<string, unknown>) => {
+      const item = items.find((candidate) => candidate.id === id);
+      if (!item) throw new Error(`Missing item ${id}`);
+      Object.assign(item, structuredClone(update));
+    },
     getLocalItems: async () => [],
     addLocalItem: async () => undefined,
     updateLocalItem: async () => undefined,
@@ -62,7 +71,7 @@ function commandPort() {
     updateItem: async () => undefined,
     deleteLocalItemsForSource: async () => undefined
   } as unknown as OwlbearPort;
-  return { port, sent };
+  return { port, sent, items, get scene() { return scene; } };
 }
 
 describe("ProductionEngine command boundary", () => {
@@ -97,7 +106,8 @@ describe("ProductionEngine command boundary", () => {
           requestId: "malformed-request",
           status: "REJECTED",
           reason: "INVALID_COMMAND",
-          coordinatorConnectionId: "coordinator"
+          coordinatorConnectionId: "coordinator",
+          recipientConnectionId: "actual-connection"
         }
       }
     ]);
@@ -132,7 +142,148 @@ describe("ProductionEngine command boundary", () => {
       data: {
         requestId: "forged-request",
         status: "REJECTED",
-        reason: "FORGED_CONNECTION"
+        reason: "FORGED_CONNECTION",
+        recipientConnectionId: "actual-connection"
+      }
+    });
+  });
+
+  it("persists barrier command changes on their scene item", async () => {
+    const fixture = commandPort([{
+      id: "wall",
+      type: "CURVE",
+      position: { x: 0, y: 0 },
+      metadata: {
+        [METADATA_KEYS.barrier]: {
+          version: 1,
+          revision: 1,
+          blocksMovement: true,
+          blocksVision: true,
+          visibility: "GM_ONLY",
+          color: "#f00"
+        }
+      }
+    }]);
+    const engine = new ProductionEngine(fixture.port);
+    engine.setCoordinator(true);
+
+    await engine.processCommand(
+      {
+        connectionId: "gm-connection",
+        data: {
+          requestId: "barrier-request",
+          senderPlayerId: "gm",
+          senderConnectionId: "gm-connection",
+          expectedRevision: 2,
+          type: "UPDATE_BARRIER",
+          itemId: "wall",
+          barrier: { color: "#0f0" }
+        }
+      },
+      {
+        role: "GM",
+        playerId: "gm",
+        connectionId: "gm-connection",
+        connectedPlayerIds: new Set(["gm"])
+      }
+    );
+
+    expect(fixture.items[0]?.metadata[METADATA_KEYS.barrier]).toMatchObject({
+      revision: 2,
+      color: "#0f0"
+    });
+  });
+
+  it("serializes concurrent commands so the second sees the new revision", async () => {
+    const fixture = commandPort();
+    const engine = new ProductionEngine(fixture.port);
+    engine.setCoordinator(true);
+    const sender = {
+      role: "GM" as const,
+      playerId: "gm",
+      connectionId: "gm-connection",
+      connectedPlayerIds: new Set(["gm"])
+    };
+    const createSide = (requestId: string, sideId: string) => engine.processCommand(
+      {
+        connectionId: "gm-connection",
+        data: {
+          requestId,
+          senderPlayerId: "gm",
+          senderConnectionId: "gm-connection",
+          expectedRevision: 2,
+          type: "CREATE_SIDE",
+          side: {
+            id: sideId,
+            name: sideId,
+            color: "#f00",
+            playerIds: [],
+            leaderPlayerIds: []
+          }
+        }
+      },
+      sender
+    );
+
+    await Promise.all([createSide("request-a", "A"), createSide("request-b", "B")]);
+
+    expect(fixture.sent.map(({ data }) => (data as { status: string }).status).sort()).toEqual([
+      "ACCEPTED",
+      "CONFLICT"
+    ]);
+    expect(fixture.scene.revision).toBe(3);
+    expect(fixture.scene.sides).toHaveLength(1);
+  });
+
+  it("sends a rejection instead of ACCEPTED when persistence fails", async () => {
+    const fixture = commandPort([{
+      id: "wall",
+      type: "CURVE",
+      position: { x: 0, y: 0 },
+      metadata: {
+        [METADATA_KEYS.barrier]: {
+          version: 1,
+          revision: 1,
+          blocksMovement: true,
+          blocksVision: true,
+          visibility: "GM_ONLY",
+          color: "#f00"
+        }
+      }
+    }]);
+    fixture.port.updateSceneItem = async () => {
+      throw new Error("write failed");
+    };
+    const engine = new ProductionEngine(fixture.port);
+    engine.setCoordinator(true);
+
+    await expect(engine.processCommand(
+      {
+        connectionId: "gm-connection",
+        data: {
+          requestId: "failed-write",
+          senderPlayerId: "gm",
+          senderConnectionId: "gm-connection",
+          expectedRevision: 2,
+          type: "UPDATE_BARRIER",
+          itemId: "wall",
+          barrier: { color: "#0f0" }
+        }
+      },
+      {
+        role: "GM",
+        playerId: "gm",
+        connectionId: "gm-connection",
+        connectedPlayerIds: new Set(["gm"])
+      }
+    )).resolves.toBeUndefined();
+
+    expect(fixture.sent.at(-1)).toMatchObject({
+      data: {
+        requestId: "failed-write",
+        status: "REJECTED",
+        reason: "PERSISTENCE_FAILED",
+        recipientConnectionId: "gm-connection"
       }
     });
   });

@@ -381,7 +381,7 @@ export function validateArmyCommand(value: unknown): CommandValidationResult {
     !boundedString(value.senderConnectionId) ||
     !nonNegativeInteger(value.expectedRevision) ||
     !boundedString(value.type) ||
-    !(value.type in PAYLOAD_PARSERS)
+    !Object.hasOwn(PAYLOAD_PARSERS, value.type)
   ) {
     return invalid(requestId);
   }

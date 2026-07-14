@@ -1,6 +1,11 @@
-import { expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { ArmyCommand } from "../shared/types";
-import { CommandGateway, type BroadcastEvent, type BroadcastPort } from "./commandGateway";
+import {
+  CommandGateway,
+  DuplicateRequestError,
+  type BroadcastEvent,
+  type BroadcastPort
+} from "./commandGateway";
 
 class MemoryBroadcast implements BroadcastPort {
   listeners = new Map<string, Set<(event: BroadcastEvent) => void>>();
@@ -22,26 +27,95 @@ class MemoryBroadcast implements BroadcastPort {
   }
 }
 
-it("resolves only an ack whose coordinator connection matches the event", async () => {
-  const port = new MemoryBroadcast();
-  const gateway = new CommandGateway(port, 1_000);
-  gateway.start();
-  const command = {
+function command(): ArmyCommand {
+  return {
     type: "START_ALL",
     requestId: "request",
     senderPlayerId: "gm",
     senderConnectionId: "sender",
     expectedRevision: 1
-  } satisfies ArmyCommand;
-  const pending = gateway.send(command);
-  port.emit(CommandGateway.ACK_CHANNEL, {
-    connectionId: "forged",
-    data: { requestId: "request", status: "ACCEPTED", coordinatorConnectionId: "real" }
+  };
+}
+
+function accepted(recipientConnectionId = "sender") {
+  return {
+    requestId: "request",
+    status: "ACCEPTED",
+    coordinatorConnectionId: "real",
+    recipientConnectionId
+  } as const;
+}
+
+describe("CommandGateway", () => {
+  it("resolves only an ack whose coordinator connection matches the event", async () => {
+    const port = new MemoryBroadcast();
+    const gateway = new CommandGateway(port, 1_000);
+    gateway.start();
+    const pending = gateway.send(command());
+    port.emit(CommandGateway.ACK_CHANNEL, {
+      connectionId: "forged",
+      data: accepted()
+    });
+    port.emit(CommandGateway.ACK_CHANNEL, {
+      connectionId: "real",
+      data: accepted()
+    });
+    await expect(pending).resolves.toMatchObject({ status: "ACCEPTED" });
+    gateway.stop();
   });
-  port.emit(CommandGateway.ACK_CHANNEL, {
-    connectionId: "real",
-    data: { requestId: "request", status: "ACCEPTED", coordinatorConnectionId: "real" }
+
+  it("ignores an ack addressed to another connection", async () => {
+    const port = new MemoryBroadcast();
+    const gateway = new CommandGateway(port, 1_000);
+    gateway.start();
+    const pending = gateway.send(command());
+    port.emit(CommandGateway.ACK_CHANNEL, {
+      connectionId: "real",
+      data: {
+        requestId: "request",
+        status: "REJECTED",
+        reason: "GM_ONLY",
+        coordinatorConnectionId: "real",
+        recipientConnectionId: "other"
+      }
+    });
+    port.emit(CommandGateway.ACK_CHANNEL, {
+      connectionId: "real",
+      data: accepted()
+    });
+    await expect(pending).resolves.toMatchObject({ status: "ACCEPTED" });
+    gateway.stop();
   });
-  await expect(pending).resolves.toMatchObject({ status: "ACCEPTED" });
-  gateway.stop();
+
+  it("ignores status-specific malformed acknowledgements", async () => {
+    const port = new MemoryBroadcast();
+    const gateway = new CommandGateway(port, 1_000);
+    gateway.start();
+    const pending = gateway.send(command());
+    port.emit(CommandGateway.ACK_CHANNEL, {
+      connectionId: "real",
+      data: {
+        requestId: "request",
+        status: "REJECTED",
+        coordinatorConnectionId: "real",
+        recipientConnectionId: "sender"
+      }
+    });
+    port.emit(CommandGateway.ACK_CHANNEL, {
+      connectionId: "real",
+      data: accepted()
+    });
+    await expect(pending).resolves.toMatchObject({ status: "ACCEPTED" });
+    gateway.stop();
+  });
+
+  it("rejects a duplicate in-flight request id", async () => {
+    const port = new MemoryBroadcast();
+    const gateway = new CommandGateway(port, 1_000);
+    gateway.start();
+    const first = gateway.send(command());
+    expect(() => gateway.send(command())).toThrow(DuplicateRequestError);
+    gateway.stop();
+    await expect(first).rejects.toThrow("Command gateway stopped");
+  });
 });

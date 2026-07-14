@@ -14,6 +14,7 @@ export interface CommandAck {
   requestId: string;
   status: "ACCEPTED" | "REJECTED" | "CONFLICT";
   coordinatorConnectionId: string;
+  recipientConnectionId: string;
   reason?: string;
   actualRevision?: number;
 }
@@ -22,16 +23,37 @@ interface PendingRequest {
   resolve(ack: CommandAck): void;
   reject(error: Error): void;
   timeoutId: ReturnType<typeof setTimeout>;
+  senderConnectionId: string;
+}
+
+export class DuplicateRequestError extends Error {
+  constructor(readonly requestId: string) {
+    super(`Duplicate in-flight request: ${requestId}`);
+    this.name = "DuplicateRequestError";
+  }
 }
 
 function isCommandAck(value: unknown): value is CommandAck {
   if (typeof value !== "object" || value === null) return false;
   const ack = value as Partial<CommandAck>;
-  return (
+  const baseValid = (
     typeof ack.requestId === "string" &&
     (ack.status === "ACCEPTED" || ack.status === "REJECTED" || ack.status === "CONFLICT") &&
-    typeof ack.coordinatorConnectionId === "string"
+    typeof ack.coordinatorConnectionId === "string" &&
+    typeof ack.recipientConnectionId === "string"
   );
+  if (!baseValid) return false;
+  if (ack.status === "REJECTED") {
+    return typeof ack.reason === "string" && ack.reason.length > 0;
+  }
+  if (ack.status === "CONFLICT") {
+    return (
+      typeof ack.actualRevision === "number" &&
+      Number.isInteger(ack.actualRevision) &&
+      ack.actualRevision >= 0
+    );
+  }
+  return true;
 }
 
 export class CommandGateway {
@@ -52,6 +74,7 @@ export class CommandGateway {
       if (!isCommandAck(event.data) || event.connectionId !== event.data.coordinatorConnectionId) return;
       const pending = this.pending.get(event.data.requestId);
       if (!pending) return;
+      if (event.data.recipientConnectionId !== pending.senderConnectionId) return;
       clearTimeout(pending.timeoutId);
       this.pending.delete(event.data.requestId);
       pending.resolve(event.data);
@@ -70,12 +93,18 @@ export class CommandGateway {
 
   send(command: ArmyCommand): Promise<CommandAck> {
     if (!this.unsubscribe) throw new Error("Command gateway is not started");
+    if (this.pending.has(command.requestId)) throw new DuplicateRequestError(command.requestId);
     return new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => {
         this.pending.delete(command.requestId);
         reject(new Error("Command acknowledgement timed out"));
       }, this.timeoutMs);
-      this.pending.set(command.requestId, { resolve, reject, timeoutId });
+      this.pending.set(command.requestId, {
+        resolve,
+        reject,
+        timeoutId,
+        senderConnectionId: command.senderConnectionId
+      });
       void this.port.send(CommandGateway.COMMAND_CHANNEL, command).catch((error: unknown) => {
         clearTimeout(timeoutId);
         this.pending.delete(command.requestId);

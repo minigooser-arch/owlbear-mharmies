@@ -85,6 +85,7 @@ export class ProductionEngine {
   private readonly cloneReconciler: LocalCloneReconciler;
   private coordinator = false;
   private lastMovementAt = performance.now();
+  private mutationTail: Promise<void> = Promise.resolve();
 
   constructor(private readonly port: OwlbearPort) {
     this.repository = new MetadataRepository(port);
@@ -130,7 +131,11 @@ export class ProductionEngine {
     await this.reconcileOverlays(scene, armies, barriers, role, playerSideIds);
   }
 
-  async movementTick(): Promise<void> {
+  movementTick(): Promise<void> {
+    return this.enqueueMutation(() => this.movementTickNow());
+  }
+
+  private async movementTickNow(): Promise<void> {
     if (!this.coordinator) return;
     const now = performance.now();
     const deltaSeconds = Math.max(0, (now - this.lastMovementAt) / 1_000);
@@ -228,7 +233,11 @@ export class ProductionEngine {
     }
   }
 
-  async pauseMovingArmies(): Promise<void> {
+  pauseMovingArmies(): Promise<void> {
+    return this.enqueueMutation(() => this.pauseMovingArmiesNow());
+  }
+
+  private async pauseMovingArmiesNow(): Promise<void> {
     const armies = await this.repository.readArmies();
     for (const record of armies) {
       if (record.state.status !== "MOVING") continue;
@@ -244,7 +253,11 @@ export class ProductionEngine {
     }
   }
 
-  async processCommand(event: BroadcastEvent, sender: CommandSender): Promise<void> {
+  processCommand(event: BroadcastEvent, sender: CommandSender): Promise<void> {
+    return this.enqueueMutation(() => this.processCommandNow(event, sender));
+  }
+
+  private async processCommandNow(event: BroadcastEvent, sender: CommandSender): Promise<void> {
     if (!this.coordinator) return;
     const validation = validateArmyCommand(event.data);
     if (!validation.ok) {
@@ -253,7 +266,8 @@ export class ProductionEngine {
           requestId: validation.requestId,
           status: "REJECTED",
           reason: validation.reason,
-          coordinatorConnectionId: await this.currentConnectionId()
+          coordinatorConnectionId: await this.currentConnectionId(),
+          recipientConnectionId: sender.connectionId
         });
       }
       return;
@@ -284,17 +298,35 @@ export class ProductionEngine {
     );
     const coordinatorConnectionId = await this.currentConnectionId();
     if (result.status === "ACCEPTED") {
-      await this.persistCommandState(result.state, commandState, sceneItems);
+      try {
+        await this.persistCommandState(result.state, commandState, sceneItems);
+      } catch {
+        try {
+          await this.persistCommandState(commandState, result.state, sceneItems);
+        } catch {
+          // Best-effort rollback: Owlbear scene/item writes are not transactional.
+        }
+        await this.port.send(CommandGateway.ACK_CHANNEL, {
+          requestId: command.requestId,
+          status: "REJECTED",
+          reason: "PERSISTENCE_FAILED",
+          coordinatorConnectionId,
+          recipientConnectionId: sender.connectionId
+        });
+        return;
+      }
       await this.port.send(CommandGateway.ACK_CHANNEL, {
         requestId: command.requestId,
         status: "ACCEPTED",
-        coordinatorConnectionId
+        coordinatorConnectionId,
+        recipientConnectionId: sender.connectionId
       });
     } else {
       await this.port.send(CommandGateway.ACK_CHANNEL, {
         requestId: command.requestId,
         status: result.status,
         coordinatorConnectionId,
+        recipientConnectionId: sender.connectionId,
         ...(result.status === "REJECTED" ? { reason: result.reason } : { actualRevision: result.actualRevision })
       });
     }
@@ -314,9 +346,18 @@ export class ProductionEngine {
     const itemById = new Map(items.map((item) => [item.id, item]));
     const armyIds = new Set([...Object.keys(previous.armies), ...Object.keys(next.armies)]);
     for (const armyId of armyIds) {
+      const previousState = previous.armies[armyId];
+      const state = next.armies[armyId];
+      const previousPosition = previous.positions?.[armyId];
+      const nextPosition = next.positions?.[armyId];
+      if (
+        JSON.stringify(previousState) === JSON.stringify(state) &&
+        JSON.stringify(previousPosition) === JSON.stringify(nextPosition)
+      ) {
+        continue;
+      }
       const item = itemById.get(armyId);
       if (!item) continue;
-      const state = next.armies[armyId];
       const metadata = Object.fromEntries(
         Object.entries(item.metadata).filter(([key]) => key !== METADATA_KEYS.army)
       );
@@ -327,6 +368,42 @@ export class ProductionEngine {
         ...(next.positions?.[armyId] ? { position: next.positions[armyId] } : {})
       });
     }
+    const barrierIds = new Set([
+      ...Object.keys(previous.barriers),
+      ...Object.keys(next.barriers)
+    ]);
+    for (const barrierId of barrierIds) {
+      const previousState = previous.barriers[barrierId];
+      const state = next.barriers[barrierId];
+      if (JSON.stringify(previousState) === JSON.stringify(state)) continue;
+      const item = itemById.get(barrierId);
+      if (!item) continue;
+      const metadata = Object.fromEntries(
+        Object.entries(item.metadata).filter(([key]) => key !== METADATA_KEYS.barrier)
+      );
+      if (state) metadata[METADATA_KEYS.barrier] = state;
+      await this.port.updateSceneItem(barrierId, { metadata });
+    }
+  }
+
+  writeCoordinatorHeartbeat(
+    heartbeat: NonNullable<SceneState["coordinatorLease"]>
+  ): Promise<void> {
+    return this.enqueueMutation(async () => {
+      const scene = await this.repository.readScene();
+      await this.port.patchSceneMetadata({
+        [METADATA_KEYS.scene]: { ...scene, coordinatorLease: heartbeat }
+      });
+    });
+  }
+
+  private enqueueMutation<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.mutationTail.then(operation, operation);
+    this.mutationTail = result.then(
+      () => undefined,
+      () => undefined
+    );
+    return result;
   }
 
   private async reconcileOverlays(
@@ -399,13 +476,7 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
     connectionId,
     now: () => Date.now(),
     participants: party,
-    writeHeartbeat: async (heartbeat) => {
-      const repository = new MetadataRepository(port);
-      const scene = await repository.readScene();
-      await port.patchSceneMetadata({
-        [METADATA_KEYS.scene]: { ...scene, coordinatorLease: heartbeat }
-      });
-    },
+    writeHeartbeat: (heartbeat) => engine.writeCoordinatorHeartbeat(heartbeat),
     onTransition: (active) => {
       engine.setCoordinator(active);
       for (const listener of coordinatorListeners) listener(active);

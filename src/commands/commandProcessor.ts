@@ -143,15 +143,31 @@ export class CommandProcessor {
           if (!command.targetSideId || !state.scene.sides.some((side) => side.id === command.targetSideId)) {
             return "TARGET_SIDE_NOT_FOUND";
           }
+          if (command.targetSideId === command.sideId) return "TARGET_SIDE_SAME";
           for (const [armyId, army] of Object.entries(state.armies)) {
             if (army.sideId === command.sideId) {
               state.armies[armyId] = bumpArmy(army, { sideId: command.targetSideId });
             }
           }
         } else {
+          const removedArmyIds = new Set(
+            Object.entries(state.armies)
+              .filter(([, army]) => army.sideId === command.sideId)
+              .map(([armyId]) => armyId)
+          );
           state.armies = Object.fromEntries(
             Object.entries(state.armies).filter(([, army]) => army.sideId !== command.sideId)
           );
+          state.scene.battleGroups = state.scene.battleGroups
+            .map((group) => {
+              const participantIds = group.participantIds.filter(
+                (armyId) => !removedArmyIds.has(armyId)
+              );
+              return participantIds.length === group.participantIds.length
+                ? group
+                : { ...group, participantIds, revision: group.revision + 1 };
+            })
+            .filter((group) => group.participantIds.length >= 2);
         }
         state.scene.sides = state.scene.sides.filter((side) => side.id !== command.sideId);
         const relations: SceneState["relations"] = {};
