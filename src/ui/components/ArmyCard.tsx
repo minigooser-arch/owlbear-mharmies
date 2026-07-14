@@ -9,13 +9,12 @@ const STATUS: Record<ArmyView["status"], string> = {
 
 interface ArmyCardProps {
   army: ArmyView;
-  role: "GM" | "PLAYER";
-  playerId: string;
+  isGM: boolean;
+  canEditRoute: boolean;
   onAction(command: UiCommand): void;
 }
 
-export function ArmyCard({ army, role, playerId, onAction }: ArmyCardProps) {
-  const canControl = role === "GM" || army.directOwnerPlayerId === playerId;
+export function ArmyCard({ army, isGM, canEditRoute, onAction }: ArmyCardProps) {
   return (
     <article className="army-card">
       <div className="army-card-heading">
@@ -27,16 +26,38 @@ export function ArmyCard({ army, role, playerId, onAction }: ArmyCardProps) {
       </div>
       <dl className="army-details">
         <div><dt>Точек маршрута</dt><dd>{army.route.length}</dd></div>
-        <div><dt>Владелец</dt><dd>{army.directOwnerPlayerId ?? "Ведущий"}</dd></div>
       </dl>
-      {canControl && (
-        <div className="card-actions">
-          {army.status === "MOVING" ? (
-            <button type="button" onClick={() => onAction({ type: "PAUSE_ARMY", armyId: army.id })}>Пауза</button>
-          ) : (
-            <button type="button" onClick={() => onAction({ type: "START_ARMY", armyId: army.id })}>Старт</button>
+      {(canEditRoute || isGM) && (
+        <div className="army-control-groups">
+          {canEditRoute && (
+            <div className="card-actions" aria-label="Маршрут армии">
+              <button type="button" onClick={() => onAction({ type: "EDIT_ROUTE", armyId: army.id })}>Маршрут</button>
+              {army.route.length > 0 && (
+                <button type="button" onClick={() => onAction({ type: "CLEAR_ROUTE", armyId: army.id })}>Очистить</button>
+              )}
+            </div>
           )}
-          <button type="button" onClick={() => onAction({ type: "EDIT_ROUTE", armyId: army.id })}>Маршрут</button>
+          {isGM && (
+            <div className="card-actions" aria-label="Движение армии">
+              {army.status === "READY" && (
+                <button type="button" onClick={() => onAction({ type: "START_ARMY", armyId: army.id })}>Старт</button>
+              )}
+              {army.status === "MOVING" && (
+                <button type="button" onClick={() => onAction({ type: "PAUSE_ARMY", armyId: army.id })}>Пауза</button>
+              )}
+              {army.status === "PAUSED" && (
+                <button type="button" onClick={() => onAction({ type: "RESUME_ARMY", armyId: army.id })}>Продолжить</button>
+              )}
+              {army.status !== "READY" && (
+                <button type="button" onClick={() => onAction({ type: "STOP_ARMY", armyId: army.id })}>Стоп</button>
+              )}
+            </div>
+          )}
+          {isGM && (
+            <div className="card-actions">
+              <button type="button" onClick={() => onAction({ type: "UNREGISTER_ARMY", armyId: army.id })}>Снять регистрацию</button>
+            </div>
+          )}
         </div>
       )}
     </article>

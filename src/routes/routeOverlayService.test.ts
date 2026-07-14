@@ -1,6 +1,10 @@
 import { expect, it } from "vitest";
-import type { SceneItemRecord } from "../shared/types";
-import { RouteOverlayService, type RouteOverlayPort } from "./routeOverlayService";
+import type { ArmyStatus, SceneItemRecord } from "../shared/types";
+import {
+  RouteOverlayService,
+  type RouteOverlayPort,
+  type RouteOverlayViewer
+} from "./routeOverlayService";
 
 class MemoryOverlayPort implements RouteOverlayPort {
   items: SceneItemRecord[] = [];
@@ -11,16 +15,56 @@ class MemoryOverlayPort implements RouteOverlayPort {
   createId() { this.next += 1; return `overlay-${this.next}`; }
 }
 
-it("renders only the player's side routes as non-interactive local items", async () => {
+function viewer(kind: "GM" | "LEADER" | "MEMBER" | "OTHER"): RouteOverlayViewer {
+  return {
+    isGM: kind === "GM",
+    memberSideIds: kind === "LEADER" || kind === "MEMBER" ? ["red"] : [],
+    leaderSideIds: kind === "LEADER" ? ["red"] : []
+  };
+}
+
+it.each([
+  ["GM", "READY", true],
+  ["LEADER", "READY", true],
+  ["MEMBER", "READY", false],
+  ["OTHER", "READY", false],
+  ["GM", "MOVING", true],
+  ["LEADER", "MOVING", true],
+  ["MEMBER", "MOVING", true],
+  ["OTHER", "MOVING", false],
+  ["MEMBER", "PAUSED", true],
+  ["MEMBER", "IN_BATTLE", true]
+] as const)("filters %s viewer for %s route", async (viewerKind, status, visible) => {
   const port = new MemoryOverlayPort();
   await new RouteOverlayService(port).reconcile(
     [
-      { armyId: "a", sideId: "A", color: "#f00", start: { x: 0, y: 0 }, waypoints: [{ x: 2, y: 0 }] },
-      { armyId: "b", sideId: "B", color: "#00f", start: { x: 5, y: 0 }, waypoints: [{ x: 7, y: 0 }] }
+      {
+        armyId: "a",
+        sideId: "red",
+        status: status as ArmyStatus,
+        color: "#f00",
+        start: { x: 0, y: 0 },
+        waypoints: [{ x: 2, y: 0 }]
+      }
     ],
-    { isGM: false, playerSideIds: ["A"] }
+    viewer(viewerKind)
   );
-  expect(port.items.some((item) => item.metadata["com.letopis.army-control/route-overlay"])).toBe(true);
+  expect(port.items.length > 0).toBe(visible);
   expect(port.items.every((item) => item.disableHit === true)).toBe(true);
-  expect(JSON.stringify(port.items)).not.toContain('"armyId":"b"');
+});
+
+it("renders no overlay for an empty route", async () => {
+  const port = new MemoryOverlayPort();
+  await new RouteOverlayService(port).reconcile(
+    [{
+      armyId: "a",
+      sideId: "red",
+      status: "MOVING",
+      color: "#f00",
+      start: { x: 0, y: 0 },
+      waypoints: []
+    }],
+    viewer("GM")
+  );
+  expect(port.items).toEqual([]);
 });

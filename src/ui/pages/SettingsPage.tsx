@@ -11,7 +11,6 @@ export function SettingsPage({ settings, onAction }: { settings: SceneSettings; 
       <div className="form-grid">
         <label>Лимит маршрута<input type="number" min="0" value={settings.defaultMaxRouteDistanceCells} onChange={(event) => updateNumber("defaultMaxRouteDistanceCells", event.target.value)} /></label>
         <label>Дальность обнаружения<input type="number" min="0" value={settings.defaultDetectionRangeCells} onChange={(event) => updateNumber("defaultDetectionRangeCells", event.target.value)} /></label>
-        <label className="toggle"><input type="checkbox" checked={settings.allowPlayersToCreateRoutes} onChange={(event) => onAction({ type: "UPDATE_SETTINGS", settings: { allowPlayersToCreateRoutes: event.target.checked } })} />Маршруты игроков</label>
       </div>
     </section>
   );

@@ -1,5 +1,5 @@
 import { METADATA_KEYS } from "../shared/constants";
-import type { SceneItemRecord, Vector2 } from "../shared/types";
+import type { ArmyStatus, SceneItemRecord, Vector2 } from "../shared/types";
 
 export interface RouteOverlayPort {
   getItems(): Promise<SceneItemRecord[]>;
@@ -11,6 +11,7 @@ export interface RouteOverlayPort {
 export interface RouteOverlay {
   armyId: string;
   sideId: string;
+  status: ArmyStatus;
   color: string;
   start: Vector2;
   waypoints: readonly Vector2[];
@@ -18,7 +19,14 @@ export interface RouteOverlay {
 
 export interface RouteOverlayViewer {
   isGM: boolean;
-  playerSideIds: readonly string[];
+  memberSideIds: readonly string[];
+  leaderSideIds: readonly string[];
+}
+
+function routeVisible(route: RouteOverlay, viewer: RouteOverlayViewer): boolean {
+  if (viewer.isGM) return true;
+  if (route.status === "READY") return viewer.leaderSideIds.includes(route.sideId);
+  return viewer.memberSideIds.includes(route.sideId);
 }
 
 export class RouteOverlayService {
@@ -29,8 +37,9 @@ export class RouteOverlayService {
       (item) => item.metadata[METADATA_KEYS.routeOverlay] !== undefined
     );
     if (existing.length > 0) await this.port.deleteItems(existing.map((item) => item.id));
-    const sideIds = new Set(viewer.playerSideIds);
-    const visible = routes.filter((route) => viewer.isGM || sideIds.has(route.sideId));
+    const visible = routes.filter(
+      (route) => route.waypoints.length > 0 && routeVisible(route, viewer)
+    );
     const overlays: SceneItemRecord[] = [];
     for (const route of visible) {
       const points = [route.start, ...route.waypoints].map((point) => ({ ...point }));
