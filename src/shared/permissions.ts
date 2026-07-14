@@ -1,9 +1,10 @@
-import type { ArmyCommand, ArmyState, SceneSettings } from "./types";
+import type { ArmyCommand, ArmyState, SceneSettings, Side } from "./types";
 
 export interface AuthorizationContext {
   role: "GM" | "PLAYER";
   playerId: string;
   armies: ReadonlyMap<string, ArmyState>;
+  sides: readonly Side[];
   settings: SceneSettings;
   connectedPlayerIds: ReadonlySet<string>;
 }
@@ -14,27 +15,19 @@ export type AuthorizationResult =
       allowed: false;
       reason:
         | "GM_ONLY"
-        | "NOT_DIRECT_OWNER"
-        | "OWNER_DISCONNECTED"
-        | "PLAYER_ROUTES_DISABLED"
-        | "PLAYER_START_DISABLED"
+        | "NOT_SIDE_LEADER"
         | "ARMY_NOT_FOUND"
+        | "SIDE_NOT_FOUND"
         | "SENDER_MISMATCH";
     };
 
-function armyIdForOwnerCommand(command: ArmyCommand): string | undefined {
-  switch (command.type) {
-    case "SET_ROUTE":
-    case "CLEAR_ROUTE":
-    case "MOVE_ARMY":
-    case "START_ARMY":
-    case "PAUSE_ARMY":
-    case "RESUME_ARMY":
-    case "STOP_ARMY":
-      return command.armyId;
-    default:
-      return undefined;
+function ledBy(context: AuthorizationContext, sideId: string): AuthorizationResult {
+  const side = context.sides?.find((candidate) => candidate.id === sideId);
+  if (!side) return { allowed: false, reason: "SIDE_NOT_FOUND" };
+  if (!side.leaderPlayerIds.includes(context.playerId)) {
+    return { allowed: false, reason: "NOT_SIDE_LEADER" };
   }
+  return { allowed: true };
 }
 
 export function authorizeArmyCommand(
@@ -46,30 +39,15 @@ export function authorizeArmyCommand(
   }
   if (context.role === "GM") return { allowed: true };
 
-  const armyId = armyIdForOwnerCommand(command);
-  if (!armyId) return { allowed: false, reason: "GM_ONLY" };
-  const army = context.armies.get(armyId);
-  if (!army) return { allowed: false, reason: "ARMY_NOT_FOUND" };
-  if (army.directOwnerPlayerId !== context.playerId) {
-    return { allowed: false, reason: "NOT_DIRECT_OWNER" };
+  if (command.type === "ADD_SIDE_PLAYER" || command.type === "REMOVE_SIDE_PLAYER") {
+    return ledBy(context, command.sideId);
   }
-  if (!context.connectedPlayerIds.has(context.playerId)) {
-    return { allowed: false, reason: "OWNER_DISCONNECTED" };
+
+  if (command.type === "SET_ROUTE" || command.type === "CLEAR_ROUTE") {
+    const army = context.armies.get(command.armyId);
+    if (!army) return { allowed: false, reason: "ARMY_NOT_FOUND" };
+    return ledBy(context, army.sideId);
   }
-  if (
-    (command.type === "SET_ROUTE" || command.type === "CLEAR_ROUTE" || command.type === "MOVE_ARMY") &&
-    !context.settings.allowPlayersToCreateRoutes
-  ) {
-    return { allowed: false, reason: "PLAYER_ROUTES_DISABLED" };
-  }
-  if (
-    (command.type === "START_ARMY" ||
-      command.type === "PAUSE_ARMY" ||
-      command.type === "RESUME_ARMY" ||
-      command.type === "STOP_ARMY") &&
-    !context.settings.allowPlayersToStartOwnArmies
-  ) {
-    return { allowed: false, reason: "PLAYER_START_DISABLED" };
-  }
-  return { allowed: true };
+
+  return { allowed: false, reason: "GM_ONLY" };
 }

@@ -109,16 +109,16 @@ export interface ItemUpdate {
   [key: string]: unknown;
 }
 
-interface CommandEnvelope {
+export interface CommandEnvelope {
   requestId: string;
   senderPlayerId: string;
   senderConnectionId: string;
   expectedRevision: number;
 }
 
-export type ArmyCommand = CommandEnvelope &
+export type ArmyCommandPayload =
   (
-    | { type: "REGISTER_ARMY"; itemId: string; sideId: string; directOwnerPlayerId?: string }
+    | { type: "REGISTER_ARMY"; itemId: string; sideId: string }
     | { type: "UNREGISTER_ARMY"; armyId: string }
     | { type: "CREATE_SIDE"; side: Side }
     | { type: "RENAME_SIDE"; sideId: string; name: string }
@@ -128,7 +128,15 @@ export type ArmyCommand = CommandEnvelope &
         strategy: "REASSIGN_ARMIES" | "UNREGISTER_ARMIES";
         targetSideId?: string;
       }
-    | { type: "ADD_SIDE_PLAYER" | "REMOVE_SIDE_PLAYER"; sideId: string; playerId: string }
+    | {
+        type:
+          | "ADD_SIDE_PLAYER"
+          | "REMOVE_SIDE_PLAYER"
+          | "ADD_SIDE_LEADER"
+          | "REMOVE_SIDE_LEADER";
+        sideId: string;
+        playerId: string;
+      }
     | { type: "SET_RELATION"; leftSideId: string; rightSideId: string; relation: SideRelation }
     | { type: "UPDATE_SETTINGS"; settings: Partial<SceneSettings> }
     | { type: "UPDATE_ARMY_OVERRIDES"; armyId: string; overrides: ArmyOverrides }
@@ -150,6 +158,8 @@ export type ArmyCommand = CommandEnvelope &
     | { type: "RELEASE_BATTLE_GROUP"; battleId: string }
     | { type: "REMOVE_BATTLE_PARTICIPANT"; battleId: string; armyId: string }
   );
+
+export type ArmyCommand = CommandEnvelope & ArmyCommandPayload;
 
 export interface ValidationIssue {
   code: "INVALID_VALUE" | "FUTURE_VERSION";

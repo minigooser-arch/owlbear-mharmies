@@ -1,9 +1,11 @@
 import { releaseBattleGroup } from "../battles/battleGroupService";
 import { authorizeArmyCommand } from "../shared/permissions";
+import { METADATA_KEYS } from "../shared/constants";
 import type {
   ArmyCommand,
   ArmyState,
   BarrierState,
+  SceneItemRecord,
   SceneState,
   Vector2
 } from "../shared/types";
@@ -12,6 +14,7 @@ export interface CommandState {
   scene: SceneState;
   armies: Record<string, ArmyState>;
   barriers: Record<string, BarrierState>;
+  items: Record<string, SceneItemRecord>;
   positions?: Record<string, Vector2>;
 }
 
@@ -63,6 +66,7 @@ export class CommandProcessor {
         role: context.role,
         playerId: context.playerId,
         armies: armyMap(context.state),
+        sides: context.state.scene.sides,
         settings: context.state.scene.settings,
         connectedPlayerIds: context.connectedPlayerIds
       },
@@ -71,16 +75,25 @@ export class CommandProcessor {
     if (!authorization.allowed) return { status: "REJECTED", reason: authorization.reason };
 
     const state = structuredClone(context.state);
-    const rejected = this.apply(state, command);
+    const rejected = this.apply(state, command, context.connectedPlayerIds);
     if (rejected) return { status: "REJECTED", reason: rejected };
     state.scene.revision += 1;
     return { status: "ACCEPTED", state };
   }
 
-  private apply(state: CommandState, command: ArmyCommand): string | undefined {
+  private apply(
+    state: CommandState,
+    command: ArmyCommand,
+    connectedPlayerIds: ReadonlySet<string>
+  ): string | undefined {
     switch (command.type) {
       case "REGISTER_ARMY": {
-        if (state.armies[command.itemId]) return "ALREADY_REGISTERED";
+        const item = state.items[command.itemId];
+        if (!item) return "ITEM_NOT_FOUND";
+        if (item.type !== "IMAGE") return "IMAGE_REQUIRED";
+        if (state.armies[command.itemId] || item.metadata[METADATA_KEYS.army] !== undefined) {
+          return "ALREADY_REGISTERED";
+        }
         if (!state.scene.sides.some((side) => side.id === command.sideId)) return "SIDE_NOT_FOUND";
         const registered: ArmyState = {
           version: 1,
@@ -95,7 +108,6 @@ export class CommandProcessor {
           ignoresVisionBarriers: false,
           revision: 1
         };
-        if (command.directOwnerPlayerId) registered.directOwnerPlayerId = command.directOwnerPlayerId;
         state.armies[command.itemId] = registered;
         return undefined;
       }
@@ -113,7 +125,11 @@ export class CommandProcessor {
         return undefined;
       case "CREATE_SIDE":
         if (state.scene.sides.some((side) => side.id === command.side.id)) return "SIDE_EXISTS";
-        state.scene.sides.push(command.side);
+        state.scene.sides.push({
+          ...command.side,
+          playerIds: [...new Set([...command.side.playerIds, ...command.side.leaderPlayerIds])],
+          leaderPlayerIds: [...new Set(command.side.leaderPlayerIds)]
+        });
         return undefined;
       case "RENAME_SIDE": {
         const side = state.scene.sides.find((candidate) => candidate.id === command.sideId);
@@ -153,9 +169,26 @@ export class CommandProcessor {
         const side = state.scene.sides.find((candidate) => candidate.id === command.sideId);
         if (!side) return "SIDE_NOT_FOUND";
         if (command.type === "ADD_SIDE_PLAYER") {
+          if (!connectedPlayerIds.has(command.playerId)) return "PLAYER_NOT_CONNECTED";
           side.playerIds = [...new Set([...side.playerIds, command.playerId])];
         } else {
+          if (side.leaderPlayerIds.includes(command.playerId)) return "PLAYER_IS_LEADER";
           side.playerIds = side.playerIds.filter((playerId) => playerId !== command.playerId);
+        }
+        return undefined;
+      }
+      case "ADD_SIDE_LEADER":
+      case "REMOVE_SIDE_LEADER": {
+        const side = state.scene.sides.find((candidate) => candidate.id === command.sideId);
+        if (!side) return "SIDE_NOT_FOUND";
+        if (command.type === "ADD_SIDE_LEADER") {
+          if (!connectedPlayerIds.has(command.playerId)) return "PLAYER_NOT_CONNECTED";
+          side.playerIds = [...new Set([...side.playerIds, command.playerId])];
+          side.leaderPlayerIds = [...new Set([...side.leaderPlayerIds, command.playerId])];
+        } else {
+          side.leaderPlayerIds = side.leaderPlayerIds.filter(
+            (playerId) => playerId !== command.playerId
+          );
         }
         return undefined;
       }

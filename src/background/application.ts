@@ -4,12 +4,12 @@ import { segmentsFromPolyline, type BarrierSegment } from "../barriers/barrierGe
 import { BarrierOverlayService } from "../barriers/barrierOverlayService";
 import { CommandGateway, type BroadcastEvent } from "../commands/commandGateway";
 import { CommandProcessor, type CommandState } from "../commands/commandProcessor";
+import { validateArmyCommand } from "../commands/commandValidation";
 import { advanceArmy } from "../movement/movementEngine";
 import { GridDistanceService } from "../grid/gridDistance";
 import { RouteOverlayService } from "../routes/routeOverlayService";
 import { METADATA_KEYS } from "../shared/constants";
 import type {
-  ArmyCommand,
   ArmyState,
   BattleGroup,
   SceneItemRecord,
@@ -26,6 +26,24 @@ import { CoordinatorLease, type CoordinatorParticipant } from "./coordinator";
 import { BackgroundRuntime, type BackgroundRuntimePort } from "./runtime";
 
 type BarrierPurpose = "movement" | "vision";
+
+export interface ConnectedParticipant {
+  id: string;
+  connectionId: string;
+  role: "GM" | "PLAYER";
+}
+
+export function mergeCurrentParticipant(
+  party: readonly ConnectedParticipant[],
+  current: ConnectedParticipant
+): ConnectedParticipant[] {
+  return [
+    ...party.filter(
+      (player) => player.id !== current.id && player.connectionId !== current.connectionId
+    ),
+    current
+  ];
+}
 
 function curvePoints(item: SceneItemRecord): Vector2[] {
   if (!Array.isArray(item.points)) return [];
@@ -227,9 +245,20 @@ export class ProductionEngine {
   }
 
   async processCommand(event: BroadcastEvent, sender: CommandSender): Promise<void> {
-    if (!this.coordinator || typeof event.data !== "object" || event.data === null) return;
-    const command = event.data as ArmyCommand;
-    if (command.senderConnectionId !== event.connectionId) return;
+    if (!this.coordinator) return;
+    const validation = validateArmyCommand(event.data);
+    if (!validation.ok) {
+      if (validation.requestId) {
+        await this.port.send(CommandGateway.ACK_CHANNEL, {
+          requestId: validation.requestId,
+          status: "REJECTED",
+          reason: validation.reason,
+          coordinatorConnectionId: await this.currentConnectionId()
+        });
+      }
+      return;
+    }
+    const command = validation.command;
     const [scene, armyRecords, barrierRecords, sceneItems] = await Promise.all([
       this.repository.readScene(),
       this.repository.readArmies(),
@@ -240,6 +269,7 @@ export class ProductionEngine {
       scene,
       armies: Object.fromEntries(armyRecords.map((record) => [record.item.id, record.state])),
       barriers: Object.fromEntries(barrierRecords.map((record) => [record.item.id, record.state])),
+      items: Object.fromEntries(sceneItems.map((item) => [item.id, item])),
       positions: Object.fromEntries(armyRecords.map((record) => [record.item.id, record.item.position]))
     };
     const result = new CommandProcessor().execute(
@@ -352,8 +382,17 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
   const engine = new ProductionEngine(port);
   const connectionId = await OBR.player.getConnectionId();
   const coordinatorListeners = new Set<(active: boolean) => void>();
+  const connectedParty = async (): Promise<ConnectedParticipant[]> => {
+    const [players, id, role, currentConnectionId] = await Promise.all([
+      OBR.party.getPlayers(),
+      OBR.player.getId(),
+      OBR.player.getRole(),
+      OBR.player.getConnectionId()
+    ]);
+    return mergeCurrentParticipant(players, { id, role, connectionId: currentConnectionId });
+  };
   const party = async (): Promise<CoordinatorParticipant[]> => {
-    const players = await OBR.party.getPlayers();
+    const players = await connectedParty();
     return players.map((player) => ({ connectionId: player.connectionId, role: player.role }));
   };
   const lease = new CoordinatorLease({
@@ -388,10 +427,7 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
     onBroadcast: (callback) => OBR.broadcast.onMessage(CommandGateway.COMMAND_CHANNEL, (event) => {
       callback();
       void (async () => {
-        if (typeof event.data !== "object" || event.data === null) return;
-        const payload = event.data as Partial<ArmyCommand>;
-        if (typeof payload.senderPlayerId !== "string") return;
-        const players = await OBR.party.getPlayers();
+        const players = await connectedParty();
         const sender = players.find((player) => player.connectionId === event.connectionId);
         if (!sender) return;
         await engine.processCommand(event, {
