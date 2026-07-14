@@ -26,6 +26,13 @@ interface PendingRequest {
   senderConnectionId: string;
 }
 
+export class CommandTimeoutError extends Error {
+  constructor(readonly requestId: string) {
+    super("Command acknowledgement timed out");
+    this.name = "CommandTimeoutError";
+  }
+}
+
 export class DuplicateRequestError extends Error {
   constructor(readonly requestId: string) {
     super(`Duplicate in-flight request: ${requestId}`);
@@ -97,7 +104,7 @@ export class CommandGateway {
     return new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => {
         this.pending.delete(command.requestId);
-        reject(new Error("Command acknowledgement timed out"));
+        reject(new CommandTimeoutError(command.requestId));
       }, this.timeoutMs);
       this.pending.set(command.requestId, {
         resolve,

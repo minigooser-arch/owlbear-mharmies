@@ -8,17 +8,14 @@ import OBR, {
 import type { BroadcastEvent, BroadcastPort } from "../commands/commandGateway";
 import type { GridSdkPort } from "../grid/gridDistance";
 import { METADATA_KEYS } from "../shared/constants";
-import type { ItemUpdate, SceneItemRecord, SceneState, Vector2 } from "../shared/types";
-import { migrateSceneState } from "../storage/migrations";
+import type { ItemUpdate, SceneItemRecord, Vector2 } from "../shared/types";
 import type { MetadataPort } from "../storage/metadataRepository";
 import type { LocalClonePort } from "../visibility/localCloneReconciler";
 import type { NotificationPort } from "./notifications";
-import type { RegistrationPort } from "./registration";
 
 export interface OwlbearPort
   extends MetadataPort,
     LocalClonePort,
-    RegistrationPort,
     BroadcastPort,
     GridSdkPort,
     NotificationPort {}
@@ -31,7 +28,6 @@ interface SceneCollectionLike {
 }
 
 interface OwlbearSdkLike {
-  player: { getRole(): Promise<"GM" | "PLAYER"> };
   scene: {
     getMetadata(): Promise<Record<string, unknown>>;
     setMetadata(update: Record<string, unknown>): Promise<void>;
@@ -112,28 +108,6 @@ export function createOwlbearAdapter(
     patchSceneMetadata: (update) => sdk.scene.setMetadata(update),
     getSceneItems: allSceneItems,
     updateSceneItem: (id, update) => updateCollectionItem(sdk.scene.items, id, update),
-    getRole: () => sdk.player.getRole(),
-    getItem: async (itemId) => (await allSceneItems()).find((item) => item.id === itemId),
-    getSceneState: async (): Promise<SceneState> => {
-      const raw = (await sdk.scene.getMetadata())[METADATA_KEYS.scene] ?? { version: 2 };
-      const result = migrateSceneState(raw);
-      if (!result.ok) throw new Error(`Invalid scene metadata: ${result.issue.code}`);
-      return result.value;
-    },
-    updateItem: (id, update) => updateCollectionItem(sdk.scene.items, id, update),
-    deleteLocalItemsForSource: async (sourceItemId) => {
-      const ids = (await allLocalItems())
-        .filter((item) => {
-          const metadata = item.metadata[METADATA_KEYS.localClone];
-          return (
-            typeof metadata === "object" &&
-            metadata !== null &&
-            (metadata as Record<string, unknown>).sourceItemId === sourceItemId
-          );
-        })
-        .map((item) => item.id);
-      if (ids.length > 0) await sdk.scene.local.deleteItems(ids);
-    },
     getLocalItems: allLocalItems,
     addLocalItem: async (item) => sdk.scene.local.addItems([item as unknown as Item]),
     updateLocalItem: (id, update) => updateCollectionItem(sdk.scene.local, id, update),

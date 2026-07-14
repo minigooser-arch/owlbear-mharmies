@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ArmyCommand } from "../shared/types";
 import {
   CommandGateway,
@@ -117,5 +117,29 @@ describe("CommandGateway", () => {
     expect(() => gateway.send(command())).toThrow(DuplicateRequestError);
     gateway.stop();
     await expect(first).rejects.toThrow("Command gateway stopped");
+  });
+
+  it("rejects a timed-out command with its request id", async () => {
+    vi.useFakeTimers();
+    try {
+      const port = new MemoryBroadcast();
+      const gateway = new CommandGateway(port, 100);
+      gateway.start();
+      const pending = gateway.send(command()).then(
+        () => ({ status: "RESOLVED" as const }),
+        (error: unknown) => ({ status: "REJECTED" as const, error })
+      );
+
+      await vi.advanceTimersByTimeAsync(100);
+      const outcome = await pending;
+      expect(outcome.status).toBe("REJECTED");
+      expect("error" in outcome ? outcome.error : undefined).toMatchObject({
+        name: "CommandTimeoutError",
+        requestId: "request"
+      });
+      gateway.stop();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

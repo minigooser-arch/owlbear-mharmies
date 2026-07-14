@@ -1,25 +1,37 @@
 import { useMemo, useState } from "react";
+import type { Side } from "../../shared/types";
 import { ArmyCard } from "../components/ArmyCard";
 import type { ArmyView, UiCommand } from "../state/useExtensionState";
 
 interface ArmiesPageProps {
   armies: readonly ArmyView[];
+  sides: readonly Side[];
   role: "GM" | "PLAYER";
   playerId: string;
+  leaderSideIds: ReadonlySet<string>;
   onAction(command: UiCommand): void;
 }
 
-export function ArmiesPage({ armies, role, playerId, onAction }: ArmiesPageProps) {
+export function ArmiesPage({
+  armies,
+  sides,
+  role,
+  leaderSideIds,
+  onAction
+}: ArmiesPageProps) {
   const [query, setQuery] = useState("");
-  const [side, setSide] = useState("ALL");
+  const [filterSideId, setFilterSideId] = useState("ALL");
+  const [registrationSideId, setRegistrationSideId] = useState(sides[0]?.id ?? "");
+  const selectedRegistrationSideId = sides.some((side) => side.id === registrationSideId)
+    ? registrationSideId
+    : (sides[0]?.id ?? "");
   const filtered = useMemo(
     () => armies.filter((army) =>
-      (side === "ALL" || army.sideId === side) &&
+      (filterSideId === "ALL" || army.sideId === filterSideId) &&
       army.name.toLocaleLowerCase("ru").includes(query.toLocaleLowerCase("ru"))
     ),
-    [armies, query, side]
+    [armies, filterSideId, query]
   );
-  const sides = [...new Map(armies.map((army) => [army.sideId, army.sideName])).entries()];
   return (
     <section aria-labelledby="armies-title">
       <div className="section-heading">
@@ -28,13 +40,44 @@ export function ArmiesPage({ armies, role, playerId, onAction }: ArmiesPageProps
       </div>
       <div className="filters">
         <input aria-label="Поиск армий" placeholder="Найти армию" value={query} onChange={(event) => setQuery(event.target.value)} />
-        <select aria-label="Фильтр по стороне" value={side} onChange={(event) => setSide(event.target.value)}>
+        <select aria-label="Фильтр по стороне" value={filterSideId} onChange={(event) => setFilterSideId(event.target.value)}>
           <option value="ALL">Все стороны</option>
-          {sides.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+          {sides.map((side) => <option key={side.id} value={side.id}>{side.name}</option>)}
         </select>
       </div>
+      {role === "GM" && (
+        <div className="filters" aria-label="Регистрация армии">
+          <select
+            aria-label="Сторона новой армии"
+            value={selectedRegistrationSideId}
+            disabled={sides.length === 0}
+            onChange={(event) => setRegistrationSideId(event.target.value)}
+          >
+            {sides.map((side) => <option key={side.id} value={side.id}>{side.name}</option>)}
+          </select>
+          <button
+            type="button"
+            disabled={sides.length === 0}
+            onClick={() => {
+              if (selectedRegistrationSideId) {
+                onAction({ type: "REGISTER_SELECTED_ARMY", sideId: selectedRegistrationSideId });
+              }
+            }}
+          >
+            Сделать армией
+          </button>
+        </div>
+      )}
       <div className="card-list">
-        {filtered.map((army) => <ArmyCard key={army.id} army={army} role={role} playerId={playerId} onAction={onAction} />)}
+        {filtered.map((army) => (
+          <ArmyCard
+            key={army.id}
+            army={army}
+            isGM={role === "GM"}
+            canEditRoute={role === "GM" || leaderSideIds.has(army.sideId)}
+            onAction={onAction}
+          />
+        ))}
         {filtered.length === 0 && <p className="empty">Подходящих армий нет.</p>}
       </div>
     </section>

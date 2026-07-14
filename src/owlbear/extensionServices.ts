@@ -1,4 +1,4 @@
-import { CommandGateway } from "../commands/commandGateway";
+import { CommandGateway, CommandTimeoutError } from "../commands/commandGateway";
 import { DEFAULT_SETTINGS, METADATA_KEYS } from "../shared/constants";
 import type { ArmyCommand, SceneItemRecord, SceneState } from "../shared/types";
 import { migrateSceneState } from "../storage/migrations";
@@ -11,6 +11,8 @@ import type {
   UiCommand
 } from "../ui/state/useExtensionState";
 import { DiagnosticsService, type DiagnosticsPort } from "./diagnostics";
+import { notifyRussian } from "./notifications";
+import { RegistrationError, resolveRegistrationSelection } from "./registration";
 
 export interface SnapshotInput {
   role: "GM" | "PLAYER";
@@ -171,9 +173,9 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
     getSelectedSource: async () => {
       const selected = await OBR.player.getSelection();
       if (!selected?.[0]) return undefined;
-      return adapter.getItem(selected[0]);
+      return (await adapter.getSceneItems()).find((item) => item.id === selected[0]);
     },
-    getSource: (id) => adapter.getItem(id),
+    getSource: async (id) => (await adapter.getSceneItems()).find((item) => item.id === id),
     createTemporaryLocal: async (source) => {
       const clone = adapter.createClone(source);
       await adapter.addLocalItem(clone);
@@ -181,7 +183,7 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
     },
     updateTemporaryLocal: (id, position) => adapter.updateLocalItem(id, { position }),
     deleteLocalItems: (ids) => adapter.deleteLocalItems(ids),
-    updateSourcePosition: (id, position) => adapter.updateItem(id, { position }),
+    updateSourcePosition: (id, position) => adapter.updateSceneItem(id, { position }),
     readBackgroundCounter: async () => Number(localStorage.getItem(`${METADATA_KEYS.scene}/background-counter`) ?? 0),
     probeContextMenu: async () => false
   };
@@ -203,13 +205,43 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
       await OBR.notification.show("Выберите инструмент маршрута на панели Owlbear.", "INFO");
       return undefined;
     }
-    const envelope = {
-      requestId: crypto.randomUUID(),
-      senderPlayerId: await OBR.player.getId(),
-      senderConnectionId: await OBR.player.getConnectionId(),
-      expectedRevision: snapshot.futureSchema ? -1 : Number((await repository.readScene()).revision)
-    };
-    return gateway.send({ ...envelope, ...command } as unknown as ArmyCommand);
+    try {
+      const payload = command.type === "REGISTER_SELECTED_ARMY"
+        ? {
+            type: "REGISTER_ARMY" as const,
+            itemId: resolveRegistrationSelection({
+              selection: (await OBR.player.getSelection()) ?? [],
+              items: await adapter.getSceneItems()
+            }).id,
+            sideId: command.sideId
+          }
+        : command;
+      const envelope = {
+        requestId: crypto.randomUUID(),
+        senderPlayerId: await OBR.player.getId(),
+        senderConnectionId: await OBR.player.getConnectionId(),
+        expectedRevision: snapshot.futureSchema ? -1 : Number((await repository.readScene()).revision)
+      };
+      const acknowledgement = await gateway.send({ ...envelope, ...payload } as ArmyCommand);
+      if (acknowledgement.status === "REJECTED") {
+        await notifyRussian(adapter, acknowledgement.reason ?? "INVALID_COMMAND");
+      } else if (acknowledgement.status === "CONFLICT") {
+        await notifyRussian(adapter, "REVISION_CONFLICT");
+      } else {
+        await refresh();
+      }
+      return acknowledgement;
+    } catch (error) {
+      if (error instanceof RegistrationError) {
+        await notifyRussian(adapter, error.code);
+        return undefined;
+      }
+      if (error instanceof CommandTimeoutError) {
+        await notifyRussian(adapter, "COMMAND_TIMEOUT");
+        return undefined;
+      }
+      throw error;
+    }
   };
 
   return {

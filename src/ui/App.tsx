@@ -34,7 +34,16 @@ export function App({ services }: { services: ExtensionServices }) {
       <header className="topbar"><div className="brand-mark">Л</div><div><p>Летопись</p><h1>Армии</h1></div><span className="role-badge">{state.role === "GM" ? "Ведущий" : "Игрок"}</span></header>
       <nav className="tabs" aria-label="Разделы">{tabs.map((item) => <button type="button" key={item} className={tab === item ? "active" : ""} onClick={() => setTab(item)}>{LABELS[item]}</button>)}</nav>
       <div className="content">
-        {tab === "ARMIES" && <ArmiesPage armies={state.armies} role={state.role} playerId={state.playerId} onAction={send} />}
+        {tab === "ARMIES" && (
+          <ArmiesPage
+            armies={state.armies}
+            sides={state.sides}
+            role={state.role}
+            playerId={state.playerId}
+            leaderSideIds={state.leaderSideIds}
+            onAction={send}
+          />
+        )}
         {tab === "SIDES" && (
           <SidesPage
             role={state.role}

@@ -1,43 +1,46 @@
 import { describe, expect, it } from "vitest";
 import { METADATA_KEYS } from "../shared/constants";
-import type { ItemUpdate, SceneItemRecord, SceneState } from "../shared/types";
-import { DEFAULT_SETTINGS } from "../shared/constants";
-import { registerArmy, RegistrationError, type RegistrationPort } from "./registration";
+import type { SceneItemRecord } from "../shared/types";
+import { resolveRegistrationSelection } from "./registration";
 
-class MemoryRegistrationPort implements RegistrationPort {
-  role: "GM" | "PLAYER" = "GM";
-  item: SceneItemRecord = { id: "army", type: "IMAGE", position: { x: 0, y: 0 }, metadata: {} };
-  scene: SceneState = {
-    version: 2,
-    revision: 0,
-    settings: DEFAULT_SETTINGS,
-    sides: [{ id: "red", name: "Красные", color: "#f00", playerIds: [], leaderPlayerIds: [] }],
-    relations: {},
-    battleGroups: []
-  };
-
-  async getRole() { return this.role; }
-  async getItem() { return structuredClone(this.item); }
-  async getSceneState() { return structuredClone(this.scene); }
-  async updateItem(_id: string, update: ItemUpdate) { Object.assign(this.item, structuredClone(update)); }
-  async deleteLocalItemsForSource() { return undefined; }
+function image(id: string): SceneItemRecord {
+  return { id, type: "IMAGE", position: { x: 0, y: 0 }, metadata: {} };
 }
 
-describe("army registration", () => {
-  it("hides an image source and writes namespaced army metadata", async () => {
-    const port = new MemoryRegistrationPort();
-    const state = await registerArmy(port, "army", "red", "owner");
-    expect(port.item.visible).toBe(false);
-    expect(port.item.metadata[METADATA_KEYS.army]).toEqual(state);
-    expect(state.directOwnerPlayerId).toBe("owner");
+function shape(id: string): SceneItemRecord {
+  return { id, type: "SHAPE", position: { x: 0, y: 0 }, metadata: {} };
+}
+
+function registeredImage(id: string): SceneItemRecord {
+  return {
+    ...image(id),
+    metadata: { [METADATA_KEYS.army]: { registered: true } }
+  };
+}
+
+describe("registration selection", () => {
+  it.each([
+    [[], "SELECTION_EMPTY"],
+    [["a", "b"], "SELECTION_MULTIPLE"],
+    [["shape"], "IMAGE_REQUIRED"],
+    [["army"], "ALREADY_REGISTERED"]
+  ])("rejects invalid registration selection %j", (selection, code) => {
+    expect(() => resolveRegistrationSelection({
+      selection,
+      items: [image("a"), image("b"), shape("shape"), registeredImage("army")]
+    })).toThrowError(expect.objectContaining({ code }));
   });
 
-  it("rejects registration for a player or non-image item", async () => {
-    const playerPort = new MemoryRegistrationPort();
-    playerPort.role = "PLAYER";
-    await expect(registerArmy(playerPort, "army", "red")).rejects.toEqual(new RegistrationError("GM_ONLY"));
-    const shapePort = new MemoryRegistrationPort();
-    shapePort.item.type = "SHAPE";
-    await expect(registerArmy(shapePort, "army", "red")).rejects.toEqual(new RegistrationError("IMAGE_REQUIRED"));
+  it("rejects a selected item that is no longer on the scene", () => {
+    expect(() => resolveRegistrationSelection({ selection: ["missing"], items: [] }))
+      .toThrowError(expect.objectContaining({ code: "ITEM_NOT_FOUND" }));
+  });
+
+  it("returns the one selected unregistered image", () => {
+    const selected = image("selected");
+    expect(resolveRegistrationSelection({
+      selection: [selected.id],
+      items: [image("other"), selected]
+    })).toBe(selected);
   });
 });
