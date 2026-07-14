@@ -1,0 +1,129 @@
+import type { ArmyState, BattleGroup } from "../shared/types";
+import type { EnemyCollision } from "./collisionEngine";
+
+export type ContactEdge = readonly [string, string];
+
+function connectedComponents(armyIds: readonly string[], edges: readonly ContactEdge[]): string[][] {
+  const adjacency = new Map<string, Set<string>>();
+  for (const armyId of armyIds) adjacency.set(armyId, new Set());
+  for (const [left, right] of edges) {
+    if (left === right) continue;
+    if (!adjacency.has(left)) adjacency.set(left, new Set());
+    if (!adjacency.has(right)) adjacency.set(right, new Set());
+    adjacency.get(left)?.add(right);
+    adjacency.get(right)?.add(left);
+  }
+  const visited = new Set<string>();
+  const components: string[][] = [];
+  for (const armyId of [...adjacency.keys()].sort()) {
+    if (visited.has(armyId)) continue;
+    const stack = [armyId];
+    const component: string[] = [];
+    visited.add(armyId);
+    while (stack.length > 0) {
+      const current = stack.pop();
+      if (!current) continue;
+      component.push(current);
+      for (const neighbor of adjacency.get(current) ?? []) {
+        if (!visited.has(neighbor)) {
+          visited.add(neighbor);
+          stack.push(neighbor);
+        }
+      }
+    }
+    if (component.length >= 2) components.push(component.sort());
+  }
+  return components;
+}
+
+export function rebuildBattleGroups(
+  armyIds: readonly string[],
+  directEnemyContacts: readonly ContactEdge[],
+  existingGroups: readonly BattleGroup[],
+  createId: () => string
+): BattleGroup[] {
+  return connectedComponents(armyIds, directEnemyContacts)
+    .map((participantIds) => {
+      const participantSet = new Set(participantIds);
+      const overlapping = existingGroups.filter((group) =>
+        group.participantIds.some((participantId) => participantSet.has(participantId))
+      );
+      const battleId =
+        overlapping.map((group) => group.battleId).sort()[0] ?? createId();
+      const revision =
+        overlapping.length === 0
+          ? 1
+          : Math.max(...overlapping.map((group) => group.revision)) + 1;
+      return { battleId, participantIds, revision };
+    })
+    .sort((left, right) => left.battleId.localeCompare(right.battleId));
+}
+
+export function joinReinforcements(
+  groups: readonly BattleGroup[],
+  directEnemyContacts: readonly ContactEdge[],
+  createId: () => string
+): BattleGroup[] {
+  const armyIds = new Set(groups.flatMap((group) => group.participantIds));
+  for (const [left, right] of directEnemyContacts) {
+    armyIds.add(left);
+    armyIds.add(right);
+  }
+  const retainedEdges: ContactEdge[] = groups.flatMap((group) => {
+    const [first, ...rest] = group.participantIds;
+    return first ? rest.map((participantId) => [first, participantId] as const) : [];
+  });
+  return rebuildBattleGroups(
+    [...armyIds],
+    [...retainedEdges, ...directEnemyContacts],
+    groups,
+    createId
+  );
+}
+
+export function applyCollision(
+  groups: readonly BattleGroup[],
+  collision: EnemyCollision,
+  createId: () => string
+): BattleGroup[] {
+  return joinReinforcements(groups, [[collision.armyAId, collision.armyBId]], createId);
+}
+
+export function mergeBattleGroups(
+  groups: readonly BattleGroup[],
+  battleIds: readonly string[]
+): BattleGroup[] {
+  const selected = groups.filter((group) => battleIds.includes(group.battleId));
+  if (selected.length < 2) return [...groups];
+  const mergedBattleId = selected.map((group) => group.battleId).sort()[0];
+  if (!mergedBattleId) return [...groups];
+  const merged: BattleGroup = {
+    battleId: mergedBattleId,
+    participantIds: [...new Set(selected.flatMap((group) => group.participantIds))].sort(),
+    revision: Math.max(...selected.map((group) => group.revision)) + 1
+  };
+  return [
+    ...groups.filter((group) => !battleIds.includes(group.battleId)),
+    merged
+  ].sort((left, right) => left.battleId.localeCompare(right.battleId));
+}
+
+export function releaseBattleGroup(
+  groups: readonly BattleGroup[],
+  armies: ReadonlyMap<string, ArmyState>,
+  battleId: string
+): { groups: BattleGroup[]; armies: Map<string, ArmyState> } {
+  const released = groups.find((group) => group.battleId === battleId);
+  const nextArmies = new Map(armies);
+  for (const participantId of released?.participantIds ?? []) {
+    const state = nextArmies.get(participantId);
+    if (!state) continue;
+    const { battleGroupId, ...withoutBattleGroup } = state;
+    void battleGroupId;
+    nextArmies.set(participantId, { ...withoutBattleGroup, status: "PAUSED" });
+  }
+  return {
+    groups: groups.filter((group) => group.battleId !== battleId),
+    armies: nextArmies
+  };
+}

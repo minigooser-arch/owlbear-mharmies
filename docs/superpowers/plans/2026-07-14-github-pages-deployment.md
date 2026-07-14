@@ -105,15 +105,15 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
       - run: npm ci
       - run: npm run check
       - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v4
         with:
           path: dist
       - name: Deploy
@@ -183,4 +183,3 @@ Expected: successful HTTP responses; manifest entrypoints match those URLs, and 
 - [ ] **Step 6: Report the Owlbear installation URL**
 
 Provide `https://minigooser-arch.github.io/owlbear-mharmies/manifest.json` and note that live-room diagnostics remain user-run checks.
-
