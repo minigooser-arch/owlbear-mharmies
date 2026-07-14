@@ -65,6 +65,32 @@ describe("metadata migrations", () => {
     });
   });
 
+  it("migrates a v0 scene through v1 to v2", () => {
+    expect(migrateSceneState({
+      version: 0,
+      revision: 4,
+      sides: [{ id: "red", name: "Красные", color: "#f00", playerIds: ["p1"] }]
+    })).toMatchObject({
+      ok: true,
+      value: {
+        version: 2,
+        revision: 4,
+        sides: [{ id: "red", playerIds: ["p1"], leaderPlayerIds: [] }]
+      }
+    });
+  });
+
+  it("rejects a present non-numeric scene version instead of treating it as missing", () => {
+    expect(migrateSceneState({ version: "1" })).toEqual({
+      ok: false,
+      issue: { code: "INVALID_VALUE", path: "version" }
+    });
+    expect(migrateSceneState({ version: null })).toEqual({
+      ok: false,
+      issue: { code: "INVALID_VALUE", path: "version" }
+    });
+  });
+
   it("migrates a v0 barrier to independent movement and vision flags", () => {
     expect(migrateBarrierState({ version: 0, blocks: false })).toMatchObject({
       ok: true,

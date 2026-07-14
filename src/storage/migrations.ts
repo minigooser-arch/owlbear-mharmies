@@ -21,6 +21,9 @@ function versionOf(raw: unknown): number | undefined {
 }
 
 export function migrateSceneState(raw: unknown): ValidationResult<SceneState> {
+  if (isRecord(raw) && Object.hasOwn(raw, "version") && typeof raw.version !== "number") {
+    return { ok: false, issue: { code: "INVALID_VALUE", path: "version" } };
+  }
   const version = versionOf(raw);
   if (version !== undefined && version > 2) {
     return { ok: false, issue: { code: "FUTURE_VERSION", version } };
