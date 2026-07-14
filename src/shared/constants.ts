@@ -1,6 +1,10 @@
 import type { SceneSettings } from "./types";
 
 export const EXTENSION_ID = "com.letopis.army-control";
+export const ROUTE_TOOL_ID = `${EXTENSION_ID}/route-tool`;
+export const ROUTE_TOOL_MODE_ID = `${ROUTE_TOOL_ID}/draw`;
+export const ROUTE_ARMY_ID_KEY = `${ROUTE_TOOL_ID}/army-id`;
+export const ROUTE_RETURN_TOOL_KEY = `${ROUTE_TOOL_ID}/return-tool`;
 
 export const METADATA_KEYS = {
   scene: `${EXTENSION_ID}/scene`,
@@ -8,6 +12,7 @@ export const METADATA_KEYS = {
   barrier: `${EXTENSION_ID}/barrier`,
   localClone: `${EXTENSION_ID}/local-clone`,
   routeOverlay: `${EXTENSION_ID}/route-overlay`,
+  routePreview: `${EXTENSION_ID}/route-preview`,
   barrierOverlay: `${EXTENSION_ID}/barrier-overlay`
 } as const;
 

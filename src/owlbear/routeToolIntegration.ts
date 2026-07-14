@@ -1,0 +1,271 @@
+import type { KeyEvent, Tool, ToolContext, ToolEvent, ToolMode } from "@owlbear-rodeo/sdk";
+import type { BarrierSegment } from "../barriers/barrierGeometry";
+import type { GridDistancePort } from "../routes/routeMath";
+import {
+  ROUTE_ARMY_ID_KEY,
+  ROUTE_RETURN_TOOL_KEY,
+  ROUTE_TOOL_ID,
+  ROUTE_TOOL_MODE_ID
+} from "../shared/constants";
+import type { Vector2 } from "../shared/types";
+import { notificationMessage } from "./notifications";
+import { RouteToolController, type RouteToolSnapshot } from "./routeTool";
+
+export interface RouteToolSession {
+  armyId: string;
+  start: Vector2;
+  maxCells: number;
+  barriers: readonly BarrierSegment[];
+}
+
+export interface RouteToolIntegrationPort {
+  loadSession(armyId: string): Promise<RouteToolSession>;
+  commitRoute(armyId: string, route: readonly Vector2[]): Promise<void>;
+  renderPreview(snapshot: RouteToolSnapshot): Promise<void>;
+  clearPreview(): Promise<void>;
+  notify(message: string, variant: "INFO" | "WARNING" | "ERROR"): Promise<void>;
+  restoreTool(toolId: string): Promise<void>;
+}
+
+export interface RouteToolApi {
+  create(tool: Tool): Promise<void>;
+  remove(id: string): Promise<void>;
+  createMode(mode: ToolMode): Promise<void>;
+  removeMode(id: string): Promise<void>;
+}
+
+function messageFrom(error: unknown): string {
+  const code = typeof error === "object" && error !== null && "code" in error
+    ? (error as { code?: unknown }).code
+    : undefined;
+  if (typeof code === "string") return notificationMessage(code);
+  if (error instanceof Error) {
+    return /^[A-Z][A-Z0-9_]+$/.test(error.message)
+      ? notificationMessage(error.message)
+      : error.message;
+  }
+  return "Неизвестная ошибка";
+}
+
+export async function registerRouteTool(
+  api: RouteToolApi,
+  port: RouteToolIntegrationPort,
+  distancePort: GridDistancePort,
+  iconUrl: string
+): Promise<() => Promise<void>> {
+  const controller = new RouteToolController(distancePort);
+  const moveIntervalMs = 1_000 / 12;
+  let tail: Promise<void> = Promise.resolve();
+  let closed = false;
+  let active = false;
+  let previewRendered = false;
+  let returnToolId: string | undefined;
+  let generation = 0;
+  let lastMoveAt = 0;
+  let pendingMove: Vector2 | undefined;
+  let moveTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const safeNotify = async (
+    message: string,
+    variant: "INFO" | "WARNING" | "ERROR"
+  ): Promise<void> => {
+    try {
+      await port.notify(message, variant);
+    } catch {
+      // A failed notification must never break the Owlbear callback queue.
+    }
+  };
+
+  const enqueue = (operation: () => Promise<void>): Promise<void> => {
+    const queued = tail.then(operation, operation);
+    tail = queued.catch((error: unknown) =>
+      safeNotify(`Не удалось изменить маршрут: ${messageFrom(error)}`, "ERROR")
+    );
+    return tail;
+  };
+
+  const cancelMoveTimer = () => {
+    if (moveTimer !== undefined) clearTimeout(moveTimer);
+    moveTimer = undefined;
+    pendingMove = undefined;
+  };
+
+  const renderSnapshot = async () => {
+    const snapshot = controller.snapshot();
+    if (!snapshot) return;
+    await port.renderPreview(snapshot);
+    previewRendered = true;
+  };
+
+  const finishSession = async (restorePrevious: boolean, cancelMoves = true) => {
+    if (cancelMoves) cancelMoveTimer();
+    const shouldClear = active || previewRendered;
+    const previousToolId = returnToolId;
+    controller.cancel();
+    active = false;
+    previewRendered = false;
+    returnToolId = undefined;
+    if (shouldClear) await port.clearPreview();
+    if (restorePrevious && previousToolId && previousToolId !== ROUTE_TOOL_ID) {
+      await port.restoreTool(previousToolId);
+    }
+  };
+
+  const runPendingMove = (): Promise<void> => {
+    if (moveTimer !== undefined) clearTimeout(moveTimer);
+    moveTimer = undefined;
+    const point = pendingMove;
+    pendingMove = undefined;
+    if (!point) return Promise.resolve();
+    lastMoveAt = Date.now();
+    return enqueue(async () => {
+      if (!active) return;
+      await controller.move(point);
+      await renderSnapshot();
+    });
+  };
+
+  const scheduleMove = (point: Vector2) => {
+    pendingMove = { ...point };
+    if (moveTimer !== undefined) return;
+    const delay = Math.max(0, moveIntervalMs - (Date.now() - lastMoveAt));
+    if (delay === 0) {
+      void runPendingMove();
+      return;
+    }
+    moveTimer = setTimeout(() => {
+      void runPendingMove();
+    }, delay);
+  };
+
+  const activate = (context: ToolContext) => {
+    if (closed) return;
+    cancelMoveTimer();
+    const activation = ++generation;
+    void enqueue(async () => {
+      await finishSession(false, false);
+      const armyId = context.metadata[ROUTE_ARMY_ID_KEY];
+      const previousToolId = context.metadata[ROUTE_RETURN_TOOL_KEY];
+      returnToolId = typeof previousToolId === "string" ? previousToolId : undefined;
+      if (typeof armyId !== "string" || armyId.length === 0) {
+        await safeNotify("Не выбрана армия для маршрута", "WARNING");
+        if (returnToolId && returnToolId !== ROUTE_TOOL_ID) {
+          const toolId = returnToolId;
+          returnToolId = undefined;
+          await port.restoreTool(toolId);
+        }
+        return;
+      }
+      let session: RouteToolSession;
+      try {
+        session = await port.loadSession(armyId);
+      } catch (error) {
+        if (!closed && activation === generation) {
+          await safeNotify(`Не удалось открыть маршрут: ${messageFrom(error)}`, "ERROR");
+          if (returnToolId && returnToolId !== ROUTE_TOOL_ID) {
+            const toolId = returnToolId;
+            returnToolId = undefined;
+            await port.restoreTool(toolId);
+          }
+        }
+        return;
+      }
+      if (closed || activation !== generation) return;
+      controller.activate(
+        session.armyId,
+        session.start,
+        session.maxCells,
+        session.barriers
+      );
+      active = true;
+      await renderSnapshot();
+    });
+  };
+
+  const click = async (event: ToolEvent): Promise<false> => {
+    if (closed) return false;
+    await runPendingMove();
+    await enqueue(async () => {
+      if (!active) return;
+      const result = await controller.click(event.pointerPosition);
+      await renderSnapshot();
+      if (!result.accepted) {
+        const message = result.reason === "BARRIER"
+          ? "Маршрут пересекает непроходимое препятствие"
+          : result.reason === "ROUTE_LIMIT"
+            ? "Превышен лимит длины маршрута"
+            : "Инструмент маршрута не активен";
+        await safeNotify(message, "WARNING");
+      }
+    });
+    return false;
+  };
+
+  const keyDown = (event: KeyEvent) => {
+    if (closed || (event.key === "Enter" && event.repeat)) return;
+    void enqueue(async () => {
+      if (!active) return;
+      const result = controller.key(event.key);
+      if (result.action === "EDITING") {
+        await renderSnapshot();
+      } else if (result.action === "COMMIT") {
+        try {
+          await port.commitRoute(result.armyId, result.route);
+        } catch (error) {
+          await safeNotify(`Не удалось сохранить маршрут: ${messageFrom(error)}`, "ERROR");
+        }
+        await finishSession(true);
+      } else if (result.action === "CANCEL") {
+        await finishSession(true);
+      }
+    });
+  };
+
+  const deactivate = () => {
+    if (closed) return;
+    generation += 1;
+    void enqueue(() => finishSession(false));
+  };
+
+  const tool: Tool = {
+    id: ROUTE_TOOL_ID,
+    icons: [{ icon: iconUrl, label: "Маршрут армии" }],
+    defaultMetadata: {
+      [ROUTE_ARMY_ID_KEY]: null,
+      [ROUTE_RETURN_TOOL_KEY]: null
+    }
+  };
+  const mode: ToolMode = {
+    id: ROUTE_TOOL_MODE_ID,
+    icons: [{
+      icon: iconUrl,
+      label: "Построить маршрут",
+      filter: { activeTools: [ROUTE_TOOL_ID] }
+    }],
+    cursors: [{ cursor: "crosshair" }],
+    onActivate: activate,
+    onDeactivate: deactivate,
+    onToolMove: (_context, event) => scheduleMove(event.pointerPosition),
+    onToolClick: (_context, event) => click(event),
+    onKeyDown: (_context, event) => keyDown(event)
+  };
+
+  await api.create(tool);
+  try {
+    await api.createMode(mode);
+  } catch (error) {
+    await api.remove(ROUTE_TOOL_ID);
+    throw error;
+  }
+
+  return async () => {
+    if (closed) return;
+    closed = true;
+    generation += 1;
+    cancelMoveTimer();
+    await tail;
+    await finishSession(false);
+    await api.removeMode(ROUTE_TOOL_MODE_ID);
+    await api.remove(ROUTE_TOOL_ID);
+  };
+}

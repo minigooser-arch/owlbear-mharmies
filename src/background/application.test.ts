@@ -4,7 +4,12 @@ import { DEFAULT_SETTINGS, METADATA_KEYS } from "../shared/constants";
 import type { SceneItemRecord, SceneState } from "../shared/types";
 import type { BarrierRecord } from "../storage/metadataRepository";
 import type { OwlbearPort } from "../owlbear/sdkAdapter";
-import { extractBarrierSegments, mergeCurrentParticipant, ProductionEngine } from "./application";
+import {
+  extractBarrierSegments,
+  localOverlayIds,
+  mergeCurrentParticipant,
+  ProductionEngine
+} from "./application";
 
 it("extracts only requested blocking polylines into barrier segments", () => {
   const records: BarrierRecord[] = [
@@ -28,6 +33,23 @@ it("extracts only requested blocking polylines into barrier segments", () => {
   ];
   expect(extractBarrierSegments(records, "movement")).toHaveLength(2);
   expect(extractBarrierSegments(records, "vision")).toEqual([]);
+});
+
+it("includes route drafts in local overlay cleanup", () => {
+  expect(localOverlayIds([
+    {
+      id: "route-preview",
+      type: "CURVE",
+      position: { x: 0, y: 0 },
+      metadata: { [METADATA_KEYS.routePreview]: { kind: "LINE" } }
+    },
+    {
+      id: "keep",
+      type: "LABEL",
+      position: { x: 0, y: 0 },
+      metadata: { other: true }
+    }
+  ])).toEqual(["route-preview"]);
 });
 
 function commandPort(initialItems: SceneItemRecord[] = []) {

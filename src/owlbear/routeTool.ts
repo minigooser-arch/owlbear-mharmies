@@ -10,6 +10,13 @@ export interface RoutePreview {
   reason?: "ROUTE_LIMIT" | "BARRIER";
 }
 
+export interface RouteToolSnapshot {
+  armyId: string;
+  start: Vector2;
+  points: readonly Vector2[];
+  preview?: RoutePreview;
+}
+
 export type RouteClickResult =
   | { accepted: true }
   | { accepted: false; reason: "ROUTE_LIMIT" | "BARRIER" | "INACTIVE" };
@@ -54,6 +61,20 @@ export class RouteToolController {
     return this.currentPreview;
   }
 
+  snapshot(): RouteToolSnapshot | undefined {
+    if (!this.armyId) return undefined;
+    return {
+      armyId: this.armyId,
+      start: { ...this.start },
+      points: this.points.map((point) => ({ ...point })),
+      ...(this.currentPreview ? { preview: structuredClone(this.currentPreview) } : {})
+    };
+  }
+
+  cancel(): void {
+    this.deactivate();
+  }
+
   async move(point: Vector2): Promise<void> {
     const sequence = ++this.sequence;
     const preview = await this.analyze(point);
@@ -62,7 +83,12 @@ export class RouteToolController {
 
   async click(point: Vector2): Promise<RouteClickResult> {
     if (!this.armyId) return { accepted: false, reason: "INACTIVE" };
+    const armyId = this.armyId;
+    const sequence = ++this.sequence;
     const preview = await this.analyze(point);
+    if (sequence !== this.sequence || this.armyId !== armyId) {
+      return { accepted: false, reason: "INACTIVE" };
+    }
     this.currentPreview = preview;
     if (!preview.valid && preview.reason) return { accepted: false, reason: preview.reason };
     this.points.push({ ...point });
@@ -72,6 +98,7 @@ export class RouteToolController {
   key(key: string): RouteKeyResult {
     if (!this.armyId) return { action: "IGNORED" };
     if (key === "Backspace") {
+      this.sequence += 1;
       this.points.pop();
       this.currentPreview = undefined;
       return { action: "EDITING" };

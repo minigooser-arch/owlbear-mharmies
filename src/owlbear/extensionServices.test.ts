@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_SETTINGS } from "../shared/constants";
+import {
+  DEFAULT_SETTINGS,
+  ROUTE_ARMY_ID_KEY,
+  ROUTE_RETURN_TOOL_KEY,
+  ROUTE_TOOL_ID,
+  ROUTE_TOOL_MODE_ID
+} from "../shared/constants";
 import type { ArmyState, SceneItemRecord, SceneState } from "../shared/types";
 import {
   buildRoleSafeSnapshot,
@@ -131,7 +137,13 @@ const serviceHarness = vi.hoisted(() => {
       getPlayers: vi.fn(async () => []),
       onChange: vi.fn(() => () => undefined)
     },
-    notification: { show: notificationShow }
+    notification: { show: notificationShow },
+    tool: {
+      getActiveTool: vi.fn(async () => "select-tool"),
+      setMetadata: vi.fn(async () => undefined),
+      activateTool: vi.fn(async () => undefined),
+      activateMode: vi.fn(async () => undefined)
+    }
   };
 
   return {
@@ -254,6 +266,28 @@ describe("extension command feedback", () => {
     expect(serviceHarness.adapter.send).toHaveBeenCalledWith(
       "com.letopis.army-control/command",
       expect.objectContaining({ type: "REGISTER_ARMY", itemId: "selected", sideId: "red" })
+    );
+  });
+
+  it("activates the route tool with the army and previous tool metadata", async () => {
+    const running = await startServices();
+
+    await running.send({ type: "EDIT_ROUTE", armyId: "army-a" });
+
+    expect(serviceHarness.sdk.tool.setMetadata).toHaveBeenCalledWith(ROUTE_TOOL_ID, {
+      [ROUTE_ARMY_ID_KEY]: "army-a",
+      [ROUTE_RETURN_TOOL_KEY]: "select-tool"
+    });
+    expect(serviceHarness.sdk.tool.activateTool).toHaveBeenCalledWith(ROUTE_TOOL_ID);
+    expect(serviceHarness.sdk.tool.activateMode).toHaveBeenCalledWith(
+      ROUTE_TOOL_ID,
+      ROUTE_TOOL_MODE_ID
+    );
+    expect(serviceHarness.sdk.tool.setMetadata.mock.invocationCallOrder[0]).toBeLessThan(
+      serviceHarness.sdk.tool.activateTool.mock.invocationCallOrder[0] ?? Infinity
+    );
+    expect(serviceHarness.sdk.tool.activateTool.mock.invocationCallOrder[0]).toBeLessThan(
+      serviceHarness.sdk.tool.activateMode.mock.invocationCallOrder[0] ?? Infinity
     );
   });
 

@@ -35,4 +35,31 @@ describe("route tool", () => {
     tool.activate("army-a", { x: 0, y: 0 }, 5, []);
     expect(tool.key("Escape")).toEqual({ action: "CANCEL" });
   });
+
+  it("exposes a defensive draft snapshot and cancels late previews", async () => {
+    let resolveDistance!: (value: number) => void;
+    const deferredDistance: GridDistancePort = {
+      distance: () => new Promise<number>((resolve) => {
+        resolveDistance = resolve;
+      })
+    };
+    const tool = new RouteToolController(deferredDistance);
+    tool.activate("army-a", { x: 0, y: 0 }, 5, []);
+
+    const moving = tool.move({ x: 2, y: 0 });
+    const draft = tool.snapshot();
+    expect(draft).toEqual({
+      armyId: "army-a",
+      start: { x: 0, y: 0 },
+      points: []
+    });
+    if (draft) draft.start.x = 99;
+    expect(tool.snapshot()?.start).toEqual({ x: 0, y: 0 });
+
+    tool.cancel();
+    resolveDistance(2);
+    await moving;
+    expect(tool.snapshot()).toBeUndefined();
+    expect(tool.preview()).toBeUndefined();
+  });
 });

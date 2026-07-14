@@ -1,5 +1,12 @@
 import { CommandGateway, CommandTimeoutError } from "../commands/commandGateway";
-import { DEFAULT_SETTINGS, METADATA_KEYS } from "../shared/constants";
+import {
+  DEFAULT_SETTINGS,
+  METADATA_KEYS,
+  ROUTE_ARMY_ID_KEY,
+  ROUTE_RETURN_TOOL_KEY,
+  ROUTE_TOOL_ID,
+  ROUTE_TOOL_MODE_ID
+} from "../shared/constants";
 import type { ArmyCommand, SceneItemRecord, SceneState } from "../shared/types";
 import { migrateSceneState } from "../storage/migrations";
 import { MetadataRepository, type ArmyRecord } from "../storage/metadataRepository";
@@ -202,7 +209,13 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
 
   const send = async (command: UiCommand): Promise<unknown> => {
     if (command.type === "EDIT_ROUTE") {
-      await OBR.notification.show("Выберите инструмент маршрута на панели Owlbear.", "INFO");
+      const returnToolId = await OBR.tool.getActiveTool();
+      await OBR.tool.setMetadata(ROUTE_TOOL_ID, {
+        [ROUTE_ARMY_ID_KEY]: command.armyId,
+        [ROUTE_RETURN_TOOL_KEY]: returnToolId
+      });
+      await OBR.tool.activateTool(ROUTE_TOOL_ID);
+      await OBR.tool.activateMode(ROUTE_TOOL_ID, ROUTE_TOOL_MODE_ID);
       return undefined;
     }
     try {

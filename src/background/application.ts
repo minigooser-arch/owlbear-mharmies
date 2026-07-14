@@ -8,6 +8,8 @@ import { validateArmyCommand } from "../commands/commandValidation";
 import { advanceArmy } from "../movement/movementEngine";
 import { GridDistanceService } from "../grid/gridDistance";
 import { RouteOverlayService } from "../routes/routeOverlayService";
+import { registerRouteTool } from "../owlbear/routeToolIntegration";
+import { RouteToolService } from "./routeToolService";
 import { METADATA_KEYS } from "../shared/constants";
 import type {
   ArmyState,
@@ -52,6 +54,18 @@ function curvePoints(item: SceneItemRecord): Vector2[] {
     const candidate = point as Record<string, unknown>;
     return typeof candidate.x === "number" && typeof candidate.y === "number";
   });
+}
+
+export function localOverlayIds(items: readonly SceneItemRecord[]): string[] {
+  const keys = [
+    METADATA_KEYS.localClone,
+    METADATA_KEYS.routeOverlay,
+    METADATA_KEYS.routePreview,
+    METADATA_KEYS.barrierOverlay
+  ];
+  return items
+    .filter((item) => keys.some((key) => item.metadata[key] !== undefined))
+    .map((item) => item.id);
 }
 
 export function extractBarrierSegments(
@@ -117,18 +131,21 @@ export class ProductionEngine {
       distancePort: this.grid,
       visionBarriers: extractBarrierSegments(barriers, "vision")
     });
-    const playerSideIds = scene.sides
+    const memberSideIds = scene.sides
       .filter((side) => side.playerIds.includes(playerId))
+      .map((side) => side.id);
+    const leaderSideIds = scene.sides
+      .filter((side) => side.leaderPlayerIds.includes(playerId))
       .map((side) => side.id);
     const visible = visibleArmyIdsForPlayer({
       isGM: role === "GM",
-      playerSideIds,
+      playerSideIds: memberSideIds,
       armies: armies.map(({ item, state }) => ({ id: item.id, sideId: state.sideId })),
       detectionGraph: graph,
       battleGroups: scene.battleGroups
     });
     await this.cloneReconciler.reconcile(visible, armies.map((record) => record.item));
-    await this.reconcileOverlays(scene, armies, barriers, role, playerSideIds);
+    await this.reconcileOverlays(scene, armies, barriers, role, memberSideIds, leaderSideIds);
   }
 
   movementTick(): Promise<void> {
@@ -411,7 +428,8 @@ export class ProductionEngine {
     armies: readonly ArmyRecord[],
     barriers: readonly BarrierRecord[],
     role: "GM" | "PLAYER",
-    playerSideIds: readonly string[]
+    memberSideIds: readonly string[],
+    leaderSideIds: readonly string[]
   ): Promise<void> {
     const overlayPort = {
       getItems: () => this.port.getLocalItems(),
@@ -428,11 +446,12 @@ export class ProductionEngine {
         .map((record) => ({
           armyId: record.item.id,
           sideId: record.state.sideId,
+          status: record.state.status,
           color: sideColors.get(record.state.sideId) ?? "#607d8b",
           start: record.item.position,
           waypoints: record.state.route
         })),
-      { isGM: role === "GM", playerSideIds }
+      { isGM: role === "GM", memberSideIds, leaderSideIds }
     );
     await new BarrierOverlayService(overlayPort).reconcile(
       barriers.map((record) => ({
@@ -458,6 +477,35 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
   const port = createOwlbearAdapter();
   const engine = new ProductionEngine(port);
   const connectionId = await OBR.player.getConnectionId();
+  const routeGateway = new CommandGateway(port);
+  routeGateway.start();
+  const routeService = new RouteToolService(
+    Object.assign(port, {
+      getPlayerIdentity: async () => {
+        const [id, role, currentConnectionId] = await Promise.all([
+          OBR.player.getId(),
+          OBR.player.getRole(),
+          OBR.player.getConnectionId()
+        ]);
+        return { id, role, connectionId: currentConnectionId };
+      },
+      createId: () => crypto.randomUUID(),
+      activateTool: (toolId: string) => OBR.tool.activateTool(toolId)
+    }),
+    routeGateway
+  );
+  let removeRouteTool: () => Promise<void>;
+  try {
+    removeRouteTool = await registerRouteTool(
+      OBR.tool,
+      routeService,
+      { distance: (from, to) => port.getGridDistance(from, to) },
+      `${import.meta.env.BASE_URL}icon.svg`
+    );
+  } catch (error) {
+    routeGateway.stop();
+    throw error;
+  }
   const coordinatorListeners = new Set<(active: boolean) => void>();
   const connectedParty = async (): Promise<ConnectedParticipant[]> => {
     const [players, id, role, currentConnectionId] = await Promise.all([
@@ -511,8 +559,7 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
     }),
     deleteLocalOverlays: async () => {
       const items = await port.getLocalItems();
-      const keys = [METADATA_KEYS.localClone, METADATA_KEYS.routeOverlay, METADATA_KEYS.barrierOverlay];
-      const ids = items.filter((item) => keys.some((key) => item.metadata[key] !== undefined)).map((item) => item.id);
+      const ids = localOverlayIds(items);
       if (ids.length > 0) await port.deleteLocalItems(ids);
     },
     pauseMovingArmies: () => engine.pauseMovingArmies(),
@@ -531,6 +578,7 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
       clearInterval(counter);
       runtime.stop();
       lease.stop();
+      void removeRouteTool().finally(() => routeGateway.stop());
     }
   };
 }
