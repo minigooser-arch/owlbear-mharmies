@@ -152,7 +152,11 @@ it("patches one scene-item metadata key without overwriting unrelated metadata",
       setMetadata: async () => undefined,
       items: collection,
       local: collection,
-      grid: { getDistance: async () => 0, onChange: () => () => undefined }
+      grid: {
+        getDistance: async () => 0,
+        snapPosition: async (position) => position,
+        onChange: () => () => undefined
+      }
     },
     broadcast: {
       sendMessage: async () => undefined,
@@ -237,4 +241,38 @@ it("builds valid Owlbear curve and label items for local overlays", () => {
     disableHit: true,
     text: { plainText: "Осталось: 3", style: { fillColor: "#0f0" } }
   });
+});
+
+it("snaps grid positions to cell centres with full sensitivity", async () => {
+  const calls: unknown[][] = [];
+  const collection = {
+    getItems: async () => [],
+    updateItems: async () => undefined,
+    addItems: async () => undefined,
+    deleteItems: async () => undefined
+  };
+  const adapter = createOwlbearAdapter({
+    scene: {
+      getMetadata: async () => ({}),
+      setMetadata: async () => undefined,
+      items: collection,
+      local: collection,
+      grid: {
+        getDistance: async () => 0,
+        snapPosition: async (...args: unknown[]) => {
+          calls.push(args);
+          return { x: 50, y: 150 };
+        },
+        onChange: () => () => undefined
+      }
+    },
+    broadcast: {
+      sendMessage: async () => undefined,
+      onMessage: () => () => undefined
+    },
+    notification: { show: async () => undefined }
+  });
+
+  await expect(adapter.snapGridCenter({ x: 17, y: 129 })).resolves.toEqual({ x: 50, y: 150 });
+  expect(calls).toEqual([[{ x: 17, y: 129 }, 1, false, true]]);
 });

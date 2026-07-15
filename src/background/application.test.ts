@@ -70,7 +70,8 @@ it("includes route drafts in local overlay cleanup", () => {
 function commandPort(
   initialItems: SceneItemRecord[] = [],
   getGridDistance = async (from: { x: number; y: number }, to: { x: number; y: number }) =>
-    Math.hypot(to.x - from.x, to.y - from.y)
+    Math.hypot(to.x - from.x, to.y - from.y),
+  snapGridCenter = async (position: { x: number; y: number }) => ({ ...position })
 ) {
   const sent: Array<{ channel: string; data: unknown }> = [];
   const items = structuredClone(initialItems);
@@ -121,6 +122,7 @@ function commandPort(
     send: async (channel: string, data: unknown) => { sent.push({ channel, data }); },
     on: () => () => undefined,
     getGridDistance,
+    snapGridCenter,
     onGridChange: () => () => undefined,
     show: async () => undefined,
     getRole: async () => "GM" as const,
@@ -133,6 +135,132 @@ function commandPort(
 }
 
 describe("ProductionEngine command boundary", () => {
+  it("centres an Image when the GM registers it as an army", async () => {
+    const fixture = commandPort(
+      [{ id: "candidate", type: "IMAGE", position: { x: 17, y: 29 }, metadata: {} }],
+      undefined,
+      async () => ({ x: 50, y: 50 })
+    );
+    fixture.scene.sides.push({
+      id: "red",
+      name: "Красные",
+      color: "#f00",
+      playerIds: [],
+      leaderPlayerIds: []
+    });
+    const engine = new ProductionEngine(fixture.port);
+    engine.setCoordinator(true);
+
+    await engine.processCommand(
+      {
+        connectionId: "gm-connection",
+        data: {
+          requestId: "register-centred",
+          senderPlayerId: "gm",
+          senderConnectionId: "gm-connection",
+          expectedRevision: 2,
+          type: "REGISTER_ARMY",
+          itemId: "candidate",
+          sideId: "red"
+        }
+      },
+      {
+        role: "GM",
+        playerId: "gm",
+        connectionId: "gm-connection",
+        connectedPlayerIds: new Set(["gm"])
+      }
+    );
+
+    expect(fixture.sent.at(-1)).toMatchObject({ data: { status: "ACCEPTED" } });
+    expect(fixture.items[0]).toMatchObject({
+      position: { x: 50, y: 50 },
+      metadata: { [METADATA_KEYS.army]: { sideId: "red", registered: true } }
+    });
+  });
+
+  it("does not snap or move an army when registration is rejected", async () => {
+    const snap = vi.fn(async () => ({ x: 50, y: 50 }));
+    const fixture = commandPort(
+      [{ id: "candidate", type: "IMAGE", position: { x: 17, y: 29 }, metadata: {} }],
+      undefined,
+      snap
+    );
+    const engine = new ProductionEngine(fixture.port);
+    engine.setCoordinator(true);
+
+    await engine.processCommand(
+      {
+        connectionId: "player-connection",
+        data: {
+          requestId: "register-rejected",
+          senderPlayerId: "player",
+          senderConnectionId: "player-connection",
+          expectedRevision: 2,
+          type: "REGISTER_ARMY",
+          itemId: "candidate",
+          sideId: "red"
+        }
+      },
+      {
+        role: "PLAYER",
+        playerId: "player",
+        connectionId: "player-connection",
+        connectedPlayerIds: new Set(["player"])
+      }
+    );
+
+    expect(fixture.sent.at(-1)).toMatchObject({
+      data: { status: "REJECTED", reason: "GM_ONLY" }
+    });
+    expect(snap).not.toHaveBeenCalled();
+    expect(fixture.items[0]).toMatchObject({ position: { x: 17, y: 29 }, metadata: {} });
+  });
+
+  it("acknowledges a grid snap failure without partially registering the army", async () => {
+    const fixture = commandPort(
+      [{ id: "candidate", type: "IMAGE", position: { x: 17, y: 29 }, metadata: {} }],
+      undefined,
+      async () => { throw new Error("grid unavailable"); }
+    );
+    fixture.scene.sides.push({
+      id: "red",
+      name: "Красные",
+      color: "#f00",
+      playerIds: [],
+      leaderPlayerIds: []
+    });
+    const engine = new ProductionEngine(fixture.port);
+    engine.setCoordinator(true);
+
+    await expect(engine.processCommand(
+      {
+        connectionId: "gm-connection",
+        data: {
+          requestId: "register-snap-failed",
+          senderPlayerId: "gm",
+          senderConnectionId: "gm-connection",
+          expectedRevision: 2,
+          type: "REGISTER_ARMY",
+          itemId: "candidate",
+          sideId: "red"
+        }
+      },
+      {
+        role: "GM",
+        playerId: "gm",
+        connectionId: "gm-connection",
+        connectedPlayerIds: new Set(["gm"])
+      }
+    )).resolves.toBeUndefined();
+
+    expect(fixture.sent.at(-1)).toMatchObject({
+      data: { status: "REJECTED", reason: "PERSISTENCE_FAILED" }
+    });
+    expect(fixture.scene.revision).toBe(2);
+    expect(fixture.items[0]).toMatchObject({ position: { x: 17, y: 29 }, metadata: {} });
+  });
+
   it("does not finish an old heartbeat after coordinator shutdown", async () => {
     const fixture = commandPort();
     let releaseRead: (() => void) | undefined;
@@ -498,6 +626,123 @@ describe("ProductionEngine command boundary", () => {
       data: { requestId: "long-route", status: "REJECTED", reason: "ROUTE_LIMIT" }
     });
     expect(fixture.scene.revision).toBe(2);
+  });
+
+  it("centres a legacy army only after a snapped route is accepted", async () => {
+    const gridDistance = async (from: { x: number; y: number }, to: { x: number; y: number }) =>
+      Math.hypot(to.x - from.x, to.y - from.y) / 100;
+    const snap = async (position: { x: number; y: number }) => ({
+      x: Math.round((position.x - 50) / 100) * 100 + 50,
+      y: Math.round((position.y - 50) / 100) * 100 + 50
+    });
+    const fixture = commandPort([{
+      id: "army-centre",
+      type: "IMAGE",
+      position: { x: 17, y: 29 },
+      metadata: {
+        [METADATA_KEYS.army]: {
+          version: 1,
+          registered: true,
+          sideId: "red",
+          status: "READY",
+          overrides: {},
+          route: [],
+          currentWaypointIndex: 0,
+          segmentProgressCells: 0,
+          ignoresMovementBarriers: false,
+          ignoresVisionBarriers: false,
+          revision: 1
+        }
+      }
+    }], gridDistance, snap);
+    const engine = new ProductionEngine(fixture.port);
+    engine.setCoordinator(true);
+
+    await engine.processCommand(
+      {
+        connectionId: "gm-connection",
+        data: {
+          requestId: "route-centred",
+          senderPlayerId: "gm",
+          senderConnectionId: "gm-connection",
+          expectedRevision: 2,
+          type: "SET_ROUTE",
+          armyId: "army-centre",
+          route: [{ x: 150, y: 50 }]
+        }
+      },
+      {
+        role: "GM",
+        playerId: "gm",
+        connectionId: "gm-connection",
+        connectedPlayerIds: new Set(["gm"])
+      }
+    );
+
+    expect(fixture.sent.at(-1)).toMatchObject({ data: { status: "ACCEPTED" } });
+    expect(fixture.items[0]).toMatchObject({
+      position: { x: 50, y: 50 },
+      metadata: { [METADATA_KEYS.army]: { route: [{ x: 150, y: 50 }] } }
+    });
+  });
+
+  it("rejects unsnapped crafted route coordinates without moving the army", async () => {
+    const snap = async (position: { x: number; y: number }) => ({
+      x: Math.round((position.x - 50) / 100) * 100 + 50,
+      y: Math.round((position.y - 50) / 100) * 100 + 50
+    });
+    const fixture = commandPort([{
+      id: "army-unsnapped",
+      type: "IMAGE",
+      position: { x: 17, y: 29 },
+      metadata: {
+        [METADATA_KEYS.army]: {
+          version: 1,
+          registered: true,
+          sideId: "red",
+          status: "READY",
+          overrides: {},
+          route: [],
+          currentWaypointIndex: 0,
+          segmentProgressCells: 0,
+          ignoresMovementBarriers: false,
+          ignoresVisionBarriers: false,
+          revision: 1
+        }
+      }
+    }], async () => 1, snap);
+    const engine = new ProductionEngine(fixture.port);
+    engine.setCoordinator(true);
+
+    await engine.processCommand(
+      {
+        connectionId: "gm-connection",
+        data: {
+          requestId: "route-unsnapped",
+          senderPlayerId: "gm",
+          senderConnectionId: "gm-connection",
+          expectedRevision: 2,
+          type: "SET_ROUTE",
+          armyId: "army-unsnapped",
+          route: [{ x: 149, y: 50 }]
+        }
+      },
+      {
+        role: "GM",
+        playerId: "gm",
+        connectionId: "gm-connection",
+        connectedPlayerIds: new Set(["gm"])
+      }
+    );
+
+    expect(fixture.sent.at(-1)).toMatchObject({
+      data: { status: "REJECTED", reason: "INVALID_COMMAND" }
+    });
+    expect(fixture.scene.revision).toBe(2);
+    expect(fixture.items[0]).toMatchObject({
+      position: { x: 17, y: 29 },
+      metadata: { [METADATA_KEYS.army]: { route: [], revision: 1 } }
+    });
   });
 
   it("rolls back an item write when the scene changes before the command commit", async () => {

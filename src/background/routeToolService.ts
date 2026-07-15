@@ -4,7 +4,12 @@ import {
   type BarrierSegment
 } from "../barriers/barrierGeometry";
 import type { CommandAck } from "../commands/commandGateway";
-import { evaluateRouteLimit, type GridDistancePort } from "../routes/routeMath";
+import {
+  evaluateRouteLimit,
+  pointsEqual,
+  type GridDistancePort,
+  type GridRoutePort
+} from "../routes/routeMath";
 import { authorizeArmyCommand } from "../shared/permissions";
 import { METADATA_KEYS } from "../shared/constants";
 import type {
@@ -39,6 +44,7 @@ export interface RouteToolServicePort extends MetadataPort {
   show(message: string, variant: "INFO" | "WARNING" | "ERROR"): Promise<void>;
   activateTool(toolId: string): Promise<void>;
   getGridDistance(from: Vector2, to: Vector2): Promise<number>;
+  snapGridCenter(position: Vector2): Promise<Vector2>;
 }
 
 export interface RouteCommandGateway {
@@ -60,6 +66,29 @@ interface AuthorizedSession {
 }
 
 export type RouteConstraintFailure = "ROUTE_LIMIT" | "BARRIER";
+
+export interface SnappedRoute {
+  start: Vector2;
+  route: Vector2[];
+  waypointsWereCentered: boolean;
+}
+
+export async function snapRouteToGrid(
+  start: Vector2,
+  route: readonly Vector2[],
+  grid: Pick<GridRoutePort, "snapGridCenter">
+): Promise<SnappedRoute> {
+  const snappedStart = await grid.snapGridCenter(start);
+  const snappedRoute = await Promise.all(route.map((point) => grid.snapGridCenter(point)));
+  return {
+    start: { ...snappedStart },
+    route: snappedRoute.map((point) => ({ ...point })),
+    waypointsWereCentered: route.every((point, index) => {
+      const snapped = snappedRoute[index];
+      return snapped !== undefined && pointsEqual(point, snapped);
+    })
+  };
+}
 
 export async function validateRouteConstraints(
   start: Vector2,
@@ -100,9 +129,10 @@ export class RouteToolService implements RouteToolIntegrationPort {
 
   async loadSession(armyId: string): Promise<RouteToolSession> {
     const authorized = await this.loadAuthorized(armyId, []);
+    const start = await this.port.snapGridCenter(authorized.army.item.position);
     return {
       armyId,
-      start: { ...authorized.army.item.position },
+      start: { ...start },
       maxCells:
         authorized.army.state.overrides.maxRouteDistanceCells ??
         authorized.scene.settings.defaultMaxRouteDistanceCells,
@@ -114,9 +144,13 @@ export class RouteToolService implements RouteToolIntegrationPort {
 
   async commitRoute(armyId: string, route: readonly Vector2[]): Promise<void> {
     const authorized = await this.loadAuthorized(armyId, route);
+    const snapped = await snapRouteToGrid(authorized.army.item.position, route, this.port);
+    if (!snapped.waypointsWereCentered) {
+      throw new RouteToolAuthorizationError("INVALID_COMMAND");
+    }
     const failure = await validateRouteConstraints(
-      authorized.army.item.position,
-      route,
+      snapped.start,
+      snapped.route,
       authorized.army.state.overrides.maxRouteDistanceCells ??
         authorized.scene.settings.defaultMaxRouteDistanceCells,
       authorized.army.state.ignoresMovementBarriers ? [] : authorized.barriers,
@@ -130,7 +164,7 @@ export class RouteToolService implements RouteToolIntegrationPort {
       expectedRevision: authorized.scene.revision,
       type: "SET_ROUTE",
       armyId,
-      route: route.map((point) => ({ ...point }))
+      route: snapped.route
     };
     const ack = await this.gateway.send(command);
     if (ack.status === "REJECTED") {

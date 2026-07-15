@@ -12,7 +12,11 @@ import {
   registerRouteTool,
   type RouteToolRegistration
 } from "../owlbear/routeToolIntegration";
-import { RouteToolService, validateRouteConstraints } from "./routeToolService";
+import {
+  RouteToolService,
+  snapRouteToGrid,
+  validateRouteConstraints
+} from "./routeToolService";
 import { METADATA_KEYS } from "../shared/constants";
 import type {
   ArmyState,
@@ -354,7 +358,7 @@ export class ProductionEngine {
       armies: Object.fromEntries(armyRecords.map((record) => [record.item.id, record.state])),
       barriers: Object.fromEntries(barrierRecords.map((record) => [record.item.id, record.state])),
       items: Object.fromEntries(sceneItems.map((item) => [item.id, item])),
-      positions: Object.fromEntries(armyRecords.map((record) => [record.item.id, record.item.position]))
+      positions: Object.fromEntries(sceneItems.map((item) => [item.id, item.position]))
     };
     const result = new CommandProcessor().execute(
       {
@@ -367,19 +371,72 @@ export class ProductionEngine {
       command
     );
     const coordinatorConnectionId = await this.currentConnectionId();
+    if (result.status === "ACCEPTED" && command.type === "REGISTER_ARMY") {
+      const item = sceneItems.find((candidate) => candidate.id === command.itemId);
+      if (item) {
+        try {
+          result.state.positions ??= {};
+          result.state.positions[command.itemId] = await this.grid.snapGridCenter(item.position);
+        } catch {
+          await this.port.send(CommandGateway.ACK_CHANNEL, {
+            requestId: command.requestId,
+            status: "REJECTED",
+            reason: "PERSISTENCE_FAILED",
+            coordinatorConnectionId,
+            recipientConnectionId: sender.connectionId
+          });
+          return;
+        }
+      }
+    }
     if (result.status === "ACCEPTED" && command.type === "SET_ROUTE") {
       const army = armyRecords.find((record) => record.item.id === command.armyId);
       if (army) {
-        const failure = await validateRouteConstraints(
-          army.item.position,
-          command.route,
-          army.state.overrides.maxRouteDistanceCells ??
-            scene.settings.defaultMaxRouteDistanceCells,
-          army.state.ignoresMovementBarriers
-            ? []
-            : extractBarrierSegments(barrierRecords, "movement"),
-          this.grid
-        );
+        let snapped: Awaited<ReturnType<typeof snapRouteToGrid>>;
+        try {
+          snapped = await snapRouteToGrid(army.item.position, command.route, this.grid);
+        } catch {
+          await this.port.send(CommandGateway.ACK_CHANNEL, {
+            requestId: command.requestId,
+            status: "REJECTED",
+            reason: "PERSISTENCE_FAILED",
+            coordinatorConnectionId,
+            recipientConnectionId: sender.connectionId
+          });
+          return;
+        }
+        if (!snapped.waypointsWereCentered) {
+          await this.port.send(CommandGateway.ACK_CHANNEL, {
+            requestId: command.requestId,
+            status: "REJECTED",
+            reason: "INVALID_COMMAND",
+            coordinatorConnectionId,
+            recipientConnectionId: sender.connectionId
+          });
+          return;
+        }
+        let failure: Awaited<ReturnType<typeof validateRouteConstraints>>;
+        try {
+          failure = await validateRouteConstraints(
+            snapped.start,
+            snapped.route,
+            army.state.overrides.maxRouteDistanceCells ??
+              scene.settings.defaultMaxRouteDistanceCells,
+            army.state.ignoresMovementBarriers
+              ? []
+              : extractBarrierSegments(barrierRecords, "movement"),
+            this.grid
+          );
+        } catch {
+          await this.port.send(CommandGateway.ACK_CHANNEL, {
+            requestId: command.requestId,
+            status: "REJECTED",
+            reason: "PERSISTENCE_FAILED",
+            coordinatorConnectionId,
+            recipientConnectionId: sender.connectionId
+          });
+          return;
+        }
         if (failure) {
           await this.port.send(CommandGateway.ACK_CHANNEL, {
             requestId: command.requestId,
@@ -390,6 +447,10 @@ export class ProductionEngine {
           });
           return;
         }
+        const nextArmy = result.state.armies[command.armyId];
+        if (nextArmy) nextArmy.route = snapped.route;
+        result.state.positions ??= {};
+        result.state.positions[command.armyId] = snapped.start;
       }
     }
     if (result.status === "ACCEPTED") {
@@ -680,7 +741,10 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
     removeRouteTool = await registerRouteTool(
       OBR.tool,
       routeService,
-      { distance: (from, to) => port.getGridDistance(from, to) },
+      {
+        distance: (from, to) => port.getGridDistance(from, to),
+        snapGridCenter: (position) => port.snapGridCenter(position)
+      },
       `${import.meta.env.BASE_URL}icon.svg`
     );
   } catch (error) {

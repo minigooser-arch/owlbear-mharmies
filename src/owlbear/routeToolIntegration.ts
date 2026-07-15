@@ -1,6 +1,6 @@
 import type { KeyEvent, Metadata, Tool, ToolContext, ToolEvent, ToolMode } from "@owlbear-rodeo/sdk";
 import type { BarrierSegment } from "../barriers/barrierGeometry";
-import type { GridDistancePort } from "../routes/routeMath";
+import type { GridRoutePort } from "../routes/routeMath";
 import {
   ROUTE_ARMY_ID_KEY,
   ROUTE_RETURN_TOOL_KEY,
@@ -56,7 +56,7 @@ function messageFrom(error: unknown): string {
 export async function registerRouteTool(
   api: RouteToolApi,
   port: RouteToolIntegrationPort,
-  distancePort: GridDistancePort,
+  distancePort: GridRoutePort,
   iconUrl: string
 ): Promise<RouteToolRegistration> {
   const controller = new RouteToolController(distancePort);

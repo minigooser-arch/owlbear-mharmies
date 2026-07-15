@@ -1,5 +1,9 @@
 import { firstBarrierIntersection, type BarrierSegment } from "../barriers/barrierGeometry";
-import { evaluateRouteLimit, type GridDistancePort } from "../routes/routeMath";
+import {
+  pointsEqual,
+  resolveRouteEndpoint,
+  type GridRoutePort
+} from "../routes/routeMath";
 import type { Vector2 } from "../shared/types";
 
 export interface RoutePreview {
@@ -40,7 +44,7 @@ export class RouteToolController {
   private currentPreview: RoutePreview | undefined;
   private sequence = 0;
 
-  constructor(private readonly distancePort: GridDistancePort) {}
+  constructor(private readonly distancePort: GridRoutePort) {}
 
   activate(
     armyId: string,
@@ -91,7 +95,8 @@ export class RouteToolController {
     }
     this.currentPreview = preview;
     if (!preview.valid && preview.reason) return { accepted: false, reason: preview.reason };
-    this.points.push({ ...point });
+    const anchor = this.points.at(-1) ?? this.start;
+    if (!pointsEqual(anchor, preview.point)) this.points.push({ ...preview.point });
     return { accepted: true };
   }
 
@@ -128,21 +133,22 @@ export class RouteToolController {
 
   private async analyze(point: Vector2): Promise<RoutePreview> {
     const anchor = this.points.at(-1) ?? this.start;
-    const barrier = firstBarrierIntersection({ from: anchor, to: point }, this.barriers);
-    const limit = await evaluateRouteLimit(
+    const endpoint = await resolveRouteEndpoint(
       this.start,
-      [...this.points, point],
+      this.points,
+      point,
       this.maxCells,
       this.distancePort
     );
-    const reason = barrier ? "BARRIER" : !limit.valid ? "ROUTE_LIMIT" : undefined;
+    const barrier = pointsEqual(anchor, endpoint.point)
+      ? undefined
+      : firstBarrierIntersection({ from: anchor, to: endpoint.point }, this.barriers);
+    const reason = barrier ? "BARRIER" : undefined;
     const preview: RoutePreview = {
-      point: { ...point },
+      point: { ...endpoint.point },
       valid: reason === undefined,
       color: reason ? "#d32f2f" : "#2e7d32",
-      label: reason === "ROUTE_LIMIT"
-        ? `Превышение: ${formatCells(limit.excessCells)}`
-        : `Осталось: ${formatCells(limit.remainingCells)}`
+      label: `Осталось: ${formatCells(endpoint.remainingCells)}`
     };
     if (reason) preview.reason = reason;
     return preview;
@@ -155,7 +161,7 @@ export interface RouteToolRegistrar {
 
 export function setupRouteTool(
   registrar: RouteToolRegistrar,
-  distancePort: GridDistancePort
+  distancePort: GridRoutePort
 ): () => void {
   return registrar.register(new RouteToolController(distancePort), 12);
 }

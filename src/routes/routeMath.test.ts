@@ -1,9 +1,23 @@
 import { describe, expect, it } from "vitest";
 import type { Vector2 } from "../shared/types";
-import { evaluateRouteLimit, measureRoute, type GridDistancePort } from "./routeMath";
+import {
+  evaluateRouteLimit,
+  measureRoute,
+  resolveRouteEndpoint,
+  type GridDistancePort,
+  type GridRoutePort
+} from "./routeMath";
 
 const euclidean: GridDistancePort = {
   distance: async (a: Vector2, b: Vector2) => Math.hypot(b.x - a.x, b.y - a.y)
+};
+
+const hundredPixelCells: GridRoutePort = {
+  distance: async (from, to) => Math.hypot(to.x - from.x, to.y - from.y) / 100,
+  snapGridCenter: async (point) => ({
+    x: Math.round((point.x - 50) / 100) * 100 + 50,
+    y: Math.round((point.y - 50) / 100) * 100 + 50
+  })
 };
 
 describe("route math", () => {
@@ -45,5 +59,65 @@ describe("route math", () => {
     };
     expect(await measureRoute({ x: 0, y: 0 }, [{ x: 1, y: 0 }, { x: 2, y: 0 }], distance)).toBe(4);
     expect(calls).toHaveLength(2);
+  });
+
+  it("keeps an endpoint that is exactly at the snapped route maximum", async () => {
+    await expect(resolveRouteEndpoint(
+      { x: 50, y: 50 },
+      [],
+      { x: 350, y: 50 },
+      3,
+      hundredPixelCells
+    )).resolves.toEqual({
+      point: { x: 350, y: 50 },
+      lengthCells: 3,
+      remainingCells: 0,
+      clamped: false
+    });
+  });
+
+  it("clamps an overdrag to the farthest reachable snapped centre", async () => {
+    await expect(resolveRouteEndpoint(
+      { x: 50, y: 50 },
+      [],
+      { x: 999, y: 50 },
+      3,
+      hundredPixelCells
+    )).resolves.toEqual({
+      point: { x: 350, y: 50 },
+      lengthCells: 3,
+      remainingCells: 0,
+      clamped: true
+    });
+  });
+
+  it("uses only the remaining budget after committed waypoints", async () => {
+    await expect(resolveRouteEndpoint(
+      { x: 50, y: 50 },
+      [{ x: 250, y: 50 }],
+      { x: 999, y: 50 },
+      4,
+      hundredPixelCells
+    )).resolves.toMatchObject({
+      point: { x: 450, y: 50 },
+      lengthCells: 4,
+      remainingCells: 0,
+      clamped: true
+    });
+  });
+
+  it("returns the current anchor when no additional snapped centre fits", async () => {
+    await expect(resolveRouteEndpoint(
+      { x: 50, y: 50 },
+      [{ x: 350, y: 50 }],
+      { x: 999, y: 50 },
+      3,
+      hundredPixelCells
+    )).resolves.toMatchObject({
+      point: { x: 350, y: 50 },
+      lengthCells: 3,
+      remainingCells: 0,
+      clamped: true
+    });
   });
 });

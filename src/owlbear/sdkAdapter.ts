@@ -45,6 +45,12 @@ interface OwlbearSdkLike {
     local: SceneCollectionLike;
     grid: {
       getDistance(from: Vector2, to: Vector2): Promise<number>;
+      snapPosition(
+        position: Vector2,
+        snappingSensitivity?: number,
+        useCorners?: boolean,
+        useCenter?: boolean
+      ): Promise<Vector2>;
       onChange(callback: () => void): () => void;
     };
   };
@@ -253,6 +259,7 @@ export function createOwlbearAdapter(
     send: (channel, data) => sdk.broadcast.sendMessage(channel, data, { destination: "ALL" }),
     on: (channel, listener) => sdk.broadcast.onMessage(channel, listener),
     getGridDistance: (from, to) => sdk.scene.grid.getDistance(from, to),
+    snapGridCenter: (position) => sdk.scene.grid.snapPosition(position, 1, false, true),
     onGridChange: (callback) => sdk.scene.grid.onChange(callback),
     show: async (message, variant) => {
       await sdk.notification.show(message, variant);

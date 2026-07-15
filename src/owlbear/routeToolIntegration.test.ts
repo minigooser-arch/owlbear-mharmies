@@ -1,6 +1,6 @@
 import type { KeyEvent, Tool, ToolContext, ToolEvent, ToolMode } from "@owlbear-rodeo/sdk";
 import { describe, expect, it, vi } from "vitest";
-import type { GridDistancePort } from "../routes/routeMath";
+import type { GridRoutePort } from "../routes/routeMath";
 import {
   ROUTE_ARMY_ID_KEY,
   ROUTE_RETURN_TOOL_KEY,
@@ -89,7 +89,10 @@ function fixture() {
   const distance = vi.fn(async (from: { x: number; y: number }, to: { x: number; y: number }) =>
     Math.hypot(to.x - from.x, to.y - from.y)
   );
-  const distancePort: GridDistancePort = { distance };
+  const distancePort: GridRoutePort = {
+    distance,
+    snapGridCenter: async (point) => ({ ...point })
+  };
   return {
     api,
     port,

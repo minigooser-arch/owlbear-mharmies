@@ -103,6 +103,7 @@ class MemoryPort implements RouteToolServicePort {
   async getGridDistance(from: { x: number; y: number }, to: { x: number; y: number }) {
     return Math.hypot(to.x - from.x, to.y - from.y);
   }
+  async snapGridCenter(position: { x: number; y: number }) { return { ...position }; }
 }
 
 function accepted(command: ArmyCommand): CommandAck {
@@ -125,6 +126,17 @@ describe("RouteToolService", () => {
       maxCells: 7,
       barriers: [{ barrierId: "wall", from: { x: 1, y: -1 }, to: { x: 1, y: 1 } }]
     });
+  });
+
+  it("starts a legacy army session at its snapped cell centre without moving the item", async () => {
+    const port = new MemoryPort();
+    port.snapGridCenter = vi.fn(async () => ({ x: 50, y: 50 }));
+    const service = new RouteToolService(port, { send: async (command) => accepted(command) });
+
+    await expect(service.loadSession("army-a")).resolves.toMatchObject({
+      start: { x: 50, y: 50 }
+    });
+    expect(port.items.find((item) => item.id === "army-a")?.position).toEqual({ x: 2, y: 3 });
   });
 
   it("rejects an ordinary member and an army from another side", async () => {
@@ -152,6 +164,21 @@ describe("RouteToolService", () => {
       senderConnectionId: "connection-leader",
       expectedRevision: 4
     }));
+  });
+
+  it("rejects an unsnapped route before broadcasting it", async () => {
+    const port = new MemoryPort();
+    port.snapGridCenter = vi.fn(async (position) => ({
+      x: Math.round((position.x - 50) / 100) * 100 + 50,
+      y: Math.round((position.y - 50) / 100) * 100 + 50
+    }));
+    const send = vi.fn(async (command: ArmyCommand) => accepted(command));
+    const service = new RouteToolService(port, { send });
+
+    await expect(service.commitRoute("army-a", [{ x: 149, y: 50 }])).rejects.toEqual(
+      expect.objectContaining({ code: "INVALID_COMMAND" })
+    );
+    expect(send).not.toHaveBeenCalled();
   });
 
   it("rechecks the current route limit when committing a previously loaded session", async () => {
