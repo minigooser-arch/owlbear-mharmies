@@ -87,15 +87,22 @@ class MemoryRouteOverlayPort implements RouteOverlayPort {
   private items: SceneItemRecord[] = [];
   private nextId = 0;
 
-  async getItems(): Promise<SceneItemRecord[]> {
+  async getLocalItems(): Promise<SceneItemRecord[]> {
     return structuredClone(this.items);
   }
 
-  async addItems(items: SceneItemRecord[]): Promise<void> {
+  async addLocalItems(items: readonly SceneItemRecord[]): Promise<void> {
     this.items.push(...structuredClone(items));
   }
 
-  async deleteItems(ids: readonly string[]): Promise<void> {
+  async updateLocalItems(items: readonly SceneItemRecord[]): Promise<void> {
+    for (const update of items) {
+      const index = this.items.findIndex((item) => item.id === update.id);
+      if (index >= 0) this.items[index] = structuredClone(update);
+    }
+  }
+
+  async deleteLocalItems(ids: readonly string[]): Promise<void> {
     this.items = this.items.filter((item) => !ids.includes(item.id));
   }
 

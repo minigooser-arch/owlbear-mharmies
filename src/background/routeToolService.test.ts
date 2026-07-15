@@ -80,6 +80,7 @@ class MemoryPort implements RouteToolServicePort {
   localItems: SceneItemRecord[] = [];
   restored: string[] = [];
   notifications: string[] = [];
+  localOperations: string[] = [];
   nextId = 0;
 
   async getPlayerIdentity() {
@@ -93,8 +94,23 @@ class MemoryPort implements RouteToolServicePort {
     if (item) Object.assign(item, structuredClone(update));
   }
   async getLocalItems() { return structuredClone(this.localItems); }
-  async addLocalItem(item: SceneItemRecord) { this.localItems.push(structuredClone(item)); }
+  async addLocalItem(item: SceneItemRecord) {
+    this.localOperations.push(`add-one:${item.id}`);
+    this.localItems.push(structuredClone(item));
+  }
+  async addLocalItems(items: readonly SceneItemRecord[]) {
+    this.localOperations.push(`add:${items.map((item) => item.id).join(",")}`);
+    this.localItems.push(...structuredClone(items));
+  }
+  async updateLocalItems(items: readonly SceneItemRecord[]) {
+    this.localOperations.push(`update:${items.map((item) => item.id).join(",")}`);
+    for (const update of items) {
+      const index = this.localItems.findIndex((item) => item.id === update.id);
+      if (index >= 0) this.localItems[index] = structuredClone(update);
+    }
+  }
   async deleteLocalItems(ids: readonly string[]) {
+    this.localOperations.push(`delete:${ids.join(",")}`);
     this.localItems = this.localItems.filter((item) => !ids.includes(item.id));
   }
   createId() { this.nextId += 1; return `preview-${this.nextId}`; }
@@ -254,5 +270,84 @@ describe("RouteToolService", () => {
 
     await service.clearPreview();
     expect(port.localItems.map((item) => item.id)).toEqual(["keep"]);
+  });
+
+  it("reconciles preview motion in one batch while preserving semantic IDs", async () => {
+    const port = new MemoryPort();
+    const service = new RouteToolService(port, { send: vi.fn() });
+    const first = {
+      armyId: "army-a",
+      start: { x: 0, y: 0 },
+      points: [{ x: 1, y: 0 }],
+      preview: {
+        point: { x: 2, y: 0 },
+        valid: true,
+        color: "#2e7d32",
+        label: "Осталось: 5"
+      }
+    };
+
+    await service.renderPreview(first);
+    expect(port.localOperations).toEqual(["add:preview-1,preview-2,preview-3"]);
+    const semanticIds = new Map(port.localItems.map((item) => {
+      const metadata = item.metadata[METADATA_KEYS.routePreview] as Record<string, unknown>;
+      return [`${metadata.kind}/${metadata.index ?? ""}`, item.id];
+    }));
+    port.localOperations = [];
+
+    await service.renderPreview({
+      ...first,
+      preview: { ...first.preview, point: { x: 3, y: 0 }, label: "Осталось: 4" }
+    });
+
+    expect(port.localOperations).toEqual([
+      `update:${semanticIds.get("LINE/")},${semanticIds.get("DISTANCE/")}`
+    ]);
+    expect(new Map(port.localItems.map((item) => {
+      const metadata = item.metadata[METADATA_KEYS.routePreview] as Record<string, unknown>;
+      return [`${metadata.kind}/${metadata.index ?? ""}`, item.id];
+    }))).toEqual(semanticIds);
+  });
+
+  it("adds and removes only waypoint overlays affected by a preview edit", async () => {
+    const port = new MemoryPort();
+    const service = new RouteToolService(port, { send: vi.fn() });
+    await service.renderPreview({
+      armyId: "army-a",
+      start: { x: 0, y: 0 },
+      points: [{ x: 1, y: 0 }],
+      preview: { point: { x: 2, y: 0 }, valid: true, color: "#2e7d32", label: "5" }
+    });
+    const firstIds = new Map(port.localItems.map((item) => {
+      const metadata = item.metadata[METADATA_KEYS.routePreview] as Record<string, unknown>;
+      return [`${metadata.kind}/${metadata.index ?? ""}`, item.id];
+    }));
+    port.localOperations = [];
+
+    await service.renderPreview({
+      armyId: "army-a",
+      start: { x: 0, y: 0 },
+      points: [{ x: 1, y: 0 }, { x: 2, y: 0 }],
+      preview: { point: { x: 3, y: 0 }, valid: true, color: "#2e7d32", label: "4" }
+    });
+
+    expect(port.localOperations[0]).toBe("add:preview-4");
+    expect(port.localItems.find((item) => item.id === firstIds.get("WAYPOINT/0"))).toBeDefined();
+    const addedWaypoint = port.localItems.find((item) => {
+      const metadata = item.metadata[METADATA_KEYS.routePreview] as Record<string, unknown>;
+      return metadata.kind === "WAYPOINT" && metadata.index === 1;
+    });
+    expect(addedWaypoint?.id).toBe("preview-4");
+    port.localOperations = [];
+
+    await service.renderPreview({
+      armyId: "army-a",
+      start: { x: 0, y: 0 },
+      points: [{ x: 1, y: 0 }],
+      preview: { point: { x: 2, y: 0 }, valid: true, color: "#2e7d32", label: "5" }
+    });
+
+    expect(port.localOperations.at(-1)).toBe("delete:preview-4");
+    expect(port.localItems.find((item) => item.id === firstIds.get("WAYPOINT/0"))).toBeDefined();
   });
 });

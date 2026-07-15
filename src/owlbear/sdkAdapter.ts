@@ -21,6 +21,8 @@ export interface OwlbearPort
     BroadcastPort,
     GridSdkPort,
     NotificationPort {
+  addLocalItems(items: readonly SceneItemRecord[]): Promise<void>;
+  updateLocalItems(items: readonly SceneItemRecord[]): Promise<void>;
   patchSceneItemMetadata(
     id: string,
     key: string,
@@ -65,6 +67,85 @@ interface OwlbearSdkLike {
 
 function asRecord(item: unknown): SceneItemRecord {
   return item as SceneItemRecord;
+}
+
+function objectRecord(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function normalizeSdkLocalItem(item: SceneItemRecord): SceneItemRecord {
+  if (item.type === "CURVE") {
+    const style = objectRecord(item.style);
+    return typeof style.strokeColor === "string"
+      ? { ...item, strokeColor: style.strokeColor }
+      : item;
+  }
+  if (item.type === "LABEL") {
+    const text = objectRecord(item.text);
+    const style = objectRecord(text.style);
+    return {
+      ...item,
+      ...(typeof text.plainText === "string" ? { text: text.plainText } : {}),
+      ...(typeof style.fillColor === "string" ? { color: style.fillColor } : {})
+    };
+  }
+  return item;
+}
+
+function hasOwn(record: object, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(record, key);
+}
+
+function applyNormalizedLocalItem(
+  draft: SceneItemRecord,
+  source: SceneItemRecord
+): void {
+  const commonFields = [
+    "name",
+    "description",
+    "position",
+    "rotation",
+    "scale",
+    "layer",
+    "zIndex",
+    "visible",
+    "locked",
+    "disableHit",
+    "disableAutoZIndex"
+  ] as const;
+  const draftRecord = draft as Record<string, unknown>;
+  for (const field of commonFields) {
+    if (hasOwn(source, field)) draftRecord[field] = structuredClone(source[field]);
+  }
+  if (hasOwn(source, "metadata")) {
+    draft.metadata = {
+      ...draft.metadata,
+      ...structuredClone(source.metadata)
+    };
+  }
+  if (source.type === "CURVE" && draft.type === "CURVE") {
+    if (hasOwn(source, "points")) draft.points = structuredClone(source.points);
+    if (hasOwn(source, "strokeColor")) {
+      draft.style = {
+        ...objectRecord(draft.style),
+        strokeColor: source.strokeColor
+      };
+    }
+  }
+  if (source.type === "LABEL" && draft.type === "LABEL") {
+    const draftText = objectRecord(draft.text);
+    const draftTextStyle = objectRecord(draftText.style);
+    draft.text = {
+      ...draftText,
+      ...(typeof source.text === "string" ? { plainText: source.text } : {}),
+      style: {
+        ...draftTextStyle,
+        ...(hasOwn(source, "color") ? { fillColor: source.color } : {})
+      }
+    };
+  }
 }
 
 function localCloneMetadata(sourceItemId: string): Record<string, unknown> {
@@ -181,10 +262,13 @@ export function createSdkLocalItem(
 }
 
 export function createOwlbearAdapter(
-  sdk: OwlbearSdkLike = OBR as unknown as OwlbearSdkLike
+  sdk: OwlbearSdkLike = OBR as unknown as OwlbearSdkLike,
+  overlayBuilders: LocalOverlayBuilderFactory = DEFAULT_OVERLAY_BUILDERS
 ): OwlbearPort {
   const allSceneItems = async () => (await sdk.scene.items.getItems()).map(asRecord);
-  const allLocalItems = async () => (await sdk.scene.local.getItems()).map(asRecord);
+  const allLocalItems = async () => (await sdk.scene.local.getItems())
+    .map(asRecord)
+    .map(normalizeSdkLocalItem);
 
   const updateCollectionItem = async (
     collection: SceneCollectionLike,
@@ -235,6 +319,24 @@ export function createOwlbearAdapter(
     });
   };
 
+  const addLocalItems = async (items: readonly SceneItemRecord[]): Promise<void> => {
+    if (items.length === 0) return;
+    await sdk.scene.local.addItems(items.map((item) =>
+      createSdkLocalItem(item, overlayBuilders) as unknown as Item
+    ));
+  };
+
+  const updateLocalItems = async (items: readonly SceneItemRecord[]): Promise<void> => {
+    if (items.length === 0) return;
+    const updateById = new Map(items.map((item) => [item.id, item]));
+    await sdk.scene.local.updateItems(items.map((item) => item.id), (drafts) => {
+      for (const draft of drafts) {
+        const update = updateById.get(draft.id);
+        if (update) applyNormalizedLocalItem(draft, update);
+      }
+    });
+  };
+
   return {
     getSceneMetadata: () => sdk.scene.getMetadata(),
     patchSceneMetadata: (update) => sdk.scene.setMetadata(update),
@@ -250,10 +352,10 @@ export function createOwlbearAdapter(
         expectedRevision
       ),
     getLocalItems: allLocalItems,
-    addLocalItem: async (item) => sdk.scene.local.addItems([
-      createSdkLocalItem(item) as unknown as Item
-    ]),
+    addLocalItem: async (item) => addLocalItems([item]),
+    addLocalItems,
     updateLocalItem: (id, update) => updateCollectionItem(sdk.scene.local, id, update),
+    updateLocalItems,
     deleteLocalItems: async (ids) => sdk.scene.local.deleteItems([...ids]),
     createClone: createSdkImageClone,
     send: (channel, data) => sdk.broadcast.sendMessage(channel, data, { destination: "ALL" }),

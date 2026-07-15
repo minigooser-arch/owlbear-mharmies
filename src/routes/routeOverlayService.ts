@@ -1,12 +1,12 @@
 import { METADATA_KEYS } from "../shared/constants";
 import type { ArmyStatus, SceneItemRecord, Vector2 } from "../shared/types";
+import {
+  reconcileLocalOverlays,
+  type DesiredLocalOverlay,
+  type LocalOverlayBatchPort
+} from "../owlbear/localOverlayReconciler";
 
-export interface RouteOverlayPort {
-  getItems(): Promise<SceneItemRecord[]>;
-  addItems(items: SceneItemRecord[]): Promise<void>;
-  deleteItems(ids: readonly string[]): Promise<void>;
-  createId(): string;
-}
+export type RouteOverlayPort = LocalOverlayBatchPort;
 
 export interface RouteOverlay {
   armyId: string;
@@ -29,51 +29,63 @@ function routeVisible(route: RouteOverlay, viewer: RouteOverlayViewer): boolean 
   return viewer.memberSideIds.includes(route.sideId);
 }
 
+function routeOverlayKey(item: SceneItemRecord): string | undefined {
+  const raw = item.metadata[METADATA_KEYS.routeOverlay];
+  if (typeof raw !== "object" || raw === null) return undefined;
+  const metadata = raw as Record<string, unknown>;
+  if (typeof metadata.armyId !== "string" || typeof metadata.kind !== "string") {
+    return undefined;
+  }
+  return typeof metadata.index === "number"
+    ? `${metadata.armyId}/${metadata.kind}/${metadata.index}`
+    : `${metadata.armyId}/${metadata.kind}`;
+}
+
 export class RouteOverlayService {
   constructor(private readonly port: RouteOverlayPort) {}
 
   async reconcile(routes: readonly RouteOverlay[], viewer: RouteOverlayViewer): Promise<void> {
-    const existing = (await this.port.getItems()).filter(
-      (item) => item.metadata[METADATA_KEYS.routeOverlay] !== undefined
-    );
-    if (existing.length > 0) await this.port.deleteItems(existing.map((item) => item.id));
     const visible = routes.filter(
       (route) => route.waypoints.length > 0 && routeVisible(route, viewer)
     );
-    const overlays: SceneItemRecord[] = [];
+    const overlays: DesiredLocalOverlay[] = [];
     for (const route of visible) {
       const points = [route.start, ...route.waypoints].map((point) => ({ ...point }));
       overlays.push({
-        id: this.port.createId(),
-        type: "CURVE",
-        position: { x: 0, y: 0 },
-        visible: true,
-        disableHit: true,
-        metadata: {
-          [METADATA_KEYS.routeOverlay]: { armyId: route.armyId, kind: "LINE" }
-        },
-        points,
-        strokeColor: route.color
-      });
-      route.waypoints.forEach((point, index) => {
-        overlays.push({
-          id: this.port.createId(),
-          type: "LABEL",
-          position: { ...point },
+        key: `${route.armyId}/LINE`,
+        item: {
+          type: "CURVE",
+          position: { x: 0, y: 0 },
           visible: true,
           disableHit: true,
           metadata: {
-            [METADATA_KEYS.routeOverlay]: {
-              armyId: route.armyId,
-              kind: "WAYPOINT",
-              index
-            }
+            [METADATA_KEYS.routeOverlay]: { armyId: route.armyId, kind: "LINE" }
           },
-          text: `${index + 1}`,
-          color: route.color
+          points,
+          strokeColor: route.color
+        }
+      });
+      route.waypoints.forEach((point, index) => {
+        overlays.push({
+          key: `${route.armyId}/WAYPOINT/${index}`,
+          item: {
+            type: "LABEL",
+            position: { ...point },
+            visible: true,
+            disableHit: true,
+            metadata: {
+              [METADATA_KEYS.routeOverlay]: {
+                armyId: route.armyId,
+                kind: "WAYPOINT",
+                index
+              }
+            },
+            text: `${index + 1}`,
+            color: route.color
+          }
         });
       });
     }
-    if (overlays.length > 0) await this.port.addItems(overlays);
+    await reconcileLocalOverlays(this.port, routeOverlayKey, overlays);
   }
 }

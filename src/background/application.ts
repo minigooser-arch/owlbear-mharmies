@@ -657,11 +657,10 @@ export class ProductionEngine {
     leaderSideIds: readonly string[]
   ): Promise<void> {
     const overlayPort = {
-      getItems: () => this.port.getLocalItems(),
-      addItems: async (items: SceneItemRecord[]) => {
-        for (const item of items) await this.port.addLocalItem(item);
-      },
-      deleteItems: (ids: readonly string[]) => this.port.deleteLocalItems(ids),
+      getLocalItems: () => this.port.getLocalItems(),
+      addLocalItems: (items: readonly SceneItemRecord[]) => this.port.addLocalItems(items),
+      updateLocalItems: (items: readonly SceneItemRecord[]) => this.port.updateLocalItems(items),
+      deleteLocalItems: (ids: readonly string[]) => this.port.deleteLocalItems(ids),
       createId: () => crypto.randomUUID()
     };
     const sideColors = new Map(scene.sides.map((side) => [side.id, side.color]));

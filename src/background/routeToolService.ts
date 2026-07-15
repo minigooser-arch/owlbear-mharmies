@@ -28,6 +28,11 @@ import type {
   RouteToolSession
 } from "../owlbear/routeToolIntegration";
 import type { RouteToolSnapshot } from "../owlbear/routeTool";
+import {
+  reconcileLocalOverlays,
+  type DesiredLocalOverlay,
+  type LocalOverlayBatchPort
+} from "../owlbear/localOverlayReconciler";
 
 export interface RouteToolIdentity {
   id: string;
@@ -35,12 +40,8 @@ export interface RouteToolIdentity {
   connectionId: string;
 }
 
-export interface RouteToolServicePort extends MetadataPort {
+export interface RouteToolServicePort extends MetadataPort, LocalOverlayBatchPort {
   getPlayerIdentity(): Promise<RouteToolIdentity>;
-  getLocalItems(): Promise<SceneItemRecord[]>;
-  addLocalItem(item: SceneItemRecord): Promise<void>;
-  deleteLocalItems(ids: readonly string[]): Promise<void>;
-  createId(): string;
   show(message: string, variant: "INFO" | "WARNING" | "ERROR"): Promise<void>;
   activateTool(toolId: string): Promise<void>;
   getGridDistance(from: Vector2, to: Vector2): Promise<number>;
@@ -117,6 +118,18 @@ function curvePoints(item: SceneItemRecord): Vector2[] {
   });
 }
 
+function previewOverlayKey(item: SceneItemRecord): string | undefined {
+  const raw = item.metadata[METADATA_KEYS.routePreview];
+  if (typeof raw !== "object" || raw === null) return undefined;
+  const metadata = raw as Record<string, unknown>;
+  if (typeof metadata.armyId !== "string" || typeof metadata.kind !== "string") {
+    return undefined;
+  }
+  return typeof metadata.index === "number"
+    ? `${metadata.armyId}/${metadata.kind}/${metadata.index}`
+    : `${metadata.armyId}/${metadata.kind}`;
+}
+
 export class RouteToolService implements RouteToolIntegrationPort {
   private readonly repository: MetadataRepository;
 
@@ -176,65 +189,69 @@ export class RouteToolService implements RouteToolIntegrationPort {
   }
 
   async renderPreview(snapshot: RouteToolSnapshot): Promise<void> {
-    await this.clearPreview();
     const polyline = [
       snapshot.start,
       ...snapshot.points,
       ...(snapshot.preview ? [snapshot.preview.point] : [])
     ].map((point) => ({ ...point }));
+    const overlays: DesiredLocalOverlay[] = [];
     if (polyline.length >= 2) {
-      await this.port.addLocalItem({
-        id: this.port.createId(),
-        type: "CURVE",
-        position: { x: 0, y: 0 },
-        visible: true,
-        disableHit: true,
-        points: polyline,
-        strokeColor: snapshot.preview?.color ?? "#2e7d32",
-        metadata: {
-          [METADATA_KEYS.routePreview]: { armyId: snapshot.armyId, kind: "LINE" }
+      overlays.push({
+        key: `${snapshot.armyId}/LINE`,
+        item: {
+          type: "CURVE",
+          position: { x: 0, y: 0 },
+          visible: true,
+          disableHit: true,
+          points: polyline,
+          strokeColor: snapshot.preview?.color ?? "#2e7d32",
+          metadata: {
+            [METADATA_KEYS.routePreview]: { armyId: snapshot.armyId, kind: "LINE" }
+          }
         }
       });
     }
     for (const [index, point] of snapshot.points.entries()) {
-      await this.port.addLocalItem({
-        id: this.port.createId(),
-        type: "LABEL",
-        position: { ...point },
-        visible: true,
-        disableHit: true,
-        text: `${index + 1}`,
-        color: "#2e7d32",
-        metadata: {
-          [METADATA_KEYS.routePreview]: {
-            armyId: snapshot.armyId,
-            kind: "WAYPOINT",
-            index
+      overlays.push({
+        key: `${snapshot.armyId}/WAYPOINT/${index}`,
+        item: {
+          type: "LABEL",
+          position: { ...point },
+          visible: true,
+          disableHit: true,
+          text: `${index + 1}`,
+          color: "#2e7d32",
+          metadata: {
+            [METADATA_KEYS.routePreview]: {
+              armyId: snapshot.armyId,
+              kind: "WAYPOINT",
+              index
+            }
           }
         }
       });
     }
     if (snapshot.preview) {
-      await this.port.addLocalItem({
-        id: this.port.createId(),
-        type: "LABEL",
-        position: { ...snapshot.preview.point },
-        visible: true,
-        disableHit: true,
-        text: snapshot.preview.label,
-        color: snapshot.preview.color,
-        metadata: {
-          [METADATA_KEYS.routePreview]: { armyId: snapshot.armyId, kind: "DISTANCE" }
+      overlays.push({
+        key: `${snapshot.armyId}/DISTANCE`,
+        item: {
+          type: "LABEL",
+          position: { ...snapshot.preview.point },
+          visible: true,
+          disableHit: true,
+          text: snapshot.preview.label,
+          color: snapshot.preview.color,
+          metadata: {
+            [METADATA_KEYS.routePreview]: { armyId: snapshot.armyId, kind: "DISTANCE" }
+          }
         }
       });
     }
+    await reconcileLocalOverlays(this.port, previewOverlayKey, overlays);
   }
 
   async clearPreview(): Promise<void> {
-    const ids = (await this.port.getLocalItems())
-      .filter((item) => item.metadata[METADATA_KEYS.routePreview] !== undefined)
-      .map((item) => item.id);
-    if (ids.length > 0) await this.port.deleteLocalItems(ids);
+    await reconcileLocalOverlays(this.port, previewOverlayKey, []);
   }
 
   notify(message: string, variant: "INFO" | "WARNING" | "ERROR"): Promise<void> {
