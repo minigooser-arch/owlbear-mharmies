@@ -51,6 +51,30 @@ describe("metadata migrations", () => {
     });
   });
 
+  it("uses locale-independent ordinal battle id order", () => {
+    const result = migrateSceneState({
+      version: 2,
+      battleGroups: [
+        { battleId: "я", participantIds: ["я1", "я2"], revision: 1 },
+        { battleId: "a", participantIds: ["a1", "a2"], revision: 1 },
+        { battleId: "Z", participantIds: ["Z1", "Z2"], revision: 1 },
+        { battleId: "é", participantIds: ["é1", "é2"], revision: 1 }
+      ]
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      value: {
+        battleGroups: [
+          { battleId: "Z", name: "Бой 1" },
+          { battleId: "a", name: "Бой 2" },
+          { battleId: "é", name: "Бой 3" },
+          { battleId: "я", name: "Бой 4" }
+        ]
+      }
+    });
+  });
+
   it("migrates v1 sides through v2 to v3 without losing memberships", () => {
     const result = migrateSceneState({
       version: 1,

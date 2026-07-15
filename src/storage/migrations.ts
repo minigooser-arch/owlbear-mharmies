@@ -4,6 +4,7 @@ import type {
   SceneState,
   ValidationResult
 } from "../shared/types";
+import { compareOrdinal } from "../shared/ordering";
 import {
   normalizeArmyState,
   normalizeBarrierState,
@@ -45,7 +46,7 @@ export function migrateSceneState(raw: unknown): ValidationResult<SceneState> {
             isRecord(group) && typeof group.battleId === "string" && group.battleId.trim().length > 0
           )
           .sort((left, right) =>
-            (left.battleId as string).localeCompare(right.battleId as string)
+            compareOrdinal(left.battleId as string, right.battleId as string)
           )
           .map((group, index) => ({ ...group, name: `Бой ${index + 1}` }))
       : [];

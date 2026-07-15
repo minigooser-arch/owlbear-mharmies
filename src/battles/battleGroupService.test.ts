@@ -54,11 +54,68 @@ describe("BattleGroup lifecycle", () => {
     ], ["a", "b"])[0]?.name).toBe("Север");
   });
 
+  it("preserves the ordinal-lowest mixed-case battle name on rebuild", () => {
+    expect(rebuildBattleGroups(
+      ["a1", "a2", "z1", "z2"],
+      [["a1", "a2"], ["a2", "z1"], ["z1", "z2"]],
+      [
+        { battleId: "a", name: "Строчная", participantIds: ["a1", "a2"], revision: 1 },
+        { battleId: "Z", name: "Прописная", participantIds: ["z1", "z2"], revision: 2 }
+      ],
+      () => "new"
+    )).toEqual([
+      {
+        battleId: "Z",
+        name: "Прописная",
+        participantIds: ["a1", "a2", "z1", "z2"],
+        revision: 3
+      }
+    ]);
+  });
+
+  it("preserves the ordinal-lowest mixed-case battle name on explicit merge", () => {
+    expect(mergeBattleGroups([
+      { battleId: "a", name: "Строчная", participantIds: ["a1", "a2"], revision: 1 },
+      { battleId: "Z", name: "Прописная", participantIds: ["z1", "z2"], revision: 2 }
+    ], ["a", "Z"])[0]).toMatchObject({ battleId: "Z", name: "Прописная" });
+  });
+
   it("uses the first free numbered name", () => {
     expect(nextBattleName([
       { battleId: "x", name: "Бой 1", participantIds: [], revision: 1 },
       { battleId: "y", name: "Бой 3", participantIds: [], revision: 1 }
     ])).toBe("Бой 2");
+  });
+
+  it("reuses the numbered name of a battle that disappears during rebuild", () => {
+    expect(rebuildBattleGroups(
+      ["new-1", "new-2"],
+      [["new-1", "new-2"]],
+      [{ battleId: "old", name: "Бой 1", participantIds: ["old-1", "old-2"], revision: 1 }],
+      () => "new"
+    )).toEqual([
+      { battleId: "new", name: "Бой 1", participantIds: ["new-1", "new-2"], revision: 1 }
+    ]);
+  });
+
+  it("reserves a later survivor name while reusing a disappeared name", () => {
+    expect(rebuildBattleGroups(
+      ["a-new-1", "a-new-2", "z-old-1", "z-old-2"],
+      [["a-new-1", "a-new-2"], ["z-old-1", "z-old-2"]],
+      [
+        { battleId: "gone", name: "Бой 2", participantIds: ["gone-1", "gone-2"], revision: 1 },
+        { battleId: "z-survivor", name: "Бой 1", participantIds: ["z-old-1", "z-old-2"], revision: 4 }
+      ],
+      () => "new"
+    )).toEqual([
+      { battleId: "new", name: "Бой 2", participantIds: ["a-new-1", "a-new-2"], revision: 1 },
+      {
+        battleId: "z-survivor",
+        name: "Бой 1",
+        participantIds: ["z-old-1", "z-old-2"],
+        revision: 5
+      }
+    ]);
   });
 
   it("releases participants to paused without deleting routes", () => {

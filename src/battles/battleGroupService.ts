@@ -1,3 +1,4 @@
+import { compareOrdinal } from "../shared/ordering";
 import type { ArmyState, BattleGroup } from "../shared/types";
 import type { EnemyCollision } from "./collisionEngine";
 
@@ -50,27 +51,33 @@ export function rebuildBattleGroups(
   existingGroups: readonly BattleGroup[],
   createId: () => string
 ): BattleGroup[] {
-  const rebuilt: BattleGroup[] = [];
-  for (const participantIds of connectedComponents(armyIds, directEnemyContacts)) {
+  const components = connectedComponents(armyIds, directEnemyContacts).map((participantIds) => {
     const participantSet = new Set(participantIds);
     const overlapping = existingGroups.filter((group) =>
       group.participantIds.some((participantId) => participantSet.has(participantId))
     );
     const surviving = [...overlapping].sort((left, right) =>
-      left.battleId.localeCompare(right.battleId)
+      compareOrdinal(left.battleId, right.battleId)
     )[0];
+    return { participantIds, overlapping, surviving };
+  });
+  const survivingGroups = components.flatMap(({ surviving }) =>
+    surviving ? [surviving] : []
+  );
+  const rebuilt: BattleGroup[] = [];
+  for (const { participantIds, overlapping, surviving } of components) {
     const revision =
       overlapping.length === 0
         ? 1
         : Math.max(...overlapping.map((group) => group.revision)) + 1;
     rebuilt.push({
       battleId: surviving?.battleId ?? createId(),
-      name: surviving?.name ?? nextBattleName([...existingGroups, ...rebuilt]),
+      name: surviving?.name ?? nextBattleName([...survivingGroups, ...rebuilt]),
       participantIds,
       revision
     });
   }
-  return rebuilt.sort((left, right) => left.battleId.localeCompare(right.battleId));
+  return rebuilt.sort((left, right) => compareOrdinal(left.battleId, right.battleId));
 }
 
 export function joinReinforcements(
@@ -110,7 +117,7 @@ export function mergeBattleGroups(
   const selected = groups.filter((group) => battleIds.includes(group.battleId));
   if (selected.length < 2) return [...groups];
   const surviving = [...selected].sort((left, right) =>
-    left.battleId.localeCompare(right.battleId)
+    compareOrdinal(left.battleId, right.battleId)
   )[0];
   if (!surviving) return [...groups];
   const merged: BattleGroup = {
@@ -122,7 +129,7 @@ export function mergeBattleGroups(
   return [
     ...groups.filter((group) => !battleIds.includes(group.battleId)),
     merged
-  ].sort((left, right) => left.battleId.localeCompare(right.battleId));
+  ].sort((left, right) => compareOrdinal(left.battleId, right.battleId));
 }
 
 export function releaseBattleGroup(
