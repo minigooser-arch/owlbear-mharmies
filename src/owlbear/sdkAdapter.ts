@@ -1,5 +1,7 @@
 import OBR, {
+  buildCurve,
   buildImage,
+  buildLabel,
   type Image,
   type Item,
   type Layer,
@@ -84,6 +86,71 @@ function createSdkImageClone(source: SceneItemRecord): SceneItemRecord {
   return builder.build() as unknown as SceneItemRecord;
 }
 
+function numeric(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+export interface LocalOverlayBuilderFactory {
+  curve(): ReturnType<typeof buildCurve>;
+  label(): ReturnType<typeof buildLabel>;
+}
+
+const DEFAULT_OVERLAY_BUILDERS: LocalOverlayBuilderFactory = {
+  curve: () => buildCurve(),
+  label: () => buildLabel()
+};
+
+export function createSdkLocalItem(
+  source: SceneItemRecord,
+  builders: LocalOverlayBuilderFactory = DEFAULT_OVERLAY_BUILDERS
+): SceneItemRecord {
+  if (source.type === "CURVE" && typeof source.style !== "object") {
+    const points = Array.isArray(source.points) ? source.points as Vector2[] : [];
+    return builders.curve()
+      .id(source.id)
+      .name(source.name ?? "Локальная линия")
+      .position(source.position)
+      .rotation(source.rotation ?? 0)
+      .scale(source.scale ?? { x: 1, y: 1 })
+      .layer((source.layer ?? "POINTER") as Layer)
+      .zIndex(source.zIndex ?? Date.now())
+      .visible(source.visible ?? true)
+      .locked(source.locked ?? false)
+      .disableHit(typeof source.disableHit === "boolean" ? source.disableHit : true)
+      .metadata(source.metadata as Metadata)
+      .points(points.map((point) => ({ ...point })))
+      .fillOpacity(numeric(source.fillOpacity, 0))
+      .strokeColor(typeof source.strokeColor === "string" ? source.strokeColor : "#2e7d32")
+      .strokeOpacity(numeric(source.strokeOpacity, 1))
+      .strokeWidth(numeric(source.strokeWidth, 4))
+      .strokeDash(Array.isArray(source.strokeDash) ? source.strokeDash as number[] : [])
+      .tension(numeric(source.tension, 0))
+      .build() as unknown as SceneItemRecord;
+  }
+  if (source.type === "LABEL" && typeof source.text === "string") {
+    return builders.label()
+      .id(source.id)
+      .name(source.name ?? "Локальная подпись")
+      .position(source.position)
+      .rotation(source.rotation ?? 0)
+      .scale(source.scale ?? { x: 1, y: 1 })
+      .layer((source.layer ?? "POINTER") as Layer)
+      .zIndex(source.zIndex ?? Date.now())
+      .visible(source.visible ?? true)
+      .locked(source.locked ?? false)
+      .disableHit(typeof source.disableHit === "boolean" ? source.disableHit : true)
+      .metadata(source.metadata as Metadata)
+      .plainText(source.text)
+      .fillColor(typeof source.color === "string" ? source.color : "#ffffff")
+      .fontSize(numeric(source.fontSize, 14))
+      .padding(numeric(source.padding, 4))
+      .backgroundOpacity(numeric(source.backgroundOpacity, 0.82))
+      .cornerRadius(numeric(source.cornerRadius, 6))
+      .build() as unknown as SceneItemRecord;
+  }
+  return source;
+}
+
 export function createOwlbearAdapter(
   sdk: OwlbearSdkLike = OBR as unknown as OwlbearSdkLike
 ): OwlbearPort {
@@ -109,7 +176,9 @@ export function createOwlbearAdapter(
     getSceneItems: allSceneItems,
     updateSceneItem: (id, update) => updateCollectionItem(sdk.scene.items, id, update),
     getLocalItems: allLocalItems,
-    addLocalItem: async (item) => sdk.scene.local.addItems([item as unknown as Item]),
+    addLocalItem: async (item) => sdk.scene.local.addItems([
+      createSdkLocalItem(item) as unknown as Item
+    ]),
     updateLocalItem: (id, update) => updateCollectionItem(sdk.scene.local, id, update),
     deleteLocalItems: async (ids) => sdk.scene.local.deleteItems([...ids]),
     createClone: createSdkImageClone,
