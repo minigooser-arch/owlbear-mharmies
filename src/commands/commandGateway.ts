@@ -1,5 +1,8 @@
-import type { ArmyCommand } from "../shared/types";
 import { METADATA_KEYS } from "../shared/constants";
+import {
+  COMMAND_PROTOCOL_VERSION,
+  type ArmyCommand
+} from "../shared/types";
 import { migrateSceneState } from "../storage/migrations";
 
 export interface BroadcastEvent {
@@ -15,6 +18,7 @@ export interface BroadcastPort {
 export type CoordinatorConnectionResolver = () => Promise<string | undefined>;
 
 export interface CommandAck {
+  protocolVersion: typeof COMMAND_PROTOCOL_VERSION;
   requestId: string;
   status: "ACCEPTED" | "REJECTED" | "CONFLICT";
   coordinatorConnectionId: string;
@@ -23,10 +27,22 @@ export interface CommandAck {
   actualRevision?: number;
 }
 
+export type AckRejectionReason =
+  | "MALFORMED"
+  | "WRONG_RECIPIENT"
+  | "WRONG_SENDER"
+  | "PROTOCOL_MISMATCH"
+  | "STALE_REQUEST";
+
+export type AckRejectionReporter = (
+  reason: AckRejectionReason,
+  event: BroadcastEvent
+) => void;
+
 interface PendingRequest {
   resolve(ack: CommandAck): void;
   reject(error: Error): void;
-  timeoutId: ReturnType<typeof setTimeout>;
+  timeoutId?: ReturnType<typeof setTimeout>;
   senderConnectionId: string;
   trustedCoordinatorConnectionId: Promise<string | undefined>;
 }
@@ -38,6 +54,13 @@ export class CommandTimeoutError extends Error {
   }
 }
 
+export class NoCoordinatorError extends Error {
+  constructor(readonly requestId: string) {
+    super("No live command coordinator is available");
+    this.name = "NoCoordinatorError";
+  }
+}
+
 export class DuplicateRequestError extends Error {
   constructor(readonly requestId: string) {
     super(`Duplicate in-flight request: ${requestId}`);
@@ -45,27 +68,23 @@ export class DuplicateRequestError extends Error {
   }
 }
 
-function isCommandAck(value: unknown): value is CommandAck {
-  if (typeof value !== "object" || value === null) return false;
-  const ack = value as Partial<CommandAck>;
-  const baseValid = (
-    typeof ack.requestId === "string" &&
-    (ack.status === "ACCEPTED" || ack.status === "REJECTED" || ack.status === "CONFLICT") &&
-    typeof ack.coordinatorConnectionId === "string" &&
-    typeof ack.recipientConnectionId === "string"
-  );
-  if (!baseValid) return false;
+function record(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+function validStatusFields(ack: Record<string, unknown>): boolean {
+  if (ack.status === "ACCEPTED") return true;
   if (ack.status === "REJECTED") {
     return typeof ack.reason === "string" && ack.reason.length > 0;
   }
   if (ack.status === "CONFLICT") {
-    return (
-      typeof ack.actualRevision === "number" &&
+    return typeof ack.actualRevision === "number" &&
       Number.isInteger(ack.actualRevision) &&
-      ack.actualRevision >= 0
-    );
+      ack.actualRevision >= 0;
   }
-  return true;
+  return false;
 }
 
 async function coordinatorConnectionIdFromScene(
@@ -76,8 +95,10 @@ async function coordinatorConnectionIdFromScene(
   };
   if (!metadataPort.getSceneMetadata) return undefined;
   const metadata = await metadataPort.getSceneMetadata();
-  const migrated = migrateSceneState(metadata[METADATA_KEYS.scene] ?? { version: 2 });
-  return migrated.ok ? migrated.value.coordinatorLease?.connectionId : undefined;
+  const migrated = migrateSceneState(metadata[METADATA_KEYS.scene] ?? { version: 3 });
+  if (!migrated.ok) return undefined;
+  const lease = migrated.value.coordinatorLease;
+  return lease && lease.expiresAt > Date.now() ? lease.connectionId : undefined;
 }
 
 export class CommandGateway {
@@ -91,7 +112,8 @@ export class CommandGateway {
     private readonly port: BroadcastPort,
     private readonly timeoutMs = 5_000,
     private readonly resolveCoordinatorConnectionId: CoordinatorConnectionResolver = () =>
-      coordinatorConnectionIdFromScene(port)
+      coordinatorConnectionIdFromScene(port),
+    private readonly reportRejection: AckRejectionReporter = () => undefined
   ) {}
 
   start(): void {
@@ -105,7 +127,7 @@ export class CommandGateway {
     this.unsubscribe?.();
     this.unsubscribe = undefined;
     for (const pending of this.pending.values()) {
-      clearTimeout(pending.timeoutId);
+      if (pending.timeoutId !== undefined) clearTimeout(pending.timeoutId);
       pending.reject(new Error("Command gateway stopped"));
     }
     this.pending.clear();
@@ -114,42 +136,110 @@ export class CommandGateway {
   send(command: ArmyCommand): Promise<CommandAck> {
     if (!this.unsubscribe) throw new Error("Command gateway is not started");
     if (this.pending.has(command.requestId)) throw new DuplicateRequestError(command.requestId);
-    return new Promise((resolve, reject) => {
-      const timeoutId = setTimeout(() => {
-        this.pending.delete(command.requestId);
-        reject(new CommandTimeoutError(command.requestId));
-      }, this.timeoutMs);
+
+    const work = new Promise<CommandAck>((resolve, reject) => {
       this.pending.set(command.requestId, {
         resolve,
         reject,
-        timeoutId,
         senderConnectionId: command.senderConnectionId,
         trustedCoordinatorConnectionId: this.resolveCoordinatorConnectionId().catch(() => undefined)
       });
-      void this.port.send(CommandGateway.COMMAND_CHANNEL, command).catch((error: unknown) => {
-        clearTimeout(timeoutId);
-        this.pending.delete(command.requestId);
-        reject(error instanceof Error ? error : new Error(String(error)));
-      });
     });
+    const pending = this.pending.get(command.requestId);
+    if (!pending) throw new Error("Failed to register pending command");
+    void this.broadcastWhenCoordinatorIsKnown(command, pending);
+    return work;
+  }
+
+  private async broadcastWhenCoordinatorIsKnown(
+    command: ArmyCommand,
+    pending: PendingRequest
+  ): Promise<void> {
+    try {
+      const coordinatorConnectionId = await pending.trustedCoordinatorConnectionId;
+      if (this.pending.get(command.requestId) !== pending) return;
+      if (!coordinatorConnectionId) {
+        this.rejectPending(command.requestId, pending, new NoCoordinatorError(command.requestId));
+        return;
+      }
+      pending.timeoutId = setTimeout(() => {
+        if (this.pending.get(command.requestId) !== pending) return;
+        this.rejectPending(command.requestId, pending, new CommandTimeoutError(command.requestId));
+      }, this.timeoutMs);
+      await this.port.send(CommandGateway.COMMAND_CHANNEL, command);
+    } catch (error) {
+      if (this.pending.get(command.requestId) !== pending) return;
+      const failure = error instanceof Error ? error : new Error(String(error));
+      this.rejectPending(command.requestId, pending, failure);
+    }
   }
 
   private async acceptTrustedAcknowledgement(event: BroadcastEvent): Promise<void> {
-    if (!isCommandAck(event.data) || event.connectionId !== event.data.coordinatorConnectionId) return;
-    const pending = this.pending.get(event.data.requestId);
-    if (!pending || event.data.recipientConnectionId !== pending.senderConnectionId) return;
-    let trustedCoordinatorConnectionId: string | undefined;
-    try {
-      trustedCoordinatorConnectionId = await pending.trustedCoordinatorConnectionId;
-    } catch {
+    const raw = record(event.data);
+    if (!raw || typeof raw.requestId !== "string") {
+      this.report("MALFORMED", event);
+      return;
+    }
+    const pending = this.pending.get(raw.requestId);
+    if (!pending) {
+      this.report("STALE_REQUEST", event);
+      return;
+    }
+    const legacy = raw.protocolVersion === undefined;
+    if (!legacy && raw.protocolVersion !== COMMAND_PROTOCOL_VERSION) {
+      this.report("PROTOCOL_MISMATCH", event);
+      return;
+    }
+    const trustedCoordinatorConnectionId = await pending.trustedCoordinatorConnectionId;
+    if (this.pending.get(raw.requestId) !== pending) return;
+    if (
+      event.connectionId !== trustedCoordinatorConnectionId ||
+      raw.coordinatorConnectionId !== event.connectionId
+    ) {
+      this.report("WRONG_SENDER", event);
+      return;
+    }
+    if (!legacy && typeof raw.recipientConnectionId !== "string") {
+      this.report("MALFORMED", event);
       return;
     }
     if (
-      this.pending.get(event.data.requestId) !== pending ||
-      event.connectionId !== trustedCoordinatorConnectionId
-    ) return;
-    clearTimeout(pending.timeoutId);
-    this.pending.delete(event.data.requestId);
-    pending.resolve(event.data);
+      raw.recipientConnectionId !== undefined &&
+      raw.recipientConnectionId !== pending.senderConnectionId
+    ) {
+      this.report("WRONG_RECIPIENT", event);
+      return;
+    }
+    if (!validStatusFields(raw)) {
+      this.report("MALFORMED", event);
+      return;
+    }
+
+    const ack: CommandAck = {
+      protocolVersion: COMMAND_PROTOCOL_VERSION,
+      requestId: raw.requestId,
+      status: raw.status as CommandAck["status"],
+      coordinatorConnectionId: event.connectionId,
+      recipientConnectionId: pending.senderConnectionId,
+      ...(raw.status === "REJECTED" ? { reason: raw.reason as string } : {}),
+      ...(raw.status === "CONFLICT" ? { actualRevision: raw.actualRevision as number } : {})
+    };
+    if (pending.timeoutId !== undefined) clearTimeout(pending.timeoutId);
+    this.pending.delete(raw.requestId);
+    pending.resolve(ack);
+  }
+
+  private rejectPending(requestId: string, pending: PendingRequest, error: Error): void {
+    if (pending.timeoutId !== undefined) clearTimeout(pending.timeoutId);
+    this.pending.delete(requestId);
+    pending.reject(error);
+  }
+
+  private report(reason: AckRejectionReason, event: BroadcastEvent): void {
+    try {
+      this.reportRejection(reason, event);
+    } catch {
+      // Diagnostics must never break command delivery.
+    }
   }
 }

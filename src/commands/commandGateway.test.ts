@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ArmyCommand } from "../shared/types";
+import { COMMAND_PROTOCOL_VERSION, type ArmyCommand } from "../shared/types";
 import {
   CommandGateway,
   DuplicateRequestError,
+  NoCoordinatorError,
+  type AckRejectionReason,
   type BroadcastEvent,
   type BroadcastPort
 } from "./commandGateway";
@@ -11,6 +13,7 @@ class MemoryBroadcast implements BroadcastPort {
   listeners = new Map<string, Set<(event: BroadcastEvent) => void>>();
   sent: Array<{ channel: string; data: unknown }> = [];
   coordinatorConnectionId = "real";
+  now = Date.now();
 
   async getSceneMetadata(): Promise<Record<string, unknown>> {
     return {
@@ -19,7 +22,7 @@ class MemoryBroadcast implements BroadcastPort {
         coordinatorLease: {
           connectionId: this.coordinatorConnectionId,
           epoch: 1,
-          expiresAt: Date.now() + 3_000
+          expiresAt: this.now + 3_000
         }
       }
     };
@@ -43,6 +46,7 @@ class MemoryBroadcast implements BroadcastPort {
 
 function command(): ArmyCommand {
   return {
+    protocolVersion: COMMAND_PROTOCOL_VERSION,
     type: "START_ALL",
     requestId: "request",
     senderPlayerId: "gm",
@@ -53,6 +57,7 @@ function command(): ArmyCommand {
 
 function accepted(recipientConnectionId = "sender") {
   return {
+    protocolVersion: COMMAND_PROTOCOL_VERSION,
     requestId: "request",
     status: "ACCEPTED",
     coordinatorConnectionId: "real",
@@ -61,6 +66,93 @@ function accepted(recipientConnectionId = "sender") {
 }
 
 describe("CommandGateway", () => {
+  it("accepts a trusted legacy acknowledgement and normalizes it to v2", async () => {
+    const port = new MemoryBroadcast();
+    const gateway = new CommandGateway(port, 1_000);
+    gateway.start();
+
+    const pending = gateway.send(command());
+    await vi.waitFor(() => expect(port.sent).toHaveLength(1));
+    port.emit(CommandGateway.ACK_CHANNEL, {
+      connectionId: "real",
+      data: {
+        requestId: "request",
+        status: "ACCEPTED",
+        coordinatorConnectionId: "real"
+      }
+    });
+
+    await expect(pending).resolves.toEqual({
+      protocolVersion: COMMAND_PROTOCOL_VERSION,
+      requestId: "request",
+      status: "ACCEPTED",
+      coordinatorConnectionId: "real",
+      recipientConnectionId: "sender"
+    });
+    gateway.stop();
+  });
+
+  it("reports and ignores an untrusted legacy acknowledgement", async () => {
+    const port = new MemoryBroadcast();
+    const rejections: AckRejectionReason[] = [];
+    const gateway = new CommandGateway(
+      port,
+      1_000,
+      async () => "real",
+      (reason) => rejections.push(reason)
+    );
+    gateway.start();
+
+    const pending = gateway.send(command());
+    port.emit(CommandGateway.ACK_CHANNEL, {
+      connectionId: "attacker",
+      data: {
+        requestId: "request",
+        status: "ACCEPTED",
+        coordinatorConnectionId: "attacker"
+      }
+    });
+    port.emit(CommandGateway.ACK_CHANNEL, { connectionId: "real", data: accepted() });
+
+    await expect(pending).resolves.toMatchObject({ status: "ACCEPTED" });
+    expect(rejections).toContain("WRONG_SENDER");
+    gateway.stop();
+  });
+
+  it("reports protocol mismatch and stale acknowledgements", async () => {
+    const port = new MemoryBroadcast();
+    const rejections: AckRejectionReason[] = [];
+    const gateway = new CommandGateway(
+      port,
+      1_000,
+      async () => "real",
+      (reason) => rejections.push(reason)
+    );
+    gateway.start();
+
+    const pending = gateway.send(command());
+    port.emit(CommandGateway.ACK_CHANNEL, {
+      connectionId: "real",
+      data: { ...accepted(), protocolVersion: 99 }
+    });
+    port.emit(CommandGateway.ACK_CHANNEL, { connectionId: "real", data: accepted() });
+    await pending;
+    port.emit(CommandGateway.ACK_CHANNEL, { connectionId: "real", data: accepted() });
+
+    expect(rejections).toEqual(expect.arrayContaining(["PROTOCOL_MISMATCH", "STALE_REQUEST"]));
+    gateway.stop();
+  });
+
+  it("rejects without broadcasting when no coordinator is available", async () => {
+    const port = new MemoryBroadcast();
+    const gateway = new CommandGateway(port, 1_000, async () => undefined);
+    gateway.start();
+
+    await expect(gateway.send(command())).rejects.toBeInstanceOf(NoCoordinatorError);
+    expect(port.sent).toEqual([]);
+    gateway.stop();
+  });
+
   it("ignores a peer ack that self-asserts the peer as coordinator", async () => {
     const port = new MemoryBroadcast();
     const gateway = new CommandGateway(port, 1_000);
@@ -163,30 +255,17 @@ describe("CommandGateway", () => {
     }
   });
 
-  it("times out cleanly when the trusted coordinator lookup fails", async () => {
-    vi.useFakeTimers();
-    try {
-      const port = new MemoryBroadcast();
-      const gateway = new CommandGateway(
-        port,
-        100,
-        async () => { throw new Error("metadata unavailable"); }
-      );
-      gateway.start();
-      const pending = gateway.send(command()).then(
-        () => ({ status: "RESOLVED" as const }),
-        (error: unknown) => ({ status: "REJECTED" as const, error })
-      );
+  it("fails immediately without a misleading timeout when coordinator lookup fails", async () => {
+    const port = new MemoryBroadcast();
+    const gateway = new CommandGateway(
+      port,
+      100,
+      async () => { throw new Error("metadata unavailable"); }
+    );
+    gateway.start();
 
-      await vi.advanceTimersByTimeAsync(100);
-
-      await expect(pending).resolves.toMatchObject({
-        status: "REJECTED",
-        error: { name: "CommandTimeoutError", requestId: "request" }
-      });
-      gateway.stop();
-    } finally {
-      vi.useRealTimers();
-    }
+    await expect(gateway.send(command())).rejects.toBeInstanceOf(NoCoordinatorError);
+    expect(port.sent).toEqual([]);
+    gateway.stop();
   });
 });

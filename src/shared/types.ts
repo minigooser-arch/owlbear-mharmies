@@ -110,7 +110,10 @@ export interface ItemUpdate {
   [key: string]: unknown;
 }
 
+export const COMMAND_PROTOCOL_VERSION = 2 as const;
+
 export interface CommandEnvelope {
+  protocolVersion: typeof COMMAND_PROTOCOL_VERSION;
   requestId: string;
   senderPlayerId: string;
   senderConnectionId: string;

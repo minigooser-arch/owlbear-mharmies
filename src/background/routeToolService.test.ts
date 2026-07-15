@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { CommandAck } from "../commands/commandGateway";
+import { COMMAND_PROTOCOL_VERSION } from "../shared/types";
 import { DEFAULT_SETTINGS, METADATA_KEYS } from "../shared/constants";
 import type {
   ArmyCommand,
@@ -124,6 +125,7 @@ class MemoryPort implements RouteToolServicePort {
 
 function accepted(command: ArmyCommand): CommandAck {
   return {
+    protocolVersion: COMMAND_PROTOCOL_VERSION,
     requestId: command.requestId,
     status: "ACCEPTED",
     coordinatorConnectionId: "coordinator",

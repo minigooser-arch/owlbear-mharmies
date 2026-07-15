@@ -7,6 +7,7 @@ import type {
   Side,
   Vector2
 } from "../shared/types";
+import { COMMAND_PROTOCOL_VERSION } from "../shared/types";
 
 type UnknownRecord = Record<string, unknown>;
 type CommandType = ArmyCommandPayload["type"];
@@ -17,7 +18,7 @@ export type CommandValidationResult =
   | {
       ok: false;
       requestId?: string;
-      reason: "INVALID_COMMAND" | "INVALID_BATTLE_NAME";
+      reason: "INVALID_COMMAND" | "INVALID_BATTLE_NAME" | "PROTOCOL_MISMATCH";
     };
 
 function isRecord(value: unknown): value is UnknownRecord {
@@ -392,7 +393,7 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
 
 function invalid(
   requestId?: string,
-  reason: "INVALID_COMMAND" | "INVALID_BATTLE_NAME" = "INVALID_COMMAND"
+  reason: "INVALID_COMMAND" | "INVALID_BATTLE_NAME" | "PROTOCOL_MISMATCH" = "INVALID_COMMAND"
 ): CommandValidationResult {
   return {
     ok: false,
@@ -404,6 +405,9 @@ function invalid(
 export function validateArmyCommand(value: unknown): CommandValidationResult {
   if (!isRecord(value)) return invalid();
   const requestId = boundedString(value.requestId, 128) ? value.requestId : undefined;
+  if (value.protocolVersion !== COMMAND_PROTOCOL_VERSION) {
+    return invalid(requestId, "PROTOCOL_MISMATCH");
+  }
   if (
     !requestId ||
     !boundedString(value.senderPlayerId) ||
@@ -427,6 +431,7 @@ export function validateArmyCommand(value: unknown): CommandValidationResult {
   return {
     ok: true,
     command: {
+      protocolVersion: COMMAND_PROTOCOL_VERSION,
       requestId,
       senderPlayerId: value.senderPlayerId,
       senderConnectionId: value.senderConnectionId,

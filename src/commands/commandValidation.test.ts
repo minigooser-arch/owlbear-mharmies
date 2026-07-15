@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { COMMAND_PROTOCOL_VERSION } from "../shared/types";
 import { validateArmyCommand } from "./commandValidation";
 
 function envelope(payload: Record<string, unknown>): Record<string, unknown> {
   return {
+    protocolVersion: COMMAND_PROTOCOL_VERSION,
     requestId: "request-1",
     senderPlayerId: "player-1",
     senderConnectionId: "connection-1",
@@ -27,6 +29,7 @@ describe("validateArmyCommand", () => {
     }))).toEqual({
       ok: true,
       command: {
+        protocolVersion: COMMAND_PROTOCOL_VERSION,
         requestId: "request-1",
         senderPlayerId: "player-1",
         senderConnectionId: "connection-1",
@@ -42,6 +45,20 @@ describe("validateArmyCommand", () => {
       }
     });
   });
+
+  it.each([undefined, 1, 99])(
+    "rejects unsupported command protocol %s with an actionable mismatch",
+    (protocolVersion) => {
+      expect(validateArmyCommand({
+        ...envelope({ type: "START_ALL" }),
+        protocolVersion
+      })).toEqual({
+        ok: false,
+        requestId: "request-1",
+        reason: "PROTOCOL_MISMATCH"
+      });
+    }
+  );
 
   it("recovers a valid request id from a malformed payload", () => {
     expect(validateArmyCommand(envelope({ type: "CREATE_SIDE" }))).toEqual({

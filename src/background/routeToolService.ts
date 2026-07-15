@@ -18,6 +18,7 @@ import type {
   SceneState,
   Vector2
 } from "../shared/types";
+import { COMMAND_PROTOCOL_VERSION } from "../shared/types";
 import {
   MetadataRepository,
   type ArmyRecord,
@@ -171,6 +172,7 @@ export class RouteToolService implements RouteToolIntegrationPort {
     );
     if (failure) throw new RouteToolAuthorizationError(failure);
     const command: ArmyCommand = {
+      protocolVersion: COMMAND_PROTOCOL_VERSION,
       requestId: crypto.randomUUID(),
       senderPlayerId: authorized.identity.id,
       senderConnectionId: authorized.identity.connectionId,
@@ -284,6 +286,7 @@ export class RouteToolService implements RouteToolIntegrationPort {
         connectedPlayerIds: new Set([identity.id])
       },
       {
+        protocolVersion: COMMAND_PROTOCOL_VERSION,
         requestId: "route-tool-authorization",
         senderPlayerId: identity.id,
         senderConnectionId: identity.connectionId,
