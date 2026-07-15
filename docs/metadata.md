@@ -1,6 +1,6 @@
 # Metadata «Летопись: Армии»
 
-Все ключи принадлежат namespace `com.letopis.army-control`. Неизвестные поля при нормализации не сохраняются. Текущая версия схем — `1`; будущие версии открываются только для чтения и не перезаписываются.
+Все ключи принадлежат namespace `com.letopis.army-control`. Неизвестные поля при нормализации не сохраняются. Текущая версия scene-схемы — `2`; схемы армии и барьера остаются на версии `1`. Будущие версии открываются только для чтения и не перезаписываются.
 
 ## Scene metadata
 
@@ -8,7 +8,7 @@
 
 ```ts
 interface SceneState {
-  version: 1;
+  version: 2;
   revision: number;
   settings: SceneSettings;
   sides: Side[];
@@ -34,15 +34,27 @@ interface SceneState {
 | `defaultMaxRouteDistanceCells` | `5` | Лимит маршрута |
 | `detectionMode` | `INDEPENDENT` | `INDEPENDENT` или `MUTUAL` |
 | `visibilityRecalculationMode` | `ON_DROP` | `ON_DROP` или `REALTIME` |
-| `allowPlayersToCreateRoutes` | `true` | Маршруты владельцев |
-| `allowPlayersToStartOwnArmies` | `true` | Управление движением владельцем |
+| `allowPlayersToCreateRoutes` | `true` | Унаследованное поле, не участвует в авторизации |
+| `allowPlayersToStartOwnArmies` | `true` | Унаследованное поле, не участвует в авторизации |
 | `movementUpdateRate` | `5` | Авторитетных тиков в секунду |
 | `visibilityUpdateRate` | `4` | Пересчётов видимости в секунду |
 | `interpolationEnabled` | `true` | Local-сглаживание |
 
+Поля `allowPlayersToCreateRoutes` и `allowPlayersToStartOwnArmies` сохраняются только для чтения старых комнат. В версии 2 они не дают прав: маршруты задают GM и лидеры стороны, а движением управляет только GM.
+
 ### Side
 
-`id`, `name`, `color`, уникальный массив `playerIds`.
+```ts
+interface Side {
+  id: string;
+  name: string;
+  color: string;
+  playerIds: string[];
+  leaderPlayerIds: string[];
+}
+```
+
+Оба массива содержат внутренние Owlbear `Player.id`, а не отображаемые имена. Значения уникальны, каждый `leaderPlayerIds` также присутствует в `playerIds`; один ID может входить в несколько сторон.
 
 ### BattleGroup
 
@@ -76,6 +88,8 @@ interface ArmyState {
 }
 ```
 
+`directOwnerPlayerId` читается только как унаследованное поле ArmyState v1. Оно не выдаёт никаких прав, не показывается в UI и не записывается при новой регистрации.
+
 Зарегистрированный source Image имеет `visible: false`. Unregister удаляет только этот ключ и восстанавливает `visible: true`.
 
 ## Barrier item metadata
@@ -90,10 +104,11 @@ interface ArmyState {
 
 - `com.letopis.army-control/local-clone`: `{ sourceItemId }` для Image-клона;
 - `com.letopis.army-control/route-overlay`: `{ armyId, kind, index? }`;
+- `com.letopis.army-control/route-preview`: черновая линия и подписи активного инструмента маршрута;
 - `com.letopis.army-control/barrier-overlay`: `{ barrierId }`.
 
 Local items можно восстановить из source items и metadata; они не являются авторитетным состоянием.
 
 ## Миграции
 
-Схемы `version: 0` последовательно переводятся в `1`. Для армии `IDLE` становится `READY`, добавляются независимые barrier exceptions. Старый единый флаг барьера `blocks` заполняет оба новых флага. `version > 1` возвращает `FUTURE_VERSION` и никогда не перезаписывается.
+Scene-схемы `version: 0` и `version: 1` последовательно переводятся в `2`; сторонам добавляется `leaderPlayerIds: []`. Для армии `IDLE` становится `READY`, добавляются независимые barrier exceptions. Старый единый флаг барьера `blocks` заполняет оба новых флага. Scene `version > 2` и army/barrier `version > 1` возвращают `FUTURE_VERSION` и никогда не перезаписываются.
