@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_SETTINGS,
+  METADATA_KEYS,
   ROUTE_ARMY_ID_KEY,
   ROUTE_RETURN_TOOL_KEY,
   ROUTE_TOOL_ID,
@@ -21,6 +22,17 @@ const serviceHarness = vi.hoisted(() => {
     | { status: "CONFLICT"; actualRevision: number }
     | { status: "NONE" };
   type AckListener = (event: { connectionId: string; data: unknown }) => void;
+  type EventListener<T = unknown> = (value: T) => void;
+
+  const callbacks: {
+    metadata: EventListener | undefined;
+    items: EventListener<unknown[]> | undefined;
+    local: EventListener<unknown[]> | undefined;
+  } = {
+    metadata: undefined,
+    items: undefined,
+    local: undefined
+  };
 
   const scene = {
     version: 2 as const,
@@ -120,9 +132,28 @@ const serviceHarness = vi.hoisted(() => {
     scene: {
       isReady: vi.fn(async () => true),
       onReadyChange: vi.fn(() => () => undefined),
-      onMetadataChange: vi.fn(() => () => undefined),
-      items: { onChange: vi.fn(() => () => undefined) },
-      local: { onChange: vi.fn(() => () => undefined) }
+      onMetadataChange: vi.fn((listener: EventListener) => {
+        callbacks.metadata = listener;
+        return () => {
+          if (callbacks.metadata === listener) callbacks.metadata = undefined;
+        };
+      }),
+      items: {
+        onChange: vi.fn((listener: EventListener<unknown[]>) => {
+          callbacks.items = listener;
+          return () => {
+            if (callbacks.items === listener) callbacks.items = undefined;
+          };
+        })
+      },
+      local: {
+        onChange: vi.fn((listener: EventListener<unknown[]>) => {
+          callbacks.local = listener;
+          return () => {
+            if (callbacks.local === listener) callbacks.local = undefined;
+          };
+        })
+      }
     },
     player: {
       getRole: vi.fn(async () => "GM" as const),
@@ -154,7 +185,9 @@ const serviceHarness = vi.hoisted(() => {
 
   return {
     adapter,
+    callbacks,
     notificationShow,
+    scene,
     sdk,
     state,
     reset() {
@@ -167,6 +200,11 @@ const serviceHarness = vi.hoisted(() => {
         metadata: {}
       }];
       state.ackMode = { status: "ACCEPTED" };
+      const firstSide = scene.sides[0];
+      if (firstSide) firstSide.name = "Красные";
+      callbacks.metadata = undefined;
+      callbacks.items = undefined;
+      callbacks.local = undefined;
       ackListeners.clear();
     }
   };
@@ -357,6 +395,70 @@ describe("extension command feedback", () => {
     services = await createOwlbearExtensionServices();
     return services;
   }
+
+  async function waitForMetadataReads(count: number): Promise<void> {
+    await vi.waitFor(() => {
+      expect(serviceHarness.adapter.getSceneMetadata).toHaveBeenCalledTimes(count);
+    });
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  }
+
+  it("does not schedule a refresh for route, barrier, and preview local overlays", async () => {
+    await startServices();
+    const readinessReads = serviceHarness.sdk.scene.isReady.mock.calls.length;
+
+    serviceHarness.callbacks.local?.([
+      { metadata: { [METADATA_KEYS.routeOverlay]: { armyId: "army", kind: "LINE" } } },
+      { metadata: { [METADATA_KEYS.routePreview]: { armyId: "army", kind: "LINE" } } },
+      { metadata: { [METADATA_KEYS.barrierOverlay]: { barrierId: "barrier" } } }
+    ]);
+    await Promise.resolve();
+
+    expect(serviceHarness.sdk.scene.isReady).toHaveBeenCalledTimes(readinessReads);
+  });
+
+  it("does not notify subscribers for an unchanged semantic snapshot", async () => {
+    const running = await startServices();
+    const listener = vi.fn();
+    running.subscribe(listener);
+    const metadataReads = serviceHarness.adapter.getSceneMetadata.mock.calls.length;
+
+    serviceHarness.callbacks.metadata?.({});
+    await waitForMetadataReads(metadataReads + 1);
+
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it("does not notify subscribers for token movement absent from UI view models", async () => {
+    const running = await startServices();
+    const listener = vi.fn();
+    running.subscribe(listener);
+    const metadataReads = serviceHarness.adapter.getSceneMetadata.mock.calls.length;
+    const sourceItem = serviceHarness.state.items[0];
+    if (!sourceItem) throw new Error("Expected the source item fixture");
+    sourceItem.position = { x: 10, y: 20 };
+
+    serviceHarness.callbacks.items?.(structuredClone(serviceHarness.state.items));
+    await waitForMetadataReads(metadataReads + 1);
+
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it("notifies subscribers once for an actual model change", async () => {
+    const running = await startServices();
+    const listener = vi.fn();
+    running.subscribe(listener);
+    const metadataReads = serviceHarness.adapter.getSceneMetadata.mock.calls.length;
+    const firstSide = serviceHarness.scene.sides[0];
+    if (!firstSide) throw new Error("Expected the side fixture");
+    firstSide.name = "Алые";
+
+    serviceHarness.callbacks.metadata?.({});
+    await waitForMetadataReads(metadataReads + 1);
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(running.getSnapshot().sides[0]?.name).toBe("Алые");
+  });
 
   it("resolves the GM selection and sends REGISTER_ARMY for the selected side", async () => {
     const running = await startServices();

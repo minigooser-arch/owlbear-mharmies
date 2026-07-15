@@ -20,7 +20,9 @@ import type {
 } from "../ui/state/useExtensionState";
 import { DiagnosticsService, type DiagnosticsPort } from "./diagnostics";
 import { notifyRussian } from "./notifications";
+import { createRefreshCoordinator } from "./refreshCoordinator";
 import { RegistrationError, resolveRegistrationSelection } from "./registration";
+import { semanticSnapshotEqual, semanticValueEqual } from "./snapshotEquality";
 
 export interface SnapshotInput {
   role: "GM" | "PLAYER";
@@ -104,7 +106,7 @@ const LOADING_SNAPSHOT: RawExtensionSnapshot = {
   settings: DEFAULT_SETTINGS
 };
 
-function localCloneSourceIds(items: readonly SceneItemRecord[]): Set<string> {
+function localCloneSourceIds(items: readonly Pick<SceneItemRecord, "metadata">[]): Set<string> {
   const result = new Set<string>();
   for (const item of items) {
     const metadata = item.metadata[METADATA_KEYS.localClone];
@@ -145,7 +147,8 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
     for (const listener of listeners) listener();
   };
 
-  const refresh = async () => {
+  let observedLocalCloneSourceIds = new Set<string>();
+  const loadSnapshot = async (): Promise<RawExtensionSnapshot> => {
     const [sceneReady, role, playerId, playerName, playerColor, party] = await Promise.all([
       OBR.scene.isReady(),
       OBR.player.getRole(),
@@ -167,14 +170,13 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
       { id: playerId, name: playerName, color: playerColor, role, connected: true }
     ];
     if (!sceneReady) {
-      publish({ ...LOADING_SNAPSHOT, ready: true, role, playerId, players });
-      return;
+      return { ...LOADING_SNAPSHOT, ready: true, role, playerId, players };
     }
     const metadata = await adapter.getSceneMetadata();
     const rawScene = metadata[METADATA_KEYS.scene] ?? { version: 3 };
     const migrated = migrateSceneState(rawScene);
     if (!migrated.ok) {
-      publish({
+      return {
         ...LOADING_SNAPSHOT,
         ready: true,
         sceneReady: true,
@@ -182,22 +184,27 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
         role,
         playerId,
         players
-      });
-      return;
+      };
     }
     const [armies, localItems] = await Promise.all([
       repository.readArmies(),
       adapter.getLocalItems()
     ]);
-    publish(buildRoleSafeSnapshot({
+    observedLocalCloneSourceIds = localCloneSourceIds(localItems);
+    return buildRoleSafeSnapshot({
       role,
       playerId,
       scene: migrated.value,
       players,
       armies,
-      mapVisibleSourceIds: localCloneSourceIds(localItems)
-    }));
+      mapVisibleSourceIds: observedLocalCloneSourceIds
+    });
   };
+  const refreshCoordinator = createRefreshCoordinator(
+    loadSnapshot,
+    publish,
+    semanticSnapshotEqual
+  );
 
   const diagnosticsPort: DiagnosticsPort = {
     getSelectedSource: async () => {
@@ -219,16 +226,23 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
   };
   const diagnostics = new DiagnosticsService(diagnosticsPort);
 
-  const triggerRefresh = () => void refresh();
+  const triggerRefresh = () => refreshCoordinator.request();
+  const triggerLocalRefresh = (items: readonly Pick<SceneItemRecord, "metadata">[]) => {
+    const nextSourceIds = localCloneSourceIds(items);
+    if (semanticValueEqual(observedLocalCloneSourceIds, nextSourceIds)) return;
+    observedLocalCloneSourceIds = nextSourceIds;
+    refreshCoordinator.request();
+  };
   unsubscribers.push(
     OBR.scene.onReadyChange(triggerRefresh),
     OBR.scene.items.onChange(triggerRefresh),
-    OBR.scene.local.onChange(triggerRefresh),
+    OBR.scene.local.onChange(triggerLocalRefresh),
     OBR.scene.onMetadataChange(triggerRefresh),
     OBR.player.onChange(triggerRefresh),
     OBR.party.onChange(triggerRefresh)
   );
-  await refresh();
+  refreshCoordinator.request();
+  await refreshCoordinator.whenIdle();
 
   const send = async (command: UiCommand): Promise<unknown> => {
     try {
@@ -276,7 +290,8 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
       } else if (acknowledgement.status === "CONFLICT") {
         await notifyRussian(adapter, "REVISION_CONFLICT");
       } else {
-        await refresh();
+        refreshCoordinator.request();
+        await refreshCoordinator.whenIdle();
       }
       return acknowledgement;
     } catch (error) {
@@ -302,6 +317,7 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
     send,
     runDiagnostic: (testId) => diagnostics.run(testId),
     stop: () => {
+      refreshCoordinator.stop();
       gateway.stop();
       unsubscribers.splice(0).forEach((unsubscribe) => unsubscribe());
       void diagnostics.cleanup();
