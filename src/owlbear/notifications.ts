@@ -7,6 +7,8 @@ export type NotificationCode =
   | "REVISION_CONFLICT"
   | "COMMAND_TIMEOUT"
   | "INVALID_COMMAND"
+  | "INVALID_BATTLE_NAME"
+  | "BATTLE_NOT_FOUND"
   | "SELECTION_EMPTY"
   | "SELECTION_MULTIPLE"
   | "ITEM_NOT_FOUND"
@@ -28,6 +30,8 @@ const RUSSIAN_MESSAGES: Readonly<Record<NotificationCode, string>> = {
   REVISION_CONFLICT: "Состояние изменилось. Повторите действие.",
   COMMAND_TIMEOUT: "Время ожидания ответа истекло. Повторите действие.",
   INVALID_COMMAND: "Команда не распознана. Обновите расширение и повторите действие.",
+  INVALID_BATTLE_NAME: "Название боя должно содержать от 1 до 80 символов.",
+  BATTLE_NOT_FOUND: "Указанный бой не найден.",
   SELECTION_EMPTY: "Выберите изображение армии на сцене.",
   SELECTION_MULTIPLE: "Выберите только одно изображение.",
   ITEM_NOT_FOUND: "Выбранный объект не найден на сцене.",

@@ -36,7 +36,7 @@ export interface RawExtensionSnapshot {
   players: readonly PartyPlayerView[];
   memberSideIds: ReadonlySet<string>;
   leaderSideIds: ReadonlySet<string>;
-  visibleSourceIds: ReadonlySet<string>;
+  mapVisibleSourceIds: ReadonlySet<string>;
   armies: readonly ArmyView[];
   sides: readonly Side[];
   relations: Readonly<Record<string, Record<string, SideRelation>>>;
@@ -68,7 +68,7 @@ export function useExtensionState(services: ExtensionServices): ExtensionViewMod
   return useMemo(() => {
     const armies = snapshot.role === "GM"
       ? [...snapshot.armies]
-      : snapshot.armies.filter((army) => snapshot.visibleSourceIds.has(army.id));
+      : snapshot.armies.filter((army) => snapshot.memberSideIds.has(army.sideId));
     return {
       ...snapshot,
       armies,

@@ -5,7 +5,7 @@ import { expect, it } from "vitest";
 import { DEFAULT_SETTINGS } from "../../shared/constants";
 import { useExtensionState, type ExtensionServices } from "./useExtensionState";
 
-it("constructs counters only from role-visible armies", () => {
+it("constructs player lists and counters from member sides, not map visibility", () => {
   const snapshot = {
     ready: true,
     sceneReady: true,
@@ -15,7 +15,7 @@ it("constructs counters only from role-visible armies", () => {
     players: [],
     memberSideIds: new Set(["A"]),
     leaderSideIds: new Set<string>(),
-    visibleSourceIds: new Set(["a"]),
+    mapVisibleSourceIds: new Set(["b"]),
     armies: [
       { id: "a", name: "A", sideId: "A", sideName: "A", status: "READY" as const, route: [] },
       { id: "b", name: "B", sideId: "B", sideName: "B", status: "IN_BATTLE" as const, route: [] }

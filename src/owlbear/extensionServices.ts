@@ -28,7 +28,7 @@ export interface SnapshotInput {
   scene: SceneState;
   players: readonly PartyPlayerView[];
   armies: readonly ArmyRecord[];
-  localCloneSourceIds: ReadonlySet<string>;
+  mapVisibleSourceIds: ReadonlySet<string>;
 }
 
 export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapshot {
@@ -40,12 +40,17 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
       .filter((side) => side.leaderPlayerIds.includes(input.playerId))
       .map((side) => side.id)
   );
-  const visibleSourceIds = new Set(input.localCloneSourceIds);
+  const authorizedRecords = input.role === "GM"
+    ? input.armies
+    : input.armies.filter(({ state }) => memberSideIds.has(state.sideId));
+  const mapVisibleSourceIds = new Set(input.mapVisibleSourceIds);
   for (const army of input.armies) {
-    if (input.role === "GM" || memberSideIds.has(army.state.sideId)) visibleSourceIds.add(army.item.id);
+    if (input.role === "GM" || memberSideIds.has(army.state.sideId)) {
+      mapVisibleSourceIds.add(army.item.id);
+    }
   }
   const sideNames = new Map(input.scene.sides.map((side) => [side.id, side.name]));
-  const armies: ArmyView[] = input.armies.map(({ item, state }) => {
+  const armies: ArmyView[] = authorizedRecords.map(({ item, state }) => {
     const routeVisible = input.role === "GM" || (
       state.status === "READY"
         ? leaderSideIds.has(state.sideId)
@@ -69,7 +74,7 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
     players: input.players,
     memberSideIds,
     leaderSideIds,
-    visibleSourceIds,
+    mapVisibleSourceIds,
     armies,
     sides: input.scene.sides,
     relations: input.scene.relations,
@@ -91,7 +96,7 @@ const LOADING_SNAPSHOT: RawExtensionSnapshot = {
   players: [],
   memberSideIds: new Set(),
   leaderSideIds: new Set(),
-  visibleSourceIds: new Set(),
+  mapVisibleSourceIds: new Set(),
   armies: [],
   sides: [],
   relations: {},
@@ -190,7 +195,7 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
       scene: migrated.value,
       players,
       armies,
-      localCloneSourceIds: localCloneSourceIds(localItems)
+      mapVisibleSourceIds: localCloneSourceIds(localItems)
     }));
   };
 

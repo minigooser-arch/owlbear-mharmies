@@ -182,7 +182,7 @@ const armyState = (sideId: string): ArmyState => ({
   segmentProgressCells: 0, ignoresMovementBarriers: false, ignoresVisionBarriers: false, revision: 1
 });
 
-it("builds a player snapshot whose visible IDs come from own side and local clones", () => {
+it("keeps a map-visible enemy off a player's army list", () => {
   const scene: SceneState = {
     version: 3, revision: 1, settings: DEFAULT_SETTINGS,
     sides: [
@@ -201,9 +201,10 @@ it("builds a player snapshot whose visible IDs come from own side and local clon
       { item: sourceB, state: armyState("B") },
       { item: hidden, state: armyState("B") }
     ],
-    localCloneSourceIds: new Set(["b"])
+    mapVisibleSourceIds: new Set(["b"])
   });
-  expect(snapshot.visibleSourceIds).toEqual(new Set(["a", "b"]));
+  expect(snapshot.mapVisibleSourceIds).toEqual(new Set(["a", "b"]));
+  expect(snapshot.armies.map((army) => army.id)).toEqual(["a"]);
   expect(snapshot.memberSideIds).toEqual(new Set(["A"]));
   expect(snapshot.leaderSideIds).toEqual(new Set());
   expect(snapshot.players.map((player) => player.id)).toEqual(["player"]);
@@ -237,7 +238,7 @@ it("derives leader sides by internal id and hides legacy direct ownership", () =
       item: { id: "army", type: "IMAGE", position: { x: 0, y: 0 }, metadata: {} },
       state
     }],
-    localCloneSourceIds: new Set()
+    mapVisibleSourceIds: new Set()
   });
 
   expect(snapshot.leaderSideIds).toEqual(new Set(["A"]));
@@ -282,12 +283,60 @@ it.each([
         item: { id: "army", type: "IMAGE", position: { x: 0, y: 0 }, metadata: {} },
         state
       }],
-      localCloneSourceIds: new Set()
+      mapVisibleSourceIds: new Set()
     });
 
-    expect(snapshot.armies[0]?.route).toEqual(routeVisible ? [{ x: 3, y: 4 }] : []);
+    expect(snapshot.armies[0]?.route).toEqual(
+      role === "PLAYER" && playerId === "outsider"
+        ? undefined
+        : routeVisible ? [{ x: 3, y: 4 }] : []
+    );
   }
 );
+
+it("returns the union of all member-side armies", () => {
+  const scene: SceneState = {
+    version: 3,
+    revision: 1,
+    settings: DEFAULT_SETTINGS,
+    sides: [
+      { id: "red", name: "Красные", color: "#f00", playerIds: ["player"], leaderPlayerIds: [] },
+      { id: "blue", name: "Синие", color: "#00f", playerIds: ["player"], leaderPlayerIds: [] },
+      { id: "green", name: "Зелёные", color: "#0f0", playerIds: [], leaderPlayerIds: [] }
+    ],
+    relations: {},
+    battleGroups: []
+  };
+  const item = (id: string): SceneItemRecord => ({
+    id,
+    type: "IMAGE",
+    name: id,
+    position: { x: 0, y: 0 },
+    metadata: {}
+  });
+
+  const snapshot = buildRoleSafeSnapshot({
+    role: "PLAYER",
+    playerId: "player",
+    scene,
+    players: [],
+    armies: [
+      { item: item("red-army"), state: armyState("red") },
+      { item: item("blue-army"), state: armyState("blue") },
+      { item: item("green-army"), state: armyState("green") }
+    ],
+    mapVisibleSourceIds: new Set(["green-army"])
+  });
+
+  expect(snapshot.armies.map((army) => army.id).sort()).toEqual(["blue-army", "red-army"]);
+});
+
+it.each([
+  ["INVALID_BATTLE_NAME", "Название боя должно содержать от 1 до 80 символов."],
+  ["BATTLE_NOT_FOUND", "Указанный бой не найден."]
+])("provides Russian feedback for %s", (code, message) => {
+  expect(notificationMessage(code)).toBe(message);
+});
 
 describe("extension command feedback", () => {
   let services: RunningExtensionServices | undefined;

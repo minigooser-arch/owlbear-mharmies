@@ -247,6 +247,28 @@ describe("CommandProcessor", () => {
     }
   });
 
+  it("rejects a crafted player registration without mutating state", () => {
+    const playerContext = context("PLAYER", "member");
+    const before = structuredClone(playerContext.state);
+
+    expect(processor.execute(
+      playerContext,
+      command({ type: "REGISTER_ARMY", itemId: "candidate-image", sideId: "red" }, "member")
+    )).toEqual({ status: "REJECTED", reason: "GM_ONLY" });
+    expect(playerContext.state).toEqual(before);
+  });
+
+  it("rejects a crafted player unregister without mutating state", () => {
+    const playerContext = context("PLAYER", "member");
+    const before = structuredClone(playerContext.state);
+
+    expect(processor.execute(
+      playerContext,
+      command({ type: "UNREGISTER_ARMY", armyId: "army-red" }, "member")
+    )).toEqual({ status: "REJECTED", reason: "GM_ONLY" });
+    expect(playerContext.state).toEqual(before);
+  });
+
   it("keeps movement GM-only even for a legacy direct owner", () => {
     expect(
       processor.execute(
@@ -329,5 +351,54 @@ describe("CommandProcessor", () => {
       expect(result.state.armies["army-red"]).toBeUndefined();
       expect(result.state.armies["army-blue"]).toBeDefined();
     }
+  });
+
+  it("renames a battle for a GM and trims the stored name", () => {
+    const commandState = state();
+    commandState.scene.battleGroups = [{
+      battleId: "battle",
+      name: "Бой 1",
+      participantIds: ["army-red", "registered-image"],
+      revision: 1
+    }];
+
+    const result = processor.execute(
+      context("GM", "gm", commandState),
+      command({ type: "RENAME_BATTLE_GROUP", battleId: "battle", name: "  Переправа  " })
+    );
+
+    expect(result).toMatchObject({
+      status: "ACCEPTED",
+      state: {
+        scene: {
+          revision: 3,
+          battleGroups: [{ name: "Переправа", revision: 2 }]
+        }
+      }
+    });
+  });
+
+  it("rejects a player battle rename without mutating state", () => {
+    const playerContext = context("PLAYER", "member");
+    playerContext.state.scene.battleGroups = [{
+      battleId: "battle",
+      name: "Бой 1",
+      participantIds: ["army-red", "registered-image"],
+      revision: 1
+    }];
+    const before = structuredClone(playerContext.state);
+
+    expect(processor.execute(
+      playerContext,
+      command({ type: "RENAME_BATTLE_GROUP", battleId: "battle", name: "Чужое имя" }, "member")
+    )).toEqual({ status: "REJECTED", reason: "GM_ONLY" });
+    expect(playerContext.state).toEqual(before);
+  });
+
+  it("rejects renaming a missing battle", () => {
+    expect(processor.execute(
+      context("GM", "gm"),
+      command({ type: "RENAME_BATTLE_GROUP", battleId: "missing", name: "Переправа" })
+    )).toEqual({ status: "REJECTED", reason: "BATTLE_NOT_FOUND" });
   });
 });

@@ -14,7 +14,11 @@ type PayloadParser = (value: UnknownRecord) => ArmyCommandPayload | undefined;
 
 export type CommandValidationResult =
   | { ok: true; command: ArmyCommand }
-  | { ok: false; requestId?: string; reason: "INVALID_COMMAND" };
+  | {
+      ok: false;
+      requestId?: string;
+      reason: "INVALID_COMMAND" | "INVALID_BATTLE_NAME";
+    };
 
 function isRecord(value: unknown): value is UnknownRecord {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
@@ -24,6 +28,13 @@ function isRecord(value: unknown): value is UnknownRecord {
 
 function boundedString(value: unknown, maxLength = 256): value is string {
   return typeof value === "string" && value.trim().length > 0 && value.length <= maxLength;
+}
+
+function battleName(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  const length = [...trimmed].length;
+  return length >= 1 && length <= 80 ? trimmed : undefined;
 }
 
 const RESERVED_RECORD_KEYS = new Set([
@@ -359,6 +370,12 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
     boundedString(value.itemId)
       ? { type: "DELETE_BARRIER", itemId: value.itemId }
       : undefined,
+  RENAME_BATTLE_GROUP: (value) => {
+    const name = battleName(value.name);
+    return boundedString(value.battleId) && name
+      ? { type: "RENAME_BATTLE_GROUP", battleId: value.battleId, name }
+      : undefined;
+  },
   RELEASE_BATTLE_GROUP: (value) =>
     boundedString(value.battleId)
       ? { type: "RELEASE_BATTLE_GROUP", battleId: value.battleId }
@@ -373,11 +390,14 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
       : undefined
 };
 
-function invalid(requestId?: string): CommandValidationResult {
+function invalid(
+  requestId?: string,
+  reason: "INVALID_COMMAND" | "INVALID_BATTLE_NAME" = "INVALID_COMMAND"
+): CommandValidationResult {
   return {
     ok: false,
     ...(requestId ? { requestId } : {}),
-    reason: "INVALID_COMMAND"
+    reason
   };
 }
 
@@ -396,7 +416,14 @@ export function validateArmyCommand(value: unknown): CommandValidationResult {
   }
   const parser = PAYLOAD_PARSERS[value.type as CommandType];
   const payload = parser(value);
-  if (!payload) return invalid(requestId);
+  if (!payload) {
+    return invalid(
+      requestId,
+      value.type === "RENAME_BATTLE_GROUP" && battleName(value.name) === undefined
+        ? "INVALID_BATTLE_NAME"
+        : "INVALID_COMMAND"
+    );
+  }
   return {
     ok: true,
     command: {

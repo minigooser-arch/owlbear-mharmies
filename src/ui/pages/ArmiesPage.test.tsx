@@ -87,3 +87,29 @@ describe("army registration panel", () => {
     expect(screen.getByRole("button", { name: "Сделать армией" })).toBeDisabled();
   });
 });
+
+describe("army side filter", () => {
+  it("offers players only sides represented by their authorized armies", () => {
+    render(
+      <ArmiesPage
+        armies={[{
+          id: "red-army",
+          name: "Красная армия",
+          sideId: "red",
+          sideName: "Красные",
+          status: "READY",
+          route: []
+        }]}
+        sides={[redSide, blueSide]}
+        role="PLAYER"
+        playerId="p"
+        leaderSideIds={new Set()}
+        onAction={vi.fn()}
+      />
+    );
+
+    const sideFilter = screen.getByRole("combobox", { name: "Фильтр по стороне" });
+    expect(within(sideFilter).getByRole("option", { name: "Красные" })).toBeInTheDocument();
+    expect(within(sideFilter).queryByRole("option", { name: "Синие" })).not.toBeInTheDocument();
+  });
+});

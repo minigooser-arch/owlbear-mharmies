@@ -22,15 +22,24 @@ export function ArmiesPage({
   const [query, setQuery] = useState("");
   const [filterSideId, setFilterSideId] = useState("ALL");
   const [registrationSideId, setRegistrationSideId] = useState(sides[0]?.id ?? "");
+  const filterSides = useMemo(() => {
+    if (role === "GM") return sides;
+    const authorizedSideIds = new Set(armies.map((army) => army.sideId));
+    return sides.filter((side) => authorizedSideIds.has(side.id));
+  }, [armies, role, sides]);
+  const selectedFilterSideId = filterSideId === "ALL" ||
+    filterSides.some((side) => side.id === filterSideId)
+    ? filterSideId
+    : "ALL";
   const selectedRegistrationSideId = sides.some((side) => side.id === registrationSideId)
     ? registrationSideId
     : (sides[0]?.id ?? "");
   const filtered = useMemo(
     () => armies.filter((army) =>
-      (filterSideId === "ALL" || army.sideId === filterSideId) &&
+      (selectedFilterSideId === "ALL" || army.sideId === selectedFilterSideId) &&
       army.name.toLocaleLowerCase("ru").includes(query.toLocaleLowerCase("ru"))
     ),
-    [armies, filterSideId, query]
+    [armies, query, selectedFilterSideId]
   );
   return (
     <section aria-labelledby="armies-title">
@@ -40,9 +49,9 @@ export function ArmiesPage({
       </div>
       <div className="filters">
         <input aria-label="Поиск армий" placeholder="Найти армию" value={query} onChange={(event) => setQuery(event.target.value)} />
-        <select aria-label="Фильтр по стороне" value={filterSideId} onChange={(event) => setFilterSideId(event.target.value)}>
+        <select aria-label="Фильтр по стороне" value={selectedFilterSideId} onChange={(event) => setFilterSideId(event.target.value)}>
           <option value="ALL">Все стороны</option>
-          {sides.map((side) => <option key={side.id} value={side.id}>{side.name}</option>)}
+          {filterSides.map((side) => <option key={side.id} value={side.id}>{side.name}</option>)}
         </select>
       </div>
       {role === "GM" && (

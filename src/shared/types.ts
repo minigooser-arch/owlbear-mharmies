@@ -156,6 +156,7 @@ export type ArmyCommandPayload =
     | { type: "CREATE_BARRIER"; itemId: string; barrier: BarrierState }
     | { type: "UPDATE_BARRIER"; itemId: string; barrier: Partial<BarrierState> }
     | { type: "DELETE_BARRIER"; itemId: string }
+    | { type: "RENAME_BATTLE_GROUP"; battleId: string; name: string }
     | { type: "RELEASE_BATTLE_GROUP"; battleId: string }
     | { type: "REMOVE_BATTLE_PARTICIPANT"; battleId: string; armyId: string }
   );

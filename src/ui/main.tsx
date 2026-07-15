@@ -18,7 +18,7 @@ const initialSnapshot: RawExtensionSnapshot = {
   players: [],
   memberSideIds: new Set(),
   leaderSideIds: new Set(),
-  visibleSourceIds: new Set(),
+  mapVisibleSourceIds: new Set(),
   armies: [],
   sides: [],
   relations: {},

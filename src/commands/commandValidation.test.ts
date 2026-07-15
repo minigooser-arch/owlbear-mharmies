@@ -51,6 +51,38 @@ describe("validateArmyCommand", () => {
     });
   });
 
+  it("trims battle names and counts their length in Unicode code points", () => {
+    const name = "😀".repeat(80);
+
+    expect(validateArmyCommand(envelope({
+      type: "RENAME_BATTLE_GROUP",
+      battleId: "battle-1",
+      name: `  ${name}  `
+    }))).toMatchObject({
+      ok: true,
+      command: {
+        type: "RENAME_BATTLE_GROUP",
+        battleId: "battle-1",
+        name
+      }
+    });
+  });
+
+  it.each(["   ", "😀".repeat(81)])(
+    "rejects an invalid battle name while preserving the request id",
+    (name) => {
+      expect(validateArmyCommand(envelope({
+        type: "RENAME_BATTLE_GROUP",
+        battleId: "battle-1",
+        name
+      }))).toEqual({
+        ok: false,
+        requestId: "request-1",
+        reason: "INVALID_BATTLE_NAME"
+      });
+    }
+  );
+
   it.each(["__proto__", "constructor", "toString"])(
     "rejects inherited parser-map key %s without throwing",
     (type) => {
@@ -137,6 +169,7 @@ describe("validateArmyCommand", () => {
     },
     { type: "UPDATE_BARRIER", itemId: "barrier", barrier: { blocksVision: true } },
     { type: "DELETE_BARRIER", itemId: "barrier" },
+    { type: "RENAME_BATTLE_GROUP", battleId: "battle", name: "Переправа" },
     { type: "RELEASE_BATTLE_GROUP", battleId: "battle" },
     { type: "REMOVE_BATTLE_PARTICIPANT", battleId: "battle", armyId: "army" }
   ])("accepts supported command $type", (payload) => {

@@ -303,6 +303,15 @@ export class CommandProcessor {
           Object.entries(state.barriers).filter(([itemId]) => itemId !== command.itemId)
         );
         return undefined;
+      case "RENAME_BATTLE_GROUP": {
+        const group = state.scene.battleGroups.find(
+          (candidate) => candidate.battleId === command.battleId
+        );
+        if (!group) return "BATTLE_NOT_FOUND";
+        group.name = command.name.trim();
+        group.revision += 1;
+        return undefined;
+      }
       case "RELEASE_BATTLE_GROUP": {
         const result = releaseBattleGroup(
           state.scene.battleGroups,
