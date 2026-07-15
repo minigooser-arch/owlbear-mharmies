@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { CoordinatorLease, electCoordinator } from "./coordinator";
+import {
+  CoordinatorLease,
+  electCoordinator,
+  resolveCoordinatorConnectionId
+} from "./coordinator";
 
 describe("GM coordinator", () => {
   it("elects the lexically smallest connected GM connection", () => {
@@ -12,15 +16,46 @@ describe("GM coordinator", () => {
     ).toBe("a");
   });
 
+  it("prefers a live non-expired persisted lease over lexical election", () => {
+    expect(resolveCoordinatorConnectionId(
+      [
+        { connectionId: "a", role: "GM" },
+        { connectionId: "z", role: "GM" }
+      ],
+      { connectionId: "z", epoch: 3, expiresAt: 11_000 },
+      10_000
+    )).toBe("z");
+  });
+
+  it("fails over from an expired holder to the next live GM", () => {
+    expect(resolveCoordinatorConnectionId(
+      [
+        { connectionId: "a", role: "GM" },
+        { connectionId: "b", role: "GM" }
+      ],
+      { connectionId: "a", epoch: 3, expiresAt: 9_999 },
+      10_000
+    )).toBe("b");
+  });
+
+  it("falls back to live election when the persisted holder disconnected", () => {
+    expect(resolveCoordinatorConnectionId(
+      [{ connectionId: "b", role: "GM" }],
+      { connectionId: "gone", epoch: 3, expiresAt: 11_000 },
+      10_000
+    )).toBe("b");
+  });
+
   it("writes a one-second heartbeat with a three-second expiry only when elected", async () => {
     const write = vi.fn(async () => undefined);
     const lease = new CoordinatorLease({
-      connectionId: "a",
+      currentConnectionId: async () => "a",
       now: () => 10_000,
       participants: async () => [
         { connectionId: "b", role: "GM" },
         { connectionId: "a", role: "GM" }
       ],
+      readHeartbeat: async () => undefined,
       writeHeartbeat: write
     });
     await lease.tick();
@@ -40,9 +75,10 @@ describe("GM coordinator", () => {
         : Promise.resolve([{ connectionId: "a", role: "GM" }] as const);
     });
     const lease = new CoordinatorLease({
-      connectionId: "a",
+      currentConnectionId: async () => "a",
       now: () => 10_000,
       participants,
+      readHeartbeat: async () => undefined,
       writeHeartbeat: vi.fn(async () => undefined)
     });
 
@@ -61,9 +97,10 @@ describe("GM coordinator", () => {
       releaseWrite = resolve;
     }));
     const lease = new CoordinatorLease({
-      connectionId: "a",
+      currentConnectionId: async () => "a",
       now: () => 10_000,
       participants: async () => [{ connectionId: "a", role: "GM" }],
+      readHeartbeat: async () => undefined,
       writeHeartbeat
     });
     lease.start();
@@ -78,5 +115,23 @@ describe("GM coordinator", () => {
     await stopWork;
     expect(stopped).toBe(true);
     expect(lease.isCoordinator()).toBe(false);
+  });
+
+  it("reads the current connection ID on every heartbeat", async () => {
+    let connectionId = "old";
+    const writes: string[] = [];
+    const lease = new CoordinatorLease({
+      currentConnectionId: async () => connectionId,
+      now: () => 10_000,
+      participants: async () => [{ connectionId, role: "GM" }],
+      readHeartbeat: async () => undefined,
+      writeHeartbeat: async (heartbeat) => { writes.push(heartbeat.connectionId); }
+    });
+
+    await lease.tick();
+    connectionId = "new";
+    await lease.tick();
+
+    expect(writes).toEqual(["old", "new"]);
   });
 });

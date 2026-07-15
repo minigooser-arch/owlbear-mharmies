@@ -9,6 +9,8 @@ class RuntimePort implements BackgroundRuntimePort {
   opened = 0;
   closed = 0;
   closeGate: Promise<void> | undefined;
+  openFailure: Error | undefined;
+  broadcast: (() => void) | undefined;
   deleted = 0;
   paused = 0;
   movement = vi.fn<() => Promise<void>>(async () => undefined);
@@ -25,7 +27,7 @@ class RuntimePort implements BackgroundRuntimePort {
     return this.subscribe((value) => { this.sceneReady = value; }, callback as never);
   }
   async isSceneReady() { return this.ready; }
-  onSceneOpen() { this.opened += 1; }
+  onSceneOpen() { this.opened += 1; if (this.openFailure) throw this.openFailure; }
   async onSceneClose() { this.closed += 1; await this.closeGate; }
   onCoordinatorChange(callback: (active: boolean) => void) {
     return this.subscribe((value) => { this.coordinator = value; }, callback as never);
@@ -36,7 +38,9 @@ class RuntimePort implements BackgroundRuntimePort {
   onGridChange(callback: () => void) { void callback; return this.subscribe(() => undefined, (() => undefined) as never); }
   onPlayerChange(callback: () => void) { void callback; return this.subscribe(() => undefined, (() => undefined) as never); }
   onPartyChange(callback: () => void) { void callback; return this.subscribe(() => undefined, (() => undefined) as never); }
-  onBroadcast(callback: () => void) { void callback; return this.subscribe(() => undefined, (() => undefined) as never); }
+  onBroadcast(callback: () => void) {
+    return this.subscribe((value) => { this.broadcast = value; }, callback as never);
+  }
   async deleteLocalOverlays() { this.deleted += 1; }
   async pauseMovingArmies() { this.paused += 1; }
   movementTick() { return this.movement(); }
@@ -53,7 +57,7 @@ describe("BackgroundRuntime", () => {
     expect(port.subscriptions.size).toBeGreaterThan(0);
     port.sceneReady?.(false);
     await runtime.whenIdle();
-    expect(port.subscriptions.size).toBe(1);
+    expect(port.subscriptions.size).toBe(2);
     expect(port.closed).toBe(1);
     expect(port.deleted).toBe(1);
 
@@ -89,12 +93,26 @@ describe("BackgroundRuntime", () => {
     runtime.start();
     await runtime.whenIdle();
     expect(port.opened).toBe(0);
-    expect(port.subscriptions.size).toBe(1);
+    expect(port.subscriptions.size).toBe(2);
 
     port.sceneReady?.(true);
     await runtime.whenIdle();
     expect(port.opened).toBe(1);
     expect(port.subscriptions.size).toBeGreaterThan(1);
+    await runtime.stop();
+  });
+
+  it("keeps the command listener active when scene opening fails", async () => {
+    const port = new RuntimePort();
+    port.openFailure = new Error("preview cleanup failed");
+    const runtime = new BackgroundRuntime(port);
+
+    runtime.start();
+    await runtime.whenIdle();
+
+    expect(port.opened).toBe(1);
+    expect(port.broadcast).toBeTypeOf("function");
+    expect(port.subscriptions.size).toBe(2);
     await runtime.stop();
   });
 

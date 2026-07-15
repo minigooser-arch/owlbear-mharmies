@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  CommandGateway,
+  type BroadcastEvent,
+  type BroadcastPort
+} from "../commands/commandGateway";
+import {
+  dispatchBackgroundCommand,
+  sendCommandAck
+} from "../background/application";
+import { COMMAND_PROTOCOL_VERSION, type ArmyCommand } from "../shared/types";
+import {
   addLeader,
   addMember,
   fourClientRoom,
@@ -9,7 +19,73 @@ import {
 } from "./helpers/factories";
 import { createFourClientRoom } from "./helpers/inMemoryAdapter";
 
+class InMemoryBroadcastHub {
+  private readonly listeners = new Map<string, Set<(event: BroadcastEvent) => void>>();
+
+  port(connectionId: string): BroadcastPort {
+    return {
+      send: async (channel, data) => {
+        for (const listener of this.listeners.get(channel) ?? []) {
+          listener({ connectionId, data: structuredClone(data) });
+        }
+      },
+      on: (channel, listener) => {
+        const listeners = this.listeners.get(channel) ?? new Set();
+        listeners.add(listener);
+        this.listeners.set(channel, listeners);
+        return () => listeners.delete(listener);
+      }
+    };
+  }
+}
+
 describe("four-client room", () => {
+  it("delivers a v2 command through the real gateway and background dispatcher", async () => {
+    const hub = new InMemoryBroadcastHub();
+    const clientPort = hub.port("player-connection");
+    const backgroundPort = hub.port("gm-connection");
+    const gateway = new CommandGateway(clientPort, 1_000, async () => "gm-connection");
+    gateway.start();
+    const unsubscribe = backgroundPort.on(CommandGateway.COMMAND_CHANNEL, (event) => {
+      void dispatchBackgroundCommand({
+        event,
+        participants: [
+          { id: "gm", connectionId: "gm-connection", role: "GM" },
+          { id: "player", connectionId: "player-connection", role: "PLAYER" }
+        ],
+        currentConnectionId: "gm-connection",
+        lease: { connectionId: "gm-connection", epoch: 1, expiresAt: Date.now() + 3_000 },
+        now: Date.now(),
+        ready: true,
+        active: true,
+        sendAck: (acknowledgement) => sendCommandAck(backgroundPort, acknowledgement),
+        process: async (sender) => sendCommandAck(backgroundPort, {
+          requestId: (event.data as ArmyCommand).requestId,
+          status: "ACCEPTED",
+          coordinatorConnectionId: "gm-connection",
+          recipientConnectionId: sender.connectionId
+        })
+      });
+    });
+
+    const acknowledgement = await gateway.send({
+      protocolVersion: COMMAND_PROTOCOL_VERSION,
+      requestId: "integration-request",
+      senderPlayerId: "player",
+      senderConnectionId: "player-connection",
+      expectedRevision: 1,
+      type: "START_ALL"
+    });
+
+    expect(acknowledgement).toMatchObject({
+      protocolVersion: COMMAND_PROTOCOL_VERSION,
+      status: "ACCEPTED",
+      coordinatorConnectionId: "gm-connection"
+    });
+    unsubscribe();
+    gateway.stop();
+  });
+
   it("keeps C uninformed while A and B detect, move, collide, and enter battle", async () => {
     const room = createFourClientRoom();
     await room.registerArmies();

@@ -6,6 +6,9 @@ export type NotificationCode =
   | "PLAYER_NOT_CONNECTED"
   | "REVISION_CONFLICT"
   | "COMMAND_TIMEOUT"
+  | "NO_COORDINATOR"
+  | "BACKGROUND_NOT_READY"
+  | "PROTOCOL_MISMATCH"
   | "INVALID_COMMAND"
   | "INVALID_BATTLE_NAME"
   | "BATTLE_NOT_FOUND"
@@ -28,7 +31,10 @@ const RUSSIAN_MESSAGES: Readonly<Record<NotificationCode, string>> = {
   PLAYER_IS_LEADER: "Сначала снимите игрока с роли лидера стороны.",
   PLAYER_NOT_CONNECTED: "Игрок не подключён к сцене.",
   REVISION_CONFLICT: "Состояние изменилось. Повторите действие.",
-  COMMAND_TIMEOUT: "Время ожидания ответа истекло. Повторите действие.",
+  COMMAND_TIMEOUT: "Фоновая часть расширения не отвечает. Перезапустите расширение.",
+  NO_COORDINATOR: "Координатор ещё не готов. Повторите попытку через несколько секунд.",
+  BACKGROUND_NOT_READY: "Фоновая часть расширения ещё загружается. Повторите попытку.",
+  PROTOCOL_MISMATCH: "Версии интерфейса и фоновой части не совпадают. Перезапустите расширение.",
   INVALID_COMMAND: "Команда не распознана. Обновите расширение и повторите действие.",
   INVALID_BATTLE_NAME: "Название боя должно содержать от 1 до 80 символов.",
   BATTLE_NOT_FOUND: "Указанный бой не найден.",

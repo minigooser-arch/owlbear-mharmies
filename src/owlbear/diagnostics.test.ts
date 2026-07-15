@@ -31,6 +31,39 @@ class DiagnosticsHarness implements DiagnosticsPort {
 }
 
 describe("live diagnostics", () => {
+  it("records rejected acknowledgements with sender and recoverable request id", () => {
+    const service = new DiagnosticsService(new DiagnosticsHarness());
+
+    service.recordAckRejection("WRONG_SENDER", {
+      connectionId: "attacker",
+      data: { requestId: "request-7" }
+    });
+    service.recordAckRejection("MALFORMED", {
+      connectionId: "broken-client",
+      data: null
+    });
+
+    expect(service.getAckRejections()).toEqual([
+      { reason: "WRONG_SENDER", connectionId: "attacker", requestId: "request-7" },
+      { reason: "MALFORMED", connectionId: "broken-client" }
+    ]);
+  });
+
+  it("bounds the acknowledgement rejection history", () => {
+    const service = new DiagnosticsService(new DiagnosticsHarness());
+    for (let index = 0; index < 55; index += 1) {
+      service.recordAckRejection("STALE_REQUEST", {
+        connectionId: `sender-${index}`,
+        data: { requestId: `request-${index}` }
+      });
+    }
+
+    const records = service.getAckRejections();
+    expect(records).toHaveLength(50);
+    expect(records[0]).toMatchObject({ requestId: "request-5" });
+    expect(records[49]).toMatchObject({ requestId: "request-54" });
+  });
+
   it("restores source position and removes temporary local items after a probe", async () => {
     const harness = new DiagnosticsHarness();
     const original = structuredClone(harness.source.position);

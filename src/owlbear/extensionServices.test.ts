@@ -7,12 +7,18 @@ import {
   ROUTE_TOOL_ID,
   ROUTE_TOOL_MODE_ID
 } from "../shared/constants";
-import type { ArmyState, SceneItemRecord, SceneState } from "../shared/types";
+import {
+  COMMAND_PROTOCOL_VERSION,
+  type ArmyState,
+  type SceneItemRecord,
+  type SceneState
+} from "../shared/types";
 import {
   buildRoleSafeSnapshot,
   createOwlbearExtensionServices,
   type RunningExtensionServices
 } from "./extensionServices";
+import { DiagnosticsService } from "./diagnostics";
 import { notificationMessage } from "./notifications";
 
 const serviceHarness = vi.hoisted(() => {
@@ -23,6 +29,14 @@ const serviceHarness = vi.hoisted(() => {
     | { status: "NONE" };
   type AckListener = (event: { connectionId: string; data: unknown }) => void;
   type EventListener<T = unknown> = (value: T) => void;
+  type PlayerRole = "GM" | "PLAYER";
+  interface PartyPlayer {
+    id: string;
+    connectionId: string;
+    name: string;
+    color: string;
+    role: PlayerRole;
+  }
 
   const callbacks: {
     metadata: EventListener | undefined;
@@ -70,6 +84,15 @@ const serviceHarness = vi.hoisted(() => {
       metadata: Record<string, unknown>;
     }>;
     ackMode: AckMode;
+    ackConnectionId: string;
+    currentConnectionId: string;
+    currentRole: PlayerRole;
+    party: PartyPlayer[];
+    coordinatorLease: {
+      connectionId: string;
+      epoch: number;
+      expiresAt: number;
+    } | undefined;
   } = {
     selection: ["selected"],
     items: [{
@@ -79,14 +102,33 @@ const serviceHarness = vi.hoisted(() => {
       position: { x: 0, y: 0 },
       metadata: {}
     }],
-    ackMode: { status: "ACCEPTED" }
+    ackMode: { status: "ACCEPTED" },
+    ackConnectionId: "coordinator",
+    currentConnectionId: "sender",
+    currentRole: "GM",
+    party: [{
+      id: "coordinator-gm",
+      connectionId: "coordinator",
+      name: "Координатор",
+      color: "#000",
+      role: "GM"
+    }],
+    coordinatorLease: undefined
   };
   const ackListeners = new Set<AckListener>();
   const notificationShow = vi.fn(async () => undefined);
+  const emitAck = (connectionId: string, data: unknown) => {
+    for (const listener of ackListeners) listener({ connectionId, data });
+  };
 
   const adapter = {
     getSceneMetadata: vi.fn(async () => ({
-      "com.letopis.army-control/scene": structuredClone(scene)
+      "com.letopis.army-control/scene": {
+        ...structuredClone(scene),
+        ...(state.coordinatorLease
+          ? { coordinatorLease: structuredClone(state.coordinatorLease) }
+          : {})
+      }
     })),
     patchSceneMetadata: vi.fn(async () => undefined),
     getSceneItems: vi.fn(async () => structuredClone(state.items)),
@@ -97,7 +139,11 @@ const serviceHarness = vi.hoisted(() => {
     deleteLocalItems: vi.fn(async () => undefined),
     createClone: vi.fn((source: unknown) => source),
     send: vi.fn(async (_channel: string, data: unknown) => {
-      const command = data as { requestId: string; senderConnectionId: string };
+      const command = data as {
+        protocolVersion: unknown;
+        requestId: string;
+        senderConnectionId: string;
+      };
       const mode = state.ackMode;
       if (mode.status === "NONE") return;
       const statusData = mode.status === "REJECTED"
@@ -106,17 +152,13 @@ const serviceHarness = vi.hoisted(() => {
           ? { status: mode.status, actualRevision: mode.actualRevision }
           : { status: mode.status };
       queueMicrotask(() => {
-        for (const listener of ackListeners) {
-          listener({
-            connectionId: "coordinator",
-            data: {
-              requestId: command.requestId,
-              coordinatorConnectionId: "coordinator",
-              recipientConnectionId: command.senderConnectionId,
-              ...statusData
-            }
-          });
-        }
+        emitAck(state.ackConnectionId, {
+          protocolVersion: COMMAND_PROTOCOL_VERSION,
+          requestId: command.requestId,
+          coordinatorConnectionId: state.ackConnectionId,
+          recipientConnectionId: command.senderConnectionId,
+          ...statusData
+        });
       });
     }),
     on: vi.fn((_channel: string, listener: AckListener) => {
@@ -156,22 +198,16 @@ const serviceHarness = vi.hoisted(() => {
       }
     },
     player: {
-      getRole: vi.fn(async () => "GM" as const),
+      getRole: vi.fn(async () => state.currentRole),
       getId: vi.fn(async () => "gm"),
       getName: vi.fn(async () => "Ведущий"),
       getColor: vi.fn(async () => "#fff"),
-      getConnectionId: vi.fn(async () => "sender"),
+      getConnectionId: vi.fn(async () => state.currentConnectionId),
       getSelection: vi.fn(async () => [...state.selection]),
       onChange: vi.fn(() => () => undefined)
     },
     party: {
-      getPlayers: vi.fn(async () => [{
-        id: "coordinator-gm",
-        connectionId: "coordinator",
-        name: "Координатор",
-        color: "#000",
-        role: "GM" as const
-      }]),
+      getPlayers: vi.fn(async () => structuredClone(state.party)),
       onChange: vi.fn(() => () => undefined)
     },
     notification: { show: notificationShow },
@@ -186,6 +222,7 @@ const serviceHarness = vi.hoisted(() => {
   return {
     adapter,
     callbacks,
+    emitAck,
     notificationShow,
     scene,
     sdk,
@@ -200,6 +237,17 @@ const serviceHarness = vi.hoisted(() => {
         metadata: {}
       }];
       state.ackMode = { status: "ACCEPTED" };
+      state.ackConnectionId = "coordinator";
+      state.currentConnectionId = "sender";
+      state.currentRole = "GM";
+      state.party = [{
+        id: "coordinator-gm",
+        connectionId: "coordinator",
+        name: "Координатор",
+        color: "#000",
+        role: "GM"
+      }];
+      state.coordinatorLease = undefined;
       const firstSide = scene.sides[0];
       if (firstSide) firstSide.name = "Красные";
       callbacks.metadata = undefined;
@@ -388,6 +436,7 @@ describe("extension command feedback", () => {
   afterEach(() => {
     services?.stop();
     services = undefined;
+    vi.restoreAllMocks();
     vi.useRealTimers();
   });
 
@@ -401,6 +450,13 @@ describe("extension command feedback", () => {
       expect(serviceHarness.adapter.getSceneMetadata).toHaveBeenCalledTimes(count);
     });
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  }
+
+  function lastSentCommand(): Record<string, unknown> {
+    const call = serviceHarness.adapter.send.mock.calls.at(-1);
+    const value: unknown = call?.[1];
+    if (typeof value !== "object" || value === null) throw new Error("Expected a sent command");
+    return value as Record<string, unknown>;
   }
 
   it("does not schedule a refresh for route, barrier, and preview local overlays", async () => {
@@ -458,6 +514,134 @@ describe("extension command feedback", () => {
 
     expect(listener).toHaveBeenCalledTimes(1);
     expect(running.getSnapshot().sides[0]?.name).toBe("Алые");
+  });
+
+  it("adds protocol version 2 to extension-generated commands", async () => {
+    const running = await startServices();
+
+    await running.send({ type: "START_ALL" });
+
+    expect(serviceHarness.adapter.send).toHaveBeenCalledWith(
+      "com.letopis.army-control/command",
+      expect.objectContaining({ protocolVersion: COMMAND_PROTOCOL_VERSION, type: "START_ALL" })
+    );
+  });
+
+  it("prefers a live non-expired lease holder over lexical GM election", async () => {
+    serviceHarness.state.coordinatorLease = {
+      connectionId: "z-lease-holder",
+      epoch: 7,
+      expiresAt: Date.now() + 60_000
+    };
+    serviceHarness.state.party = [
+      {
+        id: "fallback-gm",
+        connectionId: "a-fallback",
+        name: "Fallback",
+        color: "#111",
+        role: "GM"
+      },
+      {
+        id: "lease-gm",
+        connectionId: "z-lease-holder",
+        name: "Lease holder",
+        color: "#222",
+        role: "GM"
+      }
+    ];
+    serviceHarness.state.ackConnectionId = "z-lease-holder";
+    serviceHarness.state.ackMode = { status: "REJECTED", reason: "GM_ONLY" };
+    const running = await startServices();
+    const livePartyReads = serviceHarness.sdk.party.getPlayers.mock.calls.length;
+
+    await running.send({ type: "START_ALL" });
+
+    expect(serviceHarness.sdk.party.getPlayers).toHaveBeenCalledTimes(livePartyReads + 1);
+    expect(serviceHarness.adapter.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back live when a non-expired lease holder disconnected", async () => {
+    serviceHarness.state.coordinatorLease = {
+      connectionId: "disconnected-holder",
+      epoch: 9,
+      expiresAt: Date.now() + 60_000
+    };
+    serviceHarness.state.ackMode = { status: "REJECTED", reason: "GM_ONLY" };
+    const running = await startServices();
+    const livePartyReads = serviceHarness.sdk.party.getPlayers.mock.calls.length;
+    vi.useFakeTimers();
+
+    const pending = running.send({ type: "START_ALL" });
+    await vi.runAllTimersAsync();
+    await pending;
+
+    expect(serviceHarness.sdk.party.getPlayers).toHaveBeenCalledTimes(livePartyReads + 1);
+    expect(serviceHarness.notificationShow).toHaveBeenCalledWith(
+      notificationMessage("GM_ONLY"),
+      "WARNING"
+    );
+  });
+
+  it("falls back to live GM election when the persisted lease is expired", async () => {
+    serviceHarness.state.coordinatorLease = {
+      connectionId: "expired-coordinator",
+      epoch: 3,
+      expiresAt: Date.now() - 1
+    };
+    serviceHarness.state.ackMode = { status: "REJECTED", reason: "GM_ONLY" };
+    const running = await startServices();
+    const livePartyReads = serviceHarness.sdk.party.getPlayers.mock.calls.length;
+
+    await running.send({ type: "START_ALL" });
+
+    expect(serviceHarness.sdk.party.getPlayers).toHaveBeenCalledTimes(livePartyReads + 1);
+    expect(serviceHarness.adapter.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows NO_COORDINATOR immediately without broadcasting", async () => {
+    serviceHarness.state.currentRole = "PLAYER";
+    serviceHarness.state.party = [];
+    const running = await startServices();
+
+    await running.send({ type: "START_ALL" });
+
+    expect(serviceHarness.adapter.send).not.toHaveBeenCalled();
+    expect(serviceHarness.notificationShow).toHaveBeenCalledWith(
+      notificationMessage("NO_COORDINATOR"),
+      "WARNING"
+    );
+  });
+
+  it("reports forged acknowledgements to diagnostics before accepting the trusted reply", async () => {
+    const reporter = vi.spyOn(DiagnosticsService.prototype, "recordAckRejection");
+    serviceHarness.state.ackMode = { status: "NONE" };
+    const running = await startServices();
+    const pending = running.send({ type: "START_ALL" });
+    await vi.waitFor(() => expect(serviceHarness.adapter.send).toHaveBeenCalledTimes(1));
+    const command = lastSentCommand();
+    const requestId = command.requestId;
+    const senderConnectionId = command.senderConnectionId;
+
+    serviceHarness.emitAck("attacker", {
+      protocolVersion: COMMAND_PROTOCOL_VERSION,
+      requestId,
+      status: "ACCEPTED",
+      coordinatorConnectionId: "attacker",
+      recipientConnectionId: senderConnectionId
+    });
+    serviceHarness.emitAck("coordinator", {
+      protocolVersion: COMMAND_PROTOCOL_VERSION,
+      requestId,
+      status: "ACCEPTED",
+      coordinatorConnectionId: "coordinator",
+      recipientConnectionId: senderConnectionId
+    });
+    await pending;
+
+    expect(reporter).toHaveBeenCalledWith(
+      "WRONG_SENDER",
+      expect.objectContaining({ connectionId: "attacker" })
+    );
   });
 
   it("resolves the GM selection and sends REGISTER_ARMY for the selected side", async () => {
@@ -526,6 +710,8 @@ describe("extension command feedback", () => {
 
   it.each([
     [{ status: "REJECTED", reason: "NOT_SIDE_LEADER" } as const, "NOT_SIDE_LEADER"],
+    [{ status: "REJECTED", reason: "BACKGROUND_NOT_READY" } as const, "BACKGROUND_NOT_READY"],
+    [{ status: "REJECTED", reason: "PROTOCOL_MISMATCH" } as const, "PROTOCOL_MISMATCH"],
     [{ status: "CONFLICT", actualRevision: 3 } as const, "REVISION_CONFLICT"]
   ])("shows Russian feedback for a %s acknowledgement", async (ackMode, notificationCode) => {
     serviceHarness.state.ackMode = ackMode;

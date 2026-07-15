@@ -1,5 +1,9 @@
-import { electCoordinator } from "../background/coordinator";
-import { CommandGateway, CommandTimeoutError } from "../commands/commandGateway";
+import { resolveCoordinatorConnectionId } from "../background/coordinator";
+import {
+  CommandGateway,
+  CommandTimeoutError,
+  NoCoordinatorError
+} from "../commands/commandGateway";
 import {
   DEFAULT_SETTINGS,
   METADATA_KEYS,
@@ -8,7 +12,12 @@ import {
   ROUTE_TOOL_ID,
   ROUTE_TOOL_MODE_ID
 } from "../shared/constants";
-import type { ArmyCommand, SceneItemRecord, SceneState } from "../shared/types";
+import {
+  COMMAND_PROTOCOL_VERSION,
+  type ArmyCommand,
+  type SceneItemRecord,
+  type SceneState
+} from "../shared/types";
 import { migrateSceneState } from "../storage/migrations";
 import { MetadataRepository, type ArmyRecord } from "../storage/metadataRepository";
 import type {
@@ -124,19 +133,50 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
   ]);
   const adapter = createOwlbearAdapter();
   const repository = new MetadataRepository(adapter);
+  const diagnosticsPort: DiagnosticsPort = {
+    getSelectedSource: async () => {
+      const selected = await OBR.player.getSelection();
+      if (!selected?.[0]) return undefined;
+      return (await adapter.getSceneItems()).find((item) => item.id === selected[0]);
+    },
+    getSource: async (id) => (await adapter.getSceneItems()).find((item) => item.id === id),
+    createTemporaryLocal: async (source) => {
+      const clone = adapter.createClone(source);
+      await adapter.addLocalItem(clone);
+      return clone.id;
+    },
+    updateTemporaryLocal: (id, position) => adapter.updateLocalItem(id, { position }),
+    deleteLocalItems: (ids) => adapter.deleteLocalItems(ids),
+    updateSourcePosition: (id, position) => adapter.updateSceneItem(id, { position }),
+    readBackgroundCounter: async () => Number(localStorage.getItem(`${METADATA_KEYS.scene}/background-counter`) ?? 0),
+    probeContextMenu: async () => false
+  };
+  const diagnostics = new DiagnosticsService(diagnosticsPort);
+  let commandSceneForCoordinator: SceneState | undefined;
   const gateway = new CommandGateway(adapter, 5_000, async () => {
+    let scene = commandSceneForCoordinator;
+    commandSceneForCoordinator = undefined;
+    if (!scene) {
+      try {
+        const metadata = await adapter.getSceneMetadata();
+        const migrated = migrateSceneState(metadata[METADATA_KEYS.scene] ?? { version: 3 });
+        scene = migrated.ok ? migrated.value : undefined;
+      } catch {
+        // Live election is the startup fallback when persisted metadata is unavailable.
+      }
+    }
     const [players, currentConnectionId, currentRole] = await Promise.all([
       OBR.party.getPlayers(),
       OBR.player.getConnectionId(),
       OBR.player.getRole()
     ]);
-    return electCoordinator([
+    return resolveCoordinatorConnectionId([
       ...players
         .filter((player) => player.connectionId !== currentConnectionId)
         .map((player) => ({ connectionId: player.connectionId, role: player.role })),
       { connectionId: currentConnectionId, role: currentRole }
-    ]);
-  });
+    ], scene?.coordinatorLease, Date.now());
+  }, (reason, event) => diagnostics.recordAckRejection(reason, event));
   gateway.start();
   let snapshot = LOADING_SNAPSHOT;
   const listeners = new Set<() => void>();
@@ -206,26 +246,6 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
     semanticSnapshotEqual
   );
 
-  const diagnosticsPort: DiagnosticsPort = {
-    getSelectedSource: async () => {
-      const selected = await OBR.player.getSelection();
-      if (!selected?.[0]) return undefined;
-      return (await adapter.getSceneItems()).find((item) => item.id === selected[0]);
-    },
-    getSource: async (id) => (await adapter.getSceneItems()).find((item) => item.id === id),
-    createTemporaryLocal: async (source) => {
-      const clone = adapter.createClone(source);
-      await adapter.addLocalItem(clone);
-      return clone.id;
-    },
-    updateTemporaryLocal: (id, position) => adapter.updateLocalItem(id, { position }),
-    deleteLocalItems: (ids) => adapter.deleteLocalItems(ids),
-    updateSourcePosition: (id, position) => adapter.updateSceneItem(id, { position }),
-    readBackgroundCounter: async () => Number(localStorage.getItem(`${METADATA_KEYS.scene}/background-counter`) ?? 0),
-    probeContextMenu: async () => false
-  };
-  const diagnostics = new DiagnosticsService(diagnosticsPort);
-
   const triggerRefresh = () => refreshCoordinator.request();
   const triggerLocalRefresh = (items: readonly Pick<SceneItemRecord, "metadata">[]) => {
     const nextSourceIds = localCloneSourceIds(items);
@@ -278,11 +298,14 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
             sideId: command.sideId
           }
         : command;
+      const commandScene = snapshot.futureSchema ? undefined : await repository.readScene();
+      commandSceneForCoordinator = commandScene;
       const envelope = {
+        protocolVersion: COMMAND_PROTOCOL_VERSION,
         requestId: crypto.randomUUID(),
         senderPlayerId: await OBR.player.getId(),
         senderConnectionId: await OBR.player.getConnectionId(),
-        expectedRevision: snapshot.futureSchema ? -1 : Number((await repository.readScene()).revision)
+        expectedRevision: commandScene ? Number(commandScene.revision) : -1
       };
       const acknowledgement = await gateway.send({ ...envelope, ...payload } as ArmyCommand);
       if (acknowledgement.status === "REJECTED") {
@@ -301,6 +324,10 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
       }
       if (error instanceof CommandTimeoutError) {
         await notifyRussian(adapter, "COMMAND_TIMEOUT");
+        return undefined;
+      }
+      if (error instanceof NoCoordinatorError) {
+        await notifyRussian(adapter, "NO_COORDINATOR");
         return undefined;
       }
       await notifyRussian(adapter, "UNKNOWN", "ERROR");

@@ -2,7 +2,11 @@ import { applyCollision } from "../battles/battleGroupService";
 import { findEarliestEnemyCollision } from "../battles/collisionEngine";
 import { segmentsFromPolyline, type BarrierSegment } from "../barriers/barrierGeometry";
 import { BarrierOverlayService } from "../barriers/barrierOverlayService";
-import { CommandGateway, type BroadcastEvent } from "../commands/commandGateway";
+import {
+  CommandGateway,
+  type BroadcastEvent,
+  type CommandAck
+} from "../commands/commandGateway";
 import { CommandProcessor, type CommandState } from "../commands/commandProcessor";
 import { validateArmyCommand } from "../commands/commandValidation";
 import { advanceArmy } from "../movement/movementEngine";
@@ -18,13 +22,14 @@ import {
   validateRouteConstraints
 } from "./routeToolService";
 import { METADATA_KEYS } from "../shared/constants";
-import type {
-  ArmyState,
-  BattleGroup,
-  SceneItemRecord,
-  SceneState,
-  SideRelation,
-  Vector2
+import {
+  COMMAND_PROTOCOL_VERSION,
+  type ArmyState,
+  type BattleGroup,
+  type SceneItemRecord,
+  type SceneState,
+  type SideRelation,
+  type Vector2
 } from "../shared/types";
 import { MetadataRepository, type ArmyRecord, type BarrierRecord } from "../storage/metadataRepository";
 import { buildDetectionGraph } from "../visibility/detectionGraph";
@@ -33,17 +38,98 @@ import { visibleArmyIdsForPlayer } from "../visibility/visibilityEngine";
 import type { OwlbearPort } from "../owlbear/sdkAdapter";
 import {
   CoordinatorLease,
-  electCoordinator,
-  type CoordinatorParticipant
+  resolveCoordinatorConnectionId,
+  type CoordinatorParticipant,
+  type HeartbeatLease
 } from "./coordinator";
 import { BackgroundRuntime, type BackgroundRuntimePort } from "./runtime";
 
 type BarrierPurpose = "movement" | "vision";
 
+type CommandAckPayload = Omit<CommandAck, "protocolVersion">;
+
+export function sendCommandAck(
+  port: Pick<OwlbearPort, "send">,
+  acknowledgement: CommandAckPayload
+): Promise<void> {
+  return port.send(CommandGateway.ACK_CHANNEL, {
+    protocolVersion: COMMAND_PROTOCOL_VERSION,
+    ...acknowledgement
+  });
+}
+
 export interface ConnectedParticipant {
   id: string;
   connectionId: string;
   role: "GM" | "PLAYER";
+}
+
+export interface BackgroundCommandDispatchInput {
+  event: BroadcastEvent;
+  participants: readonly ConnectedParticipant[];
+  currentConnectionId: string;
+  lease: HeartbeatLease | undefined;
+  now: number;
+  ready: boolean;
+  active: boolean;
+  sendAck(acknowledgement: CommandAckPayload): Promise<void>;
+  process(sender: CommandSender): Promise<void>;
+}
+
+function recoverRequestId(value: unknown): string | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const requestId = (value as Record<string, unknown>).requestId;
+  return typeof requestId === "string" && requestId.trim().length > 0
+    ? requestId
+    : undefined;
+}
+
+function commandProtocol(value: unknown): unknown {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  return (value as Record<string, unknown>).protocolVersion;
+}
+
+export async function dispatchBackgroundCommand(
+  input: BackgroundCommandDispatchInput
+): Promise<void> {
+  const sender = input.participants.find(
+    (participant) => participant.connectionId === input.event.connectionId
+  );
+  if (!sender) return;
+  const authoritativeConnectionId = resolveCoordinatorConnectionId(
+    input.participants.map(({ connectionId, role }) => ({ connectionId, role })),
+    input.lease,
+    input.now
+  );
+  if (authoritativeConnectionId !== input.currentConnectionId) return;
+  const requestId = recoverRequestId(input.event.data);
+  if (!requestId) return;
+  if (commandProtocol(input.event.data) !== COMMAND_PROTOCOL_VERSION) {
+    await input.sendAck({
+      requestId,
+      status: "REJECTED",
+      reason: "PROTOCOL_MISMATCH",
+      coordinatorConnectionId: input.currentConnectionId,
+      recipientConnectionId: sender.connectionId
+    });
+    return;
+  }
+  if (!input.ready || !input.active) {
+    await input.sendAck({
+      requestId,
+      status: "REJECTED",
+      reason: "BACKGROUND_NOT_READY",
+      coordinatorConnectionId: input.currentConnectionId,
+      recipientConnectionId: sender.connectionId
+    });
+    return;
+  }
+  await input.process({
+    role: sender.role,
+    playerId: sender.id,
+    connectionId: sender.connectionId,
+    connectedPlayerIds: new Set(input.participants.map((participant) => participant.id))
+  });
 }
 
 export class SceneWorkTracker {
@@ -149,6 +235,14 @@ export class ProductionEngine {
     this.coordinator = active;
     this.activeCoordinatorConnectionId = active ? connectionId : undefined;
     if (active) this.lastMovementAt = performance.now();
+  }
+
+  isCoordinator(): boolean {
+    return this.coordinator;
+  }
+
+  async readCoordinatorLease(): Promise<HeartbeatLease | undefined> {
+    return (await this.repository.readScene()).coordinatorLease;
   }
 
   private captureCoordinatorGuard(expectedConnectionId = this.activeCoordinatorConnectionId): () => boolean {
@@ -336,7 +430,7 @@ export class ProductionEngine {
     const validation = validateArmyCommand(event.data);
     if (!validation.ok) {
       if (validation.requestId) {
-        await this.port.send(CommandGateway.ACK_CHANNEL, {
+        await sendCommandAck(this.port, {
           requestId: validation.requestId,
           status: "REJECTED",
           reason: validation.reason,
@@ -378,7 +472,7 @@ export class ProductionEngine {
           result.state.positions ??= {};
           result.state.positions[command.itemId] = await this.grid.snapGridCenter(item.position);
         } catch {
-          await this.port.send(CommandGateway.ACK_CHANNEL, {
+          await sendCommandAck(this.port, {
             requestId: command.requestId,
             status: "REJECTED",
             reason: "PERSISTENCE_FAILED",
@@ -396,7 +490,7 @@ export class ProductionEngine {
         try {
           snapped = await snapRouteToGrid(army.item.position, command.route, this.grid);
         } catch {
-          await this.port.send(CommandGateway.ACK_CHANNEL, {
+          await sendCommandAck(this.port, {
             requestId: command.requestId,
             status: "REJECTED",
             reason: "PERSISTENCE_FAILED",
@@ -406,7 +500,7 @@ export class ProductionEngine {
           return;
         }
         if (!snapped.waypointsWereCentered) {
-          await this.port.send(CommandGateway.ACK_CHANNEL, {
+          await sendCommandAck(this.port, {
             requestId: command.requestId,
             status: "REJECTED",
             reason: "INVALID_COMMAND",
@@ -428,7 +522,7 @@ export class ProductionEngine {
             this.grid
           );
         } catch {
-          await this.port.send(CommandGateway.ACK_CHANNEL, {
+          await sendCommandAck(this.port, {
             requestId: command.requestId,
             status: "REJECTED",
             reason: "PERSISTENCE_FAILED",
@@ -438,7 +532,7 @@ export class ProductionEngine {
           return;
         }
         if (failure) {
-          await this.port.send(CommandGateway.ACK_CHANNEL, {
+          await sendCommandAck(this.port, {
             requestId: command.requestId,
             status: "REJECTED",
             reason: failure,
@@ -462,7 +556,7 @@ export class ProductionEngine {
         !leaseMatches ||
         commitScene.revision !== commandState.scene.revision
       ) {
-        await this.port.send(CommandGateway.ACK_CHANNEL, {
+        await sendCommandAck(this.port, {
           requestId: command.requestId,
           status: "CONFLICT",
           actualRevision: commitScene.revision,
@@ -474,7 +568,7 @@ export class ProductionEngine {
       try {
         await this.persistCommandState(result.state, commandState, sceneItems);
       } catch {
-        await this.port.send(CommandGateway.ACK_CHANNEL, {
+        await sendCommandAck(this.port, {
           requestId: command.requestId,
           status: "REJECTED",
           reason: "PERSISTENCE_FAILED",
@@ -483,14 +577,14 @@ export class ProductionEngine {
         });
         return;
       }
-      await this.port.send(CommandGateway.ACK_CHANNEL, {
+      await sendCommandAck(this.port, {
         requestId: command.requestId,
         status: "ACCEPTED",
         coordinatorConnectionId,
         recipientConnectionId: sender.connectionId
       });
     } else {
-      await this.port.send(CommandGateway.ACK_CHANNEL, {
+      await sendCommandAck(this.port, {
         requestId: command.requestId,
         status: result.status,
         coordinatorConnectionId,
@@ -700,7 +794,6 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
   ]);
   const port = createOwlbearAdapter();
   const engine = new ProductionEngine(port);
-  const connectionId = await OBR.player.getConnectionId();
   const connectedParty = async (): Promise<ConnectedParticipant[]> => {
     const [players, id, role, currentConnectionId] = await Promise.all([
       OBR.party.getPlayers(),
@@ -717,7 +810,11 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
   const routeGateway = new CommandGateway(
     port,
     5_000,
-    async () => electCoordinator(await party())
+    async () => resolveCoordinatorConnectionId(
+      await party(),
+      await engine.readCoordinatorLease().catch(() => undefined),
+      Date.now()
+    )
   );
   routeGateway.start();
   const routeService = new RouteToolService(
@@ -752,13 +849,15 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
   }
   const coordinatorListeners = new Set<(active: boolean) => void>();
   const sceneWork = new SceneWorkTracker();
+  let commandReady = false;
   const lease = new CoordinatorLease({
-    connectionId,
+    currentConnectionId: () => OBR.player.getConnectionId(),
     now: () => Date.now(),
     participants: party,
+    readHeartbeat: () => engine.readCoordinatorLease(),
     writeHeartbeat: (heartbeat) => engine.writeCoordinatorHeartbeat(heartbeat),
-    onTransition: (active) => {
-      engine.setCoordinator(active, active ? connectionId : undefined);
+    onTransition: (active, activeConnectionId) => {
+      engine.setCoordinator(active, activeConnectionId);
       for (const listener of coordinatorListeners) listener(active);
     }
   });
@@ -767,14 +866,24 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
     isSceneReady: () => OBR.scene.isReady(),
     onSceneReady: (callback) => OBR.scene.onReadyChange(callback),
     onSceneOpen: async () => {
-      await removeRouteTool.cancelSession();
       lease.start();
+      try {
+        await removeRouteTool.cancelSession();
+      } catch {
+        // A stale preview must not disable command delivery or coordinator heartbeats.
+      }
+      commandReady = true;
     },
     onSceneClose: async () => {
+      commandReady = false;
       await lease.stop();
       await sceneWork.drain();
       await engine.whenIdle();
-      await removeRouteTool.cancelSession();
+      try {
+        await removeRouteTool.cancelSession();
+      } catch {
+        // Scene teardown continues so subscriptions and overlays can still be cleaned up.
+      }
     },
     onCoordinatorChange: (callback) => {
       coordinatorListeners.add(callback);
@@ -789,14 +898,21 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
     onBroadcast: (callback) => OBR.broadcast.onMessage(CommandGateway.COMMAND_CHANNEL, (event) => {
       callback();
       sceneWork.track((async () => {
-        const players = await connectedParty();
-        const sender = players.find((player) => player.connectionId === event.connectionId);
-        if (!sender) return;
-        await engine.processCommand(event, {
-          role: sender.role,
-          playerId: sender.id,
-          connectionId: sender.connectionId,
-          connectedPlayerIds: new Set(players.map((player) => player.id))
+        const [players, currentConnectionId, persistedLease] = await Promise.all([
+          connectedParty(),
+          OBR.player.getConnectionId(),
+          engine.readCoordinatorLease().catch(() => undefined)
+        ]);
+        await dispatchBackgroundCommand({
+          event,
+          participants: players,
+          currentConnectionId,
+          lease: persistedLease,
+          now: Date.now(),
+          ready: commandReady,
+          active: engine.isCoordinator(),
+          sendAck: (acknowledgement) => sendCommandAck(port, acknowledgement),
+          process: (sender) => engine.processCommand(event, sender)
         });
       })());
     }),

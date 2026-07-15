@@ -2,14 +2,20 @@ import { describe, expect, it } from "vitest";
 import { vi } from "vitest";
 import { CommandGateway } from "../commands/commandGateway";
 import { DEFAULT_SETTINGS, METADATA_KEYS } from "../shared/constants";
-import type { SceneItemRecord, SceneState } from "../shared/types";
+import {
+  COMMAND_PROTOCOL_VERSION,
+  type SceneItemRecord,
+  type SceneState
+} from "../shared/types";
 import type { BarrierRecord } from "../storage/metadataRepository";
 import type { OwlbearPort } from "../owlbear/sdkAdapter";
 import {
   extractBarrierSegments,
+  dispatchBackgroundCommand,
   localOverlayIds,
   mergeCurrentParticipant,
   ProductionEngine,
+  sendCommandAck,
   SceneWorkTracker
 } from "./application";
 
@@ -65,6 +71,99 @@ it("includes route drafts in local overlay cleanup", () => {
       metadata: { other: true }
     }
   ])).toEqual(["route-preview"]);
+});
+
+describe("background command readiness", () => {
+  const participants = [
+    { id: "gm-a", connectionId: "a", role: "GM" as const },
+    { id: "gm-b", connectionId: "b", role: "GM" as const },
+    { id: "player", connectionId: "player-connection", role: "PLAYER" as const }
+  ];
+  const event = {
+    connectionId: "player-connection",
+    data: {
+      protocolVersion: COMMAND_PROTOCOL_VERSION,
+      requestId: "request",
+      senderPlayerId: "player",
+      senderConnectionId: "player-connection",
+      expectedRevision: 1,
+      type: "START_ALL"
+    }
+  };
+
+  it("lets only the authoritative persisted background report not-ready", async () => {
+    const acknowledgements: Array<{ current: string; reason: string | undefined }> = [];
+    for (const currentConnectionId of ["a", "b"]) {
+      await dispatchBackgroundCommand({
+        event,
+        participants,
+        currentConnectionId,
+        lease: { connectionId: "b", epoch: 2, expiresAt: 11_000 },
+        now: 10_000,
+        ready: false,
+        active: false,
+        sendAck: async (ack) => { acknowledgements.push({ current: currentConnectionId, reason: ack.reason }); },
+        process: async () => undefined
+      });
+    }
+
+    expect(acknowledgements).toEqual([{ current: "b", reason: "BACKGROUND_NOT_READY" }]);
+  });
+
+  it("lets the next GM take over an expired persisted lease", async () => {
+    const sendAck = vi.fn(async () => undefined);
+    await dispatchBackgroundCommand({
+      event,
+      participants,
+      currentConnectionId: "b",
+      lease: { connectionId: "a", epoch: 2, expiresAt: 9_999 },
+      now: 10_000,
+      ready: false,
+      active: false,
+      sendAck,
+      process: async () => undefined
+    });
+
+    expect(sendAck).toHaveBeenCalledWith(expect.objectContaining({
+      reason: "BACKGROUND_NOT_READY",
+      coordinatorConnectionId: "b"
+    }));
+  });
+
+  it("rejects a future command protocol immediately", async () => {
+    const sendAck = vi.fn(async () => undefined);
+    await dispatchBackgroundCommand({
+      event: { ...event, data: { ...event.data, protocolVersion: 99 } },
+      participants,
+      currentConnectionId: "a",
+      lease: undefined,
+      now: 10_000,
+      ready: true,
+      active: true,
+      sendAck,
+      process: async () => undefined
+    });
+
+    expect(sendAck).toHaveBeenCalledWith(expect.objectContaining({
+      requestId: "request",
+      reason: "PROTOCOL_MISMATCH"
+    }));
+  });
+
+  it("adds protocol v2 to every wire acknowledgement", async () => {
+    const sent: unknown[] = [];
+    await sendCommandAck({
+      send: async (_channel, data) => { sent.push(data); }
+    }, {
+      requestId: "request",
+      status: "REJECTED",
+      reason: "BACKGROUND_NOT_READY",
+      coordinatorConnectionId: "a",
+      recipientConnectionId: "player-connection"
+    });
+
+    expect(sent).toEqual([expect.objectContaining({ protocolVersion: COMMAND_PROTOCOL_VERSION })]);
+  });
 });
 
 function commandPort(
@@ -155,6 +254,7 @@ describe("ProductionEngine command boundary", () => {
       {
         connectionId: "gm-connection",
         data: {
+          protocolVersion: 2,
           requestId: "register-centred",
           senderPlayerId: "gm",
           senderConnectionId: "gm-connection",
@@ -193,6 +293,7 @@ describe("ProductionEngine command boundary", () => {
       {
         connectionId: "player-connection",
         data: {
+          protocolVersion: 2,
           requestId: "register-rejected",
           senderPlayerId: "player",
           senderConnectionId: "player-connection",
@@ -237,6 +338,7 @@ describe("ProductionEngine command boundary", () => {
       {
         connectionId: "gm-connection",
         data: {
+          protocolVersion: 2,
           requestId: "register-snap-failed",
           senderPlayerId: "gm",
           senderConnectionId: "gm-connection",
@@ -325,6 +427,7 @@ describe("ProductionEngine command boundary", () => {
       {
         connectionId: "actual-connection",
         data: {
+          protocolVersion: 2,
           requestId: "malformed-request",
           senderPlayerId: "actual-player",
           senderConnectionId: "actual-connection",
@@ -348,6 +451,7 @@ describe("ProductionEngine command boundary", () => {
           status: "REJECTED",
           reason: "INVALID_COMMAND",
           coordinatorConnectionId: "coordinator",
+          protocolVersion: COMMAND_PROTOCOL_VERSION,
           recipientConnectionId: "actual-connection"
         }
       }
@@ -363,6 +467,7 @@ describe("ProductionEngine command boundary", () => {
       {
         connectionId: "actual-connection",
         data: {
+          protocolVersion: 2,
           requestId: "forged-request",
           senderPlayerId: "forged-player",
           senderConnectionId: "forged-connection",
@@ -412,6 +517,7 @@ describe("ProductionEngine command boundary", () => {
       {
         connectionId: "gm-connection",
         data: {
+          protocolVersion: 2,
           requestId: "barrier-request",
           senderPlayerId: "gm",
           senderConnectionId: "gm-connection",
@@ -449,6 +555,7 @@ describe("ProductionEngine command boundary", () => {
       {
         connectionId: "gm-connection",
         data: {
+          protocolVersion: 2,
           requestId,
           senderPlayerId: "gm",
           senderConnectionId: "gm-connection",
@@ -496,6 +603,7 @@ describe("ProductionEngine command boundary", () => {
       {
         connectionId: "gm-connection",
         data: {
+          protocolVersion: 2,
           requestId: "raced-command",
           senderPlayerId: "gm",
           senderConnectionId: "gm-connection",
@@ -550,6 +658,7 @@ describe("ProductionEngine command boundary", () => {
       {
         connectionId: "gm-connection",
         data: {
+          protocolVersion: 2,
           requestId: "failed-write",
           senderPlayerId: "gm",
           senderConnectionId: "gm-connection",
@@ -605,6 +714,7 @@ describe("ProductionEngine command boundary", () => {
       {
         connectionId: "gm-connection",
         data: {
+          protocolVersion: 2,
           requestId: "long-route",
           senderPlayerId: "gm",
           senderConnectionId: "gm-connection",
@@ -662,6 +772,7 @@ describe("ProductionEngine command boundary", () => {
       {
         connectionId: "gm-connection",
         data: {
+          protocolVersion: 2,
           requestId: "route-centred",
           senderPlayerId: "gm",
           senderConnectionId: "gm-connection",
@@ -718,6 +829,7 @@ describe("ProductionEngine command boundary", () => {
       {
         connectionId: "gm-connection",
         data: {
+          protocolVersion: 2,
           requestId: "route-unsnapped",
           senderPlayerId: "gm",
           senderConnectionId: "gm-connection",
@@ -789,6 +901,7 @@ describe("ProductionEngine command boundary", () => {
       {
         connectionId: "gm-connection",
         data: {
+          protocolVersion: 2,
           requestId: "route-race",
           senderPlayerId: "gm",
           senderConnectionId: "gm-connection",
@@ -860,6 +973,7 @@ describe("ProductionEngine command boundary", () => {
       {
         connectionId: "gm-connection",
         data: {
+          protocolVersion: 2,
           requestId: "lease-race",
           senderPlayerId: "gm",
           senderConnectionId: "gm-connection",
@@ -939,6 +1053,7 @@ describe("ProductionEngine command boundary", () => {
       {
         connectionId: "gm-connection",
         data: {
+          protocolVersion: 2,
           requestId: "blocked-route",
           senderPlayerId: "gm",
           senderConnectionId: "gm-connection",

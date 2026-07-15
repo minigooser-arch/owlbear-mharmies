@@ -18,17 +18,40 @@ export function electCoordinator(
     .sort()[0];
 }
 
+export function resolveCoordinatorConnectionId(
+  participants: readonly CoordinatorParticipant[],
+  lease: HeartbeatLease | undefined,
+  now: number
+): string | undefined {
+  const liveGms = participants
+    .filter((participant) => participant.role === "GM")
+    .map((participant) => participant.connectionId)
+    .sort();
+  if (liveGms.length === 0) return undefined;
+  const liveIds = new Set(liveGms);
+  if (lease && lease.expiresAt > now && liveIds.has(lease.connectionId)) {
+    return lease.connectionId;
+  }
+  if (lease && lease.expiresAt <= now && liveIds.has(lease.connectionId)) {
+    const successor = liveGms.find((connectionId) => connectionId !== lease.connectionId);
+    return successor ?? lease.connectionId;
+  }
+  return liveGms[0];
+}
+
 export interface CoordinatorLeaseOptions {
-  connectionId: string;
+  currentConnectionId(): Promise<string>;
   now(): number;
   participants(): Promise<readonly CoordinatorParticipant[]>;
+  readHeartbeat(): Promise<HeartbeatLease | undefined>;
   writeHeartbeat(lease: HeartbeatLease): Promise<void>;
-  onTransition?(isCoordinator: boolean): void;
+  onTransition?(isCoordinator: boolean, connectionId?: string): void;
 }
 
 export class CoordinatorLease {
   private intervalId: ReturnType<typeof setInterval> | undefined;
   private coordinator = false;
+  private coordinatorConnectionId: string | undefined;
   private epoch = 0;
   private active = false;
   private generation = 0;
@@ -90,14 +113,23 @@ export class CoordinatorLease {
 
   private async tickOnce(generation: number | undefined): Promise<void> {
     if (!this.generationIsCurrent(generation)) return;
-    const elected = electCoordinator(await this.options.participants());
+    const [connectionId, participants, persistedLease] = await Promise.all([
+      this.options.currentConnectionId(),
+      this.options.participants(),
+      this.options.readHeartbeat()
+    ]);
     if (!this.generationIsCurrent(generation)) return;
-    const isCoordinator = elected === this.options.connectionId;
-    this.setCoordinator(isCoordinator);
+    const elected = resolveCoordinatorConnectionId(
+      participants,
+      persistedLease,
+      this.options.now()
+    );
+    const isCoordinator = elected === connectionId;
+    this.setCoordinator(isCoordinator, isCoordinator ? connectionId : undefined);
     if (!isCoordinator) return;
-    this.epoch += 1;
+    this.epoch = Math.max(this.epoch, persistedLease?.epoch ?? 0) + 1;
     await this.options.writeHeartbeat({
-      connectionId: this.options.connectionId,
+      connectionId,
       epoch: this.epoch,
       expiresAt: this.options.now() + 3_000
     });
@@ -107,9 +139,13 @@ export class CoordinatorLease {
     return generation === undefined || (this.active && generation === this.generation);
   }
 
-  private setCoordinator(value: boolean): void {
-    if (this.coordinator === value) return;
+  private setCoordinator(value: boolean, connectionId?: string): void {
+    if (
+      this.coordinator === value &&
+      (!value || this.coordinatorConnectionId === connectionId)
+    ) return;
     this.coordinator = value;
-    this.options.onTransition?.(value);
+    this.coordinatorConnectionId = value ? connectionId : undefined;
+    this.options.onTransition?.(value, this.coordinatorConnectionId);
   }
 }

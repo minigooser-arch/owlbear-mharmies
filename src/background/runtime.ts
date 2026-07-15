@@ -49,6 +49,7 @@ export class BackgroundRuntime {
   start(): void {
     if (this.started) return;
     this.started = true;
+    this.readySubscriptions.add(this.port.onBroadcast(() => undefined));
     this.readySubscriptions.add(this.port.onSceneReady((ready) => {
       this.readyGeneration += 1;
       this.trackLifecycle(async () => {
@@ -122,7 +123,6 @@ export class BackgroundRuntime {
       this.sceneSubscriptions.add(this.port.onGridChange(() => this.requestVisibilityTick()));
       this.sceneSubscriptions.add(this.port.onPlayerChange(() => this.requestVisibilityTick()));
       this.sceneSubscriptions.add(this.port.onPartyChange(() => this.requestVisibilityTick()));
-      this.sceneSubscriptions.add(this.port.onBroadcast(() => undefined));
       this.movementTimer = setInterval(
         () => this.requestMovementTick(),
         1_000 / this.rates.movementHz

@@ -49,14 +49,14 @@ interface PendingRequest {
 
 export class CommandTimeoutError extends Error {
   constructor(readonly requestId: string) {
-    super("Command acknowledgement timed out");
+    super("COMMAND_TIMEOUT");
     this.name = "CommandTimeoutError";
   }
 }
 
 export class NoCoordinatorError extends Error {
   constructor(readonly requestId: string) {
-    super("No live command coordinator is available");
+    super("NO_COORDINATOR");
     this.name = "NoCoordinatorError";
   }
 }

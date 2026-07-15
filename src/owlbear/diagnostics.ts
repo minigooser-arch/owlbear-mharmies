@@ -1,3 +1,7 @@
+import type {
+  AckRejectionReason,
+  BroadcastEvent
+} from "../commands/commandGateway";
 import type { SceneItemRecord, Vector2 } from "../shared/types";
 
 export type DiagnosticTestId =
@@ -27,7 +31,14 @@ export interface DiagnosticsPort {
   probeContextMenu(): Promise<boolean>;
 }
 
+export interface AckRejectionDiagnostic {
+  reason: AckRejectionReason;
+  connectionId: string;
+  requestId?: string;
+}
+
 const BACKGROUND_BASELINE_KEY = "com.letopis.army-control/diagnostic-background-baseline";
+const ACK_REJECTION_LOG_LIMIT = 50;
 
 function detail(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -35,9 +46,27 @@ function detail(error: unknown): string {
 
 export class DiagnosticsService {
   private readonly temporaryIds = new Set<string>();
+  private readonly ackRejections: AckRejectionDiagnostic[] = [];
   private memoryBaseline: number | undefined;
 
   constructor(private readonly port: DiagnosticsPort) {}
+
+  recordAckRejection(reason: AckRejectionReason, event: BroadcastEvent): void {
+    const data = typeof event.data === "object" && event.data !== null
+      ? event.data as Record<string, unknown>
+      : undefined;
+    const requestId = typeof data?.requestId === "string" ? data.requestId : undefined;
+    this.ackRejections.push({
+      reason,
+      connectionId: event.connectionId,
+      ...(requestId ? { requestId } : {})
+    });
+    if (this.ackRejections.length > ACK_REJECTION_LOG_LIMIT) this.ackRejections.shift();
+  }
+
+  getAckRejections(): readonly AckRejectionDiagnostic[] {
+    return this.ackRejections.map((record) => ({ ...record }));
+  }
 
   async run(testId: DiagnosticTestId): Promise<DiagnosticResult> {
     if (testId === "BACKGROUND") return this.finishBackgroundProbe();
