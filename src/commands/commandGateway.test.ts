@@ -10,6 +10,20 @@ import {
 class MemoryBroadcast implements BroadcastPort {
   listeners = new Map<string, Set<(event: BroadcastEvent) => void>>();
   sent: Array<{ channel: string; data: unknown }> = [];
+  coordinatorConnectionId = "real";
+
+  async getSceneMetadata(): Promise<Record<string, unknown>> {
+    return {
+      "com.letopis.army-control/scene": {
+        version: 2,
+        coordinatorLease: {
+          connectionId: this.coordinatorConnectionId,
+          epoch: 1,
+          expiresAt: Date.now() + 3_000
+        }
+      }
+    };
+  }
 
   async send(channel: string, data: unknown): Promise<void> {
     this.sent.push({ channel, data });
@@ -47,20 +61,26 @@ function accepted(recipientConnectionId = "sender") {
 }
 
 describe("CommandGateway", () => {
-  it("resolves only an ack whose coordinator connection matches the event", async () => {
+  it("ignores a peer ack that self-asserts the peer as coordinator", async () => {
     const port = new MemoryBroadcast();
     const gateway = new CommandGateway(port, 1_000);
     gateway.start();
     const pending = gateway.send(command());
     port.emit(CommandGateway.ACK_CHANNEL, {
       connectionId: "forged",
-      data: accepted()
+      data: {
+        ...accepted(),
+        coordinatorConnectionId: "forged"
+      }
     });
     port.emit(CommandGateway.ACK_CHANNEL, {
       connectionId: "real",
       data: accepted()
     });
-    await expect(pending).resolves.toMatchObject({ status: "ACCEPTED" });
+    await expect(pending).resolves.toMatchObject({
+      status: "ACCEPTED",
+      coordinatorConnectionId: "real"
+    });
     gateway.stop();
   });
 
@@ -136,6 +156,33 @@ describe("CommandGateway", () => {
       expect("error" in outcome ? outcome.error : undefined).toMatchObject({
         name: "CommandTimeoutError",
         requestId: "request"
+      });
+      gateway.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("times out cleanly when the trusted coordinator lookup fails", async () => {
+    vi.useFakeTimers();
+    try {
+      const port = new MemoryBroadcast();
+      const gateway = new CommandGateway(
+        port,
+        100,
+        async () => { throw new Error("metadata unavailable"); }
+      );
+      gateway.start();
+      const pending = gateway.send(command()).then(
+        () => ({ status: "RESOLVED" as const }),
+        (error: unknown) => ({ status: "REJECTED" as const, error })
+      );
+
+      await vi.advanceTimersByTimeAsync(100);
+
+      await expect(pending).resolves.toMatchObject({
+        status: "REJECTED",
+        error: { name: "CommandTimeoutError", requestId: "request" }
       });
       gateway.stop();
     } finally {

@@ -20,7 +20,15 @@ export interface OwlbearPort
     LocalClonePort,
     BroadcastPort,
     GridSdkPort,
-    NotificationPort {}
+    NotificationPort {
+  patchSceneItemMetadata(
+    id: string,
+    key: string,
+    value: unknown | undefined,
+    update?: ItemUpdate,
+    expectedRevision?: number | null
+  ): Promise<void>;
+}
 
 interface SceneCollectionLike {
   getItems(): Promise<unknown[]>;
@@ -70,9 +78,20 @@ export function createLocalImageClone(
   return clone;
 }
 
-function createSdkImageClone(source: SceneItemRecord): SceneItemRecord {
+export interface LocalImageBuilderFactory {
+  image(image: Image["image"], grid: Image["grid"]): ReturnType<typeof buildImage>;
+}
+
+const DEFAULT_IMAGE_BUILDERS: LocalImageBuilderFactory = {
+  image: (image, grid) => buildImage(image, grid)
+};
+
+export function createSdkImageClone(
+  source: SceneItemRecord,
+  builders: LocalImageBuilderFactory = DEFAULT_IMAGE_BUILDERS
+): SceneItemRecord {
   const image = source as unknown as Image;
-  let builder = buildImage(image.image, image.grid)
+  let builder = builders.image(image.image, image.grid)
     .name(source.name ?? "Армия")
     .position(source.position)
     .rotation(source.rotation ?? 0)
@@ -80,8 +99,12 @@ function createSdkImageClone(source: SceneItemRecord): SceneItemRecord {
     .layer((source.layer ?? "CHARACTER") as Layer)
     .zIndex(source.zIndex ?? 0)
     .visible(true)
+    .locked(true)
+    .disableHit(true)
+    .disableAutoZIndex(true)
     .metadata(localCloneMetadata(source.id) as Metadata)
-    .text(image.text);
+    .text(image.text)
+    .textItemType(image.textItemType);
   if (typeof source.description === "string") builder = builder.description(source.description);
   return builder.build() as unknown as SceneItemRecord;
 }
@@ -170,11 +193,56 @@ export function createOwlbearAdapter(
     });
   };
 
+  const patchCollectionItemMetadata = async (
+    collection: SceneCollectionLike,
+    id: string,
+    key: string,
+    value: unknown | undefined,
+    update: ItemUpdate = {},
+    expectedRevision?: number | null
+  ): Promise<void> => {
+    await collection.updateItems([id], (drafts) => {
+      const draft = drafts[0];
+      if (!draft) throw new Error(`Item not found: ${id}`);
+      if (expectedRevision !== undefined) {
+        const current = draft.metadata[key];
+        const currentRevision = typeof current === "object" && current !== null
+          ? typeof (current as Record<string, unknown>).revision === "number"
+            ? (current as Record<string, unknown>).revision
+            : 0
+          : undefined;
+        const matches = expectedRevision === null
+          ? current === undefined
+          : currentRevision === expectedRevision;
+        if (!matches) throw new Error(`Metadata revision conflict: ${key}`);
+      }
+      for (const [field, fieldValue] of Object.entries(update)) {
+        if (field !== "metadata") draft[field] = fieldValue;
+      }
+      if (value === undefined) {
+        draft.metadata = Object.fromEntries(
+          Object.entries(draft.metadata).filter(([metadataKey]) => metadataKey !== key)
+        );
+      } else {
+        draft.metadata = { ...draft.metadata, [key]: value };
+      }
+    });
+  };
+
   return {
     getSceneMetadata: () => sdk.scene.getMetadata(),
     patchSceneMetadata: (update) => sdk.scene.setMetadata(update),
     getSceneItems: allSceneItems,
     updateSceneItem: (id, update) => updateCollectionItem(sdk.scene.items, id, update),
+    patchSceneItemMetadata: (id, key, value, update, expectedRevision) =>
+      patchCollectionItemMetadata(
+        sdk.scene.items,
+        id,
+        key,
+        value,
+        update,
+        expectedRevision
+      ),
     getLocalItems: allLocalItems,
     addLocalItem: async (item) => sdk.scene.local.addItems([
       createSdkLocalItem(item) as unknown as Item

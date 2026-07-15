@@ -3,6 +3,6 @@ import { startBackgroundApplication } from "./application";
 
 OBR.onReady(() => {
   void startBackgroundApplication().then((application) => {
-    window.addEventListener("beforeunload", () => application.stop(), { once: true });
+    window.addEventListener("beforeunload", () => void application.stop(), { once: true });
   });
 });

@@ -8,8 +8,11 @@ import { validateArmyCommand } from "../commands/commandValidation";
 import { advanceArmy } from "../movement/movementEngine";
 import { GridDistanceService } from "../grid/gridDistance";
 import { RouteOverlayService } from "../routes/routeOverlayService";
-import { registerRouteTool } from "../owlbear/routeToolIntegration";
-import { RouteToolService } from "./routeToolService";
+import {
+  registerRouteTool,
+  type RouteToolRegistration
+} from "../owlbear/routeToolIntegration";
+import { RouteToolService, validateRouteConstraints } from "./routeToolService";
 import { METADATA_KEYS } from "../shared/constants";
 import type {
   ArmyState,
@@ -24,7 +27,11 @@ import { buildDetectionGraph } from "../visibility/detectionGraph";
 import { LocalCloneReconciler, UpdateOriginGuard } from "../visibility/localCloneReconciler";
 import { visibleArmyIdsForPlayer } from "../visibility/visibilityEngine";
 import type { OwlbearPort } from "../owlbear/sdkAdapter";
-import { CoordinatorLease, type CoordinatorParticipant } from "./coordinator";
+import {
+  CoordinatorLease,
+  electCoordinator,
+  type CoordinatorParticipant
+} from "./coordinator";
 import { BackgroundRuntime, type BackgroundRuntimePort } from "./runtime";
 
 type BarrierPurpose = "movement" | "vision";
@@ -33,6 +40,22 @@ export interface ConnectedParticipant {
   id: string;
   connectionId: string;
   role: "GM" | "PLAYER";
+}
+
+export class SceneWorkTracker {
+  private readonly pending = new Set<Promise<void>>();
+
+  track(work: Promise<unknown>): void {
+    const tracked = work.then(() => undefined).finally(() => this.pending.delete(tracked));
+    this.pending.add(tracked);
+    void tracked.catch(() => undefined);
+  }
+
+  async drain(): Promise<void> {
+    while (this.pending.size > 0) {
+      await Promise.allSettled([...this.pending]);
+    }
+  }
 }
 
 export function mergeCurrentParticipant(
@@ -93,11 +116,21 @@ export interface CommandSender {
   connectedPlayerIds: ReadonlySet<string>;
 }
 
+interface AppliedMetadataWrite {
+  itemId: string;
+  key: string;
+  previousValue: unknown | undefined;
+  rollbackUpdate: Record<string, unknown>;
+  expectedRevision: number | null;
+}
+
 export class ProductionEngine {
   private readonly repository: MetadataRepository;
   private readonly grid: GridDistanceService;
   private readonly cloneReconciler: LocalCloneReconciler;
   private coordinator = false;
+  private coordinatorGeneration = 0;
+  private activeCoordinatorConnectionId: string | undefined;
   private lastMovementAt = performance.now();
   private mutationTail: Promise<void> = Promise.resolve();
 
@@ -107,9 +140,19 @@ export class ProductionEngine {
     this.cloneReconciler = new LocalCloneReconciler(port, new UpdateOriginGuard());
   }
 
-  setCoordinator(active: boolean): void {
+  setCoordinator(active: boolean, connectionId?: string): void {
+    this.coordinatorGeneration += 1;
     this.coordinator = active;
+    this.activeCoordinatorConnectionId = active ? connectionId : undefined;
     if (active) this.lastMovementAt = performance.now();
+  }
+
+  private captureCoordinatorGuard(expectedConnectionId = this.activeCoordinatorConnectionId): () => boolean {
+    const generation = this.coordinatorGeneration;
+    return () =>
+      this.coordinator &&
+      this.coordinatorGeneration === generation &&
+      this.activeCoordinatorConnectionId === expectedConnectionId;
   }
 
   async visibilityTick(role: "GM" | "PLAYER", playerId: string): Promise<void> {
@@ -154,6 +197,8 @@ export class ProductionEngine {
 
   private async movementTickNow(): Promise<void> {
     if (!this.coordinator) return;
+    const expectedCoordinatorConnectionId = this.activeCoordinatorConnectionId;
+    const canCommit = this.captureCoordinatorGuard(expectedCoordinatorConnectionId);
     const now = performance.now();
     const deltaSeconds = Math.max(0, (now - this.lastMovementAt) / 1_000);
     this.lastMovementAt = now;
@@ -235,18 +280,25 @@ export class ProductionEngine {
     }
 
     for (const frame of frames) {
-      await this.port.updateSceneItem(frame.record.item.id, {
-        position: frame.to,
-        metadata: {
-          ...frame.record.item.metadata,
-          [METADATA_KEYS.army]: frame.state
-        }
-      });
+      if (!canCommit()) return;
+      await this.port.patchSceneItemMetadata(
+        frame.record.item.id,
+        METADATA_KEYS.army,
+        frame.state,
+        { position: frame.to },
+        frame.record.state.revision
+      );
     }
     if (battleGroups) {
-      await this.port.patchSceneMetadata({
-        [METADATA_KEYS.scene]: { ...scene, revision: scene.revision + 1, battleGroups }
-      });
+      if (!canCommit()) return;
+      await this.repository.writeScene(
+        { ...scene, revision: scene.revision + 1, battleGroups },
+        scene.revision,
+        (current) =>
+          canCommit() &&
+          (expectedCoordinatorConnectionId === undefined ||
+            current.coordinatorLease?.connectionId === expectedCoordinatorConnectionId)
+      );
     }
   }
 
@@ -258,15 +310,16 @@ export class ProductionEngine {
     const armies = await this.repository.readArmies();
     for (const record of armies) {
       if (record.state.status !== "MOVING") continue;
-      await this.port.updateSceneItem(record.item.id, {
-        metadata: {
-          ...record.item.metadata,
-          [METADATA_KEYS.army]: cloneArmyState(record.state, {
-            status: "PAUSED",
-            stopReason: "COORDINATOR_GAP"
-          })
-        }
-      });
+      await this.port.patchSceneItemMetadata(
+        record.item.id,
+        METADATA_KEYS.army,
+        cloneArmyState(record.state, {
+          status: "PAUSED",
+          stopReason: "COORDINATOR_GAP"
+        }),
+        {},
+        record.state.revision
+      );
     }
   }
 
@@ -314,15 +367,52 @@ export class ProductionEngine {
       command
     );
     const coordinatorConnectionId = await this.currentConnectionId();
+    if (result.status === "ACCEPTED" && command.type === "SET_ROUTE") {
+      const army = armyRecords.find((record) => record.item.id === command.armyId);
+      if (army) {
+        const failure = await validateRouteConstraints(
+          army.item.position,
+          command.route,
+          army.state.overrides.maxRouteDistanceCells ??
+            scene.settings.defaultMaxRouteDistanceCells,
+          army.state.ignoresMovementBarriers
+            ? []
+            : extractBarrierSegments(barrierRecords, "movement"),
+          this.grid
+        );
+        if (failure) {
+          await this.port.send(CommandGateway.ACK_CHANNEL, {
+            requestId: command.requestId,
+            status: "REJECTED",
+            reason: failure,
+            coordinatorConnectionId,
+            recipientConnectionId: sender.connectionId
+          });
+          return;
+        }
+      }
+    }
     if (result.status === "ACCEPTED") {
+      const commitScene = await this.repository.readScene();
+      const leaseMatches = this.activeCoordinatorConnectionId === undefined ||
+        commitScene.coordinatorLease?.connectionId === this.activeCoordinatorConnectionId;
+      if (
+        !this.coordinator ||
+        !leaseMatches ||
+        commitScene.revision !== commandState.scene.revision
+      ) {
+        await this.port.send(CommandGateway.ACK_CHANNEL, {
+          requestId: command.requestId,
+          status: "CONFLICT",
+          actualRevision: commitScene.revision,
+          coordinatorConnectionId,
+          recipientConnectionId: sender.connectionId
+        });
+        return;
+      }
       try {
         await this.persistCommandState(result.state, commandState, sceneItems);
       } catch {
-        try {
-          await this.persistCommandState(commandState, result.state, sceneItems);
-        } catch {
-          // Best-effort rollback: Owlbear scene/item writes are not transactional.
-        }
         await this.port.send(CommandGateway.ACK_CHANNEL, {
           requestId: command.requestId,
           status: "REJECTED",
@@ -350,6 +440,7 @@ export class ProductionEngine {
   }
 
   private async currentConnectionId(): Promise<string> {
+    if (this.activeCoordinatorConnectionId) return this.activeCoordinatorConnectionId;
     const raw = (await this.repository.readScene()).coordinatorLease?.connectionId;
     return raw ?? "";
   }
@@ -359,47 +450,106 @@ export class ProductionEngine {
     previous: CommandState,
     items: readonly SceneItemRecord[]
   ): Promise<void> {
-    await this.port.patchSceneMetadata({ [METADATA_KEYS.scene]: next.scene });
     const itemById = new Map(items.map((item) => [item.id, item]));
-    const armyIds = new Set([...Object.keys(previous.armies), ...Object.keys(next.armies)]);
-    for (const armyId of armyIds) {
-      const previousState = previous.armies[armyId];
-      const state = next.armies[armyId];
-      const previousPosition = previous.positions?.[armyId];
-      const nextPosition = next.positions?.[armyId];
-      if (
-        JSON.stringify(previousState) === JSON.stringify(state) &&
-        JSON.stringify(previousPosition) === JSON.stringify(nextPosition)
-      ) {
-        continue;
+    const applied: AppliedMetadataWrite[] = [];
+    const expectedCoordinatorConnectionId = this.activeCoordinatorConnectionId;
+    const canCommit = this.captureCoordinatorGuard(expectedCoordinatorConnectionId);
+    try {
+      const armyIds = new Set([...Object.keys(previous.armies), ...Object.keys(next.armies)]);
+      for (const armyId of armyIds) {
+        const previousState = previous.armies[armyId];
+        const state = next.armies[armyId];
+        const previousPosition = previous.positions?.[armyId];
+        const nextPosition = next.positions?.[armyId];
+        if (
+          JSON.stringify(previousState) === JSON.stringify(state) &&
+          JSON.stringify(previousPosition) === JSON.stringify(nextPosition)
+        ) {
+          continue;
+        }
+        const item = itemById.get(armyId);
+        if (!item) continue;
+        if (!canCommit()) throw new Error("Coordinator stopped during persistence");
+        await this.port.patchSceneItemMetadata(armyId, METADATA_KEYS.army, state, {
+          visible: state === undefined,
+          ...(nextPosition ? { position: nextPosition } : {})
+        }, previousState?.revision ?? null);
+        applied.push({
+          itemId: armyId,
+          key: METADATA_KEYS.army,
+          previousValue: previousState,
+          rollbackUpdate: {
+            visible: item.visible ?? true,
+            ...(previousPosition ? { position: previousPosition } : {})
+          },
+          expectedRevision: state?.revision ?? null
+        });
       }
-      const item = itemById.get(armyId);
-      if (!item) continue;
-      const metadata = Object.fromEntries(
-        Object.entries(item.metadata).filter(([key]) => key !== METADATA_KEYS.army)
+      const barrierIds = new Set([
+        ...Object.keys(previous.barriers),
+        ...Object.keys(next.barriers)
+      ]);
+      for (const barrierId of barrierIds) {
+        const previousState = previous.barriers[barrierId];
+        const state = next.barriers[barrierId];
+        if (JSON.stringify(previousState) === JSON.stringify(state)) continue;
+        if (!itemById.has(barrierId)) continue;
+        if (!canCommit()) throw new Error("Coordinator stopped during persistence");
+        await this.port.patchSceneItemMetadata(
+          barrierId,
+          METADATA_KEYS.barrier,
+          state,
+          {},
+          previousState?.revision ?? null
+        );
+        applied.push({
+          itemId: barrierId,
+          key: METADATA_KEYS.barrier,
+          previousValue: previousState,
+          rollbackUpdate: {},
+          expectedRevision: state?.revision ?? null
+        });
+      }
+      if (!canCommit()) throw new Error("Coordinator stopped during persistence");
+      const latestScene = await this.repository.readScene();
+      if (!canCommit()) throw new Error("Coordinator stopped during persistence");
+      if (latestScene.revision !== previous.scene.revision) {
+        throw new Error("Scene revision changed during command persistence");
+      }
+      if (
+        expectedCoordinatorConnectionId !== undefined &&
+        latestScene.coordinatorLease?.connectionId !== expectedCoordinatorConnectionId
+      ) {
+        throw new Error("Coordinator lease changed during command persistence");
+      }
+      const nextSceneWithoutLease = { ...next.scene };
+      delete nextSceneWithoutLease.coordinatorLease;
+      const sceneToWrite = latestScene.coordinatorLease
+        ? { ...nextSceneWithoutLease, coordinatorLease: latestScene.coordinatorLease }
+        : nextSceneWithoutLease;
+      await this.repository.writeScene(
+        sceneToWrite,
+        previous.scene.revision,
+        (current) =>
+          canCommit() &&
+          (expectedCoordinatorConnectionId === undefined ||
+            current.coordinatorLease?.connectionId === expectedCoordinatorConnectionId)
       );
-      if (state) metadata[METADATA_KEYS.army] = state;
-      await this.port.updateSceneItem(armyId, {
-        metadata,
-        visible: state === undefined,
-        ...(next.positions?.[armyId] ? { position: next.positions[armyId] } : {})
-      });
-    }
-    const barrierIds = new Set([
-      ...Object.keys(previous.barriers),
-      ...Object.keys(next.barriers)
-    ]);
-    for (const barrierId of barrierIds) {
-      const previousState = previous.barriers[barrierId];
-      const state = next.barriers[barrierId];
-      if (JSON.stringify(previousState) === JSON.stringify(state)) continue;
-      const item = itemById.get(barrierId);
-      if (!item) continue;
-      const metadata = Object.fromEntries(
-        Object.entries(item.metadata).filter(([key]) => key !== METADATA_KEYS.barrier)
-      );
-      if (state) metadata[METADATA_KEYS.barrier] = state;
-      await this.port.updateSceneItem(barrierId, { metadata });
+    } catch (error) {
+      for (const write of applied.reverse()) {
+        try {
+          await this.port.patchSceneItemMetadata(
+            write.itemId,
+            write.key,
+            write.previousValue,
+            write.rollbackUpdate,
+            write.expectedRevision
+          );
+        } catch {
+          // A newer item revision wins over this guarded compensation.
+        }
+      }
+      throw error;
     }
   }
 
@@ -407,10 +557,20 @@ export class ProductionEngine {
     heartbeat: NonNullable<SceneState["coordinatorLease"]>
   ): Promise<void> {
     return this.enqueueMutation(async () => {
+      const canCommit = this.captureCoordinatorGuard(heartbeat.connectionId);
+      if (!canCommit()) return;
       const scene = await this.repository.readScene();
-      await this.port.patchSceneMetadata({
-        [METADATA_KEYS.scene]: { ...scene, coordinatorLease: heartbeat }
-      });
+      if (!canCommit()) return;
+      try {
+        await this.repository.writeScene(
+          { ...scene, coordinatorLease: heartbeat },
+          scene.revision,
+          () => canCommit()
+        );
+      } catch (error) {
+        if (!canCommit()) return;
+        throw error;
+      }
     });
   }
 
@@ -421,6 +581,10 @@ export class ProductionEngine {
       () => undefined
     );
     return result;
+  }
+
+  async whenIdle(): Promise<void> {
+    await this.mutationTail;
   }
 
   private async reconcileOverlays(
@@ -466,7 +630,7 @@ export class ProductionEngine {
 }
 
 export interface BackgroundApplication {
-  stop(): void;
+  stop(): Promise<void>;
 }
 
 export async function startBackgroundApplication(): Promise<BackgroundApplication> {
@@ -477,7 +641,24 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
   const port = createOwlbearAdapter();
   const engine = new ProductionEngine(port);
   const connectionId = await OBR.player.getConnectionId();
-  const routeGateway = new CommandGateway(port);
+  const connectedParty = async (): Promise<ConnectedParticipant[]> => {
+    const [players, id, role, currentConnectionId] = await Promise.all([
+      OBR.party.getPlayers(),
+      OBR.player.getId(),
+      OBR.player.getRole(),
+      OBR.player.getConnectionId()
+    ]);
+    return mergeCurrentParticipant(players, { id, role, connectionId: currentConnectionId });
+  };
+  const party = async (): Promise<CoordinatorParticipant[]> => {
+    const players = await connectedParty();
+    return players.map((player) => ({ connectionId: player.connectionId, role: player.role }));
+  };
+  const routeGateway = new CommandGateway(
+    port,
+    5_000,
+    async () => electCoordinator(await party())
+  );
   routeGateway.start();
   const routeService = new RouteToolService(
     Object.assign(port, {
@@ -494,7 +675,7 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
     }),
     routeGateway
   );
-  let removeRouteTool: () => Promise<void>;
+  let removeRouteTool: RouteToolRegistration;
   try {
     removeRouteTool = await registerRouteTool(
       OBR.tool,
@@ -507,32 +688,31 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
     throw error;
   }
   const coordinatorListeners = new Set<(active: boolean) => void>();
-  const connectedParty = async (): Promise<ConnectedParticipant[]> => {
-    const [players, id, role, currentConnectionId] = await Promise.all([
-      OBR.party.getPlayers(),
-      OBR.player.getId(),
-      OBR.player.getRole(),
-      OBR.player.getConnectionId()
-    ]);
-    return mergeCurrentParticipant(players, { id, role, connectionId: currentConnectionId });
-  };
-  const party = async (): Promise<CoordinatorParticipant[]> => {
-    const players = await connectedParty();
-    return players.map((player) => ({ connectionId: player.connectionId, role: player.role }));
-  };
+  const sceneWork = new SceneWorkTracker();
   const lease = new CoordinatorLease({
     connectionId,
     now: () => Date.now(),
     participants: party,
     writeHeartbeat: (heartbeat) => engine.writeCoordinatorHeartbeat(heartbeat),
     onTransition: (active) => {
-      engine.setCoordinator(active);
+      engine.setCoordinator(active, active ? connectionId : undefined);
       for (const listener of coordinatorListeners) listener(active);
     }
   });
 
   const runtimePort: BackgroundRuntimePort = {
+    isSceneReady: () => OBR.scene.isReady(),
     onSceneReady: (callback) => OBR.scene.onReadyChange(callback),
+    onSceneOpen: async () => {
+      await removeRouteTool.cancelSession();
+      lease.start();
+    },
+    onSceneClose: async () => {
+      await lease.stop();
+      await sceneWork.drain();
+      await engine.whenIdle();
+      await removeRouteTool.cancelSession();
+    },
     onCoordinatorChange: (callback) => {
       coordinatorListeners.add(callback);
       return () => coordinatorListeners.delete(callback);
@@ -545,7 +725,7 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
     onPartyChange: (callback) => OBR.party.onChange(callback),
     onBroadcast: (callback) => OBR.broadcast.onMessage(CommandGateway.COMMAND_CHANNEL, (event) => {
       callback();
-      void (async () => {
+      sceneWork.track((async () => {
         const players = await connectedParty();
         const sender = players.find((player) => player.connectionId === event.connectionId);
         if (!sender) return;
@@ -555,7 +735,7 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
           connectionId: sender.connectionId,
           connectedPlayerIds: new Set(players.map((player) => player.id))
         });
-      })();
+      })());
     }),
     deleteLocalOverlays: async () => {
       const items = await port.getLocalItems();
@@ -568,17 +748,24 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
   };
   const runtime = new BackgroundRuntime(runtimePort);
   runtime.start();
-  lease.start();
   const counter = setInterval(() => {
     const key = `${METADATA_KEYS.scene}/background-counter`;
     localStorage.setItem(key, String(Number(localStorage.getItem(key) ?? 0) + 1));
   }, 1_000);
+  let stopWork: Promise<void> | undefined;
   return {
     stop: () => {
-      clearInterval(counter);
-      runtime.stop();
-      lease.stop();
-      void removeRouteTool().finally(() => routeGateway.stop());
+      stopWork ??= (async () => {
+        clearInterval(counter);
+        await runtime.stop();
+        await lease.stop();
+        try {
+          await removeRouteTool();
+        } finally {
+          routeGateway.stop();
+        }
+      })();
+      return stopWork;
     }
   };
 }

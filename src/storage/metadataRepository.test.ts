@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { METADATA_KEYS } from "../shared/constants";
 import type { ArmyState, ItemUpdate, SceneItemRecord, SceneState } from "../shared/types";
 import {
+  CommitPreconditionFailed,
   FutureSchemaError,
   MetadataRepository,
   RevisionConflict,
@@ -86,6 +87,17 @@ describe("MetadataRepository", () => {
     const repository = new MetadataRepository(port);
 
     await expect(repository.writeScene(scene(3), 2)).rejects.toBeInstanceOf(RevisionConflict);
+  });
+
+  it("checks a scene commit precondition after reading the current revision", async () => {
+    const port = new MemoryPort();
+    port.sceneMetadata[METADATA_KEYS.scene] = scene(3);
+    const repository = new MetadataRepository(port);
+
+    await expect(repository.writeScene(scene(4), 3, () => false)).rejects.toBeInstanceOf(
+      CommitPreconditionFailed
+    );
+    expect(port.sceneMetadata[METADATA_KEYS.scene]).toEqual(scene(3));
   });
 
   it("never overwrites an unknown future army schema", async () => {

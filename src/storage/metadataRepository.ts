@@ -14,6 +14,13 @@ export interface MetadataPort {
   patchSceneMetadata(update: Record<string, unknown>): Promise<void>;
   getSceneItems(): Promise<SceneItemRecord[]>;
   updateSceneItem(id: string, update: ItemUpdate): Promise<void>;
+  patchSceneItemMetadata?(
+    id: string,
+    key: string,
+    value: unknown | undefined,
+    update?: ItemUpdate,
+    expectedRevision?: number | null
+  ): Promise<void>;
 }
 
 export class RevisionConflict extends Error {
@@ -37,6 +44,13 @@ export class InvalidMetadataError extends Error {
   constructor(readonly path: string) {
     super(`Invalid metadata at ${path}`);
     this.name = "InvalidMetadataError";
+  }
+}
+
+export class CommitPreconditionFailed extends Error {
+  constructor() {
+    super("Scene write precondition failed");
+    this.name = "CommitPreconditionFailed";
   }
 }
 
@@ -71,11 +85,16 @@ export class MetadataRepository {
     return requireValid(migrateSceneState(raw), METADATA_KEYS.scene);
   }
 
-  async writeScene(state: SceneState, expectedRevision: number): Promise<void> {
+  async writeScene(
+    state: SceneState,
+    expectedRevision: number,
+    canCommit: (current: SceneState) => boolean = () => true
+  ): Promise<void> {
     const metadata = await this.port.getSceneMetadata();
     const raw = metadata[METADATA_KEYS.scene] ?? { version: 2 };
     const current = requireValid(migrateSceneState(raw), METADATA_KEYS.scene);
     assertRevision(current.revision, expectedRevision);
+    if (!canCommit(current)) throw new CommitPreconditionFailed();
     await this.port.patchSceneMetadata({ [METADATA_KEYS.scene]: state });
   }
 
@@ -97,6 +116,16 @@ export class MetadataRepository {
     const actualRevision =
       raw === undefined ? 0 : requireValid(migrateArmyState(raw), METADATA_KEYS.army).revision;
     assertRevision(actualRevision, expectedRevision);
+    if (this.port.patchSceneItemMetadata) {
+      await this.port.patchSceneItemMetadata(
+        itemId,
+        METADATA_KEYS.army,
+        state,
+        {},
+        raw === undefined ? null : expectedRevision
+      );
+      return;
+    }
     await this.port.updateSceneItem(itemId, {
       metadata: { ...item.metadata, [METADATA_KEYS.army]: state }
     });
@@ -104,6 +133,16 @@ export class MetadataRepository {
 
   async clearArmy(itemId: string): Promise<void> {
     const item = await this.findItem(itemId);
+    if (this.port.patchSceneItemMetadata) {
+      const raw = item.metadata[METADATA_KEYS.army];
+      const expectedRevision = raw === undefined
+        ? null
+        : requireValid(migrateArmyState(raw), METADATA_KEYS.army).revision;
+      await this.port.patchSceneItemMetadata(itemId, METADATA_KEYS.army, undefined, {
+        visible: true
+      }, expectedRevision);
+      return;
+    }
     const metadata = Object.fromEntries(
       Object.entries(item.metadata).filter(([key]) => key !== METADATA_KEYS.army)
     );

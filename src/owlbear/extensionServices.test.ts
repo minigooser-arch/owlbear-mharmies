@@ -134,7 +134,13 @@ const serviceHarness = vi.hoisted(() => {
       onChange: vi.fn(() => () => undefined)
     },
     party: {
-      getPlayers: vi.fn(async () => []),
+      getPlayers: vi.fn(async () => [{
+        id: "coordinator-gm",
+        connectionId: "coordinator",
+        name: "Координатор",
+        color: "#000",
+        role: "GM" as const
+      }]),
       onChange: vi.fn(() => () => undefined)
     },
     notification: { show: notificationShow },
@@ -238,6 +244,51 @@ it("derives leader sides by internal id and hides legacy direct ownership", () =
   expect(snapshot.armies[0]).not.toHaveProperty("directOwnerPlayerId");
 });
 
+it.each([
+  ["GM", "gm", "READY", true],
+  ["PLAYER", "leader", "READY", true],
+  ["PLAYER", "member", "READY", false],
+  ["PLAYER", "member", "MOVING", true],
+  ["PLAYER", "outsider", "MOVING", false]
+] as const)(
+  "filters %s %s route coordinates for a %s army",
+  (role, playerId, status, routeVisible) => {
+    const scene: SceneState = {
+      version: 2,
+      revision: 1,
+      settings: DEFAULT_SETTINGS,
+      sides: [{
+        id: "A",
+        name: "Красные",
+        color: "#f00",
+        playerIds: ["leader", "member"],
+        leaderPlayerIds: ["leader"]
+      }],
+      relations: {},
+      battleGroups: []
+    };
+    const state: ArmyState = {
+      ...armyState("A"),
+      status,
+      route: [{ x: 3, y: 4 }]
+    };
+
+    const snapshot = buildRoleSafeSnapshot({
+      role,
+      playerId,
+      scene,
+      players: [],
+      armies: [{
+        item: { id: "army", type: "IMAGE", position: { x: 0, y: 0 }, metadata: {} },
+        state
+      }],
+      localCloneSourceIds: new Set()
+    });
+
+    expect(snapshot.armies[0]?.route).toEqual(routeVisible ? [{ x: 3, y: 4 }] : []);
+  }
+);
+
 describe("extension command feedback", () => {
   let services: RunningExtensionServices | undefined;
 
@@ -288,6 +339,23 @@ describe("extension command feedback", () => {
     );
     expect(serviceHarness.sdk.tool.activateTool.mock.invocationCallOrder[0]).toBeLessThan(
       serviceHarness.sdk.tool.activateMode.mock.invocationCallOrder[0] ?? Infinity
+    );
+  });
+
+  it("clears route metadata when tool activation fails", async () => {
+    const running = await startServices();
+    serviceHarness.sdk.tool.activateMode.mockRejectedValueOnce(new Error("activation failed"));
+
+    await expect(running.send({ type: "EDIT_ROUTE", armyId: "army-a" }))
+      .resolves.toBeUndefined();
+
+    expect(serviceHarness.sdk.tool.setMetadata).toHaveBeenLastCalledWith(ROUTE_TOOL_ID, {
+      [ROUTE_ARMY_ID_KEY]: null,
+      [ROUTE_RETURN_TOOL_KEY]: null
+    });
+    expect(serviceHarness.notificationShow).toHaveBeenCalledWith(
+      notificationMessage("UNKNOWN"),
+      "ERROR"
     );
   });
 
@@ -344,6 +412,17 @@ describe("extension command feedback", () => {
     expect(serviceHarness.notificationShow).toHaveBeenCalledWith(
       notificationMessage("COMMAND_TIMEOUT"),
       "WARNING"
+    );
+  });
+
+  it("shows generic Russian feedback when broadcasting fails", async () => {
+    const running = await startServices();
+    serviceHarness.adapter.send.mockRejectedValueOnce(new Error("network failed"));
+
+    await expect(running.send({ type: "START_ALL" })).resolves.toBeUndefined();
+    expect(serviceHarness.notificationShow).toHaveBeenCalledWith(
+      notificationMessage("UNKNOWN"),
+      "ERROR"
     );
   });
 });

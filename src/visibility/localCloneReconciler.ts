@@ -47,6 +47,7 @@ const RENDER_FIELDS = [
   "layer",
   "zIndex",
   "text",
+  "textItemType",
   "image",
   "grid"
 ] as const;

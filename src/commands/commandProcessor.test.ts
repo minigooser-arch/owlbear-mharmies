@@ -181,6 +181,20 @@ describe("CommandProcessor", () => {
     }
   });
 
+  it("keeps a player in every side they join", () => {
+    const result = processor.execute(
+      context("GM", "gm"),
+      command({ type: "ADD_SIDE_PLAYER", sideId: "blue", playerId: "member" })
+    );
+    expect(result.status).toBe("ACCEPTED");
+    if (result.status === "ACCEPTED") {
+      expect(result.state.scene.sides
+        .filter((side) => side.playerIds.includes("member"))
+        .map((side) => side.id)
+        .sort()).toEqual(["blue", "red"]);
+    }
+  });
+
   it("rejects leader membership changes for another side", () => {
     expect(
       processor.execute(
@@ -241,6 +255,43 @@ describe("CommandProcessor", () => {
       )
     ).toEqual({ status: "REJECTED", reason: "GM_ONLY" });
   });
+
+  it.each([
+    ["SET_ROUTE", "PLAYER", "leader", "MOVING"],
+    ["CLEAR_ROUTE", "PLAYER", "leader", "MOVING"],
+    ["SET_ROUTE", "GM", "gm", "MOVING"],
+    ["CLEAR_ROUTE", "GM", "gm", "MOVING"],
+    ["SET_ROUTE", "PLAYER", "leader", "PAUSED"],
+    ["CLEAR_ROUTE", "PLAYER", "leader", "PAUSED"],
+    ["SET_ROUTE", "GM", "gm", "PAUSED"],
+    ["CLEAR_ROUTE", "GM", "gm", "PAUSED"],
+    ["SET_ROUTE", "PLAYER", "leader", "IN_BATTLE"],
+    ["CLEAR_ROUTE", "PLAYER", "leader", "IN_BATTLE"],
+    ["SET_ROUTE", "GM", "gm", "IN_BATTLE"],
+    ["CLEAR_ROUTE", "GM", "gm", "IN_BATTLE"]
+  ] as const)(
+    "rejects %s by %s %s for an army in %s until the GM stops it",
+    (type, role, playerId, status) => {
+      const commandState = state();
+      const activeArmy = commandState.armies["army-red"];
+      if (!activeArmy) throw new Error("Missing test army");
+      activeArmy.status = status;
+      activeArmy.route = [{ x: 1, y: 0 }];
+
+      const routeCommand = type === "SET_ROUTE"
+        ? command({ type, armyId: "army-red", route: [{ x: 2, y: 0 }] }, playerId)
+        : command({ type, armyId: "army-red" }, playerId);
+
+      expect(processor.execute(context(role, playerId, commandState), routeCommand)).toEqual({
+        status: "REJECTED",
+        reason: "ARMY_NOT_READY"
+      });
+      expect(commandState.armies["army-red"]).toMatchObject({
+        status,
+        route: [{ x: 1, y: 0 }]
+      });
+    }
+  );
 
   it("rejects reassigning a deleted side's armies back to the same side", () => {
     expect(processor.execute(

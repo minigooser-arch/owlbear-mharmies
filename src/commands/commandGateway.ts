@@ -1,4 +1,6 @@
 import type { ArmyCommand } from "../shared/types";
+import { METADATA_KEYS } from "../shared/constants";
+import { migrateSceneState } from "../storage/migrations";
 
 export interface BroadcastEvent {
   connectionId: string;
@@ -9,6 +11,8 @@ export interface BroadcastPort {
   send(channel: string, data: unknown): Promise<void>;
   on(channel: string, listener: (event: BroadcastEvent) => void): () => void;
 }
+
+export type CoordinatorConnectionResolver = () => Promise<string | undefined>;
 
 export interface CommandAck {
   requestId: string;
@@ -24,6 +28,7 @@ interface PendingRequest {
   reject(error: Error): void;
   timeoutId: ReturnType<typeof setTimeout>;
   senderConnectionId: string;
+  trustedCoordinatorConnectionId: Promise<string | undefined>;
 }
 
 export class CommandTimeoutError extends Error {
@@ -63,6 +68,18 @@ function isCommandAck(value: unknown): value is CommandAck {
   return true;
 }
 
+async function coordinatorConnectionIdFromScene(
+  port: BroadcastPort
+): Promise<string | undefined> {
+  const metadataPort = port as BroadcastPort & {
+    getSceneMetadata?: () => Promise<Record<string, unknown>>;
+  };
+  if (!metadataPort.getSceneMetadata) return undefined;
+  const metadata = await metadataPort.getSceneMetadata();
+  const migrated = migrateSceneState(metadata[METADATA_KEYS.scene] ?? { version: 2 });
+  return migrated.ok ? migrated.value.coordinatorLease?.connectionId : undefined;
+}
+
 export class CommandGateway {
   static readonly COMMAND_CHANNEL = "com.letopis.army-control/command";
   static readonly ACK_CHANNEL = "com.letopis.army-control/ack";
@@ -72,19 +89,15 @@ export class CommandGateway {
 
   constructor(
     private readonly port: BroadcastPort,
-    private readonly timeoutMs = 5_000
+    private readonly timeoutMs = 5_000,
+    private readonly resolveCoordinatorConnectionId: CoordinatorConnectionResolver = () =>
+      coordinatorConnectionIdFromScene(port)
   ) {}
 
   start(): void {
     if (this.unsubscribe) return;
     this.unsubscribe = this.port.on(CommandGateway.ACK_CHANNEL, (event) => {
-      if (!isCommandAck(event.data) || event.connectionId !== event.data.coordinatorConnectionId) return;
-      const pending = this.pending.get(event.data.requestId);
-      if (!pending) return;
-      if (event.data.recipientConnectionId !== pending.senderConnectionId) return;
-      clearTimeout(pending.timeoutId);
-      this.pending.delete(event.data.requestId);
-      pending.resolve(event.data);
+      void this.acceptTrustedAcknowledgement(event);
     });
   }
 
@@ -110,7 +123,8 @@ export class CommandGateway {
         resolve,
         reject,
         timeoutId,
-        senderConnectionId: command.senderConnectionId
+        senderConnectionId: command.senderConnectionId,
+        trustedCoordinatorConnectionId: this.resolveCoordinatorConnectionId().catch(() => undefined)
       });
       void this.port.send(CommandGateway.COMMAND_CHANNEL, command).catch((error: unknown) => {
         clearTimeout(timeoutId);
@@ -118,5 +132,24 @@ export class CommandGateway {
         reject(error instanceof Error ? error : new Error(String(error)));
       });
     });
+  }
+
+  private async acceptTrustedAcknowledgement(event: BroadcastEvent): Promise<void> {
+    if (!isCommandAck(event.data) || event.connectionId !== event.data.coordinatorConnectionId) return;
+    const pending = this.pending.get(event.data.requestId);
+    if (!pending || event.data.recipientConnectionId !== pending.senderConnectionId) return;
+    let trustedCoordinatorConnectionId: string | undefined;
+    try {
+      trustedCoordinatorConnectionId = await pending.trustedCoordinatorConnectionId;
+    } catch {
+      return;
+    }
+    if (
+      this.pending.get(event.data.requestId) !== pending ||
+      event.connectionId !== trustedCoordinatorConnectionId
+    ) return;
+    clearTimeout(pending.timeoutId);
+    this.pending.delete(event.data.requestId);
+    pending.resolve(event.data);
   }
 }

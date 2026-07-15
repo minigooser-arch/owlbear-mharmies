@@ -1,5 +1,10 @@
-import { segmentsFromPolyline, type BarrierSegment } from "../barriers/barrierGeometry";
+import {
+  firstBarrierIntersection,
+  segmentsFromPolyline,
+  type BarrierSegment
+} from "../barriers/barrierGeometry";
 import type { CommandAck } from "../commands/commandGateway";
+import { evaluateRouteLimit, type GridDistancePort } from "../routes/routeMath";
 import { authorizeArmyCommand } from "../shared/permissions";
 import { METADATA_KEYS } from "../shared/constants";
 import type {
@@ -33,6 +38,7 @@ export interface RouteToolServicePort extends MetadataPort {
   createId(): string;
   show(message: string, variant: "INFO" | "WARNING" | "ERROR"): Promise<void>;
   activateTool(toolId: string): Promise<void>;
+  getGridDistance(from: Vector2, to: Vector2): Promise<number>;
 }
 
 export interface RouteCommandGateway {
@@ -51,6 +57,24 @@ interface AuthorizedSession {
   scene: SceneState;
   army: ArmyRecord;
   barriers: readonly BarrierSegment[];
+}
+
+export type RouteConstraintFailure = "ROUTE_LIMIT" | "BARRIER";
+
+export async function validateRouteConstraints(
+  start: Vector2,
+  route: readonly Vector2[],
+  maxCells: number,
+  barriers: readonly BarrierSegment[],
+  distancePort: GridDistancePort
+): Promise<RouteConstraintFailure | undefined> {
+  const limit = await evaluateRouteLimit(start, route, maxCells, distancePort);
+  let from = start;
+  for (const to of route) {
+    if (firstBarrierIntersection({ from, to }, barriers)) return "BARRIER";
+    from = to;
+  }
+  return limit.valid ? undefined : "ROUTE_LIMIT";
 }
 
 function curvePoints(item: SceneItemRecord): Vector2[] {
@@ -90,6 +114,15 @@ export class RouteToolService implements RouteToolIntegrationPort {
 
   async commitRoute(armyId: string, route: readonly Vector2[]): Promise<void> {
     const authorized = await this.loadAuthorized(armyId, route);
+    const failure = await validateRouteConstraints(
+      authorized.army.item.position,
+      route,
+      authorized.army.state.overrides.maxRouteDistanceCells ??
+        authorized.scene.settings.defaultMaxRouteDistanceCells,
+      authorized.army.state.ignoresMovementBarriers ? [] : authorized.barriers,
+      { distance: (from, to) => this.port.getGridDistance(from, to) }
+    );
+    if (failure) throw new RouteToolAuthorizationError(failure);
     const command: ArmyCommand = {
       requestId: crypto.randomUUID(),
       senderPlayerId: authorized.identity.id,
@@ -211,6 +244,9 @@ export class RouteToolService implements RouteToolIntegrationPort {
     );
     if (!authorization.allowed) {
       throw new RouteToolAuthorizationError(authorization.reason);
+    }
+    if (army.state.status !== "READY") {
+      throw new RouteToolAuthorizationError("ARMY_NOT_READY");
     }
     return {
       identity,

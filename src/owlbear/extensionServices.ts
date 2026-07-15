@@ -1,3 +1,4 @@
+import { electCoordinator } from "../background/coordinator";
 import { CommandGateway, CommandTimeoutError } from "../commands/commandGateway";
 import {
   DEFAULT_SETTINGS,
@@ -45,13 +46,18 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
   }
   const sideNames = new Map(input.scene.sides.map((side) => [side.id, side.name]));
   const armies: ArmyView[] = input.armies.map(({ item, state }) => {
+    const routeVisible = input.role === "GM" || (
+      state.status === "READY"
+        ? leaderSideIds.has(state.sideId)
+        : memberSideIds.has(state.sideId)
+    );
     return {
       id: item.id,
       name: item.name ?? "Безымянная армия",
       sideId: state.sideId,
       sideName: sideNames.get(state.sideId) ?? "Неизвестная сторона",
       status: state.status,
-      route: state.route.map((point) => ({ ...point }))
+      route: routeVisible ? state.route.map((point) => ({ ...point })) : []
     };
   });
   return {
@@ -111,7 +117,19 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
   ]);
   const adapter = createOwlbearAdapter();
   const repository = new MetadataRepository(adapter);
-  const gateway = new CommandGateway(adapter);
+  const gateway = new CommandGateway(adapter, 5_000, async () => {
+    const [players, currentConnectionId, currentRole] = await Promise.all([
+      OBR.party.getPlayers(),
+      OBR.player.getConnectionId(),
+      OBR.player.getRole()
+    ]);
+    return electCoordinator([
+      ...players
+        .filter((player) => player.connectionId !== currentConnectionId)
+        .map((player) => ({ connectionId: player.connectionId, role: player.role })),
+      { connectionId: currentConnectionId, role: currentRole }
+    ]);
+  });
   gateway.start();
   let snapshot = LOADING_SNAPSHOT;
   const listeners = new Set<() => void>();
@@ -208,17 +226,29 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
   await refresh();
 
   const send = async (command: UiCommand): Promise<unknown> => {
-    if (command.type === "EDIT_ROUTE") {
-      const returnToolId = await OBR.tool.getActiveTool();
-      await OBR.tool.setMetadata(ROUTE_TOOL_ID, {
-        [ROUTE_ARMY_ID_KEY]: command.armyId,
-        [ROUTE_RETURN_TOOL_KEY]: returnToolId
-      });
-      await OBR.tool.activateTool(ROUTE_TOOL_ID);
-      await OBR.tool.activateMode(ROUTE_TOOL_ID, ROUTE_TOOL_MODE_ID);
-      return undefined;
-    }
     try {
+      if (command.type === "EDIT_ROUTE") {
+        const returnToolId = await OBR.tool.getActiveTool();
+        try {
+          await OBR.tool.setMetadata(ROUTE_TOOL_ID, {
+            [ROUTE_ARMY_ID_KEY]: command.armyId,
+            [ROUTE_RETURN_TOOL_KEY]: returnToolId
+          });
+          await OBR.tool.activateTool(ROUTE_TOOL_ID);
+          await OBR.tool.activateMode(ROUTE_TOOL_ID, ROUTE_TOOL_MODE_ID);
+        } catch (error) {
+          try {
+            await OBR.tool.setMetadata(ROUTE_TOOL_ID, {
+              [ROUTE_ARMY_ID_KEY]: null,
+              [ROUTE_RETURN_TOOL_KEY]: null
+            });
+          } catch {
+            // The original activation failure is more useful to the caller.
+          }
+          throw error;
+        }
+        return undefined;
+      }
       const payload = command.type === "REGISTER_SELECTED_ARMY"
         ? {
             type: "REGISTER_ARMY" as const,
@@ -253,7 +283,8 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
         await notifyRussian(adapter, "COMMAND_TIMEOUT");
         return undefined;
       }
-      throw error;
+      await notifyRussian(adapter, "UNKNOWN", "ERROR");
+      return undefined;
     }
   };
 

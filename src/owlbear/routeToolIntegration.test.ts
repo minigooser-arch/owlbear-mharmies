@@ -19,11 +19,15 @@ class FakeToolApi implements RouteToolApi {
   tools: Tool[] = [];
   modes: ToolMode[] = [];
   removed: string[] = [];
+  metadataUpdates: Array<{ toolId: string; update: Record<string, unknown> }> = [];
 
   async create(tool: Tool) { this.tools.push(tool); }
   async remove(id: string) { this.removed.push(id); }
   async createMode(mode: ToolMode) { this.modes.push(mode); }
   async removeMode(id: string) { this.removed.push(id); }
+  async setMetadata(toolId: string, update: Record<string, unknown>) {
+    this.metadataUpdates.push({ toolId, update });
+  }
 }
 
 function context(metadata: Record<string, unknown> = {}): ToolContext {
@@ -132,6 +136,13 @@ describe("route tool SDK integration", () => {
       expect(f.commits).toEqual([{ armyId: "army-a", route: [{ x: 1, y: 0 }] }]);
       expect(f.clearCount).toBe(1);
       expect(f.restored).toEqual(["select-tool"]);
+      expect(f.api.metadataUpdates.at(-1)).toEqual({
+        toolId: ROUTE_TOOL_ID,
+        update: {
+          [ROUTE_ARMY_ID_KEY]: null,
+          [ROUTE_RETURN_TOOL_KEY]: null
+        }
+      });
     });
     await cleanup();
   });
@@ -212,5 +223,48 @@ describe("route tool SDK integration", () => {
     await vi.waitFor(() => expect(f.restored).toEqual(["select-tool"]));
     expect(f.clearCount).toBe(1);
     expect(f.notifications.join(" ")).toContain(notificationMessage("REVISION_CONFLICT"));
+  });
+
+  it("retries preview cleanup during teardown after a transient failure", async () => {
+    const f = fixture();
+    const clearPreview = vi.fn()
+      .mockRejectedValueOnce(new Error("temporary local-item failure"))
+      .mockResolvedValue(undefined);
+    f.port.clearPreview = clearPreview;
+    const cleanup = await registerRouteTool(f.api, f.port, f.distancePort, "/icon.svg");
+    const mode = registeredMode(f.api);
+    const ctx = context({
+      [ROUTE_ARMY_ID_KEY]: "army-a",
+      [ROUTE_RETURN_TOOL_KEY]: "select-tool"
+    });
+
+    mode.onActivate?.(ctx);
+    await vi.waitFor(() => expect(f.rendered.length).toBeGreaterThan(0));
+    mode.onKeyDown?.(ctx, keyEvent("Escape"));
+    await vi.waitFor(() => expect(clearPreview).toHaveBeenCalledTimes(1));
+    await cleanup();
+
+    expect(clearPreview).toHaveBeenCalledTimes(2);
+    expect(f.api.removed).toEqual([ROUTE_TOOL_MODE_ID, ROUTE_TOOL_ID]);
+  });
+
+  it("cancels an active route session without unregistering the tool", async () => {
+    const f = fixture();
+    const registration = await registerRouteTool(f.api, f.port, f.distancePort, "/icon.svg");
+    const mode = registeredMode(f.api);
+    const ctx = context({
+      [ROUTE_ARMY_ID_KEY]: "army-a",
+      [ROUTE_RETURN_TOOL_KEY]: "select-tool"
+    });
+    mode.onActivate?.(ctx);
+    await vi.waitFor(() => expect(f.rendered.length).toBeGreaterThan(0));
+
+    await registration.cancelSession();
+    expect(f.api.removed).toEqual([]);
+    expect(f.clearCount).toBe(1);
+    expect(await mode.onToolClick?.(ctx, toolEvent(1, 0))).toBe(false);
+    expect(f.commits).toEqual([]);
+
+    await registration();
   });
 });

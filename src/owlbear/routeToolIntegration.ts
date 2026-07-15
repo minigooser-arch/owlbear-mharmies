@@ -1,4 +1,4 @@
-import type { KeyEvent, Tool, ToolContext, ToolEvent, ToolMode } from "@owlbear-rodeo/sdk";
+import type { KeyEvent, Metadata, Tool, ToolContext, ToolEvent, ToolMode } from "@owlbear-rodeo/sdk";
 import type { BarrierSegment } from "../barriers/barrierGeometry";
 import type { GridDistancePort } from "../routes/routeMath";
 import {
@@ -32,6 +32,12 @@ export interface RouteToolApi {
   remove(id: string): Promise<void>;
   createMode(mode: ToolMode): Promise<void>;
   removeMode(id: string): Promise<void>;
+  setMetadata(toolId: string, update: Partial<Metadata>): Promise<void>;
+}
+
+export interface RouteToolRegistration {
+  (): Promise<void>;
+  cancelSession(): Promise<void>;
 }
 
 function messageFrom(error: unknown): string {
@@ -52,7 +58,7 @@ export async function registerRouteTool(
   port: RouteToolIntegrationPort,
   distancePort: GridDistancePort,
   iconUrl: string
-): Promise<() => Promise<void>> {
+): Promise<RouteToolRegistration> {
   const controller = new RouteToolController(distancePort);
   const moveIntervalMs = 1_000 / 12;
   let tail: Promise<void> = Promise.resolve();
@@ -103,12 +109,32 @@ export async function registerRouteTool(
     const previousToolId = returnToolId;
     controller.cancel();
     active = false;
-    previewRendered = false;
     returnToolId = undefined;
-    if (shouldClear) await port.clearPreview();
-    if (restorePrevious && previousToolId && previousToolId !== ROUTE_TOOL_ID) {
-      await port.restoreTool(previousToolId);
+    let failure: unknown;
+    if (shouldClear) {
+      try {
+        await port.clearPreview();
+        previewRendered = false;
+      } catch (error) {
+        failure = error;
+      }
     }
+    try {
+      await api.setMetadata(ROUTE_TOOL_ID, {
+        [ROUTE_ARMY_ID_KEY]: null,
+        [ROUTE_RETURN_TOOL_KEY]: null
+      });
+    } catch (error) {
+      failure ??= error;
+    }
+    if (restorePrevious && previousToolId && previousToolId !== ROUTE_TOOL_ID) {
+      try {
+        await port.restoreTool(previousToolId);
+      } catch (error) {
+        failure ??= error;
+      }
+    }
+    if (failure) throw failure;
   };
 
   const runPendingMove = (): Promise<void> => {
@@ -258,14 +284,36 @@ export async function registerRouteTool(
     throw error;
   }
 
-  return async () => {
+  const remove = async () => {
     if (closed) return;
     closed = true;
     generation += 1;
     cancelMoveTimer();
     await tail;
-    await finishSession(false);
-    await api.removeMode(ROUTE_TOOL_MODE_ID);
-    await api.remove(ROUTE_TOOL_ID);
+    let failure: unknown;
+    try {
+      await finishSession(false);
+    } catch (error) {
+      failure = error;
+    }
+    try {
+      await api.removeMode(ROUTE_TOOL_MODE_ID);
+    } catch (error) {
+      failure ??= error;
+    }
+    try {
+      await api.remove(ROUTE_TOOL_ID);
+    } catch (error) {
+      failure ??= error;
+    }
+    if (failure) throw failure;
   };
+  const registration = remove as RouteToolRegistration;
+  registration.cancelSession = async () => {
+    if (closed) return;
+    generation += 1;
+    cancelMoveTimer();
+    await enqueue(() => finishSession(false));
+  };
+  return registration;
 }

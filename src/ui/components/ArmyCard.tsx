@@ -15,6 +15,7 @@ interface ArmyCardProps {
 }
 
 export function ArmyCard({ army, isGM, canEditRoute, onAction }: ArmyCardProps) {
+  const canChangeRoute = canEditRoute && army.status === "READY";
   return (
     <article className="army-card">
       <div className="army-card-heading">
@@ -27,9 +28,9 @@ export function ArmyCard({ army, isGM, canEditRoute, onAction }: ArmyCardProps) 
       <dl className="army-details">
         <div><dt>Точек маршрута</dt><dd>{army.route.length}</dd></div>
       </dl>
-      {(canEditRoute || isGM) && (
+      {(canChangeRoute || isGM) && (
         <div className="army-control-groups">
-          {canEditRoute && (
+          {canChangeRoute && (
             <div className="card-actions" aria-label="Маршрут армии">
               <button type="button" onClick={() => onAction({ type: "EDIT_ROUTE", armyId: army.id })}>Маршрут</button>
               {army.route.length > 0 && (

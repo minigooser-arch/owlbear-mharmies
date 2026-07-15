@@ -26,6 +26,15 @@ function boundedString(value: unknown, maxLength = 256): value is string {
   return typeof value === "string" && value.trim().length > 0 && value.length <= maxLength;
 }
 
+const RESERVED_RECORD_KEYS = new Set([
+  ...Object.getOwnPropertyNames(Object.prototype),
+  "prototype"
+]);
+
+function sideId(value: unknown): value is string {
+  return boundedString(value) && !RESERVED_RECORD_KEYS.has(value);
+}
+
 function nonNegativeInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0;
 }
@@ -76,7 +85,7 @@ function parseRoute(value: unknown): Vector2[] | undefined {
 function parseSide(value: unknown): Side | undefined {
   if (
     !isRecord(value) ||
-    !boundedString(value.id) ||
+    !sideId(value.id) ||
     !boundedString(value.name) ||
     !boundedString(value.color)
   ) {
@@ -225,13 +234,13 @@ const armyIdOnly = (value: UnknownRecord): string | undefined =>
 const sidePlayer = (
   value: UnknownRecord
 ): { sideId: string; playerId: string } | undefined =>
-  boundedString(value.sideId) && boundedString(value.playerId)
+  sideId(value.sideId) && boundedString(value.playerId)
     ? { sideId: value.sideId, playerId: value.playerId }
     : undefined;
 
 const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
   REGISTER_ARMY: (value) =>
-    boundedString(value.itemId) && boundedString(value.sideId)
+    boundedString(value.itemId) && sideId(value.sideId)
       ? { type: "REGISTER_ARMY", itemId: value.itemId, sideId: value.sideId }
       : undefined,
   UNREGISTER_ARMY: (value) => {
@@ -243,15 +252,15 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
     return side ? { type: "CREATE_SIDE", side } : undefined;
   },
   RENAME_SIDE: (value) =>
-    boundedString(value.sideId) && boundedString(value.name)
+    sideId(value.sideId) && boundedString(value.name)
       ? { type: "RENAME_SIDE", sideId: value.sideId, name: value.name }
       : undefined,
   DELETE_SIDE: (value) => {
-    if (!boundedString(value.sideId)) return undefined;
+    if (!sideId(value.sideId)) return undefined;
     if (value.strategy === "UNREGISTER_ARMIES") {
       return { type: "DELETE_SIDE", sideId: value.sideId, strategy: value.strategy };
     }
-    if (value.strategy === "REASSIGN_ARMIES" && boundedString(value.targetSideId)) {
+    if (value.strategy === "REASSIGN_ARMIES" && sideId(value.targetSideId)) {
       return {
         type: "DELETE_SIDE",
         sideId: value.sideId,
@@ -278,8 +287,8 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
     return parsed ? { type: "REMOVE_SIDE_LEADER", ...parsed } : undefined;
   },
   SET_RELATION: (value) =>
-    boundedString(value.leftSideId) &&
-    boundedString(value.rightSideId) &&
+    sideId(value.leftSideId) &&
+    sideId(value.rightSideId) &&
     (value.relation === "ALLY" || value.relation === "NEUTRAL" || value.relation === "ENEMY")
       ? {
           type: "SET_RELATION",

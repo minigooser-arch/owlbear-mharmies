@@ -62,6 +62,18 @@ describe("validateArmyCommand", () => {
     }
   );
 
+  it.each(["__proto__", "prototype", "constructor", "toString", "hasOwnProperty"])(
+    "rejects reserved relation side id %s",
+    (sideId) => {
+      expect(validateArmyCommand(envelope({
+        type: "SET_RELATION",
+        leftSideId: sideId,
+        rightSideId: "blue",
+        relation: "ENEMY"
+      }))).toMatchObject({ ok: false, reason: "INVALID_COMMAND" });
+    }
+  );
+
   it.each([
     envelope({ type: "SET_ROUTE", armyId: "army", route: [{ x: Number.NaN, y: 0 }] }),
     envelope({ type: "SET_ROUTE", armyId: "army", route: new Array(1) }),

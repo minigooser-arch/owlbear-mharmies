@@ -31,6 +31,19 @@ describe("ArmyCard capabilities", () => {
     expect(screen.getByRole("button", { name: "Снять регистрацию" })).toBeInTheDocument();
   });
 
+  it("hides route mutation controls while an army is active", () => {
+    render(
+      <ArmyCard
+        army={{ ...redArmy, status: "MOVING", route: [{ x: 1, y: 0 }] }}
+        isGM={false}
+        canEditRoute
+        onAction={vi.fn()}
+      />
+    );
+    expect(screen.queryByRole("button", { name: "Маршрут" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Очистить" })).not.toBeInTheDocument();
+  });
+
   it("emits separate route, movement, and unregister commands", () => {
     const onAction = vi.fn();
     render(<ArmyCard army={redArmy} isGM canEditRoute onAction={onAction} />);

@@ -15,7 +15,8 @@ describe("notificationMessage", () => {
     ["ITEM_NOT_FOUND", "Выбранный объект не найден на сцене."],
     ["IMAGE_REQUIRED", "Для армии необходимо выбрать изображение."],
     ["ALREADY_REGISTERED", "Выбранное изображение уже зарегистрировано как армия."],
-    ["SIDE_NOT_FOUND", "Выбранная сторона не найдена."]
+    ["SIDE_NOT_FOUND", "Выбранная сторона не найдена."],
+    ["ARMY_NOT_READY", "Сначала остановите армию, чтобы изменить её маршрут."]
   ])("translates %s into Russian", (code, message) => {
     expect(notificationMessage(code)).toBe(message);
   });

@@ -226,23 +226,28 @@ export class CommandProcessor {
         )
           ? undefined
           : "ARMY_NOT_FOUND";
-      case "SET_ROUTE":
-        return updateArmy(state, command.armyId, (army) =>
-          bumpArmy(army, {
-            route: command.route.map((point) => ({ ...point })),
-            currentWaypointIndex: 0,
-            segmentProgressCells: 0,
-            status: "READY"
-          })
-        )
-          ? undefined
-          : "ARMY_NOT_FOUND";
-      case "CLEAR_ROUTE":
-        return updateArmy(state, command.armyId, (army) =>
-          bumpArmy(army, { route: [], currentWaypointIndex: 0, segmentProgressCells: 0, status: "READY" })
-        )
-          ? undefined
-          : "ARMY_NOT_FOUND";
+      case "SET_ROUTE": {
+        const army = state.armies[command.armyId];
+        if (!army) return "ARMY_NOT_FOUND";
+        if (army.status !== "READY") return "ARMY_NOT_READY";
+        state.armies[command.armyId] = bumpArmy(army, {
+          route: command.route.map((point) => ({ ...point })),
+          currentWaypointIndex: 0,
+          segmentProgressCells: 0
+        });
+        return undefined;
+      }
+      case "CLEAR_ROUTE": {
+        const army = state.armies[command.armyId];
+        if (!army) return "ARMY_NOT_FOUND";
+        if (army.status !== "READY") return "ARMY_NOT_READY";
+        state.armies[command.armyId] = bumpArmy(army, {
+          route: [],
+          currentWaypointIndex: 0,
+          segmentProgressCells: 0
+        });
+        return undefined;
+      }
       case "MOVE_ARMY":
         if (!state.armies[command.armyId]) return "ARMY_NOT_FOUND";
         state.positions ??= {};

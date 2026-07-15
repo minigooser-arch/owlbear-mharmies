@@ -13,6 +13,7 @@ export type NotificationCode =
   | "IMAGE_REQUIRED"
   | "ALREADY_REGISTERED"
   | "SIDE_NOT_FOUND"
+  | "ARMY_NOT_READY"
   | "ROUTE_LIMIT"
   | "BARRIER"
   | "COORDINATOR_GAP"
@@ -33,6 +34,7 @@ const RUSSIAN_MESSAGES: Readonly<Record<NotificationCode, string>> = {
   IMAGE_REQUIRED: "Для армии необходимо выбрать изображение.",
   ALREADY_REGISTERED: "Выбранное изображение уже зарегистрировано как армия.",
   SIDE_NOT_FOUND: "Выбранная сторона не найдена.",
+  ARMY_NOT_READY: "Сначала остановите армию, чтобы изменить её маршрут.",
   ROUTE_LIMIT: "Маршрут превышает допустимую длину.",
   BARRIER: "Движение остановлено барьером.",
   COORDINATOR_GAP: "Движение приостановлено после потери координатора.",

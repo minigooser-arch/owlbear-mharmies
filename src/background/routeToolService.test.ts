@@ -100,6 +100,9 @@ class MemoryPort implements RouteToolServicePort {
   createId() { this.nextId += 1; return `preview-${this.nextId}`; }
   async show(message: string) { this.notifications.push(message); }
   async activateTool(toolId: string) { this.restored.push(toolId); }
+  async getGridDistance(from: { x: number; y: number }, to: { x: number; y: number }) {
+    return Math.hypot(to.x - from.x, to.y - from.y);
+  }
 }
 
 function accepted(command: ArmyCommand): CommandAck {
@@ -149,6 +152,54 @@ describe("RouteToolService", () => {
       senderConnectionId: "connection-leader",
       expectedRevision: 4
     }));
+  });
+
+  it("rechecks the current route limit when committing a previously loaded session", async () => {
+    const port = new MemoryPort();
+    const send = vi.fn(async (command: ArmyCommand) => accepted(command));
+    const service = new RouteToolService(port, { send });
+    await service.loadSession("army-a");
+    port.scene.settings.defaultMaxRouteDistanceCells = 1;
+
+    await expect(service.commitRoute("army-a", [{ x: 4, y: 3 }])).rejects.toEqual(
+      expect.objectContaining({ code: "ROUTE_LIMIT" })
+    );
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("rechecks current movement barriers when committing a previously loaded session", async () => {
+    const port = new MemoryPort();
+    const wall = port.items.find((item) => item.id === "wall");
+    if (!wall) throw new Error("Missing test barrier item");
+    const wallState = wall.metadata[METADATA_KEYS.barrier] as BarrierState | undefined;
+    if (!wallState) throw new Error("Missing test barrier");
+    wallState.blocksMovement = false;
+    const send = vi.fn(async (command: ArmyCommand) => accepted(command));
+    const service = new RouteToolService(port, { send });
+    await service.loadSession("army-a");
+    wallState.blocksMovement = true;
+    wall.points = [{ x: 1, y: -10 }, { x: 1, y: 10 }];
+
+    await expect(service.commitRoute("army-a", [{ x: 0, y: 3 }])).rejects.toEqual(
+      expect.objectContaining({ code: "BARRIER" })
+    );
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("rejects commit if the army is no longer READY", async () => {
+    const port = new MemoryPort();
+    const send = vi.fn(async (command: ArmyCommand) => accepted(command));
+    const service = new RouteToolService(port, { send });
+    await service.loadSession("army-a");
+    const item = port.items.find((candidate) => candidate.id === "army-a");
+    const state = item?.metadata[METADATA_KEYS.army] as ArmyState | undefined;
+    if (!state) throw new Error("Missing test army");
+    state.status = "MOVING";
+
+    await expect(service.commitRoute("army-a", [{ x: 4, y: 3 }])).rejects.toEqual(
+      expect.objectContaining({ code: "ARMY_NOT_READY" })
+    );
+    expect(send).not.toHaveBeenCalled();
   });
 
   it("renders and clears only local route previews", async () => {
