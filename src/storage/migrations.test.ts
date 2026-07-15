@@ -30,7 +30,28 @@ describe("metadata migrations", () => {
     });
   });
 
-  it("migrates v1 sides to v2 without losing memberships", () => {
+  it("migrates v2 battles to deterministic names", () => {
+    const result = migrateSceneState({
+      version: 2,
+      battleGroups: [
+        { battleId: "z", participantIds: ["z1", "z2"], revision: 1 },
+        { battleId: "a", participantIds: ["a1", "a2"], revision: 2 }
+      ]
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      value: {
+        version: 3,
+        battleGroups: [
+          { battleId: "a", name: "Бой 1" },
+          { battleId: "z", name: "Бой 2" }
+        ]
+      }
+    });
+  });
+
+  it("migrates v1 sides through v2 to v3 without losing memberships", () => {
     const result = migrateSceneState({
       version: 1,
       revision: 7,
@@ -50,7 +71,7 @@ describe("metadata migrations", () => {
     expect(result).toMatchObject({
       ok: true,
       value: {
-        version: 2,
+        version: 3,
         revision: 7,
         sides: [
           {
@@ -65,7 +86,7 @@ describe("metadata migrations", () => {
     });
   });
 
-  it("migrates a v0 scene through v1 to v2", () => {
+  it("migrates a v0 scene through v1 and v2 to v3", () => {
     expect(migrateSceneState({
       version: 0,
       revision: 4,
@@ -73,7 +94,7 @@ describe("metadata migrations", () => {
     })).toMatchObject({
       ok: true,
       value: {
-        version: 2,
+        version: 3,
         revision: 4,
         sides: [{ id: "red", playerIds: ["p1"], leaderPlayerIds: [] }]
       }

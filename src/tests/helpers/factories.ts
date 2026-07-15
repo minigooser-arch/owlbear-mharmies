@@ -154,7 +154,7 @@ class SideLeaderRoom {
   private requestNumber = 0;
   private state: CommandState = {
     scene: {
-      version: 2,
+      version: 3,
       revision: 1,
       settings: { ...DEFAULT_SETTINGS },
       sides: [

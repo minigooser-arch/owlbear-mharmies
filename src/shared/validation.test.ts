@@ -25,14 +25,14 @@ describe("metadata validation", () => {
   });
 
   it("uses the five-cell scene route limit", () => {
-    const scene = normalizeSceneState({ version: 2 });
+    const scene = normalizeSceneState({ version: 3 });
     expect(scene.ok).toBe(true);
     if (scene.ok) expect(scene.value.settings).toEqual(DEFAULT_SETTINGS);
   });
 
   it("normalizes leaders as unique members without crossing side boundaries", () => {
     const scene = normalizeSceneState({
-      version: 2,
+      version: 3,
       sides: [
         {
           id: "red",
@@ -54,10 +54,30 @@ describe("metadata validation", () => {
     expect(scene).toMatchObject({
       ok: true,
       value: {
-        version: 2,
+        version: 3,
         sides: [
           { id: "red", playerIds: ["member", "leader"], leaderPlayerIds: ["leader"] },
           { id: "blue", playerIds: ["leader"], leaderPlayerIds: ["leader"] }
+        ]
+      }
+    });
+  });
+
+  it("requires non-empty battle names and preserves them", () => {
+    const scene = normalizeSceneState({
+      version: 3,
+      battleGroups: [
+        { battleId: "north", name: "Север", participantIds: ["a", "b"], revision: 2 },
+        { battleId: "blank", name: "   ", participantIds: ["c", "d"], revision: 1 }
+      ]
+    });
+
+    expect(scene).toMatchObject({
+      ok: true,
+      value: {
+        version: 3,
+        battleGroups: [
+          { battleId: "north", name: "Север", participantIds: ["a", "b"], revision: 2 }
         ]
       }
     });

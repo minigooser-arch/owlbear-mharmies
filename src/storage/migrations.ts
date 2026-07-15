@@ -25,19 +25,33 @@ export function migrateSceneState(raw: unknown): ValidationResult<SceneState> {
     return { ok: false, issue: { code: "INVALID_VALUE", path: "version" } };
   }
   const version = versionOf(raw);
-  if (version !== undefined && version > 2) {
+  if (version !== undefined && version > 3) {
     return { ok: false, issue: { code: "FUTURE_VERSION", version } };
   }
   if (!isRecord(raw)) return normalizeSceneState(raw);
+  let migrated = raw;
   if (version === 0 || version === 1 || version === undefined) {
     const sides = Array.isArray(raw.sides)
       ? raw.sides.map((side) =>
           isRecord(side) ? { ...side, leaderPlayerIds: [] } : side
         )
       : [];
-    return normalizeSceneState({ ...raw, version: 2, sides });
+    migrated = { ...raw, version: 2, sides };
   }
-  return normalizeSceneState(raw);
+  if (migrated.version === 2) {
+    const battleGroups = Array.isArray(migrated.battleGroups)
+      ? migrated.battleGroups
+          .filter((group): group is UnknownRecord =>
+            isRecord(group) && typeof group.battleId === "string" && group.battleId.trim().length > 0
+          )
+          .sort((left, right) =>
+            (left.battleId as string).localeCompare(right.battleId as string)
+          )
+          .map((group, index) => ({ ...group, name: `Бой ${index + 1}` }))
+      : [];
+    migrated = { ...migrated, version: 3, battleGroups };
+  }
+  return normalizeSceneState(migrated);
 }
 
 export function migrateArmyState(raw: unknown): ValidationResult<ArmyState> {

@@ -184,7 +184,7 @@ const armyState = (sideId: string): ArmyState => ({
 
 it("builds a player snapshot whose visible IDs come from own side and local clones", () => {
   const scene: SceneState = {
-    version: 2, revision: 1, settings: DEFAULT_SETTINGS,
+    version: 3, revision: 1, settings: DEFAULT_SETTINGS,
     sides: [
       { id: "A", name: "Красные", color: "#f00", playerIds: ["player"], leaderPlayerIds: [] },
       { id: "B", name: "Синие", color: "#00f", playerIds: [], leaderPlayerIds: [] }
@@ -211,7 +211,7 @@ it("builds a player snapshot whose visible IDs come from own side and local clon
 
 it("derives leader sides by internal id and hides legacy direct ownership", () => {
   const scene: SceneState = {
-    version: 2,
+    version: 3,
     revision: 1,
     settings: DEFAULT_SETTINGS,
     sides: [{
@@ -254,7 +254,7 @@ it.each([
   "filters %s %s route coordinates for a %s army",
   (role, playerId, status, routeVisible) => {
     const scene: SceneState = {
-      version: 2,
+      version: 3,
       revision: 1,
       settings: DEFAULT_SETTINGS,
       sides: [{

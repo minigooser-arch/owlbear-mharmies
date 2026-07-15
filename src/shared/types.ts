@@ -33,6 +33,7 @@ export interface Side {
 
 export interface BattleGroup {
   battleId: string;
+  name: string;
   participantIds: string[];
   revision: number;
 }
@@ -44,7 +45,7 @@ export interface CoordinatorLease {
 }
 
 export interface SceneState {
-  version: 2;
+  version: 3;
   revision: number;
   settings: SceneSettings;
   sides: Side[];

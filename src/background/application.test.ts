@@ -75,7 +75,7 @@ function commandPort(
   const sent: Array<{ channel: string; data: unknown }> = [];
   const items = structuredClone(initialItems);
   let scene: SceneState = {
-    version: 2,
+    version: 3,
     revision: 2,
     settings: { ...DEFAULT_SETTINGS },
     sides: [],

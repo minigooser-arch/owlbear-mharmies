@@ -3,6 +3,14 @@ import type { EnemyCollision } from "./collisionEngine";
 
 export type ContactEdge = readonly [string, string];
 
+export function nextBattleName(groups: readonly BattleGroup[]): string {
+  const used = new Set(groups.map((group) => group.name));
+  for (let index = 1; ; index += 1) {
+    const candidate = `Бой ${index}`;
+    if (!used.has(candidate)) return candidate;
+  }
+}
+
 function connectedComponents(armyIds: readonly string[], edges: readonly ContactEdge[]): string[][] {
   const adjacency = new Map<string, Set<string>>();
   for (const armyId of armyIds) adjacency.set(armyId, new Set());
@@ -42,21 +50,27 @@ export function rebuildBattleGroups(
   existingGroups: readonly BattleGroup[],
   createId: () => string
 ): BattleGroup[] {
-  return connectedComponents(armyIds, directEnemyContacts)
-    .map((participantIds) => {
-      const participantSet = new Set(participantIds);
-      const overlapping = existingGroups.filter((group) =>
-        group.participantIds.some((participantId) => participantSet.has(participantId))
-      );
-      const battleId =
-        overlapping.map((group) => group.battleId).sort()[0] ?? createId();
-      const revision =
-        overlapping.length === 0
-          ? 1
-          : Math.max(...overlapping.map((group) => group.revision)) + 1;
-      return { battleId, participantIds, revision };
-    })
-    .sort((left, right) => left.battleId.localeCompare(right.battleId));
+  const rebuilt: BattleGroup[] = [];
+  for (const participantIds of connectedComponents(armyIds, directEnemyContacts)) {
+    const participantSet = new Set(participantIds);
+    const overlapping = existingGroups.filter((group) =>
+      group.participantIds.some((participantId) => participantSet.has(participantId))
+    );
+    const surviving = [...overlapping].sort((left, right) =>
+      left.battleId.localeCompare(right.battleId)
+    )[0];
+    const revision =
+      overlapping.length === 0
+        ? 1
+        : Math.max(...overlapping.map((group) => group.revision)) + 1;
+    rebuilt.push({
+      battleId: surviving?.battleId ?? createId(),
+      name: surviving?.name ?? nextBattleName([...existingGroups, ...rebuilt]),
+      participantIds,
+      revision
+    });
+  }
+  return rebuilt.sort((left, right) => left.battleId.localeCompare(right.battleId));
 }
 
 export function joinReinforcements(
@@ -95,10 +109,13 @@ export function mergeBattleGroups(
 ): BattleGroup[] {
   const selected = groups.filter((group) => battleIds.includes(group.battleId));
   if (selected.length < 2) return [...groups];
-  const mergedBattleId = selected.map((group) => group.battleId).sort()[0];
-  if (!mergedBattleId) return [...groups];
+  const surviving = [...selected].sort((left, right) =>
+    left.battleId.localeCompare(right.battleId)
+  )[0];
+  if (!surviving) return [...groups];
   const merged: BattleGroup = {
-    battleId: mergedBattleId,
+    battleId: surviving.battleId,
+    name: surviving.name,
     participantIds: [...new Set(selected.flatMap((group) => group.participantIds))].sort(),
     revision: Math.max(...selected.map((group) => group.revision)) + 1
   };

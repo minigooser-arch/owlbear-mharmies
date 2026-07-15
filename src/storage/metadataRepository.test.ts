@@ -50,7 +50,7 @@ function army(revision: number): ArmyState {
 
 function scene(revision: number): SceneState {
   return {
-    version: 2,
+    version: 3,
     revision,
     settings: {
       defaultDetectionRangeCells: 6,
@@ -72,11 +72,11 @@ function scene(revision: number): SceneState {
 }
 
 describe("MetadataRepository", () => {
-  it("creates schema v2 defaults for a new scene", async () => {
+  it("creates schema v3 defaults for a new scene", async () => {
     const repository = new MetadataRepository(new MemoryPort());
 
     await expect(repository.readScene()).resolves.toMatchObject({
-      version: 2,
+      version: 3,
       sides: []
     });
   });

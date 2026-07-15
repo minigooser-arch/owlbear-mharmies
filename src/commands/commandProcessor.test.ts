@@ -32,7 +32,7 @@ function image(id: string, registered = false): SceneItemRecord {
 
 function state(): CommandState {
   const scene: SceneState = {
-    version: 2,
+    version: 3,
     revision: 2,
     settings: { ...DEFAULT_SETTINGS },
     sides: [
@@ -310,6 +310,7 @@ describe("CommandProcessor", () => {
     commandState.armies["army-blue"] = army("blue");
     commandState.scene.battleGroups = [{
       battleId: "battle",
+      name: "Бой 1",
       participantIds: ["army-red", "army-blue"],
       revision: 1
     }];

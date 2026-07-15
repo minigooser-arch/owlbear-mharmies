@@ -15,7 +15,7 @@ import {
 } from "./routeToolService";
 
 const scene: SceneState = {
-  version: 2,
+  version: 3,
   revision: 4,
   settings: { ...DEFAULT_SETTINGS, defaultMaxRouteDistanceCells: 7 },
   sides: [{

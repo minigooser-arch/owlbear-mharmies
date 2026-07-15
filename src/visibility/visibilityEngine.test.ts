@@ -41,7 +41,7 @@ describe("player visibility", () => {
         playerSideIds: ["A"],
         armies,
         detectionGraph: graph({ A: [] }),
-        battleGroups: [{ battleId: "battle", participantIds: ["a", "b"], revision: 1 }]
+        battleGroups: [{ battleId: "battle", name: "Бой 1", participantIds: ["a", "b"], revision: 1 }]
       })
     ).toEqual(new Set(["a", "b"]));
   });

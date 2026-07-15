@@ -113,9 +113,12 @@ function normalizeSide(value: unknown): Side | undefined {
 }
 
 function normalizeBattleGroup(value: unknown): BattleGroup | undefined {
-  if (!isRecord(value) || !nonEmptyString(value.battleId)) return undefined;
+  if (!isRecord(value) || !nonEmptyString(value.battleId) || !nonEmptyString(value.name)) {
+    return undefined;
+  }
   return {
     battleId: value.battleId,
+    name: value.name,
     participantIds: uniqueStrings(value.participantIds),
     revision: nonNegative(value.revision) ? Math.floor(value.revision) : 0
   };
@@ -149,10 +152,10 @@ function normalizeOverrides(value: unknown): ArmyOverrides {
 
 export function normalizeSceneState(raw: unknown): ValidationResult<SceneState> {
   if (!isRecord(raw)) return { ok: false, issue: { code: "INVALID_VALUE", path: "scene" } };
-  if (finiteNumber(raw.version) && raw.version > 2) {
+  if (finiteNumber(raw.version) && raw.version > 3) {
     return { ok: false, issue: { code: "FUTURE_VERSION", version: raw.version } };
   }
-  if (raw.version !== 2) {
+  if (raw.version !== 3) {
     return { ok: false, issue: { code: "INVALID_VALUE", path: "version" } };
   }
   const sides = Array.isArray(raw.sides)
@@ -164,7 +167,7 @@ export function normalizeSceneState(raw: unknown): ValidationResult<SceneState> 
         .filter((group): group is BattleGroup => group !== undefined)
     : [];
   const state: SceneState = {
-    version: 2,
+    version: 3,
     revision: nonNegative(raw.revision) ? Math.floor(raw.revision) : 0,
     settings: normalizeSettings(raw.settings),
     sides: [...new Map(sides.map((side) => [side.id, side])).values()],
