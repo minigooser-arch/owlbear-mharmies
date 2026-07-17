@@ -841,7 +841,7 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
         distance: (from, to) => port.getGridDistance(from, to),
         snapGridCenter: (position) => port.snapGridCenter(position)
       },
-      `${import.meta.env.BASE_URL}icon.svg`
+      `${import.meta.env.BASE_URL}icon-1.2.png`
     );
   } catch (error) {
     routeGateway.stop();

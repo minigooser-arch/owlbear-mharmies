@@ -1,5 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Летопись: Армии">
-  <rect width="64" height="64" rx="14" fill="#17233c"/>
-  <path d="M32 9 52 17v14c0 13-8 21-20 25C20 52 12 44 12 31V17l20-8Z" fill="#d8aa57"/>
-  <path d="M21 24h22v5H21zm4 9h14v5H25zm4 9h6v5h-6z" fill="#17233c"/>
-</svg>

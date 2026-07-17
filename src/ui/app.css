@@ -5,7 +5,7 @@ button, input, select { font: inherit; }
 button { color: inherit; }
 .app-shell { min-height: 100vh; display: grid; grid-template-rows: auto auto 1fr auto; }
 .topbar { display:flex; align-items:center; gap:10px; padding:14px 16px 10px; border-bottom:1px solid var(--line); }
-.brand-mark { width:38px; height:38px; display:grid; place-items:center; border-radius:11px; color:#172033; font-family:Georgia,serif; font-weight:900; font-size:22px; background:linear-gradient(145deg,#f4d28e,#b98235); box-shadow:0 6px 20px #0006; }
+.brand-mark { width:38px; height:38px; flex:0 0 38px; object-fit:contain; image-rendering:pixelated; }
 .topbar p,.topbar h1 { margin:0; }.topbar p { color:var(--muted); font-size:11px; letter-spacing:.12em; text-transform:uppercase; }.topbar h1 { font:700 20px Georgia,serif; }.role-badge { margin-left:auto; border:1px solid #ad7f3d88; color:#f2cd86; border-radius:99px; padding:5px 9px; font-size:11px; }
 .tabs { display:flex; overflow:auto; gap:4px; padding:8px 10px; border-bottom:1px solid var(--line); scrollbar-width:none; }.tabs button { white-space:nowrap; border:0; background:transparent; color:var(--muted); padding:8px 10px; border-radius:8px; cursor:pointer; }.tabs button.active { color:#101827; background:var(--gold); font-weight:700; }
 .content { padding:16px; overflow:auto; }.section-heading { display:flex; align-items:end; justify-content:space-between; margin-bottom:14px; }.section-heading h2 { margin:2px 0 0; font:700 23px Georgia,serif; }.eyebrow { margin:0; color:var(--gold); font-size:10px; letter-spacing:.14em; text-transform:uppercase; }.count-pill { min-width:30px; height:30px; display:grid; place-items:center; border-radius:9px; background:var(--panel-2); color:var(--gold); font-weight:700; }

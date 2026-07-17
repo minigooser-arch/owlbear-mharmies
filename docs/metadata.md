@@ -1,6 +1,6 @@
 # Metadata «Летопись: Армии»
 
-Все ключи принадлежат namespace `com.letopis.army-control`. Неизвестные поля при нормализации не сохраняются. Текущая версия scene-схемы — `2`; схемы армии и барьера остаются на версии `1`. Будущие версии открываются только для чтения и не перезаписываются.
+Все ключи принадлежат namespace `com.letopis.army-control`. Неизвестные поля при нормализации не сохраняются. Текущая версия scene-схемы — `3`; схемы армии и барьера остаются на версии `1`. Будущие версии открываются только для чтения и не перезаписываются.
 
 ## Scene metadata
 
@@ -8,7 +8,7 @@
 
 ```ts
 interface SceneState {
-  version: 2;
+  version: 3;
   revision: number;
   settings: SceneSettings;
   sides: Side[];
@@ -40,7 +40,7 @@ interface SceneState {
 | `visibilityUpdateRate` | `4` | Пересчётов видимости в секунду |
 | `interpolationEnabled` | `true` | Local-сглаживание |
 
-Поля `allowPlayersToCreateRoutes` и `allowPlayersToStartOwnArmies` сохраняются только для чтения старых комнат. В версии 2 они не дают прав: маршруты задают GM и лидеры стороны, а движением управляет только GM.
+Поля `allowPlayersToCreateRoutes` и `allowPlayersToStartOwnArmies` сохраняются только для чтения старых комнат. В версии 3 они не дают прав: маршруты задают GM и лидеры стороны, а движением управляет только GM.
 
 ### Side
 
@@ -58,7 +58,7 @@ interface Side {
 
 ### BattleGroup
 
-`battleId`, отсортированный массив `participantIds`, `revision`.
+`battleId`, изменяемое ведущим поле `name`, отсортированный массив `participantIds`, `revision`. При миграции и создании используются детерминированные имена `Бой N`.
 
 ## Army item metadata
 
@@ -111,4 +111,4 @@ Local items можно восстановить из source items и metadata; �
 
 ## Миграции
 
-Scene-схемы `version: 0` и `version: 1` последовательно переводятся в `2`; сторонам добавляется `leaderPlayerIds: []`. Для армии `IDLE` становится `READY`, добавляются независимые barrier exceptions. Старый единый флаг барьера `blocks` заполняет оба новых флага. Scene `version > 2` и army/barrier `version > 1` возвращают `FUTURE_VERSION` и никогда не перезаписываются.
+Scene-схемы `version: 0` и `version: 1` последовательно переводятся в `2`, затем `2` переводится в `3`; сторонам добавляется `leaderPlayerIds: []`, а боевым группам — детерминированное `name`. Для армии `IDLE` становится `READY`, добавляются независимые barrier exceptions. Старый единый флаг барьера `blocks` заполняет оба новых флага. Scene `version > 3` и army/barrier `version > 1` возвращают `FUTURE_VERSION` и никогда не перезаписываются.

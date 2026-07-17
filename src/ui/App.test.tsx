@@ -44,6 +44,14 @@ it("does not render a hidden enemy in cards, filters, or counters", () => {
   expect(screen.getByTestId("army-count")).toHaveTextContent("1");
 });
 
+it("uses the versioned sword icon in the popover header", () => {
+  render(<App services={services()} />);
+  expect(screen.getByRole("img", { name: "Летопись: Армии" })).toHaveAttribute(
+    "src",
+    "/icon-1.2.png"
+  );
+});
+
 it("shows GM management tabs but hides them from a player", () => {
   const { unmount } = render(<App services={services()} />);
   expect(screen.queryByRole("button", { name: "Стороны" })).not.toBeInTheDocument();
