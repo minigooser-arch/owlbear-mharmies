@@ -143,3 +143,86 @@ describe("metadata migrations", () => {
     });
   });
 });
+
+it("migrates v4 scene to v5 state territory model", () => {
+  const result = migrateSceneState({
+    version: 4,
+    revision: 3,
+    settings: DEFAULT_SETTINGS,
+    sides: [{ id: "red", name: "Красные", color: "#f00", playerIds: [], leaderPlayerIds: [] }],
+    relations: {},
+    battleGroups: [],
+    terrain: {
+      defaultTerrainId: "plain",
+      types: { plain: { id: "plain", name: "Равнина", movementCostUnits: 2, enabled: true } }
+    },
+    gridMap: {
+      version: 1,
+      revision: 1,
+      cells: { "1,2": { terrainId: null, impassable: false, factionTerritoryIds: ["red"] } }
+    },
+    wars: [{ id: "war", name: "Война", participantFactionIds: ["red", "blue"], active: true }],
+    turn: {
+      turnNumber: 4,
+      autoTurnsPaused: false,
+      deferredUntil: null,
+      lastCompletedAt: null,
+      lastCompletedBy: null,
+      lastProcessedBoundaryId: null
+    }
+  });
+
+  expect(result).toMatchObject({
+    ok: true,
+    value: {
+      version: 5,
+      states: [],
+      sides: [{ id: "red", stateId: null }],
+      gridMap: {
+        cells: {
+          "1,2": {
+            recognizedStateId: null,
+            deFactoStateId: null
+          }
+        }
+      },
+      wars: [{ id: "war", participantStateIds: [] }]
+    }
+  });
+});
+
+it("migrates v2 army to v3 with health supply disband and fixed five OP budget", () => {
+  const result = migrateArmyState({
+    version: 2,
+    registered: true,
+    sideId: "red",
+    status: "READY",
+    overrides: {},
+    route: [{ x: 100, y: 100 }],
+    plannedRoute: {
+      startCell: { x: 0, y: 0 },
+      cells: [{ x: 1, y: 0 }],
+      totalCostUnits: 2,
+      validatedRevision: 1,
+      requiresReplan: false
+    },
+    movement: { maxUnits: 20, remainingUnits: 17, enteredRouteCellCount: 0 },
+    currentWaypointIndex: 0,
+    segmentProgressCells: 0,
+    ignoresMovementBarriers: false,
+    ignoresVisionBarriers: false,
+    revision: 2
+  });
+
+  expect(result).toMatchObject({
+    ok: true,
+    value: {
+      version: 3,
+      health: { hp: 50, maxHp: 50 },
+      supply: { supplied: true, checkedOnTurn: 0 },
+      disband: { pending: false, requestedOnTurn: null, requestedByPlayerId: null },
+      movement: { maxUnits: 10, remainingUnits: 10 },
+      plannedRoute: { executeOnTurn: 0, requiresReplan: true }
+    }
+  });
+});

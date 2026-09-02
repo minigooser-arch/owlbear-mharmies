@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_SETTINGS } from "../shared/constants";
+import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE } from "../shared/constants";
 import type { RawExtensionSnapshot } from "../ui/state/useExtensionState";
 import { semanticSnapshotEqual, semanticValueEqual } from "./snapshotEquality";
 
@@ -24,7 +24,8 @@ function snapshot(overrides: Partial<RawExtensionSnapshot> = {}): RawExtensionSn
         sideId: "red",
         sideName: "Red",
         status: "READY",
-        route: [{ x: 1, y: 2 }, { x: 3, y: 4 }]
+        route: [{ x: 1, y: 2 }, { x: 3, y: 4 }],
+        movementMaxUnits: 10, movementRemainingUnits: 8, routeCostUnits: 2, routeCellCount: 2, routeRequiresReplan: false, atWar: false, healthHp: 50, healthMaxHp: 50, supplied: true, supplyCheckedOnTurn: 1, disbandPending: false
       },
       {
         id: "army-2",
@@ -32,7 +33,8 @@ function snapshot(overrides: Partial<RawExtensionSnapshot> = {}): RawExtensionSn
         sideId: "blue",
         sideName: "Blue",
         status: "MOVING",
-        route: []
+        route: [],
+        movementMaxUnits: 10, movementRemainingUnits: 6, routeCostUnits: 3, routeCellCount: 1, routeRequiresReplan: false, atWar: true, healthHp: 45, healthMaxHp: 50, supplied: false, supplyCheckedOnTurn: 1, disbandPending: false
       }
     ],
     sides: [
@@ -41,16 +43,19 @@ function snapshot(overrides: Partial<RawExtensionSnapshot> = {}): RawExtensionSn
         name: "Red",
         color: "#f00",
         playerIds: ["p1", "p2"],
-        leaderPlayerIds: ["p1", "p2"]
+        leaderPlayerIds: ["p1", "p2"],
+        stateId: null
       },
       {
         id: "blue",
         name: "Blue",
         color: "#00f",
         playerIds: [],
-        leaderPlayerIds: []
+        leaderPlayerIds: [],
+        stateId: null
       }
     ],
+    states: [],
     relations: {
       red: { blue: "ENEMY", red: "ALLY" },
       blue: { red: "ENEMY", blue: "ALLY" }
@@ -60,6 +65,9 @@ function snapshot(overrides: Partial<RawExtensionSnapshot> = {}): RawExtensionSn
       { battleId: "battle-2", name: "Hill", participantIds: ["army-3"], revision: 1 }
     ],
     settings: { ...DEFAULT_SETTINGS },
+    terrain: structuredClone(DEFAULT_TERRAIN),
+    wars: [],
+    turn: structuredClone(DEFAULT_TURN_STATE),
     ...overrides
   };
 }
@@ -92,7 +100,8 @@ describe("semantic snapshot equality", () => {
         playerIds: [...side.playerIds].reverse(),
         leaderPlayerIds: [...side.leaderPlayerIds].reverse()
       })),
-      relations: {
+      states: [],
+    relations: {
         blue: { blue: "ALLY", red: "ENEMY" },
         red: { red: "ALLY", blue: "ENEMY" }
       },
@@ -129,4 +138,10 @@ describe("semantic snapshot equality", () => {
       snapshot({ mapVisibleSourceIds: new Set(["b", "c"]) })
     )).toBe(true);
   });
+  it("treats turn lifecycle changes as semantically meaningful", () => {
+    const left = snapshot();
+    const right = snapshot({ turn: { ...left.turn, turnNumber: left.turn.turnNumber + 1 } });
+    expect(semanticSnapshotEqual(left, right)).toBe(false);
+  });
+
 });

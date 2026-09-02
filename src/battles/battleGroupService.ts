@@ -45,6 +45,7 @@ function connectedComponents(armyIds: readonly string[], edges: readonly Contact
   return components;
 }
 
+
 export function rebuildBattleGroups(
   armyIds: readonly string[],
   directEnemyContacts: readonly ContactEdge[],
@@ -120,10 +121,11 @@ export function mergeBattleGroups(
     compareOrdinal(left.battleId, right.battleId)
   )[0];
   if (!surviving) return [...groups];
+  const participantIds = [...new Set(selected.flatMap((group) => group.participantIds))].sort();
   const merged: BattleGroup = {
     battleId: surviving.battleId,
     name: surviving.name,
-    participantIds: [...new Set(selected.flatMap((group) => group.participantIds))].sort(),
+    participantIds,
     revision: Math.max(...selected.map((group) => group.revision)) + 1
   };
   return [

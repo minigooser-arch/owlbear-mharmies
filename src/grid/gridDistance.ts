@@ -4,6 +4,7 @@ import type { Vector2 } from "../shared/types";
 export interface GridSdkPort {
   getGridDistance(from: Vector2, to: Vector2): Promise<number>;
   snapGridCenter(position: Vector2): Promise<Vector2>;
+  getGridDpi(): Promise<number>;
   onGridChange(callback: () => void): () => void;
 }
 
@@ -16,6 +17,10 @@ export class GridDistanceService implements GridRoutePort {
 
   async snapGridCenter(position: Vector2): Promise<Vector2> {
     return this.sdk.snapGridCenter(position);
+  }
+
+  async getDpi(): Promise<number> {
+    return this.sdk.getGridDpi();
   }
 
   subscribe(onInvalidated: () => void): () => void {

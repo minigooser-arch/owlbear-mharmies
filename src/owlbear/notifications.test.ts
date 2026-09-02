@@ -19,7 +19,15 @@ describe("notificationMessage", () => {
     ["IMAGE_REQUIRED", "Для армии необходимо выбрать изображение."],
     ["ALREADY_REGISTERED", "Выбранное изображение уже зарегистрировано как армия."],
     ["SIDE_NOT_FOUND", "Выбранная сторона не найдена."],
-    ["ARMY_NOT_READY", "Сначала остановите армию, чтобы изменить её маршрут."]
+    ["ARMY_NOT_READY", "Сначала остановите армию, чтобы изменить её маршрут."],
+    ["NOT_FACTION_MEMBER", "Эта армия принадлежит другой фракции."],
+    ["ARMY_TRANSFER_FORBIDDEN", "Сухопутную армию нельзя передать другой фракции."],
+    ["ARMY_ENCIRCLED", "Окружённую армию нельзя лечить."],
+    ["DISBAND_ALREADY_REQUESTED", "Роспуск этой армии уже объявлен и не может быть отменён."],
+    ["MOVEMENT_CONSUMED_FOR_TURN", "После начала боя армия потеряла всё движение этого хода."],
+    ["ROUTE_NOT_ACTIVE_TURN", "Этот маршрут назначен на другой глобальный ход."],
+    ["ROUTE_REQUIRES_REPLAN", "Старый маршрут нужно спланировать заново."],
+    ["TURN_POSITION_UNAVAILABLE", "Не удалось определить стратегическую клетку армии для смены хода."]
   ])("translates %s into Russian", (code, message) => {
     expect(notificationMessage(code)).toBe(message);
   });

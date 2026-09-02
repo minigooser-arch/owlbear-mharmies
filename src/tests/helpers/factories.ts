@@ -7,7 +7,7 @@ import {
   RouteOverlayService,
   type RouteOverlayPort
 } from "../../routes/routeOverlayService";
-import { DEFAULT_SETTINGS, METADATA_KEYS } from "../../shared/constants";
+import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE, METADATA_KEYS } from "../../shared/constants";
 import type {
   ArmyCommand,
   ArmyCommandPayload,
@@ -37,12 +37,24 @@ export function roomArmy(id: string, sideId: string, name: string, x: number): R
     collisionRangeCells: 0.5,
     speedCellsPerSecond: 1,
     state: {
-      version: 1,
+      version: 3,
       registered: true,
       sideId,
       status: "READY",
       overrides: {},
       route: [],
+      plannedRoute: {
+        startCell: { x: 0, y: 0 },
+        executeOnTurn: 0,
+        cells: [],
+        totalCostUnits: 0,
+        validatedRevision: 0,
+        requiresReplan: false
+      },
+      movement: { maxUnits: 10, remainingUnits: 10, enteredRouteCellCount: 0 },
+      health: { hp: 50, maxHp: 50 },
+      supply: { supplied: true, checkedOnTurn: 0 },
+      disband: { pending: false, requestedOnTurn: null, requestedByPlayerId: null },
       currentWaypointIndex: 0,
       segmentProgressCells: 0,
       ignoresMovementBarriers: false,
@@ -76,7 +88,13 @@ export function registerArmy(itemId: string, sideId: string): ArmyCommandPayload
 }
 
 export function setRoute(armyId: string, route: readonly Vector2[]): ArmyCommandPayload {
-  return { type: "SET_ROUTE", armyId, route: route.map((point) => ({ ...point })) };
+  return {
+    type: "SET_ROUTE",
+    armyId,
+    route: route.map((point) => ({ ...point })),
+    startCell: { x: 0, y: 0 },
+    cells: route.map((_point, index) => ({ x: index + 1, y: 0 }))
+  };
 }
 
 export function startArmy(armyId: string): ArmyCommandPayload {
@@ -161,7 +179,7 @@ class SideLeaderRoom {
   private requestNumber = 0;
   private state: CommandState = {
     scene: {
-      version: 3,
+      version: 5,
       revision: 1,
       settings: { ...DEFAULT_SETTINGS },
       sides: [
@@ -170,18 +188,31 @@ class SideLeaderRoom {
           name: "Красные",
           color: "#f00",
           playerIds: [],
-          leaderPlayerIds: []
+          leaderPlayerIds: [],
+          stateId: null
         },
         {
           id: "blue",
           name: "Синие",
           color: "#00f",
           playerIds: ["other"],
-          leaderPlayerIds: []
+          leaderPlayerIds: [],
+          stateId: null
         }
       ],
+      states: [],
       relations: {},
-      battleGroups: []
+      battleGroups: [],
+      terrain: structuredClone(DEFAULT_TERRAIN),
+      gridMap: {
+        version: 1,
+        revision: 0,
+        cells: {
+          "1,0": { terrainId: null, impassable: false, factionTerritoryIds: ["red"], recognizedStateId: null, deFactoStateId: null }
+        }
+      },
+      wars: [],
+      turn: structuredClone(DEFAULT_TURN_STATE)
     },
     armies: {},
     barriers: {},

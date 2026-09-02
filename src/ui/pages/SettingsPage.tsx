@@ -9,7 +9,6 @@ export function SettingsPage({ settings, onAction }: { settings: SceneSettings; 
   return (
     <section><div className="section-heading"><div><p className="eyebrow">Правила</p><h2>Настройки</h2></div></div>
       <div className="form-grid">
-        <label>Лимит маршрута<input type="number" min="0" value={settings.defaultMaxRouteDistanceCells} onChange={(event) => updateNumber("defaultMaxRouteDistanceCells", event.target.value)} /></label>
         <label>Дальность обнаружения<input type="number" min="0" value={settings.defaultDetectionRangeCells} onChange={(event) => updateNumber("defaultDetectionRangeCells", event.target.value)} /></label>
       </div>
     </section>

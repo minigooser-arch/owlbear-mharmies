@@ -10,12 +10,23 @@ import {
 
 function army(status: ArmyState["status"], routeX = 5): ArmyState {
   return {
-    version: 1,
+    version: 3,
     registered: true,
     sideId: "A",
     status,
     overrides: {},
     route: [{ x: routeX, y: 0 }],
+    plannedRoute: {
+      startCell: { x: 0, y: 0 },
+      executeOnTurn: 1,
+      cells: [{ x: 1, y: 0 }],
+      totalCostUnits: 2,
+      validatedRevision: 1,
+      requiresReplan: false
+    },
+    movement: { maxUnits: 10, remainingUnits: 10, enteredRouteCellCount: 0 },
+    health: { hp: 50, maxHp: 50 }, supply: { supplied: true, checkedOnTurn: 1 },
+    disband: { pending: false, requestedOnTurn: null, requestedByPlayerId: null },
     currentWaypointIndex: 0,
     segmentProgressCells: 0,
     ignoresMovementBarriers: false,

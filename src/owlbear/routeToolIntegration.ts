@@ -1,26 +1,37 @@
-import type { KeyEvent, Metadata, Tool, ToolContext, ToolEvent, ToolMode } from "@owlbear-rodeo/sdk";
+import type { KeyEvent, Metadata, Tool, ToolAction, ToolContext, ToolEvent, ToolMode } from "@owlbear-rodeo/sdk";
 import type { BarrierSegment } from "../barriers/barrierGeometry";
 import type { GridRoutePort } from "../routes/routeMath";
 import {
   ROUTE_ARMY_ID_KEY,
   ROUTE_RETURN_TOOL_KEY,
   ROUTE_TOOL_ID,
-  ROUTE_TOOL_MODE_ID
+  ROUTE_TOOL_MODE_ID,
+  ROUTE_FINISH_ACTION_ID,
+  ROUTE_UNDO_ACTION_ID,
+  ROUTE_CLEAR_ACTION_ID,
+  ROUTE_CANCEL_ACTION_ID
 } from "../shared/constants";
-import type { Vector2 } from "../shared/types";
+import type { GridCellCoord, GridMapState, TerrainRegistryState, Vector2, WarState } from "../shared/types";
 import { notificationMessage } from "./notifications";
 import { RouteToolController, type RouteToolSnapshot } from "./routeTool";
 
 export interface RouteToolSession {
   armyId: string;
   start: Vector2;
-  maxCells: number;
+  startCell: GridCellCoord;
+  gridDpi: number;
+  sideId: string;
+  movementUnits: number;
+  maxUnits: number;
+  terrain: TerrainRegistryState;
+  gridMap: GridMapState;
+  wars: readonly WarState[];
   barriers: readonly BarrierSegment[];
 }
 
 export interface RouteToolIntegrationPort {
   loadSession(armyId: string): Promise<RouteToolSession>;
-  commitRoute(armyId: string, route: readonly Vector2[]): Promise<void>;
+  commitRoute(armyId: string, route: readonly Vector2[], startCell: GridCellCoord, cells: readonly GridCellCoord[]): Promise<void>;
   renderPreview(snapshot: RouteToolSnapshot): Promise<void>;
   clearPreview(): Promise<void>;
   notify(message: string, variant: "INFO" | "WARNING" | "ERROR"): Promise<void>;
@@ -32,6 +43,8 @@ export interface RouteToolApi {
   remove(id: string): Promise<void>;
   createMode(mode: ToolMode): Promise<void>;
   removeMode(id: string): Promise<void>;
+  createAction(action: ToolAction): Promise<void>;
+  removeAction(id: string): Promise<void>;
   setMetadata(toolId: string, update: Partial<Metadata>): Promise<void>;
 }
 
@@ -197,12 +210,7 @@ export async function registerRouteTool(
         return;
       }
       if (closed || activation !== generation) return;
-      controller.activate(
-        session.armyId,
-        session.start,
-        session.maxCells,
-        session.barriers
-      );
+      controller.activate(session);
       active = true;
       await renderSnapshot();
     });
@@ -218,9 +226,15 @@ export async function registerRouteTool(
       if (!result.accepted) {
         const message = result.reason === "BARRIER"
           ? "Маршрут пересекает непроходимое препятствие"
-          : result.reason === "ROUTE_LIMIT"
-            ? "Превышен лимит длины маршрута"
-            : "Инструмент маршрута не активен";
+          : result.reason === "NOT_ORTHOGONAL"
+            ? "Можно двигаться только по горизонтали или вертикали"
+            : result.reason === "IMPASSABLE"
+              ? "Эта клетка непроходима"
+              : result.reason === "OUTSIDE_FACTION_TERRITORY"
+                ? "В мирное время эта армия не может покидать территорию своей фракции"
+                : result.reason === "INSUFFICIENT_MOVEMENT_POINTS"
+                  ? "Не хватает очков перемещения"
+                  : "Эту клетку нельзя добавить в маршрут";
         await safeNotify(message, "WARNING");
       }
     });
@@ -234,13 +248,6 @@ export async function registerRouteTool(
       const result = controller.key(event.key);
       if (result.action === "EDITING") {
         await renderSnapshot();
-      } else if (result.action === "COMMIT") {
-        try {
-          await port.commitRoute(result.armyId, result.route);
-        } catch (error) {
-          await safeNotify(`Не удалось сохранить маршрут: ${messageFrom(error)}`, "ERROR");
-        }
-        await finishSession(true);
       } else if (result.action === "CANCEL") {
         await finishSession(true);
       }
@@ -251,6 +258,45 @@ export async function registerRouteTool(
     if (closed) return;
     generation += 1;
     void enqueue(() => finishSession(false));
+  };
+
+  const actionFilter = { activeTools: [ROUTE_TOOL_ID] };
+  const finishAction: ToolAction = {
+    id: ROUTE_FINISH_ACTION_ID,
+    icons: [{ icon: iconUrl, label: "Завершить маршрут", filter: actionFilter }],
+    onClick: () => {
+      void enqueue(async () => {
+        if (!active) return;
+        const result = controller.finish();
+        if (result.action === "INVALID") {
+          await safeNotify(result.reason === "EMPTY_ROUTE" ? "Добавьте хотя бы одну клетку маршрута" : "Маршрут сейчас недействителен", "WARNING");
+          return;
+        }
+        if (result.action !== "COMMIT") return;
+        try {
+          await port.commitRoute(result.armyId, result.route, result.startCell, result.cells);
+        } catch (error) {
+          await safeNotify(`Не удалось сохранить маршрут: ${messageFrom(error)}`, "ERROR");
+          return;
+        }
+        await finishSession(true);
+      });
+    }
+  };
+  const undoAction: ToolAction = {
+    id: ROUTE_UNDO_ACTION_ID,
+    icons: [{ icon: iconUrl, label: "Шаг назад", filter: actionFilter }],
+    onClick: () => { void enqueue(async () => { if (active) { controller.undo(); await renderSnapshot(); } }); }
+  };
+  const clearAction: ToolAction = {
+    id: ROUTE_CLEAR_ACTION_ID,
+    icons: [{ icon: iconUrl, label: "Очистить маршрут", filter: actionFilter }],
+    onClick: () => { void enqueue(async () => { if (active) { controller.clear(); await renderSnapshot(); } }); }
+  };
+  const cancelAction: ToolAction = {
+    id: ROUTE_CANCEL_ACTION_ID,
+    icons: [{ icon: iconUrl, label: "Отмена", filter: actionFilter }],
+    onClick: () => { void enqueue(() => finishSession(true)); }
   };
 
   const tool: Tool = {
@@ -277,9 +323,13 @@ export async function registerRouteTool(
   };
 
   await api.create(tool);
+  const actions = [finishAction, undoAction, clearAction, cancelAction];
   try {
     await api.createMode(mode);
+    for (const action of actions) await api.createAction(action);
   } catch (error) {
+    for (const action of actions) { try { await api.removeAction(action.id); } catch {} }
+    try { await api.removeMode(ROUTE_TOOL_MODE_ID); } catch {}
     await api.remove(ROUTE_TOOL_ID);
     throw error;
   }
@@ -295,6 +345,9 @@ export async function registerRouteTool(
       await finishSession(false);
     } catch (error) {
       failure = error;
+    }
+    for (const actionId of [ROUTE_FINISH_ACTION_ID, ROUTE_UNDO_ACTION_ID, ROUTE_CLEAR_ACTION_ID, ROUTE_CANCEL_ACTION_ID]) {
+      try { await api.removeAction(actionId); } catch (error) { failure ??= error; }
     }
     try {
       await api.removeMode(ROUTE_TOOL_MODE_ID);

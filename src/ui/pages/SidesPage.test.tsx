@@ -10,7 +10,8 @@ const red: Side = {
   name: "Красные",
   color: "#f00",
   playerIds: ["leader", "offline"],
-  leaderPlayerIds: ["leader"]
+  leaderPlayerIds: ["leader"],
+  stateId: null
 };
 
 const players = [
@@ -47,7 +48,8 @@ describe("SidesPage", () => {
         name: "Красные",
         color: "#b3261e",
         playerIds: [],
-        leaderPlayerIds: []
+        leaderPlayerIds: [],
+        stateId: null
       }
     });
   });

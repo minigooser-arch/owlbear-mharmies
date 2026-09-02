@@ -9,6 +9,7 @@ interface ArmiesPageProps {
   role: "GM" | "PLAYER";
   playerId: string;
   leaderSideIds: ReadonlySet<string>;
+  memberSideIds: ReadonlySet<string>;
   onAction(command: UiCommand): void;
 }
 
@@ -17,10 +18,12 @@ export function ArmiesPage({
   sides,
   role,
   leaderSideIds,
+  memberSideIds,
   onAction
 }: ArmiesPageProps) {
   const [query, setQuery] = useState("");
   const [filterSideId, setFilterSideId] = useState("ALL");
+  const [statusFilter, setStatusFilter] = useState<"ALL" | "MOVING" | "IN_BATTLE" | "ENCIRCLED">("ALL");
   const [registrationSideId, setRegistrationSideId] = useState(sides[0]?.id ?? "");
   const filterSides = useMemo(() => {
     if (role === "GM") return sides;
@@ -37,9 +40,10 @@ export function ArmiesPage({
   const filtered = useMemo(
     () => armies.filter((army) =>
       (selectedFilterSideId === "ALL" || army.sideId === selectedFilterSideId) &&
+      (statusFilter === "ALL" || (statusFilter === "ENCIRCLED" ? !army.supplied : army.status === statusFilter)) &&
       army.name.toLocaleLowerCase("ru").includes(query.toLocaleLowerCase("ru"))
     ),
-    [armies, query, selectedFilterSideId]
+    [armies, query, selectedFilterSideId, statusFilter]
   );
   return (
     <section aria-labelledby="armies-title">
@@ -53,6 +57,11 @@ export function ArmiesPage({
           <option value="ALL">Все стороны</option>
           {filterSides.map((side) => <option key={side.id} value={side.id}>{side.name}</option>)}
         </select>
+      </div>
+      <div className="filter-chips" aria-label="Фильтр по статусу">
+        {([
+          ["ALL", "Все"], ["MOVING", "В движении"], ["IN_BATTLE", "В бою"], ["ENCIRCLED", "Окружены"]
+        ] as const).map(([value, label]) => <button type="button" key={value} className={statusFilter === value ? "active" : ""} onClick={() => setStatusFilter(value)}>{label}</button>)}
       </div>
       {role === "GM" && (
         <div className="filters" aria-label="Регистрация армии">
@@ -84,6 +93,7 @@ export function ArmiesPage({
             army={army}
             isGM={role === "GM"}
             canEditRoute={role === "GM" || leaderSideIds.has(army.sideId)}
+            canRequestDisband={role === "GM" || memberSideIds.has(army.sideId)}
             onAction={onAction}
           />
         ))}

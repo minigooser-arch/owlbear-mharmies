@@ -3,9 +3,13 @@ import type {
   ArmyCommandPayload,
   ArmyOverrides,
   BarrierState,
+  GridCellCoord,
   SceneSettings,
   Side,
-  Vector2
+  StateEntity,
+  TerrainType,
+  Vector2,
+  WarState
 } from "../shared/types";
 import { COMMAND_PROTOCOL_VERSION } from "../shared/types";
 
@@ -94,6 +98,65 @@ function parseRoute(value: unknown): Vector2[] | undefined {
   return route;
 }
 
+
+function parseGridCell(value: unknown): GridCellCoord | undefined {
+  if (!isRecord(value) || !Number.isInteger(value.x) || !Number.isInteger(value.y)) return undefined;
+  return { x: value.x as number, y: value.y as number };
+}
+
+function parseCells(value: unknown): GridCellCoord[] | undefined {
+  if (!denseArray(value) || value.length > 4096) return undefined;
+  const cells: GridCellCoord[] = [];
+  const seen = new Set<string>();
+  for (const entry of value) {
+    const cell = parseGridCell(entry);
+    if (!cell) return undefined;
+    const key = `${cell.x},${cell.y}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    cells.push(cell);
+  }
+  return cells;
+}
+
+function parseTerrainType(value: unknown): TerrainType | undefined {
+  if (!isRecord(value) || !sideId(value.id) || !boundedString(value.name, 80) ||
+      !Number.isInteger(value.movementCostUnits) || (value.movementCostUnits as number) <= 0 ||
+      typeof value.enabled !== "boolean") return undefined;
+  const terrain: TerrainType = {
+    id: value.id,
+    name: value.name.trim(),
+    movementCostUnits: value.movementCostUnits as number,
+    enabled: value.enabled
+  };
+  if (value.color !== undefined) {
+    if (!boundedString(value.color, 32)) return undefined;
+    terrain.color = value.color;
+  }
+  return terrain;
+}
+
+
+function parseStateEntity(value: unknown): StateEntity | undefined {
+  if (!isRecord(value) || !sideId(value.id) || !boundedString(value.name, 80) || typeof value.active !== "boolean") return undefined;
+  const rulingFactionId = value.rulingFactionId === null || value.rulingFactionId === undefined
+    ? null
+    : sideId(value.rulingFactionId) ? value.rulingFactionId : undefined;
+  if (rulingFactionId === undefined) return undefined;
+  return { id: value.id, name: value.name.trim(), rulingFactionId, active: value.active };
+}
+
+function parseWar(value: unknown): WarState | undefined {
+  if (!isRecord(value) || !sideId(value.id) || !boundedString(value.name, 80) || typeof value.active !== "boolean") return undefined;
+  const participantFactionIds = parseStringArray(value.participantFactionIds);
+  const participantStateIds = value.participantStateIds === undefined
+    ? []
+    : parseStringArray(value.participantStateIds);
+  if (!participantFactionIds || !participantStateIds) return undefined;
+  if (participantFactionIds.length < 2 && participantStateIds.length < 2) return undefined;
+  return { id: value.id, name: value.name.trim(), participantFactionIds, participantStateIds, active: value.active };
+}
+
 function parseSide(value: unknown): Side | undefined {
   if (
     !isRecord(value) ||
@@ -108,12 +171,17 @@ function parseSide(value: unknown): Side | undefined {
   if (!playerIds || !leaderPlayerIds) return undefined;
   const members = new Set(playerIds);
   if (leaderPlayerIds.some((leaderId) => !members.has(leaderId))) return undefined;
+  const parsedStateId = value.stateId === undefined || value.stateId === null
+    ? null
+    : sideId(value.stateId) ? value.stateId : undefined;
+  if (parsedStateId === undefined) return undefined;
   return {
     id: value.id,
     name: value.name,
     color: value.color,
     playerIds,
-    leaderPlayerIds
+    leaderPlayerIds,
+    stateId: parsedStateId
   };
 }
 
@@ -241,6 +309,7 @@ function parseBarrierPatch(value: unknown): Partial<BarrierState> | undefined {
   return result;
 }
 
+
 const armyIdOnly = (value: UnknownRecord): string | undefined =>
   boundedString(value.armyId) ? value.armyId : undefined;
 const sidePlayer = (
@@ -321,8 +390,10 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
   },
   SET_ROUTE: (value) => {
     const route = parseRoute(value.route);
-    return boundedString(value.armyId) && route
-      ? { type: "SET_ROUTE", armyId: value.armyId, route }
+    const startCell = parseGridCell(value.startCell);
+    const cells = parseCells(value.cells);
+    return boundedString(value.armyId) && route && startCell && cells && route.length === cells.length
+      ? { type: "SET_ROUTE", armyId: value.armyId, route, startCell, cells }
       : undefined;
   },
   CLEAR_ROUTE: (value) => {
@@ -388,7 +459,121 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
           battleId: value.battleId,
           armyId: value.armyId
         }
-      : undefined
+      : undefined,
+  SET_TERRAIN_CELLS: (value) => {
+    const cells = parseCells(value.cells);
+    return cells && (value.terrainId === null || sideId(value.terrainId))
+      ? { type: "SET_TERRAIN_CELLS", cells, terrainId: value.terrainId as string | null }
+      : undefined;
+  },
+  SET_IMPASSABLE_CELLS: (value) => {
+    const cells = parseCells(value.cells);
+    return cells && typeof value.impassable === "boolean"
+      ? { type: "SET_IMPASSABLE_CELLS", cells, impassable: value.impassable }
+      : undefined;
+  },
+  UPDATE_FACTION_TERRITORY_CELLS: (value) => {
+    const cells = parseCells(value.cells);
+    return cells && sideId(value.sideId) && (value.operation === "ADD" || value.operation === "REMOVE")
+      ? { type: "UPDATE_FACTION_TERRITORY_CELLS", cells, sideId: value.sideId, operation: value.operation }
+      : undefined;
+  },
+  CLEAR_CELL_PROPERTIES: (value) => {
+    const cells = parseCells(value.cells);
+    const target = value.target === "TERRAIN" || value.target === "IMPASSABLE" || value.target === "SELECTED_FACTION" || value.target === "RECOGNIZED_STATE" || value.target === "DEFACTO_STATE" || value.target === "ALL"
+      ? value.target
+      : undefined;
+    if (!cells || !target) return undefined;
+    if (target === "SELECTED_FACTION") {
+      return sideId(value.sideId) ? { type: "CLEAR_CELL_PROPERTIES", cells, target, sideId: value.sideId } : undefined;
+    }
+    return { type: "CLEAR_CELL_PROPERTIES", cells, target };
+  },
+  CREATE_TERRAIN_TYPE: (value) => {
+    const terrain = parseTerrainType(value.terrain);
+    return terrain ? { type: "CREATE_TERRAIN_TYPE", terrain } : undefined;
+  },
+  UPDATE_TERRAIN_TYPE: (value) => {
+    if (!sideId(value.terrainId) || !isRecord(value.patch)) return undefined;
+    const patch: Partial<Omit<TerrainType, "id">> = {};
+    if ("name" in value.patch) { if (!boundedString(value.patch.name, 80)) return undefined; patch.name = value.patch.name.trim(); }
+    if ("movementCostUnits" in value.patch) { if (!Number.isInteger(value.patch.movementCostUnits) || (value.patch.movementCostUnits as number) <= 0) return undefined; patch.movementCostUnits = value.patch.movementCostUnits as number; }
+    if ("enabled" in value.patch) { if (typeof value.patch.enabled !== "boolean") return undefined; patch.enabled = value.patch.enabled; }
+    if ("color" in value.patch) { if (!boundedString(value.patch.color, 32)) return undefined; patch.color = value.patch.color; }
+    return { type: "UPDATE_TERRAIN_TYPE", terrainId: value.terrainId, patch };
+  },
+  DELETE_TERRAIN_TYPE: (value) =>
+    sideId(value.terrainId) && (value.replacementTerrainId === undefined || sideId(value.replacementTerrainId))
+      ? { type: "DELETE_TERRAIN_TYPE", terrainId: value.terrainId, ...(value.replacementTerrainId ? { replacementTerrainId: value.replacementTerrainId } : {}) }
+      : undefined,
+  CREATE_STATE: (value) => {
+    const state = parseStateEntity(value.state);
+    return state ? { type: "CREATE_STATE", state } : undefined;
+  },
+  UPDATE_STATE: (value) => {
+    if (!sideId(value.stateId) || !isRecord(value.patch)) return undefined;
+    const patch: Partial<Omit<StateEntity, "id">> = {};
+    if ("name" in value.patch) { if (!boundedString(value.patch.name, 80)) return undefined; patch.name = value.patch.name.trim(); }
+    if ("active" in value.patch) { if (typeof value.patch.active !== "boolean") return undefined; patch.active = value.patch.active; }
+    if ("rulingFactionId" in value.patch) {
+      if (value.patch.rulingFactionId !== null && !sideId(value.patch.rulingFactionId)) return undefined;
+      patch.rulingFactionId = value.patch.rulingFactionId as string | null;
+    }
+    return { type: "UPDATE_STATE", stateId: value.stateId, patch };
+  },
+  DELETE_STATE: (value) => sideId(value.stateId) ? { type: "DELETE_STATE", stateId: value.stateId } : undefined,
+  SET_SIDE_STATE: (value) => sideId(value.sideId) && (value.stateId === null || sideId(value.stateId))
+    ? { type: "SET_SIDE_STATE", sideId: value.sideId, stateId: value.stateId as string | null }
+    : undefined,
+  SET_RECOGNIZED_STATE_CELLS: (value) => {
+    const cells = parseCells(value.cells);
+    return cells && (value.stateId === null || sideId(value.stateId))
+      ? { type: "SET_RECOGNIZED_STATE_CELLS", cells, stateId: value.stateId as string | null }
+      : undefined;
+  },
+  SET_DEFACTO_STATE_CELLS: (value) => {
+    const cells = parseCells(value.cells);
+    return cells && (value.stateId === null || sideId(value.stateId))
+      ? { type: "SET_DEFACTO_STATE_CELLS", cells, stateId: value.stateId as string | null }
+      : undefined;
+  },
+  SET_ARMY_HP: (value) => {
+    if (!boundedString(value.armyId) || !nonNegativeInteger(value.hp)) return undefined;
+    if (value.maxHp !== undefined && (!nonNegativeInteger(value.maxHp) || value.maxHp <= 0)) return undefined;
+    return { type: "SET_ARMY_HP", armyId: value.armyId, hp: value.hp, ...(value.maxHp !== undefined ? { maxHp: value.maxHp } : {}) };
+  },
+  HEAL_ARMY: (value) => boundedString(value.armyId) && nonNegativeInteger(value.amount) && value.amount > 0
+    ? { type: "HEAL_ARMY", armyId: value.armyId, amount: value.amount }
+    : undefined,
+  REQUEST_ARMY_DISBAND: (value) => {
+    const armyId = armyIdOnly(value);
+    return armyId ? { type: "REQUEST_ARMY_DISBAND", armyId } : undefined;
+  },
+  CREATE_WAR: (value) => {
+    const war = parseWar(value.war);
+    return war ? { type: "CREATE_WAR", war } : undefined;
+  },
+  UPDATE_WAR: (value) => {
+    if (!sideId(value.warId) || !isRecord(value.patch)) return undefined;
+    const patch: Partial<Omit<WarState, "id">> = {};
+    if ("name" in value.patch) { if (!boundedString(value.patch.name, 80)) return undefined; patch.name = value.patch.name.trim(); }
+    if ("active" in value.patch) { if (typeof value.patch.active !== "boolean") return undefined; patch.active = value.patch.active; }
+    if ("participantFactionIds" in value.patch) { const ids = parseStringArray(value.patch.participantFactionIds); if (!ids) return undefined; patch.participantFactionIds = ids; }
+    if ("participantStateIds" in value.patch) { const ids = parseStringArray(value.patch.participantStateIds); if (!ids) return undefined; patch.participantStateIds = ids; }
+    const nextFactionCount = patch.participantFactionIds?.length;
+    const nextStateCount = patch.participantStateIds?.length;
+    if (nextFactionCount !== undefined && nextStateCount !== undefined && nextFactionCount < 2 && nextStateCount < 2) return undefined;
+    return { type: "UPDATE_WAR", warId: value.warId, patch };
+  },
+  END_WAR: (value) => sideId(value.warId) ? { type: "END_WAR", warId: value.warId } : undefined,
+  DEFER_TURN: (value) => {
+    if (!boundedString(value.until, 64) || !Number.isFinite(Date.parse(value.until))) return undefined;
+    return { type: "DEFER_TURN", until: new Date(value.until).toISOString() };
+  },
+  CANCEL_TURN_DEFERRAL: () => ({ type: "CANCEL_TURN_DEFERRAL" }),
+  PAUSE_AUTO_TURNS: () => ({ type: "PAUSE_AUTO_TURNS" }),
+  RESUME_AUTO_TURNS: () => ({ type: "RESUME_AUTO_TURNS" }),
+  COMPLETE_TURN_NOW: () => ({ type: "COMPLETE_TURN_NOW" })
 };
 
 function invalid(

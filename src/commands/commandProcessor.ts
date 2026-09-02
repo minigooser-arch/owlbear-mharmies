@@ -1,4 +1,12 @@
 import { releaseBattleGroup } from "../battles/battleGroupService";
+import { destroyArmy } from "../armies/armyLifecycle";
+import { healArmy } from "../health/armyHealth";
+import { requestArmyDisband } from "../disband/disbandService";
+import { cancelTurnDeferral, completeTurn, deferTurn, pauseAutoTurns, resumeAutoTurns } from "../turns/turnService";
+import { parseCellKey } from "../grid/strategicGrid";
+import { applyCellPatchBatch, readCell } from "../terrain/gridMap";
+import { validatePlannedRoute } from "../movement/movementRules";
+import { unenteredRouteCells } from "../movement/strategicProgress";
 import { authorizeArmyCommand } from "../shared/permissions";
 import { METADATA_KEYS } from "../shared/constants";
 import type {
@@ -7,6 +15,7 @@ import type {
   BarrierState,
   SceneItemRecord,
   SceneState,
+  GridCellCoord,
   Vector2
 } from "../shared/types";
 
@@ -50,7 +59,70 @@ function bumpArmy(army: ArmyState, patch: Partial<ArmyState>): ArmyState {
   return { ...army, ...patch, revision: army.revision + 1 };
 }
 
+function emptyPlannedRoute(startCell: GridCellCoord = { x: 0, y: 0 }): ArmyState["plannedRoute"] {
+  return {
+    startCell: { ...startCell },
+    executeOnTurn: 0,
+    cells: [],
+    totalCostUnits: 0,
+    validatedRevision: 0,
+    requiresReplan: false
+  };
+}
+
+function revalidateArmyRoute(state: CommandState, armyId: string): void {
+  const army = state.armies[armyId];
+  if (!army || army.plannedRoute.requiresReplan || army.plannedRoute.cells.length === 0) return;
+  const enteredCount = Math.max(
+    0,
+    Math.min(army.plannedRoute.cells.length, army.movement.enteredRouteCellCount)
+  );
+  const remainingCells = unenteredRouteCells(army.plannedRoute.cells, enteredCount);
+  const remainingStart = enteredCount === 0
+    ? army.plannedRoute.startCell
+    : army.plannedRoute.cells[enteredCount - 1] ?? army.plannedRoute.startCell;
+  const result = validatePlannedRoute({
+    start: remainingStart,
+    cells: remainingCells,
+    sideId: army.sideId,
+    terrain: state.scene.terrain,
+    wars: state.scene.wars,
+    remainingUnits: army.plannedRoute.executeOnTurn > state.scene.turn.turnNumber
+      ? 10
+      : army.movement.remainingUnits,
+    readCell: (cell) => readCell(state.scene.gridMap, cell),
+    armyStateAllowsMovement: army.status === "READY" || army.status === "PAUSED" || army.status === "MOVING"
+  });
+  const plannedRoute: ArmyState["plannedRoute"] = result.valid
+    ? {
+        startCell: { ...army.plannedRoute.startCell },
+        executeOnTurn: army.plannedRoute.executeOnTurn,
+        cells: army.plannedRoute.cells.map((cell) => ({ ...cell })),
+        totalCostUnits: result.totalCostUnits,
+        validatedRevision: state.scene.revision + 1,
+        requiresReplan: false
+      }
+    : {
+        ...army.plannedRoute,
+        totalCostUnits: result.totalCostUnits,
+        validatedRevision: state.scene.revision + 1,
+        requiresReplan: false,
+        invalidReason: result.reason,
+        invalidCell: { ...result.problemCell }
+      };
+  state.armies[armyId] = bumpArmy(army, { plannedRoute });
+}
+
+function revalidateAllRoutes(state: CommandState): void {
+  for (const armyId of Object.keys(state.armies)) revalidateArmyRoute(state, armyId);
+}
+
 export class CommandProcessor {
+  constructor(
+    private readonly now: () => Date = () => new Date(),
+    private readonly cellForPosition?: (position: Vector2) => GridCellCoord
+  ) {}
+
   execute(context: CommandContext, command: ArmyCommand): CommandExecutionResult {
     if (
       command.senderConnectionId !== context.connectionId ||
@@ -95,13 +167,19 @@ export class CommandProcessor {
           return "ALREADY_REGISTERED";
         }
         if (!state.scene.sides.some((side) => side.id === command.sideId)) return "SIDE_NOT_FOUND";
+        const maxUnits = 10;
         const registered: ArmyState = {
-          version: 1,
+          version: 3,
           registered: true,
           sideId: command.sideId,
           status: "READY",
           overrides: {},
           route: [],
+          plannedRoute: emptyPlannedRoute(),
+          movement: { maxUnits, remainingUnits: maxUnits, enteredRouteCellCount: 0 },
+          health: { hp: 50, maxHp: 50 },
+          supply: { supplied: true, checkedOnTurn: 0 },
+          disband: { pending: false, requestedOnTurn: null, requestedByPlayerId: null },
           currentWaypointIndex: 0,
           segmentProgressCells: 0,
           ignoresMovementBarriers: false,
@@ -111,24 +189,20 @@ export class CommandProcessor {
         state.armies[command.itemId] = registered;
         return undefined;
       }
-      case "UNREGISTER_ARMY":
+      case "UNREGISTER_ARMY": {
         if (!state.armies[command.armyId]) return "ARMY_NOT_FOUND";
-        state.armies = Object.fromEntries(
-          Object.entries(state.armies).filter(([armyId]) => armyId !== command.armyId)
-        );
-        state.scene.battleGroups = state.scene.battleGroups
-          .map((group) => ({
-            ...group,
-            participantIds: group.participantIds.filter((id) => id !== command.armyId)
-          }))
-          .filter((group) => group.participantIds.length >= 2);
+        const destroyed = destroyArmy(state.armies, state.scene.battleGroups, command.armyId);
+        state.armies = destroyed.armies;
+        state.scene.battleGroups = destroyed.battleGroups;
         return undefined;
+      }
       case "CREATE_SIDE":
         if (state.scene.sides.some((side) => side.id === command.side.id)) return "SIDE_EXISTS";
         state.scene.sides.push({
           ...command.side,
           playerIds: [...new Set([...command.side.playerIds, ...command.side.leaderPlayerIds])],
-          leaderPlayerIds: [...new Set(command.side.leaderPlayerIds)]
+          leaderPlayerIds: [...new Set(command.side.leaderPlayerIds)],
+          stateId: command.side.stateId ?? null
         });
         return undefined;
       case "RENAME_SIDE": {
@@ -140,15 +214,7 @@ export class CommandProcessor {
       case "DELETE_SIDE": {
         if (!state.scene.sides.some((side) => side.id === command.sideId)) return "SIDE_NOT_FOUND";
         if (command.strategy === "REASSIGN_ARMIES") {
-          if (!command.targetSideId || !state.scene.sides.some((side) => side.id === command.targetSideId)) {
-            return "TARGET_SIDE_NOT_FOUND";
-          }
-          if (command.targetSideId === command.sideId) return "TARGET_SIDE_SAME";
-          for (const [armyId, army] of Object.entries(state.armies)) {
-            if (army.sideId === command.sideId) {
-              state.armies[armyId] = bumpArmy(army, { sideId: command.targetSideId });
-            }
-          }
+          return "ARMY_TRANSFER_FORBIDDEN";
         } else {
           const removedArmyIds = new Set(
             Object.entries(state.armies)
@@ -163,13 +229,19 @@ export class CommandProcessor {
               const participantIds = group.participantIds.filter(
                 (armyId) => !removedArmyIds.has(armyId)
               );
-              return participantIds.length === group.participantIds.length
-                ? group
-                : { ...group, participantIds, revision: group.revision + 1 };
+              if (participantIds.length === group.participantIds.length) return group;
+              return {
+                ...group,
+                participantIds,
+                revision: group.revision + 1
+              };
             })
             .filter((group) => group.participantIds.length >= 2);
         }
         state.scene.sides = state.scene.sides.filter((side) => side.id !== command.sideId);
+        for (const stateEntity of state.scene.states) {
+          if (stateEntity.rulingFactionId === command.sideId) stateEntity.rulingFactionId = null;
+        }
         const relations: SceneState["relations"] = {};
         for (const [left, entries] of Object.entries(state.scene.relations)) {
           if (left === command.sideId) continue;
@@ -178,6 +250,16 @@ export class CommandProcessor {
           );
         }
         state.scene.relations = relations;
+        state.scene.wars = state.scene.wars
+          .map((war) => ({ ...war, participantFactionIds: war.participantFactionIds.filter((id) => id !== command.sideId) }))
+          .filter((war) => war.participantFactionIds.length >= 2 || war.participantStateIds.length >= 2);
+        const gridOperations = Object.entries(state.scene.gridMap.cells).flatMap(([key, cell]) => {
+          if (!cell.factionTerritoryIds.includes(command.sideId)) return [];
+          const parsed = parseCellKey(key);
+          return [{ cell: parsed, patch: { factionTerritoryIds: cell.factionTerritoryIds.filter((id) => id !== command.sideId) } }];
+        });
+        state.scene.gridMap = applyCellPatchBatch(state.scene.gridMap, gridOperations);
+        revalidateAllRoutes(state);
         return undefined;
       }
       case "ADD_SIDE_PLAYER":
@@ -220,18 +302,41 @@ export class CommandProcessor {
       case "UPDATE_SETTINGS":
         state.scene.settings = { ...state.scene.settings, ...command.settings };
         return undefined;
-      case "UPDATE_ARMY_OVERRIDES":
-        return updateArmy(state, command.armyId, (army) =>
-          bumpArmy(army, { overrides: { ...army.overrides, ...command.overrides } })
-        )
-          ? undefined
-          : "ARMY_NOT_FOUND";
+      case "UPDATE_ARMY_OVERRIDES": {
+        const army = state.armies[command.armyId];
+        if (!army) return "ARMY_NOT_FOUND";
+        const overrides = { ...army.overrides, ...command.overrides };
+        state.armies[command.armyId] = bumpArmy(army, { overrides });
+        revalidateArmyRoute(state, command.armyId);
+        return undefined;
+      }
       case "SET_ROUTE": {
         const army = state.armies[command.armyId];
         if (!army) return "ARMY_NOT_FOUND";
-        if (army.status !== "READY") return "ARMY_NOT_READY";
+        if (army.status === "MOVING" || army.status === "IN_BATTLE") return "ARMY_NOT_READY";
+        if (command.route.length !== command.cells.length) return "INVALID_COMMAND";
+        const validation = validatePlannedRoute({
+          start: command.startCell,
+          cells: command.cells,
+          sideId: army.sideId,
+          terrain: state.scene.terrain,
+          wars: state.scene.wars,
+          remainingUnits: 10,
+          readCell: (cell) => readCell(state.scene.gridMap, cell),
+          armyStateAllowsMovement: true
+        });
+        if (!validation.valid) return validation.reason;
         state.armies[command.armyId] = bumpArmy(army, {
           route: command.route.map((point) => ({ ...point })),
+          movement: { ...army.movement, enteredRouteCellCount: 0 },
+          plannedRoute: {
+            startCell: { ...command.startCell },
+            executeOnTurn: state.scene.turn.turnNumber + 1,
+            cells: command.cells.map((cell) => ({ ...cell })),
+            totalCostUnits: validation.totalCostUnits,
+            validatedRevision: state.scene.revision + 1,
+            requiresReplan: false
+          },
           currentWaypointIndex: 0,
           segmentProgressCells: 0
         });
@@ -240,9 +345,11 @@ export class CommandProcessor {
       case "CLEAR_ROUTE": {
         const army = state.armies[command.armyId];
         if (!army) return "ARMY_NOT_FOUND";
-        if (army.status !== "READY") return "ARMY_NOT_READY";
+        if (army.status === "MOVING" || army.status === "IN_BATTLE") return "ARMY_NOT_READY";
         state.armies[command.armyId] = bumpArmy(army, {
           route: [],
+          plannedRoute: emptyPlannedRoute(army.plannedRoute.startCell),
+          movement: { ...army.movement, enteredRouteCellCount: 0 },
           currentWaypointIndex: 0,
           segmentProgressCells: 0
         });
@@ -254,10 +361,20 @@ export class CommandProcessor {
         state.positions[command.armyId] = { ...command.position };
         return undefined;
       case "START_ARMY":
-      case "RESUME_ARMY":
-        return updateArmy(state, command.armyId, (army) => bumpArmy(army, { status: "MOVING" }))
-          ? undefined
-          : "ARMY_NOT_FOUND";
+      case "RESUME_ARMY": {
+        const army = state.armies[command.armyId];
+        if (!army) return "ARMY_NOT_FOUND";
+        revalidateArmyRoute(state, command.armyId);
+        const current = state.armies[command.armyId];
+        if (!current) return "ARMY_NOT_FOUND";
+        if (current.stopReason === "BATTLE") return "MOVEMENT_CONSUMED_FOR_TURN";
+        if (current.plannedRoute.executeOnTurn !== state.scene.turn.turnNumber) return "ROUTE_NOT_ACTIVE_TURN";
+        if (current.plannedRoute.requiresReplan) return "ROUTE_REQUIRES_REPLAN";
+        if (current.plannedRoute.invalidReason) return current.plannedRoute.invalidReason;
+        if (current.route.length === 0 || current.plannedRoute.cells.length === 0) return "ROUTE_EMPTY";
+        state.armies[command.armyId] = bumpArmy(current, { status: "MOVING" });
+        return undefined;
+      }
       case "PAUSE_ARMY":
         return updateArmy(state, command.armyId, (army) => bumpArmy(army, { status: "PAUSED" }))
           ? undefined
@@ -272,13 +389,16 @@ export class CommandProcessor {
       case "RESUME_ALL":
       case "PAUSE_ALL":
       case "STOP_ALL":
+        if (command.type === "START_ALL" || command.type === "RESUME_ALL") revalidateAllRoutes(state);
         for (const [armyId, army] of Object.entries(state.armies)) {
-          const status =
-            command.type === "START_ALL" || command.type === "RESUME_ALL"
+          let status: ArmyState["status"];
+          if (command.type === "START_ALL" || command.type === "RESUME_ALL") {
+            status = army.stopReason !== "BATTLE" &&
+              army.plannedRoute.executeOnTurn === state.scene.turn.turnNumber &&
+              !army.plannedRoute.requiresReplan && !army.plannedRoute.invalidReason && army.route.length > 0
               ? "MOVING"
-              : command.type === "PAUSE_ALL"
-                ? "PAUSED"
-                : "READY";
+              : army.status;
+          } else status = command.type === "PAUSE_ALL" ? "PAUSED" : "READY";
           state.armies[armyId] = bumpArmy(army, { status });
         }
         return undefined;
@@ -335,10 +455,211 @@ export class CommandProcessor {
         updateArmy(state, command.armyId, (army) => bumpArmy(army, { status: "PAUSED" }));
         return undefined;
       }
-      default: {
-        const exhaustive: never = command;
-        return exhaustive;
+      case "SET_TERRAIN_CELLS": {
+        if (command.terrainId !== null && !state.scene.terrain.types[command.terrainId]) return "TERRAIN_NOT_FOUND";
+        state.scene.gridMap = applyCellPatchBatch(state.scene.gridMap, command.cells.map((cell) => ({ cell, patch: { terrainId: command.terrainId } })));
+        revalidateAllRoutes(state);
+        return undefined;
       }
+      case "SET_IMPASSABLE_CELLS":
+        state.scene.gridMap = applyCellPatchBatch(state.scene.gridMap, command.cells.map((cell) => ({ cell, patch: { impassable: command.impassable } })));
+        revalidateAllRoutes(state);
+        return undefined;
+      case "UPDATE_FACTION_TERRITORY_CELLS": {
+        if (!state.scene.sides.some((side) => side.id === command.sideId)) return "SIDE_NOT_FOUND";
+        state.scene.gridMap = applyCellPatchBatch(state.scene.gridMap, command.cells.map((cell) => {
+          const current = readCell(state.scene.gridMap, cell).factionTerritoryIds;
+          const next = command.operation === "ADD"
+            ? [...new Set([...current, command.sideId])]
+            : current.filter((id) => id !== command.sideId);
+          return { cell, patch: { factionTerritoryIds: next } };
+        }));
+        revalidateAllRoutes(state);
+        return undefined;
+      }
+      case "CLEAR_CELL_PROPERTIES": {
+        if (command.target === "SELECTED_FACTION" && (!command.sideId || !state.scene.sides.some((side) => side.id === command.sideId))) return "SIDE_NOT_FOUND";
+        state.scene.gridMap = applyCellPatchBatch(state.scene.gridMap, command.cells.map((cell) => {
+          const current = readCell(state.scene.gridMap, cell);
+          if (command.target === "TERRAIN") return { cell, patch: { terrainId: null } };
+          if (command.target === "IMPASSABLE") return { cell, patch: { impassable: false } };
+          if (command.target === "SELECTED_FACTION") return { cell, patch: { factionTerritoryIds: current.factionTerritoryIds.filter((id) => id !== command.sideId) } };
+          if (command.target === "RECOGNIZED_STATE") return { cell, patch: { recognizedStateId: null } };
+          if (command.target === "DEFACTO_STATE") return { cell, patch: { deFactoStateId: null } };
+          return { cell, patch: { terrainId: null, impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null } };
+        }));
+        revalidateAllRoutes(state);
+        return undefined;
+      }
+      case "CREATE_TERRAIN_TYPE":
+        if (state.scene.terrain.types[command.terrain.id]) return "TERRAIN_EXISTS";
+        state.scene.terrain.types[command.terrain.id] = { ...command.terrain };
+        return undefined;
+      case "UPDATE_TERRAIN_TYPE": {
+        const terrain = state.scene.terrain.types[command.terrainId];
+        if (!terrain) return "TERRAIN_NOT_FOUND";
+        state.scene.terrain.types[command.terrainId] = { ...terrain, ...command.patch, id: command.terrainId };
+        revalidateAllRoutes(state);
+        return undefined;
+      }
+      case "DELETE_TERRAIN_TYPE": {
+        if (!state.scene.terrain.types[command.terrainId]) return "TERRAIN_NOT_FOUND";
+        if (command.terrainId === state.scene.terrain.defaultTerrainId) return "DEFAULT_TERRAIN_REQUIRED";
+        const replacement = command.replacementTerrainId ?? state.scene.terrain.defaultTerrainId;
+        if (!state.scene.terrain.types[replacement]) return "TERRAIN_NOT_FOUND";
+        delete state.scene.terrain.types[command.terrainId];
+        const operations = Object.entries(state.scene.gridMap.cells).flatMap(([key, cell]) => {
+          if (cell.terrainId !== command.terrainId) return [];
+          const parsed = parseCellKey(key);
+          return [{ cell: parsed, patch: { terrainId: replacement === state.scene.terrain.defaultTerrainId ? null : replacement } }];
+        });
+        state.scene.gridMap = applyCellPatchBatch(state.scene.gridMap, operations);
+        revalidateAllRoutes(state);
+        return undefined;
+      }
+      case "CREATE_STATE":
+        if (state.scene.states.some((candidate) => candidate.id === command.state.id)) return "STATE_EXISTS";
+        if (command.state.rulingFactionId && !state.scene.sides.some((side) => side.id === command.state.rulingFactionId)) return "SIDE_NOT_FOUND";
+        state.scene.states.push(structuredClone(command.state));
+        return undefined;
+      case "UPDATE_STATE": {
+        const current = state.scene.states.find((candidate) => candidate.id === command.stateId);
+        if (!current) return "STATE_NOT_FOUND";
+        if (command.patch.rulingFactionId && !state.scene.sides.some((side) => side.id === command.patch.rulingFactionId)) return "SIDE_NOT_FOUND";
+        Object.assign(current, command.patch);
+        return undefined;
+      }
+      case "DELETE_STATE": {
+        if (!state.scene.states.some((candidate) => candidate.id === command.stateId)) return "STATE_NOT_FOUND";
+        state.scene.states = state.scene.states.filter((candidate) => candidate.id !== command.stateId);
+        for (const side of state.scene.sides) if (side.stateId === command.stateId) side.stateId = null;
+        const operations = Object.entries(state.scene.gridMap.cells).flatMap(([key, cell]) => {
+          if (cell.recognizedStateId !== command.stateId && cell.deFactoStateId !== command.stateId) return [];
+          const parsed = parseCellKey(key);
+          return [{
+            cell: parsed,
+            patch: {
+              ...(cell.recognizedStateId === command.stateId ? { recognizedStateId: null } : {}),
+              ...(cell.deFactoStateId === command.stateId ? { deFactoStateId: null } : {})
+            }
+          }];
+        });
+        state.scene.gridMap = applyCellPatchBatch(state.scene.gridMap, operations);
+        state.scene.wars = state.scene.wars
+          .map((war) => ({ ...war, participantStateIds: war.participantStateIds.filter((id) => id !== command.stateId) }))
+          .filter((war) => war.participantFactionIds.length >= 2 || war.participantStateIds.length >= 2);
+        return undefined;
+      }
+      case "SET_SIDE_STATE": {
+        const side = state.scene.sides.find((candidate) => candidate.id === command.sideId);
+        if (!side) return "SIDE_NOT_FOUND";
+        if (command.stateId !== null && !state.scene.states.some((candidate) => candidate.id === command.stateId)) return "STATE_NOT_FOUND";
+        side.stateId = command.stateId;
+        return undefined;
+      }
+      case "SET_RECOGNIZED_STATE_CELLS":
+        if (command.stateId !== null && !state.scene.states.some((candidate) => candidate.id === command.stateId)) return "STATE_NOT_FOUND";
+        state.scene.gridMap = applyCellPatchBatch(state.scene.gridMap, command.cells.map((cell) => ({ cell, patch: { recognizedStateId: command.stateId } })));
+        return undefined;
+      case "SET_DEFACTO_STATE_CELLS":
+        if (command.stateId !== null && !state.scene.states.some((candidate) => candidate.id === command.stateId)) return "STATE_NOT_FOUND";
+        state.scene.gridMap = applyCellPatchBatch(state.scene.gridMap, command.cells.map((cell) => ({ cell, patch: { deFactoStateId: command.stateId } })));
+        return undefined;
+      case "SET_ARMY_HP": {
+        const army = state.armies[command.armyId];
+        if (!army) return "ARMY_NOT_FOUND";
+        const maxHp = command.maxHp ?? army.health.maxHp;
+        if (maxHp <= 0 || command.hp < 0) return "INVALID_HP";
+        const hp = Math.min(command.hp, maxHp);
+        if (hp === 0) {
+          const destroyed = destroyArmy(state.armies, state.scene.battleGroups, command.armyId);
+          state.armies = destroyed.armies;
+          state.scene.battleGroups = destroyed.battleGroups;
+          return undefined;
+        }
+        state.armies[command.armyId] = bumpArmy(army, { health: { hp, maxHp } });
+        return undefined;
+      }
+      case "HEAL_ARMY": {
+        const army = state.armies[command.armyId];
+        if (!army) return "ARMY_NOT_FOUND";
+        const healed = healArmy(army, command.amount);
+        if (!healed) return army.supply.supplied ? "ARMY_DESTROYED" : "ARMY_ENCIRCLED";
+        state.armies[command.armyId] = healed;
+        return undefined;
+      }
+      case "REQUEST_ARMY_DISBAND": {
+        const army = state.armies[command.armyId];
+        if (!army) return "ARMY_NOT_FOUND";
+        const requested = requestArmyDisband(army, state.scene.turn.turnNumber, command.senderPlayerId);
+        if (!requested) return "DISBAND_ALREADY_REQUESTED";
+        state.armies[command.armyId] = requested;
+        return undefined;
+      }
+      case "CREATE_WAR":
+        if (state.scene.wars.some((war) => war.id === command.war.id)) return "WAR_EXISTS";
+        if (command.war.participantFactionIds.some((id) => !state.scene.sides.some((side) => side.id === id))) return "SIDE_NOT_FOUND";
+        if (command.war.participantStateIds.some((id) => !state.scene.states.some((stateEntity) => stateEntity.id === id))) return "STATE_NOT_FOUND";
+        state.scene.wars.push(structuredClone(command.war));
+        revalidateAllRoutes(state);
+        return undefined;
+      case "UPDATE_WAR": {
+        const index = state.scene.wars.findIndex((war) => war.id === command.warId);
+        if (index < 0) return "WAR_NOT_FOUND";
+        const current = state.scene.wars[index]!;
+        const next = { ...current, ...command.patch, id: current.id };
+        if (next.participantFactionIds.some((id) => !state.scene.sides.some((side) => side.id === id))) return "SIDE_NOT_FOUND";
+        if (next.participantStateIds.some((id) => !state.scene.states.some((stateEntity) => stateEntity.id === id))) return "STATE_NOT_FOUND";
+        state.scene.wars[index] = next;
+        revalidateAllRoutes(state);
+        return undefined;
+      }
+      case "END_WAR": {
+        const war = state.scene.wars.find((candidate) => candidate.id === command.warId);
+        if (!war) return "WAR_NOT_FOUND";
+        war.active = false;
+        revalidateAllRoutes(state);
+        return undefined;
+      }
+      case "DEFER_TURN": {
+        const until = new Date(command.until);
+        const result = deferTurn(state.scene.turn, until, this.now());
+        if (!result.ok) return result.reason;
+        state.scene.turn = result.turn;
+        return undefined;
+      }
+      case "CANCEL_TURN_DEFERRAL":
+        state.scene.turn = cancelTurnDeferral(state.scene.turn, this.now());
+        return undefined;
+      case "PAUSE_AUTO_TURNS":
+        state.scene.turn = pauseAutoTurns(state.scene.turn);
+        return undefined;
+      case "RESUME_AUTO_TURNS":
+        state.scene.turn = resumeAutoTurns(state.scene.turn, this.now());
+        return undefined;
+      case "COMPLETE_TURN_NOW": {
+        const armyCells = Object.fromEntries(Object.entries(state.armies).flatMap(([armyId]) => {
+          const position = state.positions?.[armyId];
+          if (!position || !this.cellForPosition) return [];
+          return [[armyId, this.cellForPosition(position)]];
+        }));
+        const hasStateBoundArmyWithoutCell = Object.entries(state.armies).some(([armyId, army]) => {
+          const side = state.scene.sides.find((candidate) => candidate.id === army.sideId);
+          return Boolean(side?.stateId) && !armyCells[armyId];
+        });
+        if (hasStateBoundArmyWithoutCell) return "TURN_POSITION_UNAVAILABLE";
+        const result = completeTurn(state.scene, state.armies, {
+          source: "MANUAL",
+          completedAt: this.now(),
+          armyCells
+        });
+        if (!result.changed) return result.reason;
+        state.scene = result.scene;
+        state.armies = result.armies;
+        return undefined;
+      }
+      default:
+        return "INVALID_COMMAND";
     }
   }
 }

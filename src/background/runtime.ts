@@ -17,6 +17,7 @@ export interface BackgroundRuntimePort {
   pauseMovingArmies(): Promise<void>;
   movementTick(): Promise<void>;
   visibilityTick(): Promise<void>;
+  turnTick(): Promise<void>;
 }
 
 export interface RuntimeRates {
@@ -29,6 +30,7 @@ export class BackgroundRuntime {
   private readonly sceneSubscriptions = new SubscriptionManager();
   private movementTimer: ReturnType<typeof setInterval> | undefined;
   private visibilityTimer: ReturnType<typeof setInterval> | undefined;
+  private turnTimer: ReturnType<typeof setInterval> | undefined;
   private coordinator = false;
   private started = false;
   private sceneOpen = false;
@@ -40,6 +42,9 @@ export class BackgroundRuntime {
   private visibilityWork: Promise<void> = Promise.resolve();
   private visibilityRunning = false;
   private visibilityPending = false;
+  private turnWork: Promise<void> = Promise.resolve();
+  private turnRunning = false;
+  private turnPending = false;
 
   constructor(
     private readonly port: BackgroundRuntimePort,
@@ -99,9 +104,19 @@ export class BackgroundRuntime {
     this.visibilityWork = this.runVisibilityQueue().catch(() => undefined);
   }
 
+  requestTurnTick(): void {
+    if (!this.sceneOpen) return;
+    if (this.turnRunning) {
+      this.turnPending = true;
+      return;
+    }
+    this.turnRunning = true;
+    this.turnWork = this.runTurnQueue().catch(() => undefined);
+  }
+
   async whenIdle(): Promise<void> {
     await this.lifecycleWork;
-    await Promise.all([this.movementWork, this.visibilityWork]);
+    await Promise.all([this.movementWork, this.visibilityWork, this.turnWork]);
   }
 
   private async openScene(): Promise<void> {
@@ -111,6 +126,7 @@ export class BackgroundRuntime {
       this.sceneSubscriptions.add(this.port.onCoordinatorChange((active) => {
         const lost = this.coordinator && !active;
         this.coordinator = active;
+        if (active) this.requestTurnTick();
         if (lost) this.trackLifecycle(() => this.port.pauseMovingArmies());
       }));
       this.sceneSubscriptions.add(
@@ -131,8 +147,10 @@ export class BackgroundRuntime {
         () => this.requestVisibilityTick(),
         1_000 / this.rates.visibilityHz
       );
+      this.turnTimer = setInterval(() => this.requestTurnTick(), 30_000);
       await this.port.onSceneOpen();
       this.requestVisibilityTick();
+      this.requestTurnTick();
     } catch (error) {
       this.stopSceneWork();
       throw error;
@@ -143,7 +161,7 @@ export class BackgroundRuntime {
     if (!this.sceneOpen) return;
     this.stopSceneWork();
     await this.port.onSceneClose();
-    await Promise.all([this.movementWork, this.visibilityWork]);
+    await Promise.all([this.movementWork, this.visibilityWork, this.turnWork]);
     await this.port.deleteLocalOverlays();
   }
 
@@ -152,11 +170,14 @@ export class BackgroundRuntime {
     this.coordinator = false;
     this.movementPending = false;
     this.visibilityPending = false;
+    this.turnPending = false;
     this.sceneSubscriptions.clear();
     if (this.movementTimer !== undefined) clearInterval(this.movementTimer);
     if (this.visibilityTimer !== undefined) clearInterval(this.visibilityTimer);
+    if (this.turnTimer !== undefined) clearInterval(this.turnTimer);
     this.movementTimer = undefined;
     this.visibilityTimer = undefined;
+    this.turnTimer = undefined;
   }
 
   private async runMovementQueue(): Promise<void> {
@@ -178,6 +199,17 @@ export class BackgroundRuntime {
       } while (this.visibilityPending && this.sceneOpen);
     } finally {
       this.visibilityRunning = false;
+    }
+  }
+
+  private async runTurnQueue(): Promise<void> {
+    try {
+      do {
+        this.turnPending = false;
+        await this.port.turnTick();
+      } while (this.turnPending && this.sceneOpen);
+    } finally {
+      this.turnRunning = false;
     }
   }
 

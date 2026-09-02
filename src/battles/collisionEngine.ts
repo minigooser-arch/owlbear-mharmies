@@ -151,10 +151,12 @@ async function collisionTime(
   );
 }
 
-export async function findEarliestEnemyCollision(
+const SIMULTANEOUS_EPSILON = 1e-6;
+
+export async function findEarliestEnemyCollisions(
   input: CollisionInput
-): Promise<EnemyCollision | undefined> {
-  let earliest: EnemyCollision | undefined;
+): Promise<EnemyCollision[]> {
+  const collisions: EnemyCollision[] = [];
   for (let leftIndex = 0; leftIndex < input.armies.length; leftIndex += 1) {
     const left = input.armies[leftIndex];
     if (!left) continue;
@@ -169,15 +171,27 @@ export async function findEarliestEnemyCollision(
         continue;
       }
       const time = await collisionTime(left, right, input.distancePort);
-      if (time === undefined || (earliest && earliest.time <= time)) continue;
-      earliest = {
+      if (time === undefined) continue;
+      collisions.push({
         armyAId: left.id,
         armyBId: right.id,
         time,
         positionA: interpolatePosition(left.from, left.to, time),
         positionB: interpolatePosition(right.from, right.to, time)
-      };
+      });
     }
   }
-  return earliest;
+  if (collisions.length === 0) return [];
+  const earliestTime = Math.min(...collisions.map((collision) => collision.time));
+  return collisions
+    .filter((collision) => Math.abs(collision.time - earliestTime) <= SIMULTANEOUS_EPSILON)
+    .sort((left, right) =>
+      left.armyAId.localeCompare(right.armyAId, "en") || left.armyBId.localeCompare(right.armyBId, "en")
+    );
+}
+
+export async function findEarliestEnemyCollision(
+  input: CollisionInput
+): Promise<EnemyCollision | undefined> {
+  return (await findEarliestEnemyCollisions(input))[0];
 }

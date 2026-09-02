@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { METADATA_KEYS } from "../shared/constants";
+import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE, METADATA_KEYS } from "../shared/constants";
 import type { ArmyState, ItemUpdate, SceneItemRecord, SceneState } from "../shared/types";
 import {
   CommitPreconditionFailed,
@@ -34,12 +34,24 @@ class MemoryPort implements MetadataPort {
 
 function army(revision: number): ArmyState {
   return {
-    version: 1,
+    version: 3,
     registered: true,
     sideId: "red",
     status: "READY",
     overrides: {},
     route: [],
+    plannedRoute: {
+      startCell: { x: 0, y: 0 },
+      executeOnTurn: 1,
+      cells: [],
+      totalCostUnits: 0,
+      validatedRevision: revision,
+      requiresReplan: false
+    },
+    movement: { maxUnits: 10, remainingUnits: 10, enteredRouteCellCount: 0 },
+    health: { hp: 50, maxHp: 50 },
+    supply: { supplied: true, checkedOnTurn: 1 },
+    disband: { pending: false, requestedOnTurn: null, requestedByPlayerId: null },
     currentWaypointIndex: 0,
     segmentProgressCells: 0,
     ignoresMovementBarriers: false,
@@ -50,34 +62,30 @@ function army(revision: number): ArmyState {
 
 function scene(revision: number): SceneState {
   return {
-    version: 3,
+    version: 5,
     revision,
-    settings: {
-      defaultDetectionRangeCells: 6,
-      defaultSpeedCellsPerSecond: 0.25,
-      defaultCollisionRangeCells: 0.5,
-      defaultMaxRouteDistanceCells: 5,
-      detectionMode: "INDEPENDENT",
-      visibilityRecalculationMode: "ON_DROP",
-      allowPlayersToCreateRoutes: true,
-      allowPlayersToStartOwnArmies: true,
-      movementUpdateRate: 5,
-      visibilityUpdateRate: 4,
-      interpolationEnabled: true
-    },
+    settings: { ...DEFAULT_SETTINGS },
     sides: [],
+    states: [],
     relations: {},
-    battleGroups: []
+    battleGroups: [],
+    terrain: structuredClone(DEFAULT_TERRAIN),
+    gridMap: { version: 1, revision: 0, cells: {} },
+    wars: [],
+    turn: structuredClone(DEFAULT_TURN_STATE)
   };
 }
 
 describe("MetadataRepository", () => {
-  it("creates schema v3 defaults for a new scene", async () => {
+  it("creates schema v5 defaults for a new scene", async () => {
     const repository = new MetadataRepository(new MemoryPort());
 
     await expect(repository.readScene()).resolves.toMatchObject({
-      version: 3,
-      sides: []
+      version: 5,
+      sides: [],
+      states: [],
+      gridMap: { version: 1, revision: 0, cells: {} },
+      wars: []
     });
   });
 

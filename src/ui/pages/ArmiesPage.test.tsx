@@ -10,7 +10,8 @@ const redSide: Side = {
   name: "Красные",
   color: "#f00",
   playerIds: [],
-  leaderPlayerIds: []
+  leaderPlayerIds: [],
+  stateId: null
 };
 
 const blueSide: Side = {
@@ -18,7 +19,8 @@ const blueSide: Side = {
   name: "Синие",
   color: "#00f",
   playerIds: [],
-  leaderPlayerIds: []
+  leaderPlayerIds: [],
+  stateId: null
 };
 
 afterEach(cleanup);
@@ -33,6 +35,7 @@ describe("army registration panel", () => {
         role="PLAYER"
         playerId="p"
         leaderSideIds={new Set()}
+        memberSideIds={new Set()}
         onAction={onAction}
       />
     );
@@ -45,6 +48,7 @@ describe("army registration panel", () => {
         role="GM"
         playerId="gm"
         leaderSideIds={new Set()}
+        memberSideIds={new Set()}
         onAction={onAction}
       />
     );
@@ -61,6 +65,7 @@ describe("army registration panel", () => {
         role="GM"
         playerId="gm"
         leaderSideIds={new Set()}
+        memberSideIds={new Set()}
         onAction={onAction}
       />
     );
@@ -81,6 +86,7 @@ describe("army registration panel", () => {
         role="GM"
         playerId="gm"
         leaderSideIds={new Set()}
+        memberSideIds={new Set()}
         onAction={vi.fn()}
       />
     );
@@ -98,12 +104,14 @@ describe("army side filter", () => {
           sideId: "red",
           sideName: "Красные",
           status: "READY",
-          route: []
+          route: [],
+          movementMaxUnits: 10, movementRemainingUnits: 10, routeCostUnits: 0, routeCellCount: 0, routeRequiresReplan: false, atWar: false, healthHp: 50, healthMaxHp: 50, supplied: true, supplyCheckedOnTurn: 1, disbandPending: false
         }]}
         sides={[redSide, blueSide]}
         role="PLAYER"
         playerId="p"
         leaderSideIds={new Set()}
+        memberSideIds={new Set()}
         onAction={vi.fn()}
       />
     );

@@ -1,5 +1,5 @@
-import { applyCollision } from "../battles/battleGroupService";
-import { findEarliestEnemyCollision } from "../battles/collisionEngine";
+import { joinReinforcements } from "../battles/battleGroupService";
+import { findEarliestEnemyCollisions } from "../battles/collisionEngine";
 import { segmentsFromPolyline, type BarrierSegment } from "../barriers/barrierGeometry";
 import { BarrierOverlayService } from "../barriers/barrierOverlayService";
 import {
@@ -10,17 +10,33 @@ import {
 import { CommandProcessor, type CommandState } from "../commands/commandProcessor";
 import { validateArmyCommand } from "../commands/commandValidation";
 import { advanceArmy } from "../movement/movementEngine";
+import { validatePlannedRoute } from "../movement/movementRules";
+import {
+  reconcileStrategicMovementProgress,
+  unenteredRouteCells
+} from "../movement/strategicProgress";
+import { findStrategicConflictEdges } from "../movement/movementIntent";
+import { applyCellPatchBatch, readCell, type CellPatchOperation } from "../terrain/gridMap";
+import { annexingStateForEntry } from "../annexation/annexationRules";
+import { MapOverlayService } from "../terrain/mapOverlayService";
+import { HealthOverlayService } from "../health/healthOverlayService";
+import { getDueTurnBoundary } from "../turns/turnSchedule";
+import { completeTurn } from "../turns/turnService";
+import { getDestinationMovementCostUnits } from "../terrain/terrainRegistry";
 import { GridDistanceService } from "../grid/gridDistance";
+import { StrategicGridAdapter } from "../grid/strategicGrid";
 import { RouteOverlayService } from "../routes/routeOverlayService";
+import { validateStrategicRouteShape } from "../routes/strategicRoute";
 import {
   registerRouteTool,
   type RouteToolRegistration
 } from "../owlbear/routeToolIntegration";
 import {
   RouteToolService,
-  snapRouteToGrid,
-  validateRouteConstraints
+  snapRouteToGrid
 } from "./routeToolService";
+import { MapBrushToolService } from "./mapBrushToolService";
+import { registerMapBrushTool, type MapBrushToolRegistration } from "../owlbear/mapBrushTool";
 import { METADATA_KEYS } from "../shared/constants";
 import {
   COMMAND_PROTOCOL_VERSION,
@@ -174,7 +190,10 @@ export function localOverlayIds(items: readonly SceneItemRecord[]): string[] {
     METADATA_KEYS.localClone,
     METADATA_KEYS.routeOverlay,
     METADATA_KEYS.routePreview,
-    METADATA_KEYS.barrierOverlay
+    METADATA_KEYS.barrierOverlay,
+    METADATA_KEYS.mapOverlay,
+    METADATA_KEYS.healthOverlay,
+    METADATA_KEYS.mapBrushPreview
   ];
   return items
     .filter((item) => keys.some((key) => item.metadata[key] !== undefined))
@@ -224,7 +243,10 @@ export class ProductionEngine {
   private lastMovementAt = performance.now();
   private mutationTail: Promise<void> = Promise.resolve();
 
-  constructor(private readonly port: OwlbearPort) {
+  constructor(
+    private readonly port: OwlbearPort,
+    private readonly wallClock: () => Date = () => new Date()
+  ) {
     this.repository = new MetadataRepository(port);
     this.grid = new GridDistanceService(port);
     this.cloneReconciler = new LocalCloneReconciler(port, new UpdateOriginGuard());
@@ -286,11 +308,67 @@ export class ProductionEngine {
       battleGroups: scene.battleGroups
     });
     await this.cloneReconciler.reconcile(visible, armies.map((record) => record.item));
-    await this.reconcileOverlays(scene, armies, barriers, role, memberSideIds, leaderSideIds);
+    await this.reconcileOverlays(scene, armies, barriers, role, memberSideIds, leaderSideIds, visible);
   }
 
   movementTick(): Promise<void> {
     return this.enqueueMutation(() => this.movementTickNow());
+  }
+
+  turnTick(): Promise<void> {
+    return this.enqueueMutation(() => this.turnTickNow());
+  }
+
+  private async turnTickNow(): Promise<void> {
+    if (!this.coordinator) return;
+    const expectedCoordinatorConnectionId = this.activeCoordinatorConnectionId;
+    const canCommit = this.captureCoordinatorGuard(expectedCoordinatorConnectionId);
+    const now = this.wallClock();
+    const [scene, armyRecords, barrierRecords, sceneItems] = await Promise.all([
+      this.repository.readScene(),
+      this.repository.readArmies(),
+      this.repository.readBarriers(),
+      this.port.getSceneItems()
+    ]);
+    if (!canCommit()) return;
+    const boundary = getDueTurnBoundary(now, scene.turn);
+    if (!boundary) return;
+    const armies = Object.fromEntries(armyRecords.map((record) => [record.item.id, record.state]));
+    let strategicGrid: StrategicGridAdapter;
+    try {
+      strategicGrid = new StrategicGridAdapter({
+        dpi: await this.grid.getDpi(),
+        offset: { x: 0, y: 0 }
+      });
+    } catch {
+      return;
+    }
+    const armyCells = Object.fromEntries(armyRecords.map((record) => [
+      record.item.id,
+      strategicGrid.sceneToCell(record.item.position)
+    ]));
+    const completion = completeTurn(scene, armies, {
+      source: "SCHEDULE",
+      completedAt: now,
+      boundaryId: boundary.id,
+      armyCells
+    });
+    if (!completion.changed) return;
+
+    const previous: CommandState = {
+      scene,
+      armies,
+      barriers: Object.fromEntries(barrierRecords.map((record) => [record.item.id, record.state])),
+      items: Object.fromEntries(sceneItems.map((item) => [item.id, item])),
+      positions: Object.fromEntries(sceneItems.map((item) => [item.id, item.position]))
+    };
+    const next: CommandState = {
+      ...structuredClone(previous),
+      scene: { ...completion.scene, revision: scene.revision + 1 },
+      armies: completion.armies
+    };
+    if (!canCommit()) return;
+    await this.persistCommandState(next, previous, sceneItems);
   }
 
   private async movementTickNow(): Promise<void> {
@@ -308,13 +386,108 @@ export class ProductionEngine {
     const moving = armies.filter((record) => record.state.status === "MOVING");
     if (moving.length === 0) return;
     const movementBarriers = extractBarrierSegments(barriers, "movement");
+    let strategicGrid: StrategicGridAdapter;
+    try {
+      strategicGrid = new StrategicGridAdapter({
+        dpi: await this.grid.getDpi(),
+        offset: { x: 0, y: 0 }
+      });
+    } catch {
+      return;
+    }
     const frames: Array<{
       record: ArmyRecord;
       from: Vector2;
       to: Vector2;
       state: ArmyState;
     }> = [];
+    const movingIds = new Set(moving.map((record) => record.item.id));
+    const strategicConflictEdges = findStrategicConflictEdges(
+      moving.flatMap((record) => {
+        const enteredCount = Math.max(0, Math.min(record.state.plannedRoute.cells.length, record.state.movement.enteredRouteCellCount));
+        const nextCell = record.state.plannedRoute.cells[enteredCount];
+        if (!nextCell) return [];
+        return [{
+          armyId: record.item.id,
+          sideId: record.state.sideId,
+          from: strategicGrid.sceneToCell(record.item.position),
+          to: nextCell
+        }];
+      }),
+      (left, right) => relation(scene, left, right),
+      armies
+        .filter((record) => !movingIds.has(record.item.id))
+        .map((record) => ({
+          armyId: record.item.id,
+          sideId: record.state.sideId,
+          cell: strategicGrid.sceneToCell(record.item.position)
+        }))
+    );
+    const strategicBattleArmyIds = new Set(strategicConflictEdges.flat());
     for (const record of moving) {
+      if (strategicBattleArmyIds.has(record.item.id)) {
+        frames.push({
+          record,
+          from: { ...record.item.position },
+          to: { ...record.item.position },
+          state: cloneArmyState(record.state, {
+            status: "IN_BATTLE",
+            stopReason: "BATTLE",
+            movement: { ...record.state.movement, remainingUnits: 0 }
+          })
+        });
+        continue;
+      }
+      const enteredCount = Math.max(
+        0,
+        Math.min(record.state.plannedRoute.cells.length, record.state.movement.enteredRouteCellCount)
+      );
+      const remainingCells = unenteredRouteCells(record.state.plannedRoute.cells, enteredCount);
+      const remainingStart = enteredCount === 0
+        ? record.state.plannedRoute.startCell
+        : record.state.plannedRoute.cells[enteredCount - 1] ?? record.state.plannedRoute.startCell;
+      const validation = record.state.plannedRoute.requiresReplan
+        ? undefined
+        : validatePlannedRoute({
+            start: remainingStart,
+            cells: remainingCells,
+            sideId: record.state.sideId,
+            terrain: scene.terrain,
+            wars: scene.wars,
+            remainingUnits: record.state.movement.remainingUnits,
+            readCell: (cell) => readCell(scene.gridMap, cell),
+            armyStateAllowsMovement: true
+          });
+      if (!validation || !validation.valid) {
+        const plannedRoute: ArmyState["plannedRoute"] = validation && !validation.valid
+          ? {
+              ...record.state.plannedRoute,
+              validatedRevision: scene.revision,
+              invalidReason: validation.reason,
+              invalidCell: { ...validation.problemCell }
+            }
+          : { ...record.state.plannedRoute };
+        frames.push({
+          record,
+          from: { ...record.item.position },
+          to: { ...record.item.position },
+          state: cloneArmyState(record.state, {
+            status: "PAUSED",
+            stopReason: "INVALID_ROUTE",
+            plannedRoute
+          })
+        });
+        continue;
+      }
+
+      const plannedRoute: ArmyState["plannedRoute"] = {
+        startCell: { ...record.state.plannedRoute.startCell },
+        executeOnTurn: record.state.plannedRoute.executeOnTurn,
+        cells: record.state.plannedRoute.cells.map((cell) => ({ ...cell })),
+        totalCostUnits: record.state.plannedRoute.totalCostUnits,
+        validatedRevision: scene.revision,
+        requiresReplan: false
+      };
       const result = await advanceArmy({
         position: record.item.position,
         waypoints: record.state.route,
@@ -335,12 +508,13 @@ export class ProductionEngine {
           status: result.status,
           currentWaypointIndex: result.currentWaypointIndex,
           segmentProgressCells: result.segmentProgressCells,
+          plannedRoute,
           ...(result.stopReason ? { stopReason: result.stopReason } : {})
         })
       });
     }
 
-    const collision = await findEarliestEnemyCollision({
+    const collisions = await findEarliestEnemyCollisions({
       armies: frames.map((frame) => ({
         id: frame.record.item.id,
         sideId: frame.record.state.sideId,
@@ -354,30 +528,84 @@ export class ProductionEngine {
     });
 
     let battleGroups: BattleGroup[] | undefined;
-    if (collision) {
-      battleGroups = applyCollision(scene.battleGroups, collision, () => crypto.randomUUID());
-      const group = battleGroups.find((candidate) =>
-        candidate.participantIds.includes(collision.armyAId)
-      );
+    const collisionEdges = collisions.map((collision) => [collision.armyAId, collision.armyBId] as const);
+    const allBattleEdges = [...strategicConflictEdges, ...collisionEdges];
+    if (allBattleEdges.length > 0) {
+      battleGroups = joinReinforcements(scene.battleGroups, allBattleEdges, () => crypto.randomUUID());
+      const collisionPositions = new Map<string, Vector2>();
+      for (const collision of collisions) {
+        collisionPositions.set(collision.armyAId, collision.positionA);
+        collisionPositions.set(collision.armyBId, collision.positionB);
+      }
       for (const frame of frames) {
-        if (frame.record.item.id === collision.armyAId) {
-          frame.to = collision.positionA;
-          frame.state = cloneArmyState(frame.state, {
+        const inBattle = allBattleEdges.some(([left, right]) => left === frame.record.item.id || right === frame.record.item.id);
+        if (!inBattle) continue;
+        const collisionPosition = collisionPositions.get(frame.record.item.id);
+        if (collisionPosition) frame.to = collisionPosition;
+        const group = battleGroups.find((candidate) => candidate.participantIds.includes(frame.record.item.id));
+        frame.state = cloneArmyState(frame.state, {
+          status: "IN_BATTLE",
+          stopReason: "BATTLE",
+          movement: { ...frame.state.movement, remainingUnits: 0 },
+          ...(group ? { battleGroupId: group.battleId } : {})
+        });
+      }
+      for (const record of armies) {
+        if (movingIds.has(record.item.id) || !strategicBattleArmyIds.has(record.item.id)) continue;
+        const group = battleGroups.find((candidate) => candidate.participantIds.includes(record.item.id));
+        if (!canCommit()) return;
+        await this.port.patchSceneItemMetadata(
+          record.item.id,
+          METADATA_KEYS.army,
+          cloneArmyState(record.state, {
             status: "IN_BATTLE",
+            stopReason: "BATTLE",
+            movement: { ...record.state.movement, remainingUnits: 0 },
             ...(group ? { battleGroupId: group.battleId } : {})
-          });
-        }
-        if (frame.record.item.id === collision.armyBId) {
-          frame.to = collision.positionB;
-          frame.state = cloneArmyState(frame.state, {
-            status: "IN_BATTLE",
-            ...(group ? { battleGroupId: group.battleId } : {})
-          });
-        }
+          }),
+          {},
+          record.state.revision
+        );
       }
     }
 
+    const annexOperations: CellPatchOperation[] = [];
     for (const frame of frames) {
+      if (!frame.state.plannedRoute.requiresReplan && frame.state.plannedRoute.cells.length > 0) {
+        const progress = reconcileStrategicMovementProgress({
+          routeCells: frame.state.plannedRoute.cells,
+          previousEnteredCount: frame.record.state.movement.enteredRouteCellCount,
+          movementWaypointIndex: frame.state.currentWaypointIndex,
+          finalCell: strategicGrid.sceneToCell(frame.to),
+          remainingUnits: frame.record.state.movement.remainingUnits,
+          costForCell: (cell) => {
+            const cost = getDestinationMovementCostUnits(scene.terrain, readCell(scene.gridMap, cell));
+            if (cost === undefined) throw new Error(`Invalid terrain for strategic cell ${cell.x},${cell.y}`);
+            return cost;
+          }
+        });
+        frame.state = {
+          ...frame.state,
+          movement: {
+            ...frame.state.movement,
+            remainingUnits: frame.state.status === "IN_BATTLE" ? 0 : progress.remainingUnits,
+            enteredRouteCellCount: progress.enteredRouteCellCount
+          }
+        };
+        const enteredCells = frame.state.plannedRoute.cells.slice(
+          frame.record.state.movement.enteredRouteCellCount,
+          progress.enteredRouteCellCount
+        );
+        for (const cell of enteredCells) {
+          const destination = readCell(scene.gridMap, cell);
+          const annexingStateId = annexingStateForEntry(
+            { states: scene.states, sides: scene.sides, wars: scene.wars },
+            frame.state.sideId,
+            destination
+          );
+          if (annexingStateId) annexOperations.push({ cell, patch: { deFactoStateId: annexingStateId } });
+        }
+      }
       if (!canCommit()) return;
       await this.port.patchSceneItemMetadata(
         frame.record.item.id,
@@ -387,10 +615,16 @@ export class ProductionEngine {
         frame.record.state.revision
       );
     }
-    if (battleGroups) {
+    const nextGridMap = applyCellPatchBatch(scene.gridMap, annexOperations);
+    if (battleGroups || nextGridMap !== scene.gridMap) {
       if (!canCommit()) return;
       await this.repository.writeScene(
-        { ...scene, revision: scene.revision + 1, battleGroups },
+        {
+          ...scene,
+          revision: scene.revision + 1,
+          battleGroups: battleGroups ?? scene.battleGroups,
+          gridMap: nextGridMap
+        },
         scene.revision,
         (current) =>
           canCommit() &&
@@ -454,7 +688,16 @@ export class ProductionEngine {
       items: Object.fromEntries(sceneItems.map((item) => [item.id, item])),
       positions: Object.fromEntries(sceneItems.map((item) => [item.id, item.position]))
     };
-    const result = new CommandProcessor().execute(
+    let commandCellForPosition: ((position: Vector2) => import("../shared/types").GridCellCoord) | undefined;
+    if (command.type === "COMPLETE_TURN_NOW") {
+      try {
+        const grid = new StrategicGridAdapter({ dpi: await this.grid.getDpi(), offset: { x: 0, y: 0 } });
+        commandCellForPosition = (position) => grid.sceneToCell(position);
+      } catch {
+        // CommandProcessor will reject state-bound turn completion when positions cannot be resolved.
+      }
+    }
+    const result = new CommandProcessor(() => this.wallClock(), commandCellForPosition).execute(
       {
         role: sender.role,
         playerId: sender.playerId,
@@ -509,18 +752,19 @@ export class ProductionEngine {
           });
           return;
         }
-        let failure: Awaited<ReturnType<typeof validateRouteConstraints>>;
+        let failure: ReturnType<typeof validateStrategicRouteShape>;
         try {
-          failure = await validateRouteConstraints(
-            snapped.start,
-            snapped.route,
-            army.state.overrides.maxRouteDistanceCells ??
-              scene.settings.defaultMaxRouteDistanceCells,
-            army.state.ignoresMovementBarriers
+          const gridDpi = await this.grid.getDpi();
+          failure = validateStrategicRouteShape({
+            start: snapped.start,
+            route: snapped.route,
+            startCell: command.startCell,
+            cells: command.cells,
+            grid: new StrategicGridAdapter({ dpi: gridDpi, offset: { x: 0, y: 0 } }),
+            barriers: army.state.ignoresMovementBarriers
               ? []
-              : extractBarrierSegments(barrierRecords, "movement"),
-            this.grid
-          );
+              : extractBarrierSegments(barrierRecords, "movement")
+          });
         } catch {
           await sendCommandAck(this.port, {
             requestId: command.requestId,
@@ -748,7 +992,8 @@ export class ProductionEngine {
     barriers: readonly BarrierRecord[],
     role: "GM" | "PLAYER",
     memberSideIds: readonly string[],
-    leaderSideIds: readonly string[]
+    leaderSideIds: readonly string[],
+    visibleArmyIds: ReadonlySet<string>
   ): Promise<void> {
     const overlayPort = {
       getLocalItems: () => this.port.getLocalItems(),
@@ -780,6 +1025,34 @@ export class ProductionEngine {
       })),
       role === "GM"
     );
+
+    await new HealthOverlayService(overlayPort).reconcile(
+      armies.map((record) => ({
+        armyId: record.item.id,
+        position: record.item.position,
+        hp: record.state.health.hp,
+        maxHp: record.state.health.maxHp,
+        color: sideColors.get(record.state.sideId) ?? "#ffffff"
+      })),
+      visibleArmyIds
+    );
+
+    const mapOverlayService = new MapOverlayService(overlayPort);
+    if (role !== "GM") {
+      await mapOverlayService.reconcile(undefined);
+      return;
+    }
+    try {
+      await mapOverlayService.reconcile({
+        dpi: await this.grid.getDpi(),
+        gridMap: scene.gridMap,
+        terrain: scene.terrain,
+        sides: scene.sides,
+        states: scene.states
+      });
+    } catch {
+      // Keep the last valid GM map overlay if grid geometry is temporarily unavailable.
+    }
   }
 }
 
@@ -817,21 +1090,19 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
     )
   );
   routeGateway.start();
-  const routeService = new RouteToolService(
-    Object.assign(port, {
-      getPlayerIdentity: async () => {
-        const [id, role, currentConnectionId] = await Promise.all([
-          OBR.player.getId(),
-          OBR.player.getRole(),
-          OBR.player.getConnectionId()
-        ]);
-        return { id, role, connectionId: currentConnectionId };
-      },
-      createId: () => crypto.randomUUID(),
-      activateTool: (toolId: string) => OBR.tool.activateTool(toolId)
-    }),
-    routeGateway
-  );
+  const toolPort = Object.assign(port, {
+    getPlayerIdentity: async () => {
+      const [id, role, currentConnectionId] = await Promise.all([
+        OBR.player.getId(),
+        OBR.player.getRole(),
+        OBR.player.getConnectionId()
+      ]);
+      return { id, role, connectionId: currentConnectionId };
+    },
+    createId: () => crypto.randomUUID(),
+    activateTool: (toolId: string) => OBR.tool.activateTool(toolId)
+  });
+  const routeService = new RouteToolService(toolPort, routeGateway);
   let removeRouteTool: RouteToolRegistration;
   try {
     removeRouteTool = await registerRouteTool(
@@ -844,6 +1115,18 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
       `${import.meta.env.BASE_URL}icon-1.2.png`
     );
   } catch (error) {
+    routeGateway.stop();
+    throw error;
+  }
+  let removeMapBrushTool: MapBrushToolRegistration;
+  try {
+    removeMapBrushTool = await registerMapBrushTool(
+      OBR.tool,
+      new MapBrushToolService(toolPort, routeGateway),
+      `${import.meta.env.BASE_URL}icon-1.2.png`
+    );
+  } catch (error) {
+    await removeRouteTool();
     routeGateway.stop();
     throw error;
   }
@@ -923,7 +1206,8 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
     },
     pauseMovingArmies: () => engine.pauseMovingArmies(),
     movementTick: () => engine.movementTick(),
-    visibilityTick: async () => engine.visibilityTick(await OBR.player.getRole(), await OBR.player.getId())
+    visibilityTick: async () => engine.visibilityTick(await OBR.player.getRole(), await OBR.player.getId()),
+    turnTick: () => engine.turnTick()
   };
   const runtime = new BackgroundRuntime(runtimePort);
   runtime.start();
@@ -939,6 +1223,7 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
         await runtime.stop();
         await lease.stop();
         try {
+          await removeMapBrushTool();
           await removeRouteTool();
         } finally {
           routeGateway.stop();

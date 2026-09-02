@@ -154,6 +154,7 @@ it("patches one scene-item metadata key without overwriting unrelated metadata",
       local: collection,
       grid: {
         getDistance: async () => 0,
+        getDpi: async () => 100,
         snapPosition: async (position) => position,
         onChange: () => () => undefined
       }
@@ -259,6 +260,7 @@ it("snaps grid positions to cell centres with full sensitivity", async () => {
       local: collection,
       grid: {
         getDistance: async () => 0,
+        getDpi: async () => 100,
         snapPosition: async (...args: unknown[]) => {
           calls.push(args);
           return { x: 50, y: 150 };
@@ -274,6 +276,7 @@ it("snaps grid positions to cell centres with full sensitivity", async () => {
   });
 
   await expect(adapter.snapGridCenter({ x: 17, y: 129 })).resolves.toEqual({ x: 50, y: 150 });
+  await expect(adapter.getGridDpi()).resolves.toBe(100);
   expect(calls).toEqual([[{ x: 17, y: 129 }, 1, false, true]]);
 });
 
@@ -293,6 +296,7 @@ it("adds normalized local overlays in one SDK collection batch", async () => {
       local: collection,
       grid: {
         getDistance: async () => 0,
+        getDpi: async () => 100,
         snapPosition: async (position) => position,
         onChange: () => () => undefined
       }
@@ -368,6 +372,7 @@ it("updates normalized overlays in one batch using nested SDK fields", async () 
       local: localCollection,
       grid: {
         getDistance: async () => 0,
+        getDpi: async () => 100,
         snapPosition: async (position) => position,
         onChange: () => () => undefined
       }
@@ -452,6 +457,7 @@ it("normalizes nested SDK curve and label fields when reading local overlays", a
       local: localCollection,
       grid: {
         getDistance: async () => 0,
+        getDpi: async () => 100,
         snapPosition: async (position) => position,
         onChange: () => () => undefined
       }
