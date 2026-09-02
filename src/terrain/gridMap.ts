@@ -70,7 +70,7 @@ export function applyCellPatchBatch(
     const after = JSON.stringify(next);
     if (before === after) continue;
     changed = true;
-    if (isDefaultCell(next)) delete cells[key];
+    if (isDefaultCell(next)) Reflect.deleteProperty(cells, key);
     else cells[key] = next;
   }
   return changed

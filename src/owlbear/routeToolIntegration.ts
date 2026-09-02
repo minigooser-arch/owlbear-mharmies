@@ -328,8 +328,18 @@ export async function registerRouteTool(
     await api.createMode(mode);
     for (const action of actions) await api.createAction(action);
   } catch (error) {
-    for (const action of actions) { try { await api.removeAction(action.id); } catch {} }
-    try { await api.removeMode(ROUTE_TOOL_MODE_ID); } catch {}
+    for (const action of actions) {
+      try {
+        await api.removeAction(action.id);
+      } catch {
+        // Rollback cleanup is best-effort after a partial registration failure.
+      }
+    }
+    try {
+      await api.removeMode(ROUTE_TOOL_MODE_ID);
+    } catch {
+      // Rollback cleanup is best-effort after a partial registration failure.
+    }
     await api.remove(ROUTE_TOOL_ID);
     throw error;
   }

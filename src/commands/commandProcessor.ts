@@ -507,7 +507,7 @@ export class CommandProcessor {
         if (command.terrainId === state.scene.terrain.defaultTerrainId) return "DEFAULT_TERRAIN_REQUIRED";
         const replacement = command.replacementTerrainId ?? state.scene.terrain.defaultTerrainId;
         if (!state.scene.terrain.types[replacement]) return "TERRAIN_NOT_FOUND";
-        delete state.scene.terrain.types[command.terrainId];
+        Reflect.deleteProperty(state.scene.terrain.types, command.terrainId);
         const operations = Object.entries(state.scene.gridMap.cells).flatMap(([key, cell]) => {
           if (cell.terrainId !== command.terrainId) return [];
           const parsed = parseCellKey(key);
@@ -606,7 +606,8 @@ export class CommandProcessor {
       case "UPDATE_WAR": {
         const index = state.scene.wars.findIndex((war) => war.id === command.warId);
         if (index < 0) return "WAR_NOT_FOUND";
-        const current = state.scene.wars[index]!;
+        const current = state.scene.wars[index];
+        if (!current) return "WAR_NOT_FOUND";
         const next = { ...current, ...command.patch, id: current.id };
         if (next.participantFactionIds.some((id) => !state.scene.sides.some((side) => side.id === id))) return "SIDE_NOT_FOUND";
         if (next.participantStateIds.some((id) => !state.scene.states.some((stateEntity) => stateEntity.id === id))) return "STATE_NOT_FOUND";

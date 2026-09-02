@@ -30,7 +30,8 @@ export function destroyArmy(
   if (dissolvedSurvivorIds.size > 0) {
     nextArmies = Object.fromEntries(Object.entries(nextArmies).map(([id, army]) => {
       if (!dissolvedSurvivorIds.has(id)) return [id, army];
-      const { battleGroupId: _battleGroupId, ...withoutBattleGroup } = army;
+      const withoutBattleGroup = { ...army };
+      delete withoutBattleGroup.battleGroupId;
       return [id, {
         ...withoutBattleGroup,
         status: "PAUSED" as const,

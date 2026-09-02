@@ -22,7 +22,8 @@ export type CompleteTurnResult =
   | { changed: true; scene: SceneState; armies: Record<string, ArmyState> };
 
 function withoutStopReason(army: ArmyState): ArmyState {
-  const { stopReason: _stopReason, ...rest } = army;
+  const rest = { ...army };
+  delete rest.stopReason;
   return rest;
 }
 
@@ -62,7 +63,9 @@ function prepareArmyForNewTurn(
       readCell: (cell) => readCell(scene.gridMap, cell),
       armyStateAllowsMovement: true
     });
-    const { invalidReason: _invalidReason, invalidCell: _invalidCell, ...cleanRoute } = next.plannedRoute;
+    const cleanRoute = { ...next.plannedRoute };
+    delete cleanRoute.invalidReason;
+    delete cleanRoute.invalidCell;
     next = {
       ...next,
       plannedRoute: validation.valid

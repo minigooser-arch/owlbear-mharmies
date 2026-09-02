@@ -108,7 +108,11 @@ export async function registerMapBrushTool(
     const next = tail.then(operation, operation);
     tail = next.catch(async (error: unknown) => {
       const message = error instanceof Error ? error.message : String(error);
-      try { await port.notify(`Не удалось изменить разметку: ${message}`, "ERROR"); } catch {}
+      try {
+        await port.notify(`Не удалось изменить разметку: ${message}`, "ERROR");
+      } catch {
+        // Notification delivery is best-effort and must not break the tool queue.
+      }
     });
     return tail;
   };
@@ -220,7 +224,11 @@ export async function registerMapBrushTool(
     if (closed) return;
     closed = true;
     await tail;
-    try { await port.clearPreview(); } catch {}
+    try {
+      await port.clearPreview();
+    } catch {
+      // Preview cleanup is best-effort during tool teardown.
+    }
     try { await api.removeMode(MAP_BRUSH_TOOL_MODE_ID); } finally { await api.remove(MAP_BRUSH_TOOL_ID); }
   }) as MapBrushToolRegistration;
   remove.registered = true;

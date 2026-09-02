@@ -1,8 +1,10 @@
+import type { ToolMode } from "@owlbear-rodeo/sdk";
 import { describe, expect, it } from "vitest";
 import {
   mapBrushSettingsFromMetadata,
   registerMapBrushTool,
-  type MapBrushSettings
+  type MapBrushSettings,
+  type MapBrushToolApi
 } from "./mapBrushTool";
 import {
   MAP_BRUSH_MODE_KEY,
@@ -17,18 +19,22 @@ function event(x: number, y: number) {
 }
 
 function apiHarness() {
-  let mode: any;
+  let registeredMode: ToolMode | undefined;
   const created: string[] = [];
+  const api: MapBrushToolApi = {
+    create: async (tool) => { created.push(tool.id); },
+    remove: async () => undefined,
+    createMode: async (value) => { registeredMode = value; },
+    removeMode: async () => undefined,
+    setMetadata: async () => undefined
+  };
   return {
-    api: {
-      create: async (tool: any) => { created.push(tool.id); },
-      remove: async () => undefined,
-      createMode: async (value: any) => { mode = value; },
-      removeMode: async () => undefined,
-      setMetadata: async () => undefined
-    },
+    api,
     created,
-    get mode() { return mode; }
+    get mode(): ToolMode {
+      if (!registeredMode) throw new Error("Expected map brush tool mode to be registered");
+      return registeredMode;
+    }
   };
 }
 

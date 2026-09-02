@@ -452,8 +452,10 @@ describe("CommandProcessor", () => {
     const now = new Date("2026-09-02T12:30:00.000Z");
     const processor = new CommandProcessor(() => now);
     const commandState = state();
+    const redArmy = commandState.armies["army-red"];
+    if (!redArmy) throw new Error("Expected army-red fixture");
     commandState.armies["army-red"] = {
-      ...commandState.armies["army-red"]!,
+      ...redArmy,
       movement: { maxUnits: 10, remainingUnits: 3, enteredRouteCellCount: 0 }
     };
 
@@ -537,8 +539,11 @@ it("cleans battle and state references when a faction is deleted", () => {
     { id: "russia", name: "Россия", rulingFactionId: "red", active: true },
     { id: "germany", name: "Германия", rulingFactionId: "blue", active: true }
   ];
-  commandState.scene.sides[0]!.stateId = "russia";
-  commandState.scene.sides[1]!.stateId = "germany";
+  const redSide = commandState.scene.sides[0];
+  const blueSide = commandState.scene.sides[1];
+  if (!redSide || !blueSide) throw new Error("Expected red and blue side fixtures");
+  redSide.stateId = "russia";
+  blueSide.stateId = "germany";
   commandState.scene.battleGroups = [{
     battleId: "battle",
     name: "Бой",
@@ -566,8 +571,10 @@ it("cleans battle and state references when a faction is deleted", () => {
 
 it("keeps the fixed five-OP budget when a legacy route-distance override is edited", () => {
   const commandState = state();
+  const redArmy = commandState.armies["army-red"];
+  if (!redArmy) throw new Error("Expected army-red fixture");
   commandState.armies["army-red"] = {
-    ...commandState.armies["army-red"]!,
+    ...redArmy,
     movement: { maxUnits: 10, remainingUnits: 7, enteredRouteCellCount: 0 }
   };
   const result = new CommandProcessor().execute(

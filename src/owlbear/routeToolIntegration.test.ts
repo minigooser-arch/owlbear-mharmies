@@ -102,7 +102,7 @@ describe("route tool SDK integration", () => {
     await Promise.resolve();
     expect(f.commits).toEqual([]);
 
-    action(f.api, ROUTE_FINISH_ACTION_ID).onClick?.(ctx as never);
+    action(f.api, ROUTE_FINISH_ACTION_ID).onClick?.(ctx, ROUTE_FINISH_ACTION_ID);
     await vi.waitFor(() => expect(f.commits).toEqual([{ armyId: "army-a", cells: [{ x: 1, y: 0 }] }]));
     expect(f.restored).toEqual(["select-tool"]);
   });
@@ -116,12 +116,12 @@ describe("route tool SDK integration", () => {
     mode.onActivate?.(ctx);
     await vi.waitFor(() => expect(f.rendered.length).toBeGreaterThan(0));
     await mode.onToolClick?.(ctx, toolEvent(150, 50));
-    action(f.api, ROUTE_UNDO_ACTION_ID).onClick?.(ctx as never);
+    action(f.api, ROUTE_UNDO_ACTION_ID).onClick?.(ctx, ROUTE_UNDO_ACTION_ID);
     await vi.waitFor(() => expect(f.rendered.at(-1)?.cells).toEqual([]));
     await mode.onToolClick?.(ctx, toolEvent(150, 50));
-    action(f.api, ROUTE_CLEAR_ACTION_ID).onClick?.(ctx as never);
+    action(f.api, ROUTE_CLEAR_ACTION_ID).onClick?.(ctx, ROUTE_CLEAR_ACTION_ID);
     await vi.waitFor(() => expect(f.rendered.at(-1)?.cells).toEqual([]));
-    action(f.api, ROUTE_CANCEL_ACTION_ID).onClick?.(ctx as never);
+    action(f.api, ROUTE_CANCEL_ACTION_ID).onClick?.(ctx, ROUTE_CANCEL_ACTION_ID);
     await vi.waitFor(() => expect(f.clearCount).toBeGreaterThan(0));
     expect(f.commits).toEqual([]);
   });

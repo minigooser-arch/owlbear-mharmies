@@ -25,10 +25,8 @@ export function findStrategicConflictEdges(
   stationaryOccupants: readonly StrategicOccupant[] = []
 ): StrategicConflictEdge[] {
   const edges: StrategicConflictEdge[] = [];
-  for (let leftIndex = 0; leftIndex < intents.length; leftIndex += 1) {
-    const left = intents[leftIndex]!;
-    for (let rightIndex = leftIndex + 1; rightIndex < intents.length; rightIndex += 1) {
-      const right = intents[rightIndex]!;
+  for (const [leftIndex, left] of intents.entries()) {
+    for (const right of intents.slice(leftIndex + 1)) {
       if (relationForSides(left.sideId, right.sideId) !== "ENEMY") continue;
       const sameDestination = sameCell(left.to, right.to);
       const swap = sameCell(left.from, right.to) && sameCell(left.to, right.from);
