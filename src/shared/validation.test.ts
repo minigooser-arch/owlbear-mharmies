@@ -5,7 +5,7 @@ import { normalizeArmyState, normalizeSceneState } from "./validation";
 describe("metadata validation", () => {
   it("applies safe defaults and rejects invalid numeric overrides", () => {
     const army = normalizeArmyState({
-      version: 1,
+      version: 3,
       registered: true,
       sideId: "a",
       status: "READY",
@@ -25,14 +25,14 @@ describe("metadata validation", () => {
   });
 
   it("uses the five-cell scene route limit", () => {
-    const scene = normalizeSceneState({ version: 3 });
+    const scene = normalizeSceneState({ version: 5 });
     expect(scene.ok).toBe(true);
     if (scene.ok) expect(scene.value.settings).toEqual(DEFAULT_SETTINGS);
   });
 
   it("normalizes leaders as unique members without crossing side boundaries", () => {
     const scene = normalizeSceneState({
-      version: 3,
+      version: 5,
       sides: [
         {
           id: "red",
@@ -54,7 +54,7 @@ describe("metadata validation", () => {
     expect(scene).toMatchObject({
       ok: true,
       value: {
-        version: 3,
+        version: 5,
         sides: [
           { id: "red", playerIds: ["member", "leader"], leaderPlayerIds: ["leader"] },
           { id: "blue", playerIds: ["leader"], leaderPlayerIds: ["leader"] }
@@ -65,7 +65,7 @@ describe("metadata validation", () => {
 
   it("requires non-empty battle names and preserves them", () => {
     const scene = normalizeSceneState({
-      version: 3,
+      version: 5,
       battleGroups: [
         { battleId: "north", name: "Север", participantIds: ["a", "b"], revision: 2 },
         { battleId: "blank", name: "   ", participantIds: ["c", "d"], revision: 1 }
@@ -75,7 +75,7 @@ describe("metadata validation", () => {
     expect(scene).toMatchObject({
       ok: true,
       value: {
-        version: 3,
+        version: 5,
         battleGroups: [
           { battleId: "north", name: "Север", participantIds: ["a", "b"], revision: 2 }
         ]

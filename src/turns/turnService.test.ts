@@ -47,6 +47,7 @@ it("disbands pending armies before the new turn", () => {
 it("checks supply and applies ten percent max HP damage before movement", () => {
   const current = scene();
   current.gridMap.cells["0,0"] = {terrainId:null,impassable:false,factionTerritoryIds:[],recognizedStateId:"blue",deFactoStateId:"red-state"};
+  current.gridMap.cells["1,0"] = {terrainId:null,impassable:false,factionTerritoryIds:[],recognizedStateId:"blue",deFactoStateId:"blue"};
   const result = completeTurn(current, { a: army(3) }, { source:"MANUAL", completedAt:new Date("2026-09-02T10:00:00Z"), armyCells:{a:{x:0,y:0}} });
   expect(result.changed).toBe(true); if (!result.changed) return;
   expect(result.armies.a?.supply).toEqual({ supplied:false, checkedOnTurn:2 });

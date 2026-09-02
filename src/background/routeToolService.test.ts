@@ -145,13 +145,22 @@ describe("RouteToolService", () => {
     expect(send).not.toHaveBeenCalled();
   });
 
-  it("re-authorizes READY state at commit time", async () => {
+  it.each(["MOVING", "PAUSED", "IN_BATTLE"] as const)("rejects %s state when loading a route session", async (status) => {
+    const port = new MemoryPort();
+    const state = port.items[0]?.metadata[METADATA_KEYS.army] as ArmyState;
+    state.status = status;
+    const service = new RouteToolService(port, { send: vi.fn() });
+    await expect(service.loadSession("army-a"))
+      .rejects.toEqual(expect.objectContaining({ code: "ARMY_NOT_READY" }));
+  });
+
+  it.each(["MOVING", "PAUSED", "IN_BATTLE"] as const)("re-authorizes against %s state at commit time", async (status) => {
     const port = new MemoryPort();
     const send = vi.fn(async (command: ArmyCommand) => accepted(command));
     const service = new RouteToolService(port, { send });
     await service.loadSession("army-a");
     const state = port.items[0]?.metadata[METADATA_KEYS.army] as ArmyState;
-    state.status = "MOVING";
+    state.status = status;
     await expect(service.commitRoute("army-a", [{ x: 150, y: 50 }], { x: 0, y: 0 }, [{ x: 1, y: 0 }]))
       .rejects.toEqual(expect.objectContaining({ code: "ARMY_NOT_READY" }));
     expect(send).not.toHaveBeenCalled();

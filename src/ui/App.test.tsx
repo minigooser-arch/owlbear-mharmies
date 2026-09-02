@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
 import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE } from "../shared/constants";
 import { App } from "./App";
@@ -77,7 +77,7 @@ it("uses a separate GM operations navigation", () => {
 
 it("shows turn administration on the turn page only to the GM", () => {
   const { unmount } = render(<App services={services()} />);
-  screen.getByRole("button", { name: "Ход" }).click();
+  fireEvent.click(screen.getByRole("button", { name: "Ход" }));
   expect(screen.getByText("Ход №1")).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Остановить ходы" })).not.toBeInTheDocument();
   unmount();

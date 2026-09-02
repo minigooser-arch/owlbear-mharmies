@@ -15,7 +15,7 @@ describe("metadata migrations", () => {
     expect(result).toMatchObject({
       ok: true,
       value: {
-        version: 1,
+        version: 3,
         status: "READY",
         ignoresMovementBarriers: false,
         ignoresVisionBarriers: false
@@ -42,7 +42,7 @@ describe("metadata migrations", () => {
     expect(result).toMatchObject({
       ok: true,
       value: {
-        version: 3,
+        version: 5,
         battleGroups: [
           { battleId: "a", name: "Бой 1" },
           { battleId: "z", name: "Бой 2" }
@@ -75,7 +75,7 @@ describe("metadata migrations", () => {
     });
   });
 
-  it("migrates v1 sides through v2 to v3 without losing memberships", () => {
+  it("migrates v1 sides through the current v5 schema without losing memberships", () => {
     const result = migrateSceneState({
       version: 1,
       revision: 7,
@@ -95,7 +95,7 @@ describe("metadata migrations", () => {
     expect(result).toMatchObject({
       ok: true,
       value: {
-        version: 3,
+        version: 5,
         revision: 7,
         sides: [
           {
@@ -110,7 +110,7 @@ describe("metadata migrations", () => {
     });
   });
 
-  it("migrates a v0 scene through v1 and v2 to v3", () => {
+  it("migrates a v0 scene through the current v5 schema", () => {
     expect(migrateSceneState({
       version: 0,
       revision: 4,
@@ -118,7 +118,7 @@ describe("metadata migrations", () => {
     })).toMatchObject({
       ok: true,
       value: {
-        version: 3,
+        version: 5,
         revision: 4,
         sides: [{ id: "red", playerIds: ["p1"], leaderPlayerIds: [] }]
       }
