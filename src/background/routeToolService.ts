@@ -314,7 +314,7 @@ export class RouteToolService implements RouteToolIntegrationPort {
     if (!authorization.allowed) {
       throw new RouteToolAuthorizationError(authorization.reason);
     }
-    if (army.state.status === "MOVING" || army.state.status === "IN_BATTLE") {
+    if (army.state.status !== "READY") {
       throw new RouteToolAuthorizationError("ARMY_NOT_READY");
     }
     return {

@@ -30,10 +30,10 @@ afterEach(cleanup);
 describe("ArmyCard capabilities", () => {
   it("shows movement points, planned cost, and war state", () => {
     render(<ArmyCard army={redArmy} isGM={false} canEditRoute canRequestDisband onAction={vi.fn()} />);
-    expect(screen.getByText("ОП: 4,5 / 6")).toBeInTheDocument();
+    expect(screen.getByLabelText("Параметры армии")).toHaveTextContent(/ОП\s*4,5 \/ 6/);
     expect(screen.getByText("Маршрут: 2,5 ОП")).toBeInTheDocument();
     expect(screen.getByText("Война")).toBeInTheDocument();
-    expect(screen.getByText("HP: 45 / 50")).toBeInTheDocument();
+    expect(screen.getByLabelText("Параметры армии")).toHaveTextContent(/HP\s*45 \/ 50/);
     expect(screen.getByText(/Окружена/)).toBeInTheDocument();
     expect(screen.getByText(/−5 HP/)).toBeInTheDocument();
   });
@@ -54,10 +54,10 @@ describe("ArmyCard capabilities", () => {
     expect(screen.getByRole("button", { name: "Снять регистрацию" })).toBeInTheDocument();
   });
 
-  it("hides route mutation controls while an army is active", () => {
+  it.each(["MOVING", "PAUSED"] as const)("hides route mutation controls while an army is %s", (status) => {
     render(
       <ArmyCard
-        army={{ ...redArmy, status: "MOVING", route: [{ x: 1, y: 0 }] }}
+        army={{ ...redArmy, status, route: [{ x: 1, y: 0 }] }}
         isGM={false}
         canEditRoute
         canRequestDisband
@@ -66,6 +66,16 @@ describe("ArmyCard capabilities", () => {
     );
     expect(screen.queryByRole("button", { name: "Изменить маршрут" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Очистить" })).not.toBeInTheDocument();
+  });
+
+  it("lets the GM stop a paused army so it can return to READY", () => {
+    const onAction = vi.fn();
+    render(<ArmyCard army={{ ...redArmy, status: "PAUSED" }} isGM canEditRoute canRequestDisband onAction={onAction} />);
+
+    fireEvent.click(screen.getByText("Дополнительные действия"));
+    expect(screen.queryByRole("button", { name: "Пауза" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Стоп" }));
+    expect(onAction).toHaveBeenCalledWith({ type: "STOP_ARMY", armyId: "army-red" });
   });
 
   it("emits separate route, movement, and unregister commands", () => {

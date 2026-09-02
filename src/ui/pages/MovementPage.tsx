@@ -12,7 +12,7 @@ export function MovementPage({ armies, turn, isGM, leaderSideIds, onAction }: { 
       <div className="movement-list">
         {armies.map((army) => {
           const reason = movementDenialMessage(army.routeInvalidReason);
-          const canPlan = (army.status === "READY" || army.status === "PAUSED") && (isGM || leaderSideIds.has(army.sideId));
+          const canPlan = army.status === "READY" && (isGM || leaderSideIds.has(army.sideId));
           return <article className="movement-row" key={army.id}>
             <div><h3>{army.name}</h3><p>{army.sideName}{army.atWar ? " · Война" : ""}</p></div>
             <div className="movement-row-stats"><strong>{formatMovementUnits(army.movementRemainingUnits)} / {formatMovementUnits(army.movementMaxUnits)} ОП</strong><span>{army.routeCellCount > 0 ? `${army.routeCellCount} кл. · ${formatMovementUnits(army.routeCostUnits)} ОП` : "Без маршрута"}</span></div>

@@ -40,7 +40,8 @@ describe("validateArmyCommand", () => {
           name: "Красные",
           color: "#f00",
           playerIds: ["leader"],
-          leaderPlayerIds: ["leader"]
+          leaderPlayerIds: ["leader"],
+          stateId: null
         }
       }
     });

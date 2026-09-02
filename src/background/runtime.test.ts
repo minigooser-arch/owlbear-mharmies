@@ -173,6 +173,11 @@ describe("BackgroundRuntime", () => {
 
   it("never overlaps slow turn reconciliation ticks", async () => {
     const port = new RuntimePort();
+    const runtime = new BackgroundRuntime(port);
+    runtime.start();
+    await runtime.whenIdle();
+    port.turns.mockClear();
+
     let release: (() => void) | undefined;
     let call = 0;
     port.turns.mockImplementation(() => {
@@ -181,10 +186,6 @@ describe("BackgroundRuntime", () => {
         ? new Promise<void>((resolve) => { release = resolve; })
         : Promise.resolve();
     });
-    const runtime = new BackgroundRuntime(port);
-    runtime.start();
-    await runtime.whenIdle();
-    port.turns.mockClear();
 
     runtime.requestTurnTick();
     runtime.requestTurnTick();

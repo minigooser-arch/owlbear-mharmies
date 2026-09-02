@@ -22,13 +22,13 @@ afterEach(cleanup);
 it("shows active war participants and an explicit end action", () => {
   render(<WarsPage wars={wars} sides={sides} states={states} onAction={vi.fn()} />);
   expect(screen.getByText("Русско-германская война")).toBeInTheDocument();
-  expect(screen.getByText("Россия, Германия")).toBeInTheDocument();
+  expect(screen.getByText(/Фракции: Россия, Германия/)).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Завершить войну" })).toBeInTheDocument();
 });
 
 
 it("shows state participants separately from faction participants", () => {
   render(<WarsPage wars={wars} sides={sides} states={states} onAction={vi.fn()} />);
-  expect(screen.getByText("Российская империя, Германская империя")).toBeInTheDocument();
+  expect(screen.getByText(/Государства: Российская империя, Германская империя/)).toBeInTheDocument();
   expect(screen.getAllByText(/Государства/).length).toBeGreaterThan(0);
 });

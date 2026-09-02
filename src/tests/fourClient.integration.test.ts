@@ -14,8 +14,7 @@ import {
   addMember,
   fourClientRoom,
   registerArmy,
-  setRoute,
-  startArmy
+  setRoute
 } from "./helpers/factories";
 import { createFourClientRoom } from "./helpers/inMemoryAdapter";
 
@@ -133,7 +132,7 @@ describe("four-client room", () => {
     expect(await room.member.routeIds()).not.toContain("red-token");
     expect(await room.other.routeIds()).not.toContain("red-token");
 
-    await room.gm.send(startArmy("red-token"));
+    await room.gm.send({ type: "COMPLETE_TURN_NOW" });
     expect(await room.member.routeIds()).toContain("red-token");
     expect(await room.other.routeIds()).not.toContain("red-token");
   });

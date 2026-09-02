@@ -313,7 +313,7 @@ export class CommandProcessor {
       case "SET_ROUTE": {
         const army = state.armies[command.armyId];
         if (!army) return "ARMY_NOT_FOUND";
-        if (army.status === "MOVING" || army.status === "IN_BATTLE") return "ARMY_NOT_READY";
+        if (army.status !== "READY") return "ARMY_NOT_READY";
         if (command.route.length !== command.cells.length) return "INVALID_COMMAND";
         const validation = validatePlannedRoute({
           start: command.startCell,
@@ -345,7 +345,7 @@ export class CommandProcessor {
       case "CLEAR_ROUTE": {
         const army = state.armies[command.armyId];
         if (!army) return "ARMY_NOT_FOUND";
-        if (army.status === "MOVING" || army.status === "IN_BATTLE") return "ARMY_NOT_READY";
+        if (army.status !== "READY") return "ARMY_NOT_READY";
         state.armies[command.armyId] = bumpArmy(army, {
           route: [],
           plannedRoute: emptyPlannedRoute(army.plannedRoute.startCell),

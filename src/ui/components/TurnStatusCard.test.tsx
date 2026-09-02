@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from "@testing-library/react";
-import { expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, expect, it, vi } from "vitest";
 import { DEFAULT_TURN_STATE } from "../../shared/constants";
 import { TurnStatusCard } from "./TurnStatusCard";
+
+afterEach(cleanup);
 
 it("shows a deferred Moscow time and GM controls", () => {
   const action = vi.fn();
