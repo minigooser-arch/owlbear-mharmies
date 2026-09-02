@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { GridDistancePort } from "../routes/routeMath";
 import type { SideRelation, Vector2 } from "../shared/types";
-import { findEarliestEnemyCollision } from "./collisionEngine";
+import { findEarliestEnemyCollision, findEarliestEnemyCollisions } from "./collisionEngine";
 
 const distancePort: GridDistancePort = {
   distance: async (from: Vector2, to: Vector2) => Math.hypot(to.x - from.x, to.y - from.y)
@@ -44,6 +44,16 @@ describe("swept collisions", () => {
     if (hit) {
       expect(await distancePort.distance(hit.positionA, hit.positionB)).toBeCloseTo(0.5, 4);
     }
+  });
+
+  it("returns all enemy contacts at the same earliest moment", async () => {
+    const input = crossing("ENEMY");
+    input.armies.push({
+      id: "c", sideId: "B", from: { x: 10, y: 0 }, to: { x: 0, y: 0 }, collisionRangeCells: 0.5
+    });
+    const hits = await findEarliestEnemyCollisions(input);
+    expect(hits.map((hit) => [hit.armyAId, hit.armyBId])).toEqual([["a","b"],["a","c"]]);
+    expect(hits[0]?.time).toBeCloseTo(hits[1]?.time ?? -1, 8);
   });
 
   it("returns the earliest collision among multiple enemy pairs", async () => {

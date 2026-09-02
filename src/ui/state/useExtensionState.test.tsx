@@ -2,7 +2,7 @@
 
 import { renderHook } from "@testing-library/react";
 import { expect, it } from "vitest";
-import { DEFAULT_SETTINGS } from "../../shared/constants";
+import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE } from "../../shared/constants";
 import { useExtensionState, type ExtensionServices } from "./useExtensionState";
 
 it("constructs player lists and counters from member sides, not map visibility", () => {
@@ -17,13 +17,17 @@ it("constructs player lists and counters from member sides, not map visibility",
     leaderSideIds: new Set<string>(),
     mapVisibleSourceIds: new Set(["b"]),
     armies: [
-      { id: "a", name: "A", sideId: "A", sideName: "A", status: "READY" as const, route: [] },
-      { id: "b", name: "B", sideId: "B", sideName: "B", status: "IN_BATTLE" as const, route: [] }
+      { id: "a", name: "A", sideId: "A", sideName: "A", status: "READY" as const, route: [], movementMaxUnits: 10, movementRemainingUnits: 10, routeCostUnits: 0, routeCellCount: 0, routeRequiresReplan: false, atWar: false, healthHp: 50, healthMaxHp: 50, supplied: true, supplyCheckedOnTurn: 1, disbandPending: false },
+      { id: "b", name: "B", sideId: "B", sideName: "B", status: "IN_BATTLE" as const, route: [], movementMaxUnits: 10, movementRemainingUnits: 8, routeCostUnits: 2, routeCellCount: 1, routeRequiresReplan: false, atWar: true, healthHp: 45, healthMaxHp: 50, supplied: false, supplyCheckedOnTurn: 1, disbandPending: false }
     ],
     sides: [],
+    states: [],
     relations: {},
     battleGroups: [],
-    settings: DEFAULT_SETTINGS
+    settings: DEFAULT_SETTINGS,
+    terrain: DEFAULT_TERRAIN,
+    wars: [],
+    turn: DEFAULT_TURN_STATE
   };
   const services: ExtensionServices = {
     getSnapshot: () => snapshot,

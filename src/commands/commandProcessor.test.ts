@@ -1,16 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_SETTINGS, METADATA_KEYS } from "../shared/constants";
+import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE, METADATA_KEYS } from "../shared/constants";
 import type { ArmyCommand, ArmyState, SceneItemRecord, SceneState } from "../shared/types";
 import { CommandProcessor, type CommandContext, type CommandState } from "./commandProcessor";
 
 function army(sideId: string, directOwnerPlayerId?: string): ArmyState {
   return {
-    version: 1,
+    version: 3,
     registered: true,
     sideId,
     status: "READY",
     overrides: {},
     route: [],
+    plannedRoute: { startCell: { x: 0, y: 0 }, executeOnTurn: 0, cells: [], totalCostUnits: 0, validatedRevision: 2, requiresReplan: false },
+    movement: { maxUnits: 10, remainingUnits: 10, enteredRouteCellCount: 0 },
+    health: { hp: 50, maxHp: 50 }, supply: { supplied: true, checkedOnTurn: 1 },
+    disband: { pending: false, requestedOnTurn: null, requestedByPlayerId: null },
     currentWaypointIndex: 0,
     segmentProgressCells: 0,
     ignoresMovementBarriers: false,
@@ -32,7 +36,7 @@ function image(id: string, registered = false): SceneItemRecord {
 
 function state(): CommandState {
   const scene: SceneState = {
-    version: 3,
+    version: 5,
     revision: 2,
     settings: { ...DEFAULT_SETTINGS },
     sides: [
@@ -41,18 +45,25 @@ function state(): CommandState {
         name: "Красные",
         color: "#f00",
         playerIds: ["leader", "member", "legacy-owner"],
-        leaderPlayerIds: ["leader"]
+        leaderPlayerIds: ["leader"],
+        stateId: null
       },
       {
         id: "blue",
         name: "Синие",
         color: "#00f",
         playerIds: ["blue-leader"],
-        leaderPlayerIds: ["blue-leader"]
+        leaderPlayerIds: ["blue-leader"],
+        stateId: null
       }
     ],
+    states: [],
     relations: {},
-    battleGroups: []
+    battleGroups: [],
+    terrain: structuredClone(DEFAULT_TERRAIN),
+    gridMap: { version: 1, revision: 0, cells: {} },
+    wars: [],
+    turn: structuredClone(DEFAULT_TURN_STATE)
   };
   return {
     scene,
@@ -111,7 +122,8 @@ describe("CommandProcessor", () => {
           name: "Зелёные",
           color: "#0f0",
           playerIds: [],
-          leaderPlayerIds: []
+          leaderPlayerIds: [],
+          stateId: null
         }
       })
     );
@@ -301,7 +313,7 @@ describe("CommandProcessor", () => {
       activeArmy.route = [{ x: 1, y: 0 }];
 
       const routeCommand = type === "SET_ROUTE"
-        ? command({ type, armyId: "army-red", route: [{ x: 2, y: 0 }] }, playerId)
+        ? command({ type, armyId: "army-red", route: [{ x: 2, y: 0 }], startCell: { x: 0, y: 0 }, cells: [{ x: 1, y: 0 }] }, playerId)
         : command({ type, armyId: "army-red" }, playerId);
 
       expect(processor.execute(context(role, playerId, commandState), routeCommand)).toEqual({
@@ -315,16 +327,16 @@ describe("CommandProcessor", () => {
     }
   );
 
-  it("rejects reassigning a deleted side's armies back to the same side", () => {
+  it("forbids transferring armies to another faction when deleting a side", () => {
     expect(processor.execute(
       context("GM", "gm"),
       command({
         type: "DELETE_SIDE",
         sideId: "red",
         strategy: "REASSIGN_ARMIES",
-        targetSideId: "red"
+        targetSideId: "blue"
       })
-    )).toEqual({ status: "REJECTED", reason: "TARGET_SIDE_SAME" });
+    )).toEqual({ status: "REJECTED", reason: "ARMY_TRANSFER_FORBIDDEN" });
   });
 
   it("removes unregistered side armies from battle groups", () => {
@@ -400,5 +412,173 @@ describe("CommandProcessor", () => {
       context("GM", "gm"),
       command({ type: "RENAME_BATTLE_GROUP", battleId: "missing", name: "Переправа" })
     )).toEqual({ status: "REJECTED", reason: "BATTLE_NOT_FOUND" });
+  });
+  it("lets only the GM edit strategic cells and revalidates saved routes", () => {
+    const commandState = state();
+    commandState.scene.gridMap.cells["1,0"] = {
+      terrainId: "road",
+      impassable: false,
+      factionTerritoryIds: ["red"],
+      recognizedStateId: null,
+      deFactoStateId: null
+    };
+    const existing = commandState.armies["army-red"];
+    if (!existing) throw new Error("Missing test army");
+    existing.route = [{ x: 150, y: 50 }];
+    existing.plannedRoute = {
+      startCell: { x: 0, y: 0 },
+      executeOnTurn: 2,
+      cells: [{ x: 1, y: 0 }],
+      totalCostUnits: 1,
+      validatedRevision: 2,
+      requiresReplan: false
+    };
+
+    expect(processor.execute(
+      context("PLAYER", "leader", commandState),
+      command({ type: "SET_IMPASSABLE_CELLS", cells: [{ x: 1, y: 0 }], impassable: true }, "leader")
+    )).toEqual({ status: "REJECTED", reason: "GM_ONLY" });
+
+    const result = processor.execute(
+      context("GM", "gm", commandState),
+      command({ type: "SET_IMPASSABLE_CELLS", cells: [{ x: 1, y: 0 }], impassable: true })
+    );
+    expect(result.status).toBe("ACCEPTED");
+    if (result.status !== "ACCEPTED") return;
+    expect(result.state.armies["army-red"]?.plannedRoute.invalidReason).toBe("IMPASSABLE");
+  });
+
+  it("administers turn pause, deferral, resume, and manual completion", () => {
+    const now = new Date("2026-09-02T12:30:00.000Z");
+    const processor = new CommandProcessor(() => now);
+    const commandState = state();
+    commandState.armies["army-red"] = {
+      ...commandState.armies["army-red"]!,
+      movement: { maxUnits: 10, remainingUnits: 3, enteredRouteCellCount: 0 }
+    };
+
+    const deferred = processor.execute(
+      context("GM", "gm", commandState),
+      command({ type: "DEFER_TURN", until: "2026-09-03T15:00:00.000Z" })
+    );
+    expect(deferred.status).toBe("ACCEPTED");
+    if (deferred.status !== "ACCEPTED") return;
+    expect(deferred.state.scene.turn.deferredUntil).toBe("2026-09-03T15:00:00.000Z");
+
+    const paused = processor.execute(
+      context("GM", "gm", { ...deferred.state, scene: { ...deferred.state.scene, revision: 2 } }),
+      command({ type: "PAUSE_AUTO_TURNS" })
+    );
+    expect(paused.status).toBe("ACCEPTED");
+    if (paused.status !== "ACCEPTED") return;
+    expect(paused.state.scene.turn.autoTurnsPaused).toBe(true);
+    expect(paused.state.scene.turn.deferredUntil).toBeNull();
+
+    const completed = processor.execute(
+      context("GM", "gm", commandState),
+      command({ type: "COMPLETE_TURN_NOW" })
+    );
+    expect(completed.status).toBe("ACCEPTED");
+    if (completed.status !== "ACCEPTED") return;
+    expect(completed.state.scene.turn.turnNumber).toBe(2);
+    expect(completed.state.scene.turn.lastCompletedBy).toBe("MANUAL");
+    expect(completed.state.armies["army-red"]?.movement.remainingUnits).toBe(10);
+  });
+
+  it("rejects a turn deferral that is not in the future", () => {
+    const processor = new CommandProcessor(() => new Date("2026-09-02T12:30:00.000Z"));
+    expect(processor.execute(
+      context("GM", "gm"),
+      command({ type: "DEFER_TURN", until: "2026-09-02T12:00:00.000Z" })
+    )).toEqual({ status: "REJECTED", reason: "INVALID_TURN_TIME" });
+  });
+
+});
+
+it("revalidates only the unentered route cells when resuming an army", () => {
+  const commandState = state();
+  commandState.scene.gridMap.cells["1,0"] = {
+    terrainId: "road", impassable: false, factionTerritoryIds: ["red"], recognizedStateId: null, deFactoStateId: null
+  };
+  commandState.scene.gridMap.cells["2,0"] = {
+    terrainId: "forest", impassable: false, factionTerritoryIds: ["red"], recognizedStateId: null, deFactoStateId: null
+  };
+  commandState.armies["army-red"] = {
+    ...army("red"),
+    status: "PAUSED",
+    route: [{ x: 150, y: 50 }, { x: 250, y: 50 }],
+    plannedRoute: {
+      startCell: { x: 0, y: 0 },
+      executeOnTurn: 1,
+      cells: [{ x: 1, y: 0 }, { x: 2, y: 0 }],
+      totalCostUnits: 5,
+      validatedRevision: 2,
+      requiresReplan: false
+    },
+    movement: { maxUnits: 5, remainingUnits: 4, enteredRouteCellCount: 1 },
+    currentWaypointIndex: 1
+  };
+
+  const result = new CommandProcessor().execute(
+    context("GM", "gm", commandState),
+    command({ type: "RESUME_ARMY", armyId: "army-red" })
+  );
+
+  expect(result.status).toBe("ACCEPTED");
+  if (result.status !== "ACCEPTED") return;
+  expect(result.state.armies["army-red"]?.status).toBe("MOVING");
+});
+
+it("cleans battle and state references when a faction is deleted", () => {
+  const commandState = state();
+  commandState.armies["army-blue"] = army("blue");
+  commandState.armies["army-blue-2"] = army("blue");
+  commandState.scene.states = [
+    { id: "russia", name: "Россия", rulingFactionId: "red", active: true },
+    { id: "germany", name: "Германия", rulingFactionId: "blue", active: true }
+  ];
+  commandState.scene.sides[0]!.stateId = "russia";
+  commandState.scene.sides[1]!.stateId = "germany";
+  commandState.scene.battleGroups = [{
+    battleId: "battle",
+    name: "Бой",
+    participantIds: ["army-red", "army-blue", "army-blue-2"],
+    revision: 1
+  }];
+  commandState.scene.wars = [{
+    id: "war",
+    name: "Война",
+    participantFactionIds: ["red", "blue"],
+    participantStateIds: ["russia", "germany"],
+    active: true
+  }];
+
+  const result = new CommandProcessor().execute(
+    context("GM", "gm", commandState),
+    command({ type: "DELETE_SIDE", sideId: "red", strategy: "UNREGISTER_ARMIES" })
+  );
+  expect(result.status).toBe("ACCEPTED");
+  if (result.status !== "ACCEPTED") return;
+  expect(result.state.scene.wars).toHaveLength(1);
+  expect(result.state.scene.wars[0]?.participantFactionIds).toEqual(["blue"]);
+  expect(result.state.scene.states.find((item) => item.id === "russia")?.rulingFactionId).toBeNull();
+});
+
+it("keeps the fixed five-OP budget when a legacy route-distance override is edited", () => {
+  const commandState = state();
+  commandState.armies["army-red"] = {
+    ...commandState.armies["army-red"]!,
+    movement: { maxUnits: 10, remainingUnits: 7, enteredRouteCellCount: 0 }
+  };
+  const result = new CommandProcessor().execute(
+    context("GM", "gm", commandState),
+    command({ type: "UPDATE_ARMY_OVERRIDES", armyId: "army-red", overrides: { maxRouteDistanceCells: 99 } })
+  );
+  expect(result.status).toBe("ACCEPTED");
+  if (result.status !== "ACCEPTED") return;
+  expect(result.state.armies["army-red"]?.movement).toEqual({
+    maxUnits: 10,
+    remainingUnits: 7,
+    enteredRouteCellCount: 0
   });
 });

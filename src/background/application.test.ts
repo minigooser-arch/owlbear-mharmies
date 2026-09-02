@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { vi } from "vitest";
 import { CommandGateway } from "../commands/commandGateway";
-import { DEFAULT_SETTINGS, METADATA_KEYS } from "../shared/constants";
+import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE, METADATA_KEYS } from "../shared/constants";
 import {
   COMMAND_PROTOCOL_VERSION,
+  type ArmyState,
   type SceneItemRecord,
   type SceneState
 } from "../shared/types";
@@ -56,7 +57,7 @@ it("extracts only requested blocking polylines into barrier segments", () => {
   expect(extractBarrierSegments(records, "vision")).toEqual([]);
 });
 
-it("includes route drafts in local overlay cleanup", () => {
+it("includes route, map brush, and health overlays in local overlay cleanup", () => {
   expect(localOverlayIds([
     {
       id: "route-preview",
@@ -65,12 +66,24 @@ it("includes route drafts in local overlay cleanup", () => {
       metadata: { [METADATA_KEYS.routePreview]: { kind: "LINE" } }
     },
     {
+      id: "map-brush-preview",
+      type: "CURVE",
+      position: { x: 0, y: 0 },
+      metadata: { [METADATA_KEYS.mapBrushPreview]: { cellKey: "0,0" } }
+    },
+    {
+      id: "health",
+      type: "LABEL",
+      position: { x: 0, y: 0 },
+      metadata: { [METADATA_KEYS.healthOverlay]: { armyId: "army" } }
+    },
+    {
       id: "keep",
       type: "LABEL",
       position: { x: 0, y: 0 },
       metadata: { other: true }
     }
-  ])).toEqual(["route-preview"]);
+  ])).toEqual(["route-preview", "map-brush-preview", "health"]);
 });
 
 describe("background command readiness", () => {
@@ -175,12 +188,17 @@ function commandPort(
   const sent: Array<{ channel: string; data: unknown }> = [];
   const items = structuredClone(initialItems);
   let scene: SceneState = {
-    version: 3,
+    version: 5,
     revision: 2,
     settings: { ...DEFAULT_SETTINGS },
     sides: [],
+    states: [],
     relations: {},
     battleGroups: [],
+    terrain: structuredClone(DEFAULT_TERRAIN),
+    gridMap: { version: 1, revision: 0, cells: {} },
+    wars: [],
+    turn: structuredClone(DEFAULT_TURN_STATE),
     coordinatorLease: { connectionId: "coordinator", epoch: 1, expiresAt: Date.now() + 10_000 }
   };
   const port = {
@@ -221,6 +239,7 @@ function commandPort(
     send: async (channel: string, data: unknown) => { sent.push({ channel, data }); },
     on: () => () => undefined,
     getGridDistance,
+    getGridDpi: async () => 100,
     snapGridCenter,
     onGridChange: () => () => undefined,
     show: async () => undefined,
@@ -245,7 +264,8 @@ describe("ProductionEngine command boundary", () => {
       name: "Красные",
       color: "#f00",
       playerIds: [],
-      leaderPlayerIds: []
+      leaderPlayerIds: [],
+      stateId: null
     });
     const engine = new ProductionEngine(fixture.port);
     engine.setCoordinator(true);
@@ -254,7 +274,7 @@ describe("ProductionEngine command boundary", () => {
       {
         connectionId: "gm-connection",
         data: {
-          protocolVersion: 2,
+          protocolVersion: COMMAND_PROTOCOL_VERSION,
           requestId: "register-centred",
           senderPlayerId: "gm",
           senderConnectionId: "gm-connection",
@@ -293,7 +313,7 @@ describe("ProductionEngine command boundary", () => {
       {
         connectionId: "player-connection",
         data: {
-          protocolVersion: 2,
+          protocolVersion: COMMAND_PROTOCOL_VERSION,
           requestId: "register-rejected",
           senderPlayerId: "player",
           senderConnectionId: "player-connection",
@@ -329,7 +349,8 @@ describe("ProductionEngine command boundary", () => {
       name: "Красные",
       color: "#f00",
       playerIds: [],
-      leaderPlayerIds: []
+      leaderPlayerIds: [],
+      stateId: null
     });
     const engine = new ProductionEngine(fixture.port);
     engine.setCoordinator(true);
@@ -338,7 +359,7 @@ describe("ProductionEngine command boundary", () => {
       {
         connectionId: "gm-connection",
         data: {
-          protocolVersion: 2,
+          protocolVersion: COMMAND_PROTOCOL_VERSION,
           requestId: "register-snap-failed",
           senderPlayerId: "gm",
           senderConnectionId: "gm-connection",
@@ -361,6 +382,35 @@ describe("ProductionEngine command boundary", () => {
     });
     expect(fixture.scene.revision).toBe(2);
     expect(fixture.items[0]).toMatchObject({ position: { x: 17, y: 29 }, metadata: {} });
+  });
+
+  it("completes a due scheduled turn exactly once and restores army movement points", async () => {
+    const scheduledArmy: ArmyState = {
+      version: 3, registered: true, sideId: "red", status: "READY", overrides: {}, route: [],
+      plannedRoute: { startCell: { x: 0, y: 0 }, executeOnTurn: 0, cells: [], totalCostUnits: 0, validatedRevision: 2, requiresReplan: false },
+      movement: { maxUnits: 10, remainingUnits: 3, enteredRouteCellCount: 0 },
+      health: { hp: 50, maxHp: 50 }, supply: { supplied: true, checkedOnTurn: 1 },
+      disband: { pending: false, requestedOnTurn: null, requestedByPlayerId: null },
+      currentWaypointIndex: 0, segmentProgressCells: 0,
+      ignoresMovementBarriers: false, ignoresVisionBarriers: false, revision: 1
+    };
+    const fixture = commandPort([{
+      id: "army", type: "IMAGE", position: { x: 0, y: 0 },
+      metadata: { [METADATA_KEYS.army]: scheduledArmy }
+    }]);
+    const engine = new ProductionEngine(
+      fixture.port,
+      () => new Date("2026-09-02T12:00:01.000Z")
+    );
+    engine.setCoordinator(true, "coordinator");
+
+    await engine.turnTick();
+    expect(fixture.scene.turn.turnNumber).toBe(2);
+    expect(fixture.scene.turn.lastProcessedBoundaryId).toBe("STANDARD:2026-09-02T15:00:00+03:00");
+    expect((fixture.items[0]?.metadata[METADATA_KEYS.army] as ArmyState).movement.remainingUnits).toBe(10);
+
+    await engine.turnTick();
+    expect(fixture.scene.turn.turnNumber).toBe(2);
   });
 
   it("does not finish an old heartbeat after coordinator shutdown", async () => {
@@ -427,7 +477,7 @@ describe("ProductionEngine command boundary", () => {
       {
         connectionId: "actual-connection",
         data: {
-          protocolVersion: 2,
+          protocolVersion: COMMAND_PROTOCOL_VERSION,
           requestId: "malformed-request",
           senderPlayerId: "actual-player",
           senderConnectionId: "actual-connection",
@@ -467,7 +517,7 @@ describe("ProductionEngine command boundary", () => {
       {
         connectionId: "actual-connection",
         data: {
-          protocolVersion: 2,
+          protocolVersion: COMMAND_PROTOCOL_VERSION,
           requestId: "forged-request",
           senderPlayerId: "forged-player",
           senderConnectionId: "forged-connection",
@@ -517,7 +567,7 @@ describe("ProductionEngine command boundary", () => {
       {
         connectionId: "gm-connection",
         data: {
-          protocolVersion: 2,
+          protocolVersion: COMMAND_PROTOCOL_VERSION,
           requestId: "barrier-request",
           senderPlayerId: "gm",
           senderConnectionId: "gm-connection",
@@ -555,7 +605,7 @@ describe("ProductionEngine command boundary", () => {
       {
         connectionId: "gm-connection",
         data: {
-          protocolVersion: 2,
+          protocolVersion: COMMAND_PROTOCOL_VERSION,
           requestId,
           senderPlayerId: "gm",
           senderConnectionId: "gm-connection",
@@ -603,7 +653,7 @@ describe("ProductionEngine command boundary", () => {
       {
         connectionId: "gm-connection",
         data: {
-          protocolVersion: 2,
+          protocolVersion: COMMAND_PROTOCOL_VERSION,
           requestId: "raced-command",
           senderPlayerId: "gm",
           senderConnectionId: "gm-connection",
@@ -658,7 +708,7 @@ describe("ProductionEngine command boundary", () => {
       {
         connectionId: "gm-connection",
         data: {
-          protocolVersion: 2,
+          protocolVersion: COMMAND_PROTOCOL_VERSION,
           requestId: "failed-write",
           senderPlayerId: "gm",
           senderConnectionId: "gm-connection",
@@ -686,11 +736,11 @@ describe("ProductionEngine command boundary", () => {
     });
   });
 
-  it("rejects a crafted SET_ROUTE that exceeds the army's current route limit", async () => {
+  it("uses movement-point cost instead of the legacy waypoint-count limit", async () => {
     const fixture = commandPort([{
       id: "army",
       type: "IMAGE",
-      position: { x: 0, y: 0 },
+      position: { x: 50, y: 50 },
       metadata: {
         [METADATA_KEYS.army]: {
           version: 1,
@@ -707,6 +757,8 @@ describe("ProductionEngine command boundary", () => {
         }
       }
     }]);
+    fixture.scene.gridMap.cells["1,0"] = { terrainId: "road", impassable: false, factionTerritoryIds: ["red"], recognizedStateId: null, deFactoStateId: null };
+    fixture.scene.gridMap.cells["2,0"] = { terrainId: "road", impassable: false, factionTerritoryIds: ["red"], recognizedStateId: null, deFactoStateId: null };
     const engine = new ProductionEngine(fixture.port);
     engine.setCoordinator(true);
 
@@ -714,14 +766,16 @@ describe("ProductionEngine command boundary", () => {
       {
         connectionId: "gm-connection",
         data: {
-          protocolVersion: 2,
+          protocolVersion: COMMAND_PROTOCOL_VERSION,
           requestId: "long-route",
           senderPlayerId: "gm",
           senderConnectionId: "gm-connection",
           expectedRevision: 2,
           type: "SET_ROUTE",
           armyId: "army",
-          route: [{ x: 2, y: 0 }]
+          route: [{ x: 150, y: 50 }, { x: 250, y: 50 }],
+          startCell: { x: 0, y: 0 },
+          cells: [{ x: 1, y: 0 }, { x: 2, y: 0 }]
         }
       },
       {
@@ -733,9 +787,9 @@ describe("ProductionEngine command boundary", () => {
     );
 
     expect(fixture.sent.at(-1)).toMatchObject({
-      data: { requestId: "long-route", status: "REJECTED", reason: "ROUTE_LIMIT" }
+      data: { requestId: "long-route", status: "ACCEPTED" }
     });
-    expect(fixture.scene.revision).toBe(2);
+    expect(fixture.scene.revision).toBe(3);
   });
 
   it("centres a legacy army only after a snapped route is accepted", async () => {
@@ -765,6 +819,7 @@ describe("ProductionEngine command boundary", () => {
         }
       }
     }], gridDistance, snap);
+    fixture.scene.gridMap.cells["1,0"] = { terrainId: "road", impassable: false, factionTerritoryIds: ["red"], recognizedStateId: null, deFactoStateId: null };
     const engine = new ProductionEngine(fixture.port);
     engine.setCoordinator(true);
 
@@ -772,14 +827,16 @@ describe("ProductionEngine command boundary", () => {
       {
         connectionId: "gm-connection",
         data: {
-          protocolVersion: 2,
+          protocolVersion: COMMAND_PROTOCOL_VERSION,
           requestId: "route-centred",
           senderPlayerId: "gm",
           senderConnectionId: "gm-connection",
           expectedRevision: 2,
           type: "SET_ROUTE",
           armyId: "army-centre",
-          route: [{ x: 150, y: 50 }]
+          route: [{ x: 150, y: 50 }],
+          startCell: { x: 0, y: 0 },
+          cells: [{ x: 1, y: 0 }]
         }
       },
       {
@@ -822,6 +879,7 @@ describe("ProductionEngine command boundary", () => {
         }
       }
     }], async () => 1, snap);
+    fixture.scene.gridMap.cells["1,0"] = { terrainId: "road", impassable: false, factionTerritoryIds: ["red"], recognizedStateId: null, deFactoStateId: null };
     const engine = new ProductionEngine(fixture.port);
     engine.setCoordinator(true);
 
@@ -829,14 +887,16 @@ describe("ProductionEngine command boundary", () => {
       {
         connectionId: "gm-connection",
         data: {
-          protocolVersion: 2,
+          protocolVersion: COMMAND_PROTOCOL_VERSION,
           requestId: "route-unsnapped",
           senderPlayerId: "gm",
           senderConnectionId: "gm-connection",
           expectedRevision: 2,
           type: "SET_ROUTE",
           armyId: "army-unsnapped",
-          route: [{ x: 149, y: 50 }]
+          route: [{ x: 149, y: 50 }],
+          startCell: { x: 0, y: 0 },
+          cells: [{ x: 1, y: 0 }]
         }
       },
       {
@@ -861,7 +921,7 @@ describe("ProductionEngine command boundary", () => {
     const fixture = commandPort([{
       id: "army",
       type: "IMAGE",
-      position: { x: 0, y: 0 },
+      position: { x: 50, y: 50 },
       visible: false,
       metadata: {
         [METADATA_KEYS.army]: {
@@ -894,6 +954,7 @@ describe("ProductionEngine command boundary", () => {
       }
       return metadata;
     };
+    fixture.scene.gridMap.cells["1,0"] = { terrainId: "road", impassable: false, factionTerritoryIds: ["red"], recognizedStateId: null, deFactoStateId: null };
     const engine = new ProductionEngine(fixture.port);
     engine.setCoordinator(true);
 
@@ -901,14 +962,16 @@ describe("ProductionEngine command boundary", () => {
       {
         connectionId: "gm-connection",
         data: {
-          protocolVersion: 2,
+          protocolVersion: COMMAND_PROTOCOL_VERSION,
           requestId: "route-race",
           senderPlayerId: "gm",
           senderConnectionId: "gm-connection",
           expectedRevision: 2,
           type: "SET_ROUTE",
           armyId: "army",
-          route: [{ x: 1, y: 0 }]
+          route: [{ x: 150, y: 50 }],
+          startCell: { x: 0, y: 0 },
+          cells: [{ x: 1, y: 0 }]
         }
       },
       {
@@ -934,7 +997,7 @@ describe("ProductionEngine command boundary", () => {
     const fixture = commandPort([{
       id: "army",
       type: "IMAGE",
-      position: { x: 0, y: 0 },
+      position: { x: 50, y: 50 },
       visible: false,
       metadata: {
         [METADATA_KEYS.army]: {
@@ -966,6 +1029,7 @@ describe("ProductionEngine command boundary", () => {
       }
       return readSceneMetadata();
     };
+    fixture.scene.gridMap.cells["1,0"] = { terrainId: "road", impassable: false, factionTerritoryIds: ["red"], recognizedStateId: null, deFactoStateId: null };
     const engine = new ProductionEngine(fixture.port);
     engine.setCoordinator(true, "coordinator");
 
@@ -973,14 +1037,16 @@ describe("ProductionEngine command boundary", () => {
       {
         connectionId: "gm-connection",
         data: {
-          protocolVersion: 2,
+          protocolVersion: COMMAND_PROTOCOL_VERSION,
           requestId: "lease-race",
           senderPlayerId: "gm",
           senderConnectionId: "gm-connection",
           expectedRevision: 2,
           type: "SET_ROUTE",
           armyId: "army",
-          route: [{ x: 1, y: 0 }]
+          route: [{ x: 150, y: 50 }],
+          startCell: { x: 0, y: 0 },
+          cells: [{ x: 1, y: 0 }]
         }
       },
       {
@@ -1012,7 +1078,7 @@ describe("ProductionEngine command boundary", () => {
       {
         id: "army",
         type: "IMAGE",
-        position: { x: 0, y: 0 },
+        position: { x: 50, y: 50 },
         metadata: {
           [METADATA_KEYS.army]: {
             version: 1,
@@ -1033,7 +1099,7 @@ describe("ProductionEngine command boundary", () => {
         id: "wall",
         type: "CURVE",
         position: { x: 0, y: 0 },
-        points: [{ x: 1, y: -1 }, { x: 1, y: 1 }],
+        points: [{ x: 100, y: 0 }, { x: 100, y: 100 }],
         metadata: {
           [METADATA_KEYS.barrier]: {
             version: 1,
@@ -1046,6 +1112,7 @@ describe("ProductionEngine command boundary", () => {
         }
       }
     ]);
+    fixture.scene.gridMap.cells["1,0"] = { terrainId: "road", impassable: false, factionTerritoryIds: ["red"], recognizedStateId: null, deFactoStateId: null };
     const engine = new ProductionEngine(fixture.port);
     engine.setCoordinator(true);
 
@@ -1053,14 +1120,16 @@ describe("ProductionEngine command boundary", () => {
       {
         connectionId: "gm-connection",
         data: {
-          protocolVersion: 2,
+          protocolVersion: COMMAND_PROTOCOL_VERSION,
           requestId: "blocked-route",
           senderPlayerId: "gm",
           senderConnectionId: "gm-connection",
           expectedRevision: 2,
           type: "SET_ROUTE",
           armyId: "army",
-          route: [{ x: 2, y: 0 }]
+          route: [{ x: 150, y: 50 }],
+          startCell: { x: 0, y: 0 },
+          cells: [{ x: 1, y: 0 }]
         }
       },
       {
@@ -1089,4 +1158,95 @@ it("includes the current player exactly once in the connected party", () => {
     { id: "other", connectionId: "other-connection", role: "PLAYER" },
     { id: "self", connectionId: "self-connection", role: "GM" }
   ]);
+});
+
+describe("ProductionEngine strategic movement costs", () => {
+  function movingArmyState(): ArmyState {
+    return {
+      version: 3,
+      registered: true,
+      sideId: "red",
+      status: "MOVING",
+      overrides: { speedCellsPerSecond: 2 },
+      route: [{ x: 150, y: 50 }],
+      plannedRoute: {
+        startCell: { x: 0, y: 0 },
+        executeOnTurn: 1,
+        cells: [{ x: 1, y: 0 }],
+        totalCostUnits: 1,
+        validatedRevision: 2,
+        requiresReplan: false
+      },
+      movement: { maxUnits: 10, remainingUnits: 10, enteredRouteCellCount: 0 },
+      health: { hp: 50, maxHp: 50 },
+      supply: { supplied: true, checkedOnTurn: 1 },
+      disband: { pending: false, requestedOnTurn: null, requestedByPlayerId: null },
+      currentWaypointIndex: 0,
+      segmentProgressCells: 0,
+      ignoresMovementBarriers: false,
+      ignoresVisionBarriers: false,
+      revision: 1
+    };
+  }
+
+  it("charges destination terrain when the army actually enters the cell", async () => {
+    const fixture = commandPort(
+      [{
+        id: "army",
+        type: "IMAGE",
+        position: { x: 50, y: 50 },
+        metadata: { [METADATA_KEYS.army]: movingArmyState() }
+      }],
+      async (from, to) => Math.hypot(to.x - from.x, to.y - from.y) / 100
+    );
+    fixture.scene.sides.push({
+      id: "red", name: "Красные", color: "#f00", playerIds: [], leaderPlayerIds: [], stateId: null
+    });
+    fixture.scene.gridMap.cells["1,0"] = {
+      terrainId: "road", impassable: false, factionTerritoryIds: ["red"], recognizedStateId: null, deFactoStateId: null
+    };
+    const engine = new ProductionEngine(fixture.port);
+    engine.setCoordinator(true);
+    (engine as unknown as { lastMovementAt: number }).lastMovementAt = performance.now() - 1_000;
+
+    await engine.movementTick();
+
+    const persisted = fixture.items[0]?.metadata[METADATA_KEYS.army] as ArmyState;
+    expect(fixture.items[0]?.position).toEqual({ x: 150, y: 50 });
+    expect(persisted.movement).toEqual({
+      maxUnits: 10,
+      remainingUnits: 9,
+      enteredRouteCellCount: 1
+    });
+  });
+
+  it("pauses before entering a route cell that became invalid", async () => {
+    const fixture = commandPort(
+      [{
+        id: "army",
+        type: "IMAGE",
+        position: { x: 50, y: 50 },
+        metadata: { [METADATA_KEYS.army]: movingArmyState() }
+      }],
+      async (from, to) => Math.hypot(to.x - from.x, to.y - from.y) / 100
+    );
+    fixture.scene.sides.push({
+      id: "red", name: "Красные", color: "#f00", playerIds: [], leaderPlayerIds: [], stateId: null
+    });
+    fixture.scene.gridMap.cells["1,0"] = {
+      terrainId: "road", impassable: true, factionTerritoryIds: ["red"], recognizedStateId: null, deFactoStateId: null
+    };
+    const engine = new ProductionEngine(fixture.port);
+    engine.setCoordinator(true);
+    (engine as unknown as { lastMovementAt: number }).lastMovementAt = performance.now() - 1_000;
+
+    await engine.movementTick();
+
+    const persisted = fixture.items[0]?.metadata[METADATA_KEYS.army] as ArmyState;
+    expect(fixture.items[0]?.position).toEqual({ x: 50, y: 50 });
+    expect(persisted.status).toBe("PAUSED");
+    expect(persisted.stopReason).toBe("INVALID_ROUTE");
+    expect(persisted.plannedRoute.invalidReason).toBe("IMPASSABLE");
+    expect(persisted.movement.remainingUnits).toBe(10);
+  });
 });

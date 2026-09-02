@@ -4,12 +4,23 @@ import type { ArmyCommand, ArmyState, Side } from "./types";
 import { authorizeArmyCommand } from "./permissions";
 
 const redArmy: ArmyState = {
-  version: 1,
+  version: 3,
   registered: true,
   sideId: "red",
   status: "READY",
   overrides: {},
   route: [],
+  plannedRoute: {
+    startCell: { x: 0, y: 0 },
+    executeOnTurn: 0,
+    cells: [],
+    totalCostUnits: 0,
+    validatedRevision: 1,
+    requiresReplan: false
+  },
+  movement: { maxUnits: 10, remainingUnits: 10, enteredRouteCellCount: 0 },
+  health: { hp: 50, maxHp: 50 }, supply: { supplied: true, checkedOnTurn: 1 },
+  disband: { pending: false, requestedOnTurn: null, requestedByPlayerId: null },
   currentWaypointIndex: 0,
   segmentProgressCells: 0,
   ignoresMovementBarriers: false,
@@ -26,14 +37,16 @@ const sides: Side[] = [
     name: "Красные",
     color: "#f00",
     playerIds: ["leader", "member", "legacy-owner"],
-    leaderPlayerIds: ["leader"]
+    leaderPlayerIds: ["leader"],
+    stateId: null
   },
   {
     id: "blue",
     name: "Синие",
     color: "#00f",
     playerIds: ["blue-leader"],
-    leaderPlayerIds: ["blue-leader"]
+    leaderPlayerIds: ["blue-leader"],
+    stateId: null
   }
 ];
 
@@ -145,4 +158,17 @@ describe("command authorization", () => {
       )
     ).toEqual({ allowed: false, reason: "SENDER_MISMATCH" });
   });
+});
+
+it("allows any faction member to request disband of their faction army", () => {
+  const army = structuredClone(redArmy);
+  const result = authorizeArmyCommand({
+    role: "PLAYER",
+    playerId: "member",
+    armies: new Map([["army", army]]),
+    sides: [{ id:"red",name:"Красные",color:"#f00",playerIds:["leader","member"],leaderPlayerIds:["leader"],stateId:null }],
+    settings: DEFAULT_SETTINGS,
+    connectedPlayerIds: new Set(["member"])
+  }, command("REQUEST_ARMY_DISBAND", "member", { armyId:"army" }));
+  expect(result).toEqual({ allowed:true });
 });

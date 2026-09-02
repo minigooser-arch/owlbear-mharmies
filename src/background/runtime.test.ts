@@ -15,6 +15,7 @@ class RuntimePort implements BackgroundRuntimePort {
   paused = 0;
   movement = vi.fn<() => Promise<void>>(async () => undefined);
   visibility = vi.fn<() => Promise<void>>(async () => undefined);
+  turns = vi.fn<() => Promise<void>>(async () => undefined);
 
   private subscribe(setter: (callback: never) => void, callback: never): () => void {
     setter(callback);
@@ -45,6 +46,7 @@ class RuntimePort implements BackgroundRuntimePort {
   async pauseMovingArmies() { this.paused += 1; }
   movementTick() { return this.movement(); }
   visibilityTick() { return this.visibility(); }
+  turnTick() { return this.turns(); }
 }
 
 describe("BackgroundRuntime", () => {
@@ -166,6 +168,30 @@ describe("BackgroundRuntime", () => {
     release?.();
     await runtime.whenIdle();
     expect(port.movement).toHaveBeenCalledTimes(2);
+    await runtime.stop();
+  });
+
+  it("never overlaps slow turn reconciliation ticks", async () => {
+    const port = new RuntimePort();
+    let release: (() => void) | undefined;
+    let call = 0;
+    port.turns.mockImplementation(() => {
+      call += 1;
+      return call === 1
+        ? new Promise<void>((resolve) => { release = resolve; })
+        : Promise.resolve();
+    });
+    const runtime = new BackgroundRuntime(port);
+    runtime.start();
+    await runtime.whenIdle();
+    port.turns.mockClear();
+
+    runtime.requestTurnTick();
+    runtime.requestTurnTick();
+    expect(port.turns).toHaveBeenCalledTimes(1);
+    release?.();
+    await runtime.whenIdle();
+    expect(port.turns).toHaveBeenCalledTimes(2);
     await runtime.stop();
   });
 

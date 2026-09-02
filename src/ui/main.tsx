@@ -1,7 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import OBR from "@owlbear-rodeo/sdk";
-import { DEFAULT_SETTINGS } from "../shared/constants";
+import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE } from "../shared/constants";
 import { createOwlbearExtensionServices } from "../owlbear/extensionServices";
 import { App } from "./App";
 import "./app.css";
@@ -21,9 +21,13 @@ const initialSnapshot: RawExtensionSnapshot = {
   mapVisibleSourceIds: new Set(),
   armies: [],
   sides: [],
+  states: [],
   relations: {},
   battleGroups: [],
-  settings: DEFAULT_SETTINGS
+  settings: DEFAULT_SETTINGS,
+  terrain: DEFAULT_TERRAIN,
+  wars: [],
+  turn: DEFAULT_TURN_STATE
 };
 
 const services: ExtensionServices = {

@@ -4,6 +4,7 @@ import {
   type BarrierSegment
 } from "../barriers/barrierGeometry";
 import type { CommandAck } from "../commands/commandGateway";
+import { StrategicGridAdapter } from "../grid/strategicGrid";
 import {
   evaluateRouteLimit,
   pointsEqual,
@@ -14,6 +15,7 @@ import { authorizeArmyCommand } from "../shared/permissions";
 import { METADATA_KEYS } from "../shared/constants";
 import type {
   ArmyCommand,
+  GridCellCoord,
   SceneItemRecord,
   SceneState,
   Vector2
@@ -47,6 +49,7 @@ export interface RouteToolServicePort extends MetadataPort, LocalOverlayBatchPor
   activateTool(toolId: string): Promise<void>;
   getGridDistance(from: Vector2, to: Vector2): Promise<number>;
   snapGridCenter(position: Vector2): Promise<Vector2>;
+  getGridDpi(): Promise<number>;
 }
 
 export interface RouteCommandGateway {
@@ -142,35 +145,41 @@ export class RouteToolService implements RouteToolIntegrationPort {
   }
 
   async loadSession(armyId: string): Promise<RouteToolSession> {
-    const authorized = await this.loadAuthorized(armyId, []);
-    const start = await this.port.snapGridCenter(authorized.army.item.position);
+    const authorized = await this.loadAuthorized(armyId, [], { x: 0, y: 0 }, []);
+    const [start, gridDpi] = await Promise.all([
+      this.port.snapGridCenter(authorized.army.item.position),
+      this.port.getGridDpi()
+    ]);
+    const adapter = new StrategicGridAdapter({ dpi: gridDpi, offset: { x: 0, y: 0 } });
     return {
       armyId,
       start: { ...start },
-      maxCells:
-        authorized.army.state.overrides.maxRouteDistanceCells ??
-        authorized.scene.settings.defaultMaxRouteDistanceCells,
+      startCell: adapter.sceneToCell(start),
+      gridDpi,
+      sideId: authorized.army.state.sideId,
+      // Route planning is always for the next global turn: full 5 OP budget.
+      movementUnits: 10,
+      maxUnits: 10,
+      terrain: structuredClone(authorized.scene.terrain),
+      gridMap: structuredClone(authorized.scene.gridMap),
+      wars: structuredClone(authorized.scene.wars),
       barriers: authorized.army.state.ignoresMovementBarriers
         ? []
         : authorized.barriers.map((segment) => structuredClone(segment))
     };
   }
 
-  async commitRoute(armyId: string, route: readonly Vector2[]): Promise<void> {
-    const authorized = await this.loadAuthorized(armyId, route);
+  async commitRoute(
+    armyId: string,
+    route: readonly Vector2[],
+    startCell: GridCellCoord,
+    cells: readonly GridCellCoord[]
+  ): Promise<void> {
+    const authorized = await this.loadAuthorized(armyId, route, startCell, cells);
     const snapped = await snapRouteToGrid(authorized.army.item.position, route, this.port);
-    if (!snapped.waypointsWereCentered) {
+    if (!snapped.waypointsWereCentered || snapped.route.length !== cells.length) {
       throw new RouteToolAuthorizationError("INVALID_COMMAND");
     }
-    const failure = await validateRouteConstraints(
-      snapped.start,
-      snapped.route,
-      authorized.army.state.overrides.maxRouteDistanceCells ??
-        authorized.scene.settings.defaultMaxRouteDistanceCells,
-      authorized.army.state.ignoresMovementBarriers ? [] : authorized.barriers,
-      { distance: (from, to) => this.port.getGridDistance(from, to) }
-    );
-    if (failure) throw new RouteToolAuthorizationError(failure);
     const command: ArmyCommand = {
       protocolVersion: COMMAND_PROTOCOL_VERSION,
       requestId: crypto.randomUUID(),
@@ -179,7 +188,9 @@ export class RouteToolService implements RouteToolIntegrationPort {
       expectedRevision: authorized.scene.revision,
       type: "SET_ROUTE",
       armyId,
-      route: snapped.route
+      route: snapped.route,
+      startCell: { ...startCell },
+      cells: cells.map((cell) => ({ ...cell }))
     };
     const ack = await this.gateway.send(command);
     if (ack.status === "REJECTED") {
@@ -221,7 +232,7 @@ export class RouteToolService implements RouteToolIntegrationPort {
           position: { ...point },
           visible: true,
           disableHit: true,
-          text: `${index + 1}`,
+          text: `${index + 1} · ${((snapshot.stepCostUnits[index] ?? 0) / 2).toLocaleString("ru-RU")} ОП`,
           color: "#2e7d32",
           metadata: {
             [METADATA_KEYS.routePreview]: {
@@ -266,7 +277,9 @@ export class RouteToolService implements RouteToolIntegrationPort {
 
   private async loadAuthorized(
     armyId: string,
-    route: readonly Vector2[]
+    route: readonly Vector2[],
+    startCell: GridCellCoord,
+    cells: readonly GridCellCoord[]
   ): Promise<AuthorizedSession> {
     const [identity, scene, armies, barriers] = await Promise.all([
       this.port.getPlayerIdentity(),
@@ -293,13 +306,15 @@ export class RouteToolService implements RouteToolIntegrationPort {
         expectedRevision: scene.revision,
         type: "SET_ROUTE",
         armyId,
-        route: route.map((point) => ({ ...point }))
+        route: route.map((point) => ({ ...point })),
+        startCell: { ...startCell },
+        cells: cells.map((cell) => ({ ...cell }))
       }
     );
     if (!authorization.allowed) {
       throw new RouteToolAuthorizationError(authorization.reason);
     }
-    if (army.state.status !== "READY") {
+    if (army.state.status === "MOVING" || army.state.status === "IN_BATTLE") {
       throw new RouteToolAuthorizationError("ARMY_NOT_READY");
     }
     return {

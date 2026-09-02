@@ -1,7 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_SETTINGS,
+  DEFAULT_TERRAIN,
+  DEFAULT_TURN_STATE,
   METADATA_KEYS,
+  MAP_BRUSH_ERASER_TARGET_KEY,
+  MAP_BRUSH_FACTION_OPERATION_KEY,
+  MAP_BRUSH_IMPASSABLE_VALUE_KEY,
+  MAP_BRUSH_MODE_KEY,
+  MAP_BRUSH_SIDE_ID_KEY,
+  MAP_BRUSH_SIZE_KEY,
+  MAP_BRUSH_TERRAIN_ID_KEY,
+  MAP_BRUSH_TOOL_ID,
+  MAP_BRUSH_TOOL_MODE_ID,
   ROUTE_ARMY_ID_KEY,
   ROUTE_RETURN_TOOL_KEY,
   ROUTE_TOOL_ID,
@@ -264,18 +275,27 @@ vi.mock("./sdkAdapter", () => ({
 }));
 
 const armyState = (sideId: string): ArmyState => ({
-  version: 1, registered: true, sideId, status: "READY", overrides: {}, route: [], currentWaypointIndex: 0,
-  segmentProgressCells: 0, ignoresMovementBarriers: false, ignoresVisionBarriers: false, revision: 1
+  version: 3, registered: true, sideId, status: "READY", overrides: {}, route: [],
+  plannedRoute: { startCell: { x: 0, y: 0 }, executeOnTurn: 0, cells: [], totalCostUnits: 0, validatedRevision: 1, requiresReplan: false },
+  movement: { maxUnits: 10, remainingUnits: 10, enteredRouteCellCount: 0 },
+  health: { hp: 50, maxHp: 50 }, supply: { supplied: true, checkedOnTurn: 1 },
+  disband: { pending: false, requestedOnTurn: null, requestedByPlayerId: null },
+  currentWaypointIndex: 0, segmentProgressCells: 0, ignoresMovementBarriers: false, ignoresVisionBarriers: false, revision: 1
 });
 
-it("keeps a map-visible enemy off a player's army list", () => {
-  const scene: SceneState = {
-    version: 3, revision: 1, settings: DEFAULT_SETTINGS,
-    sides: [
-      { id: "A", name: "Красные", color: "#f00", playerIds: ["player"], leaderPlayerIds: [] },
-      { id: "B", name: "Синие", color: "#00f", playerIds: [], leaderPlayerIds: [] }
-    ], relations: {}, battleGroups: []
+function sceneState(sides: SceneState["sides"]): SceneState {
+  return {
+    version: 5, revision: 1, settings: DEFAULT_SETTINGS, sides, states: [], relations: {}, battleGroups: [],
+    terrain: structuredClone(DEFAULT_TERRAIN), gridMap: { version: 1, revision: 0, cells: {} },
+    wars: [], turn: structuredClone(DEFAULT_TURN_STATE)
   };
+}
+
+it("keeps a map-visible enemy off a player's army list", () => {
+  const scene = sceneState([
+    { id: "A", name: "Красные", color: "#f00", playerIds: ["player"], leaderPlayerIds: [], stateId: null },
+    { id: "B", name: "Синие", color: "#00f", playerIds: [], leaderPlayerIds: [], stateId: null }
+  ]);
   const sourceA: SceneItemRecord = { id: "a", type: "IMAGE", name: "A", position: { x: 0, y: 0 }, metadata: {} };
   const sourceB: SceneItemRecord = { id: "b", type: "IMAGE", name: "B", position: { x: 1, y: 0 }, metadata: {} };
   const hidden: SceneItemRecord = { id: "hidden", type: "IMAGE", name: "Hidden", position: { x: 2, y: 0 }, metadata: {} };
@@ -297,20 +317,9 @@ it("keeps a map-visible enemy off a player's army list", () => {
 });
 
 it("derives leader sides by internal id and hides legacy direct ownership", () => {
-  const scene: SceneState = {
-    version: 3,
-    revision: 1,
-    settings: DEFAULT_SETTINGS,
-    sides: [{
-      id: "A",
-      name: "Красные",
-      color: "#f00",
-      playerIds: ["leader"],
-      leaderPlayerIds: ["leader"]
-    }],
-    relations: {},
-    battleGroups: []
-  };
+  const scene = sceneState([{
+    id: "A", name: "Красные", color: "#f00", playerIds: ["leader"], leaderPlayerIds: ["leader"], stateId: null
+  }]);
   const state = { ...armyState("A"), directOwnerPlayerId: "legacy-owner" };
   const snapshot = buildRoleSafeSnapshot({
     role: "PLAYER",
@@ -340,20 +349,9 @@ it.each([
 ] as const)(
   "filters %s %s route coordinates for a %s army",
   (role, playerId, status, routeVisible) => {
-    const scene: SceneState = {
-      version: 3,
-      revision: 1,
-      settings: DEFAULT_SETTINGS,
-      sides: [{
-        id: "A",
-        name: "Красные",
-        color: "#f00",
-        playerIds: ["leader", "member"],
-        leaderPlayerIds: ["leader"]
-      }],
-      relations: {},
-      battleGroups: []
-    };
+    const scene = sceneState([{
+      id: "A", name: "Красные", color: "#f00", playerIds: ["leader", "member"], leaderPlayerIds: ["leader"], stateId: null
+    }]);
     const state: ArmyState = {
       ...armyState("A"),
       status,
@@ -381,18 +379,11 @@ it.each([
 );
 
 it("returns the union of all member-side armies", () => {
-  const scene: SceneState = {
-    version: 3,
-    revision: 1,
-    settings: DEFAULT_SETTINGS,
-    sides: [
-      { id: "red", name: "Красные", color: "#f00", playerIds: ["player"], leaderPlayerIds: [] },
-      { id: "blue", name: "Синие", color: "#00f", playerIds: ["player"], leaderPlayerIds: [] },
-      { id: "green", name: "Зелёные", color: "#0f0", playerIds: [], leaderPlayerIds: [] }
-    ],
-    relations: {},
-    battleGroups: []
-  };
+  const scene = sceneState([
+    { id: "red", name: "Красные", color: "#f00", playerIds: ["player"], leaderPlayerIds: [], stateId: null },
+    { id: "blue", name: "Синие", color: "#00f", playerIds: ["player"], leaderPlayerIds: [], stateId: null },
+    { id: "green", name: "Зелёные", color: "#0f0", playerIds: [], leaderPlayerIds: [], stateId: null }
+  ]);
   const item = (id: string): SceneItemRecord => ({
     id,
     type: "IMAGE",
@@ -419,7 +410,10 @@ it("returns the union of all member-side armies", () => {
 
 it.each([
   ["INVALID_BATTLE_NAME", "Название боя должно содержать от 1 до 80 символов."],
-  ["BATTLE_NOT_FOUND", "Указанный бой не найден."]
+  ["BATTLE_NOT_FOUND", "Указанный бой не найден."],
+  ["IMPASSABLE", "Эта клетка непроходима."],
+  ["OUTSIDE_FACTION_TERRITORY", "В мирное время армия не может покидать территорию своей фракции."],
+  ["INSUFFICIENT_MOVEMENT_POINTS", "Для этого маршрута не хватает очков перемещения."]
 ])("provides Russian feedback for %s", (code, message) => {
   expect(notificationMessage(code)).toBe(message);
 });
@@ -653,6 +647,31 @@ describe("extension command feedback", () => {
       "com.letopis.army-control/command",
       expect.objectContaining({ type: "REGISTER_ARMY", itemId: "selected", sideId: "red" })
     );
+  });
+
+  it("configures and activates the GM map brush without broadcasting a command", async () => {
+    const running = await startServices();
+
+    await running.send({
+      type: "OPEN_MAP_BRUSH",
+      settings: {
+        mode: "FACTION_TERRITORY", size: 3, terrainId: "plain", sideId: "red",
+        factionOperation: "ADD", impassable: true, eraserTarget: "TERRAIN"
+      }
+    });
+
+    expect(serviceHarness.sdk.tool.setMetadata).toHaveBeenCalledWith(MAP_BRUSH_TOOL_ID, {
+      [MAP_BRUSH_MODE_KEY]: "FACTION_TERRITORY",
+      [MAP_BRUSH_SIZE_KEY]: 3,
+      [MAP_BRUSH_TERRAIN_ID_KEY]: "plain",
+      [MAP_BRUSH_SIDE_ID_KEY]: "red",
+      [MAP_BRUSH_FACTION_OPERATION_KEY]: "ADD",
+      [MAP_BRUSH_IMPASSABLE_VALUE_KEY]: true,
+      [MAP_BRUSH_ERASER_TARGET_KEY]: "TERRAIN"
+    });
+    expect(serviceHarness.sdk.tool.activateTool).toHaveBeenCalledWith(MAP_BRUSH_TOOL_ID);
+    expect(serviceHarness.sdk.tool.activateMode).toHaveBeenCalledWith(MAP_BRUSH_TOOL_ID, MAP_BRUSH_TOOL_MODE_ID);
+    expect(serviceHarness.adapter.send).not.toHaveBeenCalled();
   });
 
   it("activates the route tool with the army and previous tool metadata", async () => {

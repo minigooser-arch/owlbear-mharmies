@@ -69,3 +69,15 @@ describe("battle names", () => {
     expect(screen.queryByRole("button", { name: "Развести армии" })).not.toBeInTheDocument();
   });
 });
+
+it("shows participant armies and HP to a player", () => {
+  const armies = [
+    { id: "red-army", name: "1-я армия", sideId: "red", sideName: "Красные", status: "IN_BATTLE" as const, route: [], movementMaxUnits: 10, movementRemainingUnits: 0, routeCostUnits: 0, routeCellCount: 0, routeRequiresReplan: false, atWar: true, healthHp: 43, healthMaxHp: 50, supplied: true, supplyCheckedOnTurn: 1, disbandPending: false },
+    { id: "blue-army", name: "2-я армия", sideId: "blue", sideName: "Синие", status: "IN_BATTLE" as const, route: [], movementMaxUnits: 10, movementRemainingUnits: 0, routeCostUnits: 0, routeCellCount: 0, routeRequiresReplan: false, atWar: true, healthHp: 31, healthMaxHp: 50, supplied: true, supplyCheckedOnTurn: 1, disbandPending: false }
+  ];
+  render(<BattlesPage battles={[battle()]} armies={armies} isGM={false} onAction={vi.fn()} />);
+  expect(screen.getByText("1-я армия")).toBeInTheDocument();
+  expect(screen.getByText("♥ 43 / 50")).toBeInTheDocument();
+  expect(screen.getByText("2-я армия")).toBeInTheDocument();
+  expect(screen.getByText("♥ 31 / 50")).toBeInTheDocument();
+});

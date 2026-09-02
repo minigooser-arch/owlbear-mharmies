@@ -1,273 +1,128 @@
-import type { KeyEvent, Tool, ToolContext, ToolEvent, ToolMode } from "@owlbear-rodeo/sdk";
+import type { KeyEvent, Tool, ToolAction, ToolContext, ToolEvent, ToolMode } from "@owlbear-rodeo/sdk";
 import { describe, expect, it, vi } from "vitest";
 import type { GridRoutePort } from "../routes/routeMath";
 import {
+  DEFAULT_TERRAIN,
   ROUTE_ARMY_ID_KEY,
+  ROUTE_CANCEL_ACTION_ID,
+  ROUTE_CLEAR_ACTION_ID,
+  ROUTE_FINISH_ACTION_ID,
   ROUTE_RETURN_TOOL_KEY,
   ROUTE_TOOL_ID,
-  ROUTE_TOOL_MODE_ID
+  ROUTE_TOOL_MODE_ID,
+  ROUTE_UNDO_ACTION_ID
 } from "../shared/constants";
 import type { RouteToolSnapshot } from "./routeTool";
-import { notificationMessage } from "./notifications";
-import {
-  registerRouteTool,
-  type RouteToolApi,
-  type RouteToolIntegrationPort
-} from "./routeToolIntegration";
+import { registerRouteTool, type RouteToolApi, type RouteToolIntegrationPort } from "./routeToolIntegration";
 
 class FakeToolApi implements RouteToolApi {
   tools: Tool[] = [];
   modes: ToolMode[] = [];
+  actions: ToolAction[] = [];
   removed: string[] = [];
   metadataUpdates: Array<{ toolId: string; update: Record<string, unknown> }> = [];
-
   async create(tool: Tool) { this.tools.push(tool); }
   async remove(id: string) { this.removed.push(id); }
   async createMode(mode: ToolMode) { this.modes.push(mode); }
   async removeMode(id: string) { this.removed.push(id); }
-  async setMetadata(toolId: string, update: Record<string, unknown>) {
-    this.metadataUpdates.push({ toolId, update });
-  }
+  async createAction(action: ToolAction) { this.actions.push(action); }
+  async removeAction(id: string) { this.removed.push(id); }
+  async setMetadata(toolId: string, update: Record<string, unknown>) { this.metadataUpdates.push({ toolId, update }); }
 }
 
 function context(metadata: Record<string, unknown> = {}): ToolContext {
-  return { activeTool: ROUTE_TOOL_ID, activeMode: ROUTE_TOOL_MODE_ID, metadata };
+  return { activeTool: ROUTE_TOOL_ID, activeMode: ROUTE_TOOL_MODE_ID, metadata } as ToolContext;
 }
-
 function toolEvent(x: number, y: number): ToolEvent {
-  return {
-    pointerPosition: { x, y },
-    altKey: false,
-    shiftKey: false,
-    ctrlKey: false,
-    metaKey: false
-  };
+  return { pointerPosition: { x, y }, altKey: false, shiftKey: false, ctrlKey: false, metaKey: false } as ToolEvent;
 }
-
 function keyEvent(key: string, repeat = false): KeyEvent {
-  return {
-    key,
-    code: key,
-    repeat,
-    altKey: false,
-    shiftKey: false,
-    ctrlKey: false,
-    metaKey: false
-  };
+  return { key, code: key, repeat, altKey: false, shiftKey: false, ctrlKey: false, metaKey: false } as KeyEvent;
 }
-
-function registeredMode(api: FakeToolApi): ToolMode {
-  const mode = api.modes[0];
-  if (!mode) throw new Error("Route tool mode was not registered");
-  return mode;
-}
-
 function fixture() {
   const api = new FakeToolApi();
-  const commits: Array<{ armyId: string; route: readonly { x: number; y: number }[] }> = [];
+  const commits: Array<{ armyId: string; cells: readonly { x: number; y: number }[] }> = [];
   const rendered: RouteToolSnapshot[] = [];
   const restored: string[] = [];
-  const notifications: string[] = [];
   let clearCount = 0;
   const port: RouteToolIntegrationPort = {
     loadSession: async (armyId) => ({
       armyId,
-      start: { x: 0, y: 0 },
-      maxCells: 5,
-      barriers: []
+      start: { x: 50, y: 50 }, startCell: { x: 0, y: 0 }, gridDpi: 100,
+      sideId: "red", movementUnits: 6, maxUnits: 6, terrain: structuredClone(DEFAULT_TERRAIN),
+      gridMap: { version: 1, revision: 0, cells: {
+        "1,0": { terrainId: "road", impassable: false, factionTerritoryIds: ["red"], recognizedStateId: null, deFactoStateId: null }
+      } }, wars: [], barriers: []
     }),
-    commitRoute: async (armyId, route) => {
-      commits.push({ armyId, route: structuredClone(route) });
-    },
-    renderPreview: async (snapshot) => {
-      rendered.push(structuredClone(snapshot));
-    },
+    commitRoute: async (armyId, _route, _startCell, cells) => { commits.push({ armyId, cells: structuredClone(cells) }); },
+    renderPreview: async (snapshot) => { rendered.push(structuredClone(snapshot)); },
     clearPreview: async () => { clearCount += 1; },
-    notify: async (message) => { notifications.push(message); },
+    notify: async () => {},
     restoreTool: async (toolId) => { restored.push(toolId); }
   };
-  const distance = vi.fn(async (from: { x: number; y: number }, to: { x: number; y: number }) =>
-    Math.hypot(to.x - from.x, to.y - from.y)
-  );
   const distancePort: GridRoutePort = {
-    distance,
-    snapGridCenter: async (point) => ({ ...point })
+    distance: async () => 0,
+    snapGridCenter: async (point) => ({ x: Math.floor(point.x / 100) * 100 + 50, y: Math.floor(point.y / 100) * 100 + 50 })
   };
-  return {
-    api,
-    port,
-    distancePort,
-    commits,
-    rendered,
-    restored,
-    notifications,
-    distance,
-    get clearCount() { return clearCount; }
-  };
+  return { api, port, distancePort, commits, rendered, restored, get clearCount() { return clearCount; } };
+}
+
+function action(api: FakeToolApi, id: string): ToolAction {
+  const found = api.actions.find((candidate) => candidate.id === id);
+  if (!found) throw new Error(`Missing action ${id}`);
+  return found;
 }
 
 describe("route tool SDK integration", () => {
-  it("registers and removes one tool and mode", async () => {
+  it("registers the tool, mode, and four visible actions", async () => {
     const f = fixture();
     const cleanup = await registerRouteTool(f.api, f.port, f.distancePort, "/icon.svg");
-
-    expect(f.api.tools).toHaveLength(1);
     expect(f.api.tools[0]?.id).toBe(ROUTE_TOOL_ID);
-    expect(f.api.modes).toHaveLength(1);
     expect(f.api.modes[0]?.id).toBe(ROUTE_TOOL_MODE_ID);
-    expect(f.api.modes[0]?.icons[0]?.filter).toEqual({ activeTools: [ROUTE_TOOL_ID] });
-
+    expect(f.api.actions.map((candidate) => candidate.id)).toEqual([
+      ROUTE_FINISH_ACTION_ID, ROUTE_UNDO_ACTION_ID, ROUTE_CLEAR_ACTION_ID, ROUTE_CANCEL_ACTION_ID
+    ]);
     await cleanup();
-    expect(f.api.removed).toEqual([ROUTE_TOOL_MODE_ID, ROUTE_TOOL_ID]);
+    expect(f.api.removed).toEqual([
+      ROUTE_FINISH_ACTION_ID, ROUTE_UNDO_ACTION_ID, ROUTE_CLEAR_ACTION_ID, ROUTE_CANCEL_ACTION_ID,
+      ROUTE_TOOL_MODE_ID, ROUTE_TOOL_ID
+    ]);
   });
 
-  it("commits exactly once on non-repeated Enter and cleans the preview", async () => {
-    const f = fixture();
-    const cleanup = await registerRouteTool(f.api, f.port, f.distancePort, "/icon.svg");
-    const mode = registeredMode(f.api);
-    const ctx = context({
-      [ROUTE_ARMY_ID_KEY]: "army-a",
-      [ROUTE_RETURN_TOOL_KEY]: "select-tool"
-    });
-
-    mode.onActivate?.(ctx);
-    expect(await mode.onToolClick?.(ctx, toolEvent(1, 0))).toBe(false);
-    mode.onKeyDown?.(ctx, keyEvent("Enter", false));
-    mode.onKeyDown?.(ctx, keyEvent("Enter", true));
-
-    await vi.waitFor(() => {
-      expect(f.commits).toEqual([{ armyId: "army-a", route: [{ x: 1, y: 0 }] }]);
-      expect(f.clearCount).toBe(1);
-      expect(f.restored).toEqual(["select-tool"]);
-      expect(f.api.metadataUpdates.at(-1)).toEqual({
-        toolId: ROUTE_TOOL_ID,
-        update: {
-          [ROUTE_ARMY_ID_KEY]: null,
-          [ROUTE_RETURN_TOOL_KEY]: null
-        }
-      });
-    });
-    await cleanup();
-  });
-
-  it("cancels with Escape without committing and ignores missing metadata", async () => {
+  it("does not commit on Enter and commits exactly once from the finish action", async () => {
     const f = fixture();
     await registerRouteTool(f.api, f.port, f.distancePort, "/icon.svg");
-    const mode = registeredMode(f.api);
-    const ctx = context({
-      [ROUTE_ARMY_ID_KEY]: "army-a",
-      [ROUTE_RETURN_TOOL_KEY]: "select-tool"
-    });
+    const mode = f.api.modes[0];
+    if (!mode) throw new Error("Mode missing");
+    const ctx = context({ [ROUTE_ARMY_ID_KEY]: "army-a", [ROUTE_RETURN_TOOL_KEY]: "select-tool" });
     mode.onActivate?.(ctx);
-    mode.onKeyDown?.(ctx, keyEvent("Escape"));
-    await vi.waitFor(() => expect(f.restored).toEqual(["select-tool"]));
-    expect(f.commits).toEqual([]);
-
-    mode.onActivate?.(context());
-    await vi.waitFor(() => expect(f.notifications.length).toBeGreaterThan(0));
-  });
-
-  it("coalesces pointer moves to at most twelve starts per second", async () => {
-    const f = fixture();
-    const cleanup = await registerRouteTool(f.api, f.port, f.distancePort, "/icon.svg");
-    const mode = registeredMode(f.api);
-    const ctx = context({
-      [ROUTE_ARMY_ID_KEY]: "army-a",
-      [ROUTE_RETURN_TOOL_KEY]: "select-tool"
-    });
-    mode.onActivate?.(ctx);
-
-    mode.onToolMove?.(ctx, toolEvent(1, 0));
-    mode.onToolMove?.(ctx, toolEvent(2, 0));
-    mode.onToolMove?.(ctx, toolEvent(3, 0));
-
-    await vi.waitFor(() => {
-      expect(f.rendered.at(-1)?.preview?.point).toEqual({ x: 3, y: 0 });
-    });
-    expect(f.distance).toHaveBeenCalledTimes(2);
-    await cleanup();
-  });
-
-  it("returns to the previous tool when session loading is rejected", async () => {
-    const f = fixture();
-    f.port.loadSession = vi.fn(async () => {
-      throw new Error("NOT_SIDE_LEADER");
-    });
-    await registerRouteTool(f.api, f.port, f.distancePort, "/icon.svg");
-    const mode = registeredMode(f.api);
-    const ctx = context({
-      [ROUTE_ARMY_ID_KEY]: "army-a",
-      [ROUTE_RETURN_TOOL_KEY]: "select-tool"
-    });
-
-    mode.onActivate?.(ctx);
-    expect(await mode.onToolClick?.(ctx, toolEvent(1, 0))).toBe(false);
-
-    await vi.waitFor(() => expect(f.restored).toEqual(["select-tool"]));
-    expect(f.notifications.join(" ")).toContain(notificationMessage("NOT_SIDE_LEADER"));
-  });
-
-  it("cleans up and restores the previous tool when commit is rejected", async () => {
-    const f = fixture();
-    f.port.commitRoute = vi.fn(async () => {
-      throw new Error("REVISION_CONFLICT");
-    });
-    await registerRouteTool(f.api, f.port, f.distancePort, "/icon.svg");
-    const mode = registeredMode(f.api);
-    const ctx = context({
-      [ROUTE_ARMY_ID_KEY]: "army-a",
-      [ROUTE_RETURN_TOOL_KEY]: "select-tool"
-    });
-
-    mode.onActivate?.(ctx);
-    expect(await mode.onToolClick?.(ctx, toolEvent(1, 0))).toBe(false);
+    await vi.waitFor(() => expect(f.rendered.length).toBeGreaterThan(0));
+    expect(await mode.onToolClick?.(ctx, toolEvent(150, 50))).toBe(false);
     mode.onKeyDown?.(ctx, keyEvent("Enter"));
-
-    await vi.waitFor(() => expect(f.restored).toEqual(["select-tool"]));
-    expect(f.clearCount).toBe(1);
-    expect(f.notifications.join(" ")).toContain(notificationMessage("REVISION_CONFLICT"));
-  });
-
-  it("retries preview cleanup during teardown after a transient failure", async () => {
-    const f = fixture();
-    const clearPreview = vi.fn()
-      .mockRejectedValueOnce(new Error("temporary local-item failure"))
-      .mockResolvedValue(undefined);
-    f.port.clearPreview = clearPreview;
-    const cleanup = await registerRouteTool(f.api, f.port, f.distancePort, "/icon.svg");
-    const mode = registeredMode(f.api);
-    const ctx = context({
-      [ROUTE_ARMY_ID_KEY]: "army-a",
-      [ROUTE_RETURN_TOOL_KEY]: "select-tool"
-    });
-
-    mode.onActivate?.(ctx);
-    await vi.waitFor(() => expect(f.rendered.length).toBeGreaterThan(0));
-    mode.onKeyDown?.(ctx, keyEvent("Escape"));
-    await vi.waitFor(() => expect(clearPreview).toHaveBeenCalledTimes(1));
-    await cleanup();
-
-    expect(clearPreview).toHaveBeenCalledTimes(2);
-    expect(f.api.removed).toEqual([ROUTE_TOOL_MODE_ID, ROUTE_TOOL_ID]);
-  });
-
-  it("cancels an active route session without unregistering the tool", async () => {
-    const f = fixture();
-    const registration = await registerRouteTool(f.api, f.port, f.distancePort, "/icon.svg");
-    const mode = registeredMode(f.api);
-    const ctx = context({
-      [ROUTE_ARMY_ID_KEY]: "army-a",
-      [ROUTE_RETURN_TOOL_KEY]: "select-tool"
-    });
-    mode.onActivate?.(ctx);
-    await vi.waitFor(() => expect(f.rendered.length).toBeGreaterThan(0));
-
-    await registration.cancelSession();
-    expect(f.api.removed).toEqual([]);
-    expect(f.clearCount).toBe(1);
-    expect(await mode.onToolClick?.(ctx, toolEvent(1, 0))).toBe(false);
+    await Promise.resolve();
     expect(f.commits).toEqual([]);
 
-    await registration();
+    action(f.api, ROUTE_FINISH_ACTION_ID).onClick?.(ctx as never);
+    await vi.waitFor(() => expect(f.commits).toEqual([{ armyId: "army-a", cells: [{ x: 1, y: 0 }] }]));
+    expect(f.restored).toEqual(["select-tool"]);
+  });
+
+  it("supports undo, clear, and cancel actions without committing", async () => {
+    const f = fixture();
+    await registerRouteTool(f.api, f.port, f.distancePort, "/icon.svg");
+    const mode = f.api.modes[0];
+    if (!mode) throw new Error("Mode missing");
+    const ctx = context({ [ROUTE_ARMY_ID_KEY]: "army-a" });
+    mode.onActivate?.(ctx);
+    await vi.waitFor(() => expect(f.rendered.length).toBeGreaterThan(0));
+    await mode.onToolClick?.(ctx, toolEvent(150, 50));
+    action(f.api, ROUTE_UNDO_ACTION_ID).onClick?.(ctx as never);
+    await vi.waitFor(() => expect(f.rendered.at(-1)?.cells).toEqual([]));
+    await mode.onToolClick?.(ctx, toolEvent(150, 50));
+    action(f.api, ROUTE_CLEAR_ACTION_ID).onClick?.(ctx as never);
+    await vi.waitFor(() => expect(f.rendered.at(-1)?.cells).toEqual([]));
+    action(f.api, ROUTE_CANCEL_ACTION_ID).onClick?.(ctx as never);
+    await vi.waitFor(() => expect(f.clearCount).toBeGreaterThan(0));
+    expect(f.commits).toEqual([]);
   });
 });

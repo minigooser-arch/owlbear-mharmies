@@ -6,7 +6,19 @@ import {
 } from "../commands/commandGateway";
 import {
   DEFAULT_SETTINGS,
+  DEFAULT_TERRAIN,
+  DEFAULT_TURN_STATE,
   METADATA_KEYS,
+  MAP_BRUSH_ERASER_TARGET_KEY,
+  MAP_BRUSH_FACTION_OPERATION_KEY,
+  MAP_BRUSH_IMPASSABLE_VALUE_KEY,
+  MAP_BRUSH_MODE_KEY,
+  MAP_BRUSH_SIDE_ID_KEY,
+  MAP_BRUSH_STATE_ID_KEY,
+  MAP_BRUSH_SIZE_KEY,
+  MAP_BRUSH_TERRAIN_ID_KEY,
+  MAP_BRUSH_TOOL_ID,
+  MAP_BRUSH_TOOL_MODE_ID,
   ROUTE_ARMY_ID_KEY,
   ROUTE_RETURN_TOOL_KEY,
   ROUTE_TOOL_ID,
@@ -19,6 +31,7 @@ import {
   type SceneState
 } from "../shared/types";
 import { migrateSceneState } from "../storage/migrations";
+import { isFactionAtWar } from "../wars/warRules";
 import { MetadataRepository, type ArmyRecord } from "../storage/metadataRepository";
 import type {
   ArmyView,
@@ -73,7 +86,19 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
       sideId: state.sideId,
       sideName: sideNames.get(state.sideId) ?? "Неизвестная сторона",
       status: state.status,
-      route: routeVisible ? state.route.map((point) => ({ ...point })) : []
+      route: routeVisible ? state.route.map((point) => ({ ...point })) : [],
+      movementMaxUnits: state.movement.maxUnits,
+      movementRemainingUnits: state.movement.remainingUnits,
+      routeCostUnits: state.plannedRoute.totalCostUnits,
+      routeCellCount: state.plannedRoute.cells.length,
+      routeRequiresReplan: state.plannedRoute.requiresReplan,
+      ...(state.plannedRoute.invalidReason ? { routeInvalidReason: state.plannedRoute.invalidReason } : {}),
+      atWar: isFactionAtWar(input.scene.wars, state.sideId),
+      healthHp: state.health.hp,
+      healthMaxHp: state.health.maxHp,
+      supplied: state.supply.supplied,
+      supplyCheckedOnTurn: state.supply.checkedOnTurn,
+      disbandPending: state.disband.pending
     };
   });
   return {
@@ -88,9 +113,13 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
     mapVisibleSourceIds,
     armies,
     sides: input.scene.sides,
+    states: input.scene.states,
     relations: input.scene.relations,
     battleGroups: input.scene.battleGroups,
-    settings: input.scene.settings
+    settings: input.scene.settings,
+    terrain: input.scene.terrain,
+    wars: input.scene.wars,
+    turn: input.scene.turn
   };
 }
 
@@ -110,9 +139,13 @@ const LOADING_SNAPSHOT: RawExtensionSnapshot = {
   mapVisibleSourceIds: new Set(),
   armies: [],
   sides: [],
+  states: [],
   relations: {},
   battleGroups: [],
-  settings: DEFAULT_SETTINGS
+  settings: DEFAULT_SETTINGS,
+  terrain: DEFAULT_TERRAIN,
+  wars: [],
+  turn: DEFAULT_TURN_STATE
 };
 
 function localCloneSourceIds(items: readonly Pick<SceneItemRecord, "metadata">[]): Set<string> {
@@ -266,6 +299,26 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
 
   const send = async (command: UiCommand): Promise<unknown> => {
     try {
+      if (command.type === "OPEN_MAP_BRUSH") {
+        if (snapshot.role !== "GM") {
+          await notifyRussian(adapter, "GM_ONLY");
+          return undefined;
+        }
+        const settings = command.settings;
+        await OBR.tool.setMetadata(MAP_BRUSH_TOOL_ID, {
+          [MAP_BRUSH_MODE_KEY]: settings.mode,
+          [MAP_BRUSH_SIZE_KEY]: settings.size,
+          [MAP_BRUSH_TERRAIN_ID_KEY]: settings.terrainId,
+          [MAP_BRUSH_SIDE_ID_KEY]: settings.sideId ?? null,
+          [MAP_BRUSH_STATE_ID_KEY]: settings.stateId ?? null,
+          [MAP_BRUSH_FACTION_OPERATION_KEY]: settings.factionOperation,
+          [MAP_BRUSH_IMPASSABLE_VALUE_KEY]: settings.impassable,
+          [MAP_BRUSH_ERASER_TARGET_KEY]: settings.eraserTarget
+        });
+        await OBR.tool.activateTool(MAP_BRUSH_TOOL_ID);
+        await OBR.tool.activateMode(MAP_BRUSH_TOOL_ID, MAP_BRUSH_TOOL_MODE_ID);
+        return undefined;
+      }
       if (command.type === "EDIT_ROUTE") {
         const returnToolId = await OBR.tool.getActiveTool();
         try {

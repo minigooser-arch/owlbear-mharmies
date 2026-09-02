@@ -3,6 +3,11 @@ export interface Vector2 {
   y: number;
 }
 
+export interface GridCellCoord {
+  x: number;
+  y: number;
+}
+
 export type ArmyStatus = "READY" | "MOVING" | "PAUSED" | "IN_BATTLE";
 export type DetectionMode = "INDEPENDENT" | "MUTUAL";
 export type VisibilityRecalculationMode = "ON_DROP" | "REALTIME";
@@ -13,6 +18,7 @@ export interface SceneSettings {
   defaultDetectionRangeCells: number;
   defaultSpeedCellsPerSecond: number;
   defaultCollisionRangeCells: number;
+  /** Legacy setting retained for migration/backward-compatible administration. */
   defaultMaxRouteDistanceCells: number;
   detectionMode: DetectionMode;
   visibilityRecalculationMode: VisibilityRecalculationMode;
@@ -29,6 +35,15 @@ export interface Side {
   color: string;
   playerIds: string[];
   leaderPlayerIds: string[];
+  /** State the faction belongs to. Null for stateless factions. */
+  stateId: string | null;
+}
+
+export interface StateEntity {
+  id: string;
+  name: string;
+  rulingFactionId: string | null;
+  active: boolean;
 }
 
 export interface BattleGroup {
@@ -44,13 +59,66 @@ export interface CoordinatorLease {
   expiresAt: number;
 }
 
+export interface TerrainType {
+  id: string;
+  name: string;
+  movementCostUnits: number;
+  enabled: boolean;
+  color?: string;
+}
+
+export interface TerrainRegistryState {
+  defaultTerrainId: string;
+  types: Record<string, TerrainType>;
+}
+
+export interface CellState {
+  /** null means use the registry default terrain. */
+  terrainId: string | null;
+  impassable: boolean;
+  /** Peace-time movement access; independent from state ownership. */
+  factionTerritoryIds: string[];
+  /** Internationally recognized state owner. */
+  recognizedStateId: string | null;
+  /** Current de-facto state controller. */
+  deFactoStateId: string | null;
+}
+
+export interface GridMapState {
+  version: 1;
+  cells: Record<string, CellState>;
+  revision: number;
+}
+
+export interface WarState {
+  id: string;
+  name: string;
+  participantFactionIds: string[];
+  participantStateIds: string[];
+  active: boolean;
+}
+
+export interface TurnState {
+  turnNumber: number;
+  autoTurnsPaused: boolean;
+  deferredUntil: string | null;
+  lastCompletedAt: string | null;
+  lastCompletedBy: "SCHEDULE" | "MANUAL" | null;
+  lastProcessedBoundaryId: string | null;
+}
+
 export interface SceneState {
-  version: 3;
+  version: 5;
   revision: number;
   settings: SceneSettings;
   sides: Side[];
+  states: StateEntity[];
   relations: Record<string, Record<string, SideRelation>>;
   battleGroups: BattleGroup[];
+  terrain: TerrainRegistryState;
+  gridMap: GridMapState;
+  wars: WarState[];
+  turn: TurnState;
   coordinatorLease?: CoordinatorLease;
 }
 
@@ -58,16 +126,68 @@ export interface ArmyOverrides {
   detectionRangeCells?: number;
   speedCellsPerSecond?: number;
   collisionRangeCells?: number;
+  /** Legacy route budget in cells. 2 internal movement units are created per cell. */
   maxRouteDistanceCells?: number;
 }
 
+export type MovementDenialReason =
+  | "NOT_ORTHOGONAL"
+  | "OUTSIDE_MAP"
+  | "IMPASSABLE"
+  | "OUTSIDE_FACTION_TERRITORY"
+  | "INVALID_TERRAIN"
+  | "INSUFFICIENT_MOVEMENT_POINTS"
+  | "ARMY_STATE_BLOCKS_MOVEMENT"
+  | "BARRIER";
+
+export interface PlannedRoute {
+  startCell: GridCellCoord;
+  /** Global turn on which this route is allowed to execute. 0 means legacy/unplanned. */
+  executeOnTurn: number;
+  cells: GridCellCoord[];
+  totalCostUnits: number;
+  validatedRevision: number;
+  requiresReplan: boolean;
+  invalidReason?: MovementDenialReason;
+  invalidCell?: GridCellCoord;
+}
+
+export interface ArmyMovementState {
+  maxUnits: number;
+  remainingUnits: number;
+  enteredRouteCellCount: number;
+}
+
+export interface ArmyHealthState {
+  hp: number;
+  maxHp: number;
+}
+
+export interface ArmySupplyState {
+  supplied: boolean;
+  checkedOnTurn: number;
+}
+
+export interface ArmyDisbandState {
+  pending: boolean;
+  requestedOnTurn: number | null;
+  requestedByPlayerId: string | null;
+}
+
 export interface ArmyState {
-  version: 1;
+  version: 3;
   registered: true;
   sideId: string;
   status: ArmyStatus;
   overrides: ArmyOverrides;
+  /** Scene-space centers used to animate/render the current route. */
   route: Vector2[];
+  /** Authoritative strategic-cell route. */
+  plannedRoute: PlannedRoute;
+  movement: ArmyMovementState;
+  health: ArmyHealthState;
+  supply: ArmySupplyState;
+  disband: ArmyDisbandState;
   currentWaypointIndex: number;
   segmentProgressCells: number;
   ignoresMovementBarriers: boolean;
@@ -75,7 +195,7 @@ export interface ArmyState {
   revision: number;
   directOwnerPlayerId?: string;
   battleGroupId?: string;
-  stopReason?: "BARRIER" | "COORDINATOR_GAP" | "MANUAL" | "ARRIVED";
+  stopReason?: "BARRIER" | "COORDINATOR_GAP" | "MANUAL" | "ARRIVED" | "INVALID_ROUTE" | "BATTLE";
 }
 
 export interface BarrierState {
@@ -110,7 +230,7 @@ export interface ItemUpdate {
   [key: string]: unknown;
 }
 
-export const COMMAND_PROTOCOL_VERSION = 2 as const;
+export const COMMAND_PROTOCOL_VERSION = 4 as const;
 
 export interface CommandEnvelope {
   protocolVersion: typeof COMMAND_PROTOCOL_VERSION;
@@ -119,6 +239,8 @@ export interface CommandEnvelope {
   senderConnectionId: string;
   expectedRevision: number;
 }
+
+export type CellPropertyTarget = "TERRAIN" | "IMPASSABLE" | "SELECTED_FACTION" | "RECOGNIZED_STATE" | "DEFACTO_STATE" | "ALL";
 
 export type ArmyCommandPayload =
   (
@@ -144,7 +266,7 @@ export type ArmyCommandPayload =
     | { type: "SET_RELATION"; leftSideId: string; rightSideId: string; relation: SideRelation }
     | { type: "UPDATE_SETTINGS"; settings: Partial<SceneSettings> }
     | { type: "UPDATE_ARMY_OVERRIDES"; armyId: string; overrides: ArmyOverrides }
-    | { type: "SET_ROUTE"; armyId: string; route: Vector2[] }
+    | { type: "SET_ROUTE"; armyId: string; route: Vector2[]; startCell: GridCellCoord; cells: GridCellCoord[] }
     | { type: "CLEAR_ROUTE"; armyId: string }
     | { type: "MOVE_ARMY"; armyId: string; position: Vector2 }
     | {
@@ -162,6 +284,41 @@ export type ArmyCommandPayload =
     | { type: "RENAME_BATTLE_GROUP"; battleId: string; name: string }
     | { type: "RELEASE_BATTLE_GROUP"; battleId: string }
     | { type: "REMOVE_BATTLE_PARTICIPANT"; battleId: string; armyId: string }
+    | { type: "SET_TERRAIN_CELLS"; cells: GridCellCoord[]; terrainId: string | null }
+    | { type: "SET_IMPASSABLE_CELLS"; cells: GridCellCoord[]; impassable: boolean }
+    | {
+        type: "UPDATE_FACTION_TERRITORY_CELLS";
+        cells: GridCellCoord[];
+        sideId: string;
+        operation: "ADD" | "REMOVE";
+      }
+    | {
+        type: "CLEAR_CELL_PROPERTIES";
+        cells: GridCellCoord[];
+        target: CellPropertyTarget;
+        sideId?: string;
+      }
+    | { type: "CREATE_TERRAIN_TYPE"; terrain: TerrainType }
+    | { type: "UPDATE_TERRAIN_TYPE"; terrainId: string; patch: Partial<Omit<TerrainType, "id">> }
+    | { type: "DELETE_TERRAIN_TYPE"; terrainId: string; replacementTerrainId?: string }
+
+    | { type: "CREATE_STATE"; state: StateEntity }
+    | { type: "UPDATE_STATE"; stateId: string; patch: Partial<Omit<StateEntity, "id">> }
+    | { type: "DELETE_STATE"; stateId: string }
+    | { type: "SET_SIDE_STATE"; sideId: string; stateId: string | null }
+    | { type: "SET_RECOGNIZED_STATE_CELLS"; cells: GridCellCoord[]; stateId: string | null }
+    | { type: "SET_DEFACTO_STATE_CELLS"; cells: GridCellCoord[]; stateId: string | null }
+    | { type: "SET_ARMY_HP"; armyId: string; hp: number; maxHp?: number }
+    | { type: "HEAL_ARMY"; armyId: string; amount: number }
+    | { type: "REQUEST_ARMY_DISBAND"; armyId: string }
+    | { type: "CREATE_WAR"; war: WarState }
+    | { type: "UPDATE_WAR"; warId: string; patch: Partial<Omit<WarState, "id">> }
+    | { type: "END_WAR"; warId: string }
+    | { type: "DEFER_TURN"; until: string }
+    | { type: "CANCEL_TURN_DEFERRAL" }
+    | { type: "PAUSE_AUTO_TURNS" }
+    | { type: "RESUME_AUTO_TURNS" }
+    | { type: "COMPLETE_TURN_NOW" }
   );
 
 export type ArmyCommand = CommandEnvelope & ArmyCommandPayload;

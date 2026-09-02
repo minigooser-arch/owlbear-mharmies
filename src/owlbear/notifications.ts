@@ -20,8 +20,25 @@ export type NotificationCode =
   | "SIDE_NOT_FOUND"
   | "ARMY_NOT_READY"
   | "ROUTE_LIMIT"
+  | "NOT_ORTHOGONAL"
+  | "OUTSIDE_MAP"
+  | "IMPASSABLE"
+  | "OUTSIDE_FACTION_TERRITORY"
+  | "INVALID_TERRAIN"
+  | "INSUFFICIENT_MOVEMENT_POINTS"
+  | "ARMY_STATE_BLOCKS_MOVEMENT"
   | "BARRIER"
   | "COORDINATOR_GAP"
+  | "AUTO_TURNS_PAUSED"
+  | "INVALID_TURN_TIME"
+  | "NOT_FACTION_MEMBER"
+  | "ARMY_TRANSFER_FORBIDDEN"
+  | "ARMY_ENCIRCLED"
+  | "DISBAND_ALREADY_REQUESTED"
+  | "MOVEMENT_CONSUMED_FOR_TURN"
+  | "ROUTE_NOT_ACTIVE_TURN"
+  | "ROUTE_REQUIRES_REPLAN"
+  | "TURN_POSITION_UNAVAILABLE"
   | "INVALID_METADATA";
 
 const RUSSIAN_MESSAGES: Readonly<Record<NotificationCode, string>> = {
@@ -46,8 +63,25 @@ const RUSSIAN_MESSAGES: Readonly<Record<NotificationCode, string>> = {
   SIDE_NOT_FOUND: "Выбранная сторона не найдена.",
   ARMY_NOT_READY: "Сначала остановите армию, чтобы изменить её маршрут.",
   ROUTE_LIMIT: "Маршрут превышает допустимую длину.",
+  NOT_ORTHOGONAL: "Можно двигаться только по горизонтали или вертикали.",
+  OUTSIDE_MAP: "Эта клетка находится за пределами игровой карты.",
+  IMPASSABLE: "Эта клетка непроходима.",
+  OUTSIDE_FACTION_TERRITORY: "В мирное время армия не может покидать территорию своей фракции.",
+  INVALID_TERRAIN: "Для этой клетки задан недоступный тип местности.",
+  INSUFFICIENT_MOVEMENT_POINTS: "Для этого маршрута не хватает очков перемещения.",
+  ARMY_STATE_BLOCKS_MOVEMENT: "Текущее состояние армии не позволяет продолжить движение.",
   BARRIER: "Движение остановлено барьером.",
   COORDINATOR_GAP: "Движение приостановлено после потери координатора.",
+  AUTO_TURNS_PAUSED: "Сначала возобновите автоматические ходы.",
+  INVALID_TURN_TIME: "Выберите будущие дату и время для переноса хода.",
+  NOT_FACTION_MEMBER: "Эта армия принадлежит другой фракции.",
+  ARMY_TRANSFER_FORBIDDEN: "Сухопутную армию нельзя передать другой фракции.",
+  ARMY_ENCIRCLED: "Окружённую армию нельзя лечить.",
+  DISBAND_ALREADY_REQUESTED: "Роспуск этой армии уже объявлен и не может быть отменён.",
+  MOVEMENT_CONSUMED_FOR_TURN: "После начала боя армия потеряла всё движение этого хода.",
+  ROUTE_NOT_ACTIVE_TURN: "Этот маршрут назначен на другой глобальный ход.",
+  ROUTE_REQUIRES_REPLAN: "Старый маршрут нужно спланировать заново.",
+  TURN_POSITION_UNAVAILABLE: "Не удалось определить стратегическую клетку армии для смены хода.",
   INVALID_METADATA: "Данные расширения повреждены или имеют неизвестную версию."
 };
 

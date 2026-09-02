@@ -18,6 +18,7 @@ export type AuthorizationResult =
         | "NOT_SIDE_LEADER"
         | "ARMY_NOT_FOUND"
         | "SIDE_NOT_FOUND"
+        | "NOT_FACTION_MEMBER"
         | "SENDER_MISMATCH";
     };
 
@@ -41,6 +42,17 @@ export function authorizeArmyCommand(
 
   if (command.type === "ADD_SIDE_PLAYER" || command.type === "REMOVE_SIDE_PLAYER") {
     return ledBy(context, command.sideId);
+  }
+
+
+  if (command.type === "REQUEST_ARMY_DISBAND") {
+    const army = context.armies.get(command.armyId);
+    if (!army) return { allowed: false, reason: "ARMY_NOT_FOUND" };
+    const side = context.sides.find((candidate) => candidate.id === army.sideId);
+    if (!side) return { allowed: false, reason: "SIDE_NOT_FOUND" };
+    return side.playerIds.includes(context.playerId)
+      ? { allowed: true }
+      : { allowed: false, reason: "NOT_FACTION_MEMBER" };
   }
 
   if (command.type === "SET_ROUTE" || command.type === "CLEAR_ROUTE") {

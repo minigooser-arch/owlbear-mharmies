@@ -39,7 +39,8 @@ export function SidesPage({
         name: trimmedName,
         color,
         playerIds: [],
-        leaderPlayerIds: []
+        leaderPlayerIds: [],
+        stateId: null
       }
     });
     setName("");

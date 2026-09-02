@@ -86,7 +86,14 @@ function armyEqual(left: ArmyView, right: ArmyView): boolean {
     && left.sideId === right.sideId
     && left.sideName === right.sideName
     && left.status === right.status
-    && semanticValueEqual(left.route, right.route);
+    && semanticValueEqual(left.route, right.route)
+    && left.movementMaxUnits === right.movementMaxUnits
+    && left.movementRemainingUnits === right.movementRemainingUnits
+    && left.routeCostUnits === right.routeCostUnits
+    && left.routeCellCount === right.routeCellCount
+    && left.routeRequiresReplan === right.routeRequiresReplan
+    && left.routeInvalidReason === right.routeInvalidReason
+    && left.atWar === right.atWar;
 }
 
 function sideEqual(left: Side, right: Side): boolean {
@@ -124,5 +131,8 @@ export function semanticSnapshotEqual(
       (battle) => battle.battleId,
       battleEqual
     )
-    && semanticValueEqual(left.settings, right.settings);
+    && semanticValueEqual(left.settings, right.settings)
+    && semanticValueEqual(left.terrain, right.terrain)
+    && semanticValueEqual(left.wars, right.wars)
+    && semanticValueEqual(left.turn, right.turn);
 }

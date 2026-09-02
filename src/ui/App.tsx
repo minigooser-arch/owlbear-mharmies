@@ -2,66 +2,61 @@ import { useState } from "react";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { ArmiesPage } from "./pages/ArmiesPage";
 import { BattlesPage } from "./pages/BattlesPage";
-import { DiagnosticsPage } from "./pages/DiagnosticsPage";
+import { ManagementPage } from "./pages/ManagementPage";
 import { MovementPage } from "./pages/MovementPage";
-import { RelationsPage } from "./pages/RelationsPage";
-import { SettingsPage } from "./pages/SettingsPage";
+import { MapEditorPage } from "./pages/MapEditorPage";
+import { OverviewPage } from "./pages/OverviewPage";
 import { SidesPage } from "./pages/SidesPage";
 import { useExtensionState, type ExtensionServices, type UiCommand } from "./state/useExtensionState";
 
-type Tab = "ARMIES" | "SIDES" | "RELATIONS" | "MOVEMENT" | "BATTLES" | "SETTINGS" | "DIAGNOSTICS";
-const LABELS: Record<Tab, string> = { ARMIES: "Армии", SIDES: "Стороны", RELATIONS: "Отношения", MOVEMENT: "Движение", BATTLES: "Бои", SETTINGS: "Настройки", DIAGNOSTICS: "Диагностика" };
+type PlayerTab = "ARMIES" | "TURN" | "BATTLES";
+type GmTab = "OVERVIEW" | "ARMIES" | "MAP" | "BATTLES" | "MANAGEMENT";
+type Tab = PlayerTab | GmTab;
+const LABELS: Record<Tab, string> = {
+  OVERVIEW: "Обзор",
+  ARMIES: "Армии",
+  TURN: "Ход",
+  MAP: "Карта",
+  BATTLES: "Бои",
+  MANAGEMENT: "Управление"
+};
 
 export function App({ services }: { services: ExtensionServices }) {
   const state = useExtensionState(services);
-  const [tab, setTab] = useState<Tab>("ARMIES");
+  const [playerTab, setPlayerTab] = useState<PlayerTab>("ARMIES");
+  const [gmTab, setGmTab] = useState<GmTab>("OVERVIEW");
   const [dangerous, setDangerous] = useState<UiCommand | undefined>();
   if (!state.ready) return <main className="state-screen">Загрузка…</main>;
   if (!state.sceneReady) return <main className="state-screen">Откройте сцену Owlbear Rodeo.</main>;
   if (state.futureSchema) return <main className="state-screen warning">Данные созданы более новой версией расширения. Доступен только просмотр.</main>;
 
-  const tabs: Tab[] = state.role === "GM"
-    ? ["ARMIES", "SIDES", "RELATIONS", "MOVEMENT", "BATTLES", "SETTINGS", "DIAGNOSTICS"]
-    : state.leaderSideIds.size > 0
-      ? ["ARMIES", "SIDES", "MOVEMENT", "BATTLES", "DIAGNOSTICS"]
-      : ["ARMIES", "MOVEMENT", "BATTLES", "DIAGNOSTICS"];
+  const isGM = state.role === "GM";
+  const tabs: readonly Tab[] = isGM
+    ? ["OVERVIEW", "ARMIES", "MAP", "BATTLES", "MANAGEMENT"]
+    : ["ARMIES", "TURN", "BATTLES"];
+  const tab: Tab = isGM ? gmTab : playerTab;
+  const selectTab = (next: Tab) => isGM ? setGmTab(next as GmTab) : setPlayerTab(next as PlayerTab);
+
   const send = (command: UiCommand) => {
-    if (["DELETE_SIDE", "STOP_ALL", "RELEASE_BATTLE_GROUP"].includes(command.type)) setDangerous(command);
+    if (["DELETE_SIDE", "STOP_ALL", "RELEASE_BATTLE_GROUP", "COMPLETE_TURN_NOW", "REQUEST_ARMY_DISBAND"].includes(command.type) || (command.type === "SET_ARMY_HP" && command.hp === 0)) setDangerous(command);
     else void state.send(command);
   };
   return (
     <main className="app-shell">
-      <header className="topbar"><img className="brand-mark" src={`${import.meta.env.BASE_URL}icon-1.2.png`} alt="Летопись: Армии" /><div><p>Летопись</p><h1>Армии</h1></div><span className="role-badge">{state.role === "GM" ? "Ведущий" : "Игрок"}</span></header>
-      <nav className="tabs" aria-label="Разделы">{tabs.map((item) => <button type="button" key={item} className={tab === item ? "active" : ""} onClick={() => setTab(item)}>{LABELS[item]}</button>)}</nav>
+      <header className="topbar"><img className="brand-mark" src={`${import.meta.env.BASE_URL}icon-1.2.png`} alt="Летопись: Армии" /><div><p>Летопись</p><h1>Армии</h1></div><span className="role-badge">{isGM ? "Ведущий" : "Игрок"}</span></header>
+      <nav className="tabs tabs-primary" aria-label="Разделы">{tabs.map((item) => <button type="button" key={item} className={tab === item ? "active" : ""} onClick={() => selectTab(item)}>{LABELS[item]}</button>)}</nav>
       <div className="content">
-        {tab === "ARMIES" && (
-          <ArmiesPage
-            armies={state.armies}
-            sides={state.sides}
-            role={state.role}
-            playerId={state.playerId}
-            leaderSideIds={state.leaderSideIds}
-            onAction={send}
-          />
-        )}
-        {tab === "SIDES" && (
-          <SidesPage
-            role={state.role}
-            playerId={state.playerId}
-            sides={state.sides}
-            players={state.players}
-            leaderSideIds={state.leaderSideIds}
-            onAction={send}
-          />
-        )}
-        {tab === "RELATIONS" && <RelationsPage sides={state.sides} relations={state.relations} onAction={send} />}
-        {tab === "MOVEMENT" && <MovementPage armies={state.armies} isGM={state.role === "GM"} onAction={send} />}
-        {tab === "BATTLES" && <BattlesPage battles={state.battleGroups} isGM={state.role === "GM"} onAction={send} />}
-        {tab === "SETTINGS" && <SettingsPage settings={state.settings} onAction={send} />}
-        {tab === "DIAGNOSTICS" && <DiagnosticsPage run={state.runDiagnostic} />}
+        {tab === "OVERVIEW" && isGM && <OverviewPage armies={state.armies} wars={state.wars} turn={state.turn} onAction={send} />}
+        {tab === "ARMIES" && <>
+          <ArmiesPage armies={state.armies} sides={state.sides} role={state.role} playerId={state.playerId} leaderSideIds={state.leaderSideIds} memberSideIds={state.memberSideIds} onAction={send} />
+          {!isGM && state.leaderSideIds.size > 0 && <details className="leader-management"><summary>Управление фракцией</summary><SidesPage role="PLAYER" playerId={state.playerId} sides={state.sides.filter((side) => state.leaderSideIds.has(side.id))} players={state.players} leaderSideIds={state.leaderSideIds} onAction={send} /></details>}
+        </>}
+        {tab === "TURN" && !isGM && <MovementPage armies={state.armies} turn={state.turn} isGM={false} leaderSideIds={state.leaderSideIds} onAction={send} />}
+        {tab === "MAP" && isGM && <MapEditorPage terrain={state.terrain} sides={state.sides} states={state.states} onAction={send} />}
+        {tab === "BATTLES" && <BattlesPage battles={state.battleGroups} armies={state.armies} isGM={isGM} onAction={send} />}
+        {tab === "MANAGEMENT" && isGM && <ManagementPage playerId={state.playerId} sides={state.sides} states={state.states} players={state.players} relations={state.relations} wars={state.wars} settings={state.settings} leaderSideIds={state.leaderSideIds} onAction={send} runDiagnostic={state.runDiagnostic} />}
       </div>
-      <footer className="summary"><span>Всего {state.counters.total}</span><span>В пути {state.counters.moving}</span><span>В бою {state.counters.inBattle}</span></footer>
-      <ConfirmDialog open={dangerous !== undefined} title="Подтвердите действие" message="Это действие изменит общее состояние сцены." onCancel={() => setDangerous(undefined)} onConfirm={() => { if (dangerous) void state.send(dangerous); setDangerous(undefined); }} />
+      <ConfirmDialog open={dangerous !== undefined} title="Подтвердите действие" message={dangerous?.type === "REQUEST_ARMY_DISBAND" ? "Армия будет распущена в начале следующего глобального хода. Отменить роспуск после подтверждения невозможно." : dangerous?.type === "SET_ARMY_HP" && dangerous.hp === 0 ? "Установка 0 HP уничтожит армию и удалит её с карты. Продолжить?" : "Это действие изменит общее состояние сцены."} onCancel={() => setDangerous(undefined)} onConfirm={() => { if (dangerous) void state.send(dangerous); setDangerous(undefined); }} />
     </main>
   );
 }

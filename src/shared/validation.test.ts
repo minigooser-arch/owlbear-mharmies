@@ -82,4 +82,24 @@ describe("metadata validation", () => {
       }
     });
   });
+
+  it("drops legacy battle player assignment metadata", () => {
+    const scene = normalizeSceneState({
+      version: 5,
+      battleGroups: [{
+        battleId: "battle-lock",
+        name: "Бой",
+        participantIds: ["a", "b"],
+        playerAssignments: [{ playerId: "p2", armyId: "a" }],
+        lockedPlayerIds: ["p1"],
+        revision: 1
+      }]
+    });
+    expect(scene.ok).toBe(true);
+    if (!scene.ok) return;
+    expect(scene.value.battleGroups[0]).toEqual({
+      battleId: "battle-lock", name: "Бой", participantIds: ["a", "b"], revision: 1
+    });
+  });
+
 });
