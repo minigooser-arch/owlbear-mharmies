@@ -13,6 +13,11 @@ export type DetectionMode = "INDEPENDENT" | "MUTUAL";
 export type VisibilityRecalculationMode = "ON_DROP" | "REALTIME";
 export type SideRelation = "ALLY" | "NEUTRAL" | "ENEMY";
 export type BarrierVisibility = "GM_ONLY" | "EVERYONE";
+export type MovementDomain = "LAND" | "SEA";
+export type TurnPhase = "MOVEMENT" | "NAVAL_BATTLE";
+export type ShipClassId = "BATTLESHIP" | "CRUISER" | "IRONCLAD" | "HOSPITAL" | "TRANSPORT";
+export type ShipFacing = "NORTH" | "EAST" | "SOUTH" | "WEST";
+export type ShipStatus = "READY" | "IN_NAVAL_BATTLE";
 
 export interface SceneSettings {
   defaultDetectionRangeCells: number;
@@ -64,6 +69,8 @@ export interface TerrainType {
   name: string;
   movementCostUnits: number;
   enabled: boolean;
+  movementDomains: MovementDomain[];
+  blocksNavalLos: boolean;
   color?: string;
 }
 
@@ -100,6 +107,7 @@ export interface WarState {
 
 export interface TurnState {
   turnNumber: number;
+  phase: TurnPhase;
   autoTurnsPaused: boolean;
   deferredUntil: string | null;
   lastCompletedAt: string | null;
@@ -107,8 +115,72 @@ export interface TurnState {
   lastProcessedBoundaryId: string | null;
 }
 
+export interface ShipState {
+  version: 1;
+  registered: true;
+  sideId: string;
+  classId: ShipClassId;
+  status: ShipStatus;
+  hp: number;
+  temporaryHp: number;
+  facing: ShipFacing;
+  plannedRoute: GridCellCoord[];
+  globalMovementRemaining: number;
+  movementSpentThisTurn: boolean;
+  battleId: string | null;
+  detectionOverride: number | null;
+  embarkedArmyId: string | null;
+  shoreBombardmentUsedOnTurn: number | null;
+  logisticsActionUsedOnTurn: number | null;
+  revision: number;
+}
+
+export interface NavalBattleRequest {
+  id: string;
+  initiatingShipId: string;
+  targetShipId: string;
+  createdOnTurn?: number;
+}
+
+export interface NavalBattleShipSnapshot {
+  shipId: string;
+  strategicCell: GridCellCoord;
+  strategicPosition: Vector2;
+  strategicFacing: ShipFacing;
+}
+
+export interface NavalInitiativeEntry {
+  shipId: string;
+  initialRoll: number;
+  bonus: number;
+  total: number;
+  tieBreakRolls: number[];
+}
+
+export interface NavalBattleState {
+  version: 1;
+  id: string;
+  requestId: string | null;
+  initiatorSideId: string;
+  areaCells: GridCellCoord[];
+  participantShipIds: string[];
+  snapshots: Record<string, NavalBattleShipSnapshot>;
+  initiative: NavalInitiativeEntry[];
+  roundNumber: number;
+  currentShipId: string | null;
+  completedShipIdsThisRound: string[];
+  movementRemainingByShip: Record<string, number>;
+  actionUsedByShip: Record<string, boolean>;
+  exitedShipIds: string[];
+  status: "ACTIVE" | "COMPLETED";
+  events: unknown[];
+  startedOnTurn: number;
+  startedAt: number;
+  revision: number;
+}
+
 export interface SceneState {
-  version: 5;
+  version: 6;
   revision: number;
   settings: SceneSettings;
   sides: Side[];
@@ -119,6 +191,11 @@ export interface SceneState {
   gridMap: GridMapState;
   wars: WarState[];
   turn: TurnState;
+  ships: Record<string, ShipState>;
+  navalBattleRequests: NavalBattleRequest[];
+  activeNavalBattle: NavalBattleState | null;
+  navalBattleHistory: NavalBattleState[];
+  navalRevealUntilTurn: Record<string, Record<string, number>>;
   coordinatorLease?: CoordinatorLease;
 }
 
@@ -175,7 +252,7 @@ export interface ArmyDisbandState {
 }
 
 export interface ArmyState {
-  version: 3;
+  version: 4;
   registered: true;
   sideId: string;
   status: ArmyStatus;
@@ -188,6 +265,7 @@ export interface ArmyState {
   health: ArmyHealthState;
   supply: ArmySupplyState;
   disband: ArmyDisbandState;
+  embarkedOnShipId: string | null;
   currentWaypointIndex: number;
   segmentProgressCells: number;
   ignoresMovementBarriers: boolean;
@@ -301,7 +379,6 @@ export type ArmyCommandPayload =
     | { type: "CREATE_TERRAIN_TYPE"; terrain: TerrainType }
     | { type: "UPDATE_TERRAIN_TYPE"; terrainId: string; patch: Partial<Omit<TerrainType, "id">> }
     | { type: "DELETE_TERRAIN_TYPE"; terrainId: string; replacementTerrainId?: string }
-
     | { type: "CREATE_STATE"; state: StateEntity }
     | { type: "UPDATE_STATE"; stateId: string; patch: Partial<Omit<StateEntity, "id">> }
     | { type: "DELETE_STATE"; stateId: string }
