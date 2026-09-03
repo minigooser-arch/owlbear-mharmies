@@ -16,6 +16,7 @@ export type BroadsideSectorResolver = (input: BroadsideSectorInput) => boolean;
 
 export type BroadsideTargetFailure =
   | "SHIP_NOT_ACTIVE"
+  | "SHIP_DESTROYED"
   | "ACTION_ALREADY_USED"
   | "SHIP_UNARMED"
   | "TARGET_EXITED"
@@ -47,6 +48,9 @@ export function validateBroadsideTarget(
 ): BroadsideTargetValidation {
   if (input.battle.currentShipId !== input.attackerId) {
     return { ok: false, reason: "SHIP_NOT_ACTIVE" };
+  }
+  if (input.attacker.hp <= 0) {
+    return { ok: false, reason: "SHIP_DESTROYED" };
   }
   if (input.battle.actionUsedByShip[input.attackerId]) {
     return { ok: false, reason: "ACTION_ALREADY_USED" };
