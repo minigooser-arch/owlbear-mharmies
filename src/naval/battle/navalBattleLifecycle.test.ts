@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE } from "../../shared/constants";
 import type {
   GridCellCoord,
+  NavalBattleRequest,
   NavalBattleShipSnapshot,
   NavalSceneState,
   ShipClassId,
@@ -122,7 +123,7 @@ describe("naval battle lifecycle", () => {
       rollD20: rolls(18, 10)
     });
 
-    expect(result.navalBattleRequests.map((request) => request.id)).toEqual(["other"]);
+    expect(result.navalBattleRequests.map((request: NavalBattleRequest) => request.id)).toEqual(["other"]);
     expect(result.navalRevealUntilTurn).toEqual({
       red: { blue: 5 },
       blue: { red: 5 }
@@ -169,7 +170,9 @@ describe("naval battle lifecycle", () => {
     })).toThrow("Missing naval battle participant: blue");
 
     const dead = scene();
-    dead.ships.blue = { ...dead.ships.blue, hp: 0 };
+    const blue = dead.ships.blue;
+    if (!blue) throw new Error("Missing blue fixture");
+    dead.ships.blue = { ...blue, hp: 0 };
     expect(() => startNavalBattle(dead, {
       battleId: "battle-1",
       requestId: null,
