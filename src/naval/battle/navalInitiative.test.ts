@@ -13,7 +13,7 @@ function sequence(values: number[]): () => number {
 
 describe("naval initiative", () => {
   it("gives +2 only to the specific initiating ship on its initial roll", () => {
-    const result = rollNavalInitiative(["initiator", "ally", "enemy"], "initiator", sequence([10, 11, 12]));
+    const result = rollNavalInitiative(["initiator", "ally", "enemy"], "initiator", sequence([10, 11, 12, 15, 14]));
     expect(result).toEqual([
       { shipId: "initiator", initialRoll: 10, bonus: 2, total: 12, tieBreakRolls: [15] },
       { shipId: "enemy", initialRoll: 12, bonus: 0, total: 12, tieBreakRolls: [14] },
