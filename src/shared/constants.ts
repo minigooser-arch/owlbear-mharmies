@@ -56,15 +56,16 @@ export const DEFAULT_SETTINGS: SceneSettings = {
 export const DEFAULT_TERRAIN: TerrainRegistryState = {
   defaultTerrainId: "plain",
   types: {
-    plain: { id: "plain", name: "Равнина", movementCostUnits: 2, enabled: true, color: "#90a4ae" },
-    road: { id: "road", name: "Дорога", movementCostUnits: 1, enabled: true, color: "#bcaaa4" },
-    forest: { id: "forest", name: "Лес", movementCostUnits: 4, enabled: true, color: "#66bb6a" },
-    mountains: { id: "mountains", name: "Горы", movementCostUnits: 6, enabled: true, color: "#8d6e63" }
+    plain: { id: "plain", name: "Равнина", movementCostUnits: 2, enabled: true, movementDomains: ["LAND"], blocksNavalLos: true, color: "#90a4ae" },
+    road: { id: "road", name: "Дорога", movementCostUnits: 1, enabled: true, movementDomains: ["LAND"], blocksNavalLos: true, color: "#bcaaa4" },
+    forest: { id: "forest", name: "Лес", movementCostUnits: 4, enabled: true, movementDomains: ["LAND"], blocksNavalLos: true, color: "#66bb6a" },
+    mountains: { id: "mountains", name: "Горы", movementCostUnits: 6, enabled: true, movementDomains: ["LAND"], blocksNavalLos: true, color: "#8d6e63" }
   }
 };
 
 export const DEFAULT_TURN_STATE: TurnState = {
   turnNumber: 1,
+  phase: "MOVEMENT",
   autoTurnsPaused: false,
   deferredUntil: null,
   lastCompletedAt: null,
