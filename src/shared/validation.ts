@@ -11,14 +11,24 @@ import type {
   DetectionMode,
   GridCellCoord,
   GridMapState,
+  MovementDomain,
+  NavalBattleRequest,
+  NavalBattleShipSnapshot,
+  NavalBattleState,
+  NavalInitiativeEntry,
   PlannedRoute,
   SceneSettings,
   SceneState,
+  ShipClassId,
+  ShipFacing,
+  ShipState,
+  ShipStatus,
   Side,
   SideRelation,
   StateEntity,
   TerrainRegistryState,
   TerrainType,
+  TurnPhase,
   TurnState,
   ValidationResult,
   Vector2,
@@ -48,6 +58,10 @@ function positiveInteger(value: unknown): value is number {
   return Number.isInteger(value) && positive(value);
 }
 
+function nonNegativeInteger(value: unknown): value is number {
+  return Number.isInteger(value) && nonNegative(value);
+}
+
 function nonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
@@ -69,6 +83,12 @@ function normalizeVector(value: unknown): Vector2 | undefined {
 function normalizeGridCell(value: unknown): GridCellCoord | undefined {
   if (!isRecord(value) || !Number.isInteger(value.x) || !Number.isInteger(value.y)) return undefined;
   return { x: value.x as number, y: value.y as number };
+}
+
+function normalizeGridCells(value: unknown): GridCellCoord[] {
+  return Array.isArray(value)
+    ? value.map(normalizeGridCell).filter((cell): cell is GridCellCoord => cell !== undefined)
+    : [];
 }
 
 function normalizeSettings(value: unknown): SceneSettings {
@@ -132,7 +152,6 @@ function normalizeSide(value: unknown): Side | undefined {
   };
 }
 
-
 function normalizeStateEntity(value: unknown): StateEntity | undefined {
   if (!isRecord(value) || !nonEmptyString(value.id) || !nonEmptyString(value.name)) return undefined;
   return {
@@ -173,6 +192,14 @@ function normalizeRelations(value: unknown): Record<string, Record<string, SideR
   return result;
 }
 
+function normalizeMovementDomains(value: unknown): MovementDomain[] {
+  if (!Array.isArray(value)) return ["LAND"];
+  const domains = [...new Set(value.filter((domain): domain is MovementDomain =>
+    enumValue<MovementDomain>(domain, ["LAND", "SEA"])
+  ))];
+  return domains.length > 0 ? domains : ["LAND"];
+}
+
 function normalizeTerrainType(value: unknown, fallbackId?: string): TerrainType | undefined {
   if (!isRecord(value)) return undefined;
   const id = nonEmptyString(value.id) ? value.id : fallbackId;
@@ -181,7 +208,9 @@ function normalizeTerrainType(value: unknown, fallbackId?: string): TerrainType 
     id,
     name: value.name.trim(),
     movementCostUnits: value.movementCostUnits,
-    enabled: typeof value.enabled === "boolean" ? value.enabled : true
+    enabled: typeof value.enabled === "boolean" ? value.enabled : true,
+    movementDomains: normalizeMovementDomains(value.movementDomains),
+    blocksNavalLos: typeof value.blocksNavalLos === "boolean" ? value.blocksNavalLos : true
   };
   if (nonEmptyString(value.color)) terrain.color = value.color;
   return terrain;
@@ -261,8 +290,12 @@ function validIsoTimestamp(value: unknown): value is string {
 
 function normalizeTurn(value: unknown): TurnState {
   if (!isRecord(value)) return { ...DEFAULT_TURN_STATE };
+  const phase: TurnPhase = enumValue<TurnPhase>(value.phase, ["MOVEMENT", "NAVAL_BATTLE"])
+    ? value.phase
+    : DEFAULT_TURN_STATE.phase;
   return {
     turnNumber: positiveInteger(value.turnNumber) ? value.turnNumber : DEFAULT_TURN_STATE.turnNumber,
+    phase,
     autoTurnsPaused: typeof value.autoTurnsPaused === "boolean" ? value.autoTurnsPaused : false,
     deferredUntil: value.deferredUntil === null || validIsoTimestamp(value.deferredUntil)
       ? value.deferredUntil as string | null
@@ -306,9 +339,7 @@ function normalizePlannedRoute(value: unknown): PlannedRoute {
     return { startCell: { x: 0, y: 0 }, executeOnTurn: 0, cells: [], totalCostUnits: 0, validatedRevision: 0, requiresReplan: false };
   }
   const startCell = normalizeGridCell(value.startCell) ?? { x: 0, y: 0 };
-  const cells = Array.isArray(value.cells)
-    ? value.cells.map(normalizeGridCell).filter((cell): cell is GridCellCoord => cell !== undefined)
-    : [];
+  const cells = normalizeGridCells(value.cells);
   const planned: PlannedRoute = {
     startCell,
     executeOnTurn: Number.isInteger(value.executeOnTurn) && nonNegative(value.executeOnTurn)
@@ -340,12 +371,168 @@ function normalizePlannedRoute(value: unknown): PlannedRoute {
   return planned;
 }
 
+function nullableNonNegativeInteger(value: unknown): number | null {
+  return value === null ? null : nonNegativeInteger(value) ? value : null;
+}
+
+function nullableNonNegativeNumber(value: unknown): number | null {
+  return value === null ? null : nonNegative(value) ? value : null;
+}
+
+function normalizeShip(value: unknown): ShipState | undefined {
+  if (!isRecord(value) || value.version !== 1 || value.registered !== true || !nonEmptyString(value.sideId)) {
+    return undefined;
+  }
+  if (!enumValue<ShipClassId>(value.classId, ["BATTLESHIP", "CRUISER", "IRONCLAD", "HOSPITAL", "TRANSPORT"])) {
+    return undefined;
+  }
+  if (!enumValue<ShipStatus>(value.status, ["READY", "IN_NAVAL_BATTLE"])) return undefined;
+  if (!enumValue<ShipFacing>(value.facing, ["NORTH", "EAST", "SOUTH", "WEST"])) return undefined;
+  return {
+    version: 1,
+    registered: true,
+    sideId: value.sideId,
+    classId: value.classId,
+    status: value.status,
+    hp: nonNegative(value.hp) ? value.hp : 0,
+    temporaryHp: nonNegative(value.temporaryHp) ? value.temporaryHp : 0,
+    facing: value.facing,
+    plannedRoute: normalizeGridCells(value.plannedRoute),
+    globalMovementRemaining: nonNegativeInteger(value.globalMovementRemaining) ? value.globalMovementRemaining : 0,
+    movementSpentThisTurn: typeof value.movementSpentThisTurn === "boolean" ? value.movementSpentThisTurn : false,
+    battleId: value.battleId === null || nonEmptyString(value.battleId) ? value.battleId as string | null : null,
+    detectionOverride: nullableNonNegativeNumber(value.detectionOverride),
+    embarkedArmyId: value.embarkedArmyId === null || nonEmptyString(value.embarkedArmyId)
+      ? value.embarkedArmyId as string | null
+      : null,
+    shoreBombardmentUsedOnTurn: nullableNonNegativeInteger(value.shoreBombardmentUsedOnTurn),
+    logisticsActionUsedOnTurn: nullableNonNegativeInteger(value.logisticsActionUsedOnTurn),
+    revision: nonNegative(value.revision) ? Math.floor(value.revision) : 0
+  };
+}
+
+function normalizeShips(value: unknown): Record<string, ShipState> {
+  if (!isRecord(value)) return {};
+  const ships: Record<string, ShipState> = {};
+  for (const [shipId, rawShip] of Object.entries(value)) {
+    if (!nonEmptyString(shipId)) continue;
+    const ship = normalizeShip(rawShip);
+    if (ship) ships[shipId] = ship;
+  }
+  return ships;
+}
+
+function normalizeNavalBattleRequest(value: unknown): NavalBattleRequest | undefined {
+  if (!isRecord(value) || !nonEmptyString(value.id) || !nonEmptyString(value.initiatingShipId) || !nonEmptyString(value.targetShipId)) {
+    return undefined;
+  }
+  const request: NavalBattleRequest = {
+    id: value.id,
+    initiatingShipId: value.initiatingShipId,
+    targetShipId: value.targetShipId
+  };
+  if (nonNegativeInteger(value.createdOnTurn)) request.createdOnTurn = value.createdOnTurn;
+  return request;
+}
+
+function normalizeNavalBattleSnapshot(value: unknown): NavalBattleShipSnapshot | undefined {
+  if (!isRecord(value) || !nonEmptyString(value.shipId)) return undefined;
+  const strategicCell = normalizeGridCell(value.strategicCell);
+  const strategicPosition = normalizeVector(value.strategicPosition);
+  if (!strategicCell || !strategicPosition || !enumValue<ShipFacing>(value.strategicFacing, ["NORTH", "EAST", "SOUTH", "WEST"])) {
+    return undefined;
+  }
+  return { shipId: value.shipId, strategicCell, strategicPosition, strategicFacing: value.strategicFacing };
+}
+
+function normalizeNavalInitiativeEntry(value: unknown): NavalInitiativeEntry | undefined {
+  if (!isRecord(value) || !nonEmptyString(value.shipId) || !finiteNumber(value.initialRoll) || !finiteNumber(value.bonus) || !finiteNumber(value.total)) {
+    return undefined;
+  }
+  const tieBreakRolls = Array.isArray(value.tieBreakRolls)
+    ? value.tieBreakRolls.filter(finiteNumber)
+    : [];
+  return {
+    shipId: value.shipId,
+    initialRoll: value.initialRoll,
+    bonus: value.bonus,
+    total: value.total,
+    tieBreakRolls
+  };
+}
+
+function normalizeNumberMap(value: unknown): Record<string, number> {
+  if (!isRecord(value)) return {};
+  const result: Record<string, number> = {};
+  for (const [key, rawNumber] of Object.entries(value)) {
+    if (nonEmptyString(key) && nonNegative(rawNumber)) result[key] = rawNumber;
+  }
+  return result;
+}
+
+function normalizeBooleanMap(value: unknown): Record<string, boolean> {
+  if (!isRecord(value)) return {};
+  const result: Record<string, boolean> = {};
+  for (const [key, rawBoolean] of Object.entries(value)) {
+    if (nonEmptyString(key) && typeof rawBoolean === "boolean") result[key] = rawBoolean;
+  }
+  return result;
+}
+
+function normalizeNavalBattle(value: unknown): NavalBattleState | undefined {
+  if (!isRecord(value) || value.version !== 1 || !nonEmptyString(value.id) || !nonEmptyString(value.initiatorSideId)) {
+    return undefined;
+  }
+  const snapshots: Record<string, NavalBattleShipSnapshot> = {};
+  if (isRecord(value.snapshots)) {
+    for (const [shipId, rawSnapshot] of Object.entries(value.snapshots)) {
+      const snapshot = normalizeNavalBattleSnapshot(rawSnapshot);
+      if (snapshot) snapshots[shipId] = snapshot;
+    }
+  }
+  const initiative = Array.isArray(value.initiative)
+    ? value.initiative.map(normalizeNavalInitiativeEntry).filter((entry): entry is NavalInitiativeEntry => entry !== undefined)
+    : [];
+  const status = enumValue(value.status, ["ACTIVE", "COMPLETED"] as const) ? value.status : "ACTIVE";
+  return {
+    version: 1,
+    id: value.id,
+    requestId: value.requestId === null || nonEmptyString(value.requestId) ? value.requestId as string | null : null,
+    initiatorSideId: value.initiatorSideId,
+    areaCells: normalizeGridCells(value.areaCells),
+    participantShipIds: uniqueStrings(value.participantShipIds),
+    snapshots,
+    initiative,
+    roundNumber: positiveInteger(value.roundNumber) ? value.roundNumber : 1,
+    currentShipId: value.currentShipId === null || nonEmptyString(value.currentShipId) ? value.currentShipId as string | null : null,
+    completedShipIdsThisRound: uniqueStrings(value.completedShipIdsThisRound),
+    movementRemainingByShip: normalizeNumberMap(value.movementRemainingByShip),
+    actionUsedByShip: normalizeBooleanMap(value.actionUsedByShip),
+    exitedShipIds: uniqueStrings(value.exitedShipIds),
+    status,
+    events: Array.isArray(value.events) ? structuredClone(value.events) : [],
+    startedOnTurn: nonNegativeInteger(value.startedOnTurn) ? value.startedOnTurn : 0,
+    startedAt: nonNegative(value.startedAt) ? value.startedAt : 0,
+    revision: nonNegative(value.revision) ? Math.floor(value.revision) : 0
+  };
+}
+
+function normalizeNavalRevealMap(value: unknown): Record<string, Record<string, number>> {
+  if (!isRecord(value)) return {};
+  const result: Record<string, Record<string, number>> = {};
+  for (const [sideId, rawMap] of Object.entries(value)) {
+    if (!nonEmptyString(sideId)) continue;
+    result[sideId] = normalizeNumberMap(rawMap);
+  }
+  return result;
+}
+
 export function normalizeSceneState(raw: unknown): ValidationResult<SceneState> {
   if (!isRecord(raw)) return { ok: false, issue: { code: "INVALID_VALUE", path: "scene" } };
-  if (finiteNumber(raw.version) && raw.version > 5) {
+  if (finiteNumber(raw.version) && raw.version > 6) {
     return { ok: false, issue: { code: "FUTURE_VERSION", version: raw.version } };
   }
-  if (raw.version !== 5) {
+  if (raw.version !== 6) {
     return { ok: false, issue: { code: "INVALID_VALUE", path: "version" } };
   }
   const sides = Array.isArray(raw.sides)
@@ -364,8 +551,19 @@ export function normalizeSceneState(raw: unknown): ValidationResult<SceneState> 
   const wars = Array.isArray(raw.wars)
     ? raw.wars.map(normalizeWar).filter((war): war is WarState => war !== undefined)
     : [];
+  const navalBattleRequests = Array.isArray(raw.navalBattleRequests)
+    ? raw.navalBattleRequests
+        .map(normalizeNavalBattleRequest)
+        .filter((request): request is NavalBattleRequest => request !== undefined)
+    : [];
+  const activeNavalBattle = raw.activeNavalBattle === null ? null : normalizeNavalBattle(raw.activeNavalBattle) ?? null;
+  const navalBattleHistory = Array.isArray(raw.navalBattleHistory)
+    ? raw.navalBattleHistory
+        .map(normalizeNavalBattle)
+        .filter((battle): battle is NavalBattleState => battle !== undefined)
+    : [];
   const state: SceneState = {
-    version: 5,
+    version: 6,
     revision: nonNegative(raw.revision) ? Math.floor(raw.revision) : 0,
     settings: normalizeSettings(raw.settings),
     sides: [...new Map(sides.map((side) => [side.id, side])).values()],
@@ -375,7 +573,12 @@ export function normalizeSceneState(raw: unknown): ValidationResult<SceneState> 
     terrain: normalizeTerrainRegistry(raw.terrain),
     gridMap: normalizeGridMap(raw.gridMap),
     wars: [...new Map(wars.map((war) => [war.id, war])).values()],
-    turn: normalizeTurn(raw.turn)
+    turn: normalizeTurn(raw.turn),
+    ships: normalizeShips(raw.ships),
+    navalBattleRequests,
+    activeNavalBattle,
+    navalBattleHistory,
+    navalRevealUntilTurn: normalizeNavalRevealMap(raw.navalRevealUntilTurn)
   };
   if (isRecord(raw.coordinatorLease) && nonEmptyString(raw.coordinatorLease.connectionId)) {
     const { epoch, expiresAt } = raw.coordinatorLease;
@@ -392,10 +595,10 @@ export function normalizeSceneState(raw: unknown): ValidationResult<SceneState> 
 
 export function normalizeArmyState(raw: unknown): ValidationResult<ArmyState> {
   if (!isRecord(raw)) return { ok: false, issue: { code: "INVALID_VALUE", path: "army" } };
-  if (finiteNumber(raw.version) && raw.version > 3) {
+  if (finiteNumber(raw.version) && raw.version > 4) {
     return { ok: false, issue: { code: "FUTURE_VERSION", version: raw.version } };
   }
-  if (raw.version !== 3 || raw.registered !== true || !nonEmptyString(raw.sideId)) {
+  if (raw.version !== 4 || raw.registered !== true || !nonEmptyString(raw.sideId)) {
     return { ok: false, issue: { code: "INVALID_VALUE", path: "army.required" } };
   }
   if (!enumValue<ArmyStatus>(raw.status, ["READY", "MOVING", "PAUSED", "IN_BATTLE"])) {
@@ -405,7 +608,7 @@ export function normalizeArmyState(raw: unknown): ValidationResult<ArmyState> {
     ? raw.route.map(normalizeVector).filter((point): point is Vector2 => point !== undefined)
     : [];
   const value: ArmyState = {
-    version: 3,
+    version: 4,
     registered: true,
     sideId: raw.sideId,
     status: raw.status,
@@ -442,6 +645,9 @@ export function normalizeArmyState(raw: unknown): ValidationResult<ArmyState> {
           : null
       };
     })(),
+    embarkedOnShipId: raw.embarkedOnShipId === null || nonEmptyString(raw.embarkedOnShipId)
+      ? raw.embarkedOnShipId as string | null
+      : null,
     currentWaypointIndex: nonNegative(raw.currentWaypointIndex)
       ? Math.min(Math.floor(raw.currentWaypointIndex), route.length)
       : 0,
