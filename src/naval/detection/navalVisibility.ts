@@ -1,11 +1,11 @@
 import type { NavalBattleState, ShipState } from "../../shared/types";
-import type { NavalDetectionGraph } from "./navalDetection";
+import type { DetectionGraph } from "../../visibility/detectionGraph";
 
 export interface NavalVisibilityInput {
   isGM: boolean;
   playerSideIds: readonly string[];
   ships: Readonly<Record<string, ShipState>>;
-  detectionGraph: NavalDetectionGraph;
+  detectionGraph: DetectionGraph;
   revealUntilTurn: Readonly<Record<string, Readonly<Record<string, number>>>>;
   currentTurn: number;
 }
