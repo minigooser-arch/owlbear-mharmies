@@ -2,7 +2,7 @@ import { firstBarrierIntersection, type BarrierSegment } from "../barriers/barri
 import type { GridDistancePort } from "../routes/routeMath";
 import type { DetectionMode, Vector2 } from "../shared/types";
 
-export interface DetectionArmy {
+export interface DetectionUnit {
   id: string;
   sideId: string;
   position: Vector2;
@@ -17,7 +17,7 @@ export interface DetectionGraph {
 
 export interface DetectionGraphInput {
   mode: DetectionMode;
-  armies: readonly DetectionArmy[];
+  units: readonly DetectionUnit[];
   distancePort: GridDistancePort;
   visionBarriers: readonly BarrierSegment[];
 }
@@ -30,18 +30,18 @@ function ensureSide(graph: DetectionGraph, sideId: string): void {
 function recordDetection(
   graph: DetectionGraph,
   sideId: string,
-  targetArmyId: string,
-  observerArmyId: string
+  targetUnitId: string,
+  observerUnitId: string
 ): void {
   ensureSide(graph, sideId);
-  graph.visibleTargetsBySide.get(sideId)?.add(targetArmyId);
+  graph.visibleTargetsBySide.get(sideId)?.add(targetUnitId);
   const targets = graph.observersBySide.get(sideId);
-  let observers = targets?.get(targetArmyId);
+  let observers = targets?.get(targetUnitId);
   if (!observers) {
     observers = new Set();
-    targets?.set(targetArmyId, observers);
+    targets?.set(targetUnitId, observers);
   }
-  observers.add(observerArmyId);
+  observers.add(observerUnitId);
 }
 
 export async function buildDetectionGraph(input: DetectionGraphInput): Promise<DetectionGraph> {
@@ -49,10 +49,10 @@ export async function buildDetectionGraph(input: DetectionGraphInput): Promise<D
     visibleTargetsBySide: new Map(),
     observersBySide: new Map()
   };
-  for (const army of input.armies) ensureSide(graph, army.sideId);
+  for (const unit of input.units) ensureSide(graph, unit.sideId);
 
-  for (const observer of input.armies) {
-    for (const target of input.armies) {
+  for (const observer of input.units) {
+    for (const target of input.units) {
       if (observer.id === target.id || observer.sideId === target.sideId) continue;
       const distance = await input.distancePort.distance(observer.position, target.position);
       if (distance > observer.detectionRangeCells) continue;
