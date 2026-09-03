@@ -27,6 +27,15 @@ const battleship: ShipView = {
   embarkedArmyId: null
 };
 
+const activeBattleship: ShipView = {
+  ...battleship,
+  status: "IN_NAVAL_BATTLE",
+  navalRoundNumber: 2,
+  isCurrentNavalTurn: true,
+  navalMovementRemaining: 2,
+  navalActionUsed: false
+};
+
 afterEach(cleanup);
 
 function renderShip(isGM: boolean, onAction = vi.fn()) {
@@ -118,5 +127,78 @@ describe("ShipCard HP management", () => {
     }
     fireEvent.change(input, { target: { value: "23" } });
     expect(submit).toBeEnabled();
+  });
+});
+
+describe("ShipCard naval tactical controls", () => {
+  it("lets the side leader or GM maneuver the active ship and end its turn", () => {
+    const onAction = vi.fn();
+    render(
+      <ShipCard
+        ship={activeBattleship}
+        sideColor="#f00"
+        isGM={false}
+        canPlanRoute
+        onAction={onAction}
+      />
+    );
+
+    expect(screen.getByText("Раунд 2 · ОП 2")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Повернуть влево" }));
+    fireEvent.click(screen.getByRole("button", { name: "Вперёд" }));
+    fireEvent.click(screen.getByRole("button", { name: "Повернуть вправо" }));
+    fireEvent.click(screen.getByRole("button", { name: "Завершить ход" }));
+
+    expect(onAction).toHaveBeenNthCalledWith(1, { type: "NAVAL_TURN_SHIP", shipId: "ship", direction: "LEFT" });
+    expect(onAction).toHaveBeenNthCalledWith(2, { type: "NAVAL_MOVE_FORWARD", shipId: "ship" });
+    expect(onAction).toHaveBeenNthCalledWith(3, { type: "NAVAL_TURN_SHIP", shipId: "ship", direction: "RIGHT" });
+    expect(onAction).toHaveBeenNthCalledWith(4, { type: "END_NAVAL_SHIP_TURN", shipId: "ship" });
+  });
+
+  it.each([
+    ["без ОП", { navalMovementRemaining: 0 }],
+    ["после активного действия", { navalMovementRemaining: 2, navalActionUsed: true }]
+  ] as const)("disables maneuver buttons %s but keeps explicit end-turn available", (_label, patch) => {
+    render(
+      <ShipCard
+        ship={{ ...activeBattleship, ...patch }}
+        sideColor="#f00"
+        isGM={false}
+        canPlanRoute
+        onAction={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: "Повернуть влево" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Вперёд" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Повернуть вправо" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Завершить ход" })).toBeEnabled();
+  });
+
+  it("does not expose tactical controls to a non-leader or for a ship waiting its turn", () => {
+    render(
+      <ShipCard
+        ship={activeBattleship}
+        sideColor="#f00"
+        isGM={false}
+        canPlanRoute={false}
+        onAction={vi.fn()}
+      />
+    );
+    expect(screen.queryByRole("button", { name: "Вперёд" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Завершить ход" })).toBeNull();
+
+    cleanup();
+    render(
+      <ShipCard
+        ship={{ ...activeBattleship, isCurrentNavalTurn: false }}
+        sideColor="#f00"
+        isGM={false}
+        canPlanRoute
+        onAction={vi.fn()}
+      />
+    );
+    expect(screen.queryByRole("button", { name: "Вперёд" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Завершить ход" })).toBeNull();
   });
 });
