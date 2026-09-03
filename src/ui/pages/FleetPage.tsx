@@ -17,12 +17,14 @@ export function FleetPage({
   armies,
   sides,
   role,
+  leaderSideIds,
   onAction
 }: {
   ships: readonly ShipView[];
   armies: readonly ArmyView[];
   sides: readonly Side[];
   role: "GM" | "PLAYER";
+  leaderSideIds: ReadonlySet<string>;
   onAction(command: UiCommand): void;
 }) {
   const [query, setQuery] = useState("");
@@ -113,12 +115,14 @@ export function FleetPage({
         {filtered.map((ship) => {
           const sideColor = sides.find((side) => side.id === ship.sideId)?.color ?? "#687F91";
           const embarkedArmyName = ship.embarkedArmyId ? armyNames.get(ship.embarkedArmyId) : undefined;
+          const canPlanRoute = role === "GM" || leaderSideIds.has(ship.sideId);
           return (
             <ShipCard
               key={ship.id}
               ship={ship}
               sideColor={sideColor}
               isGM={role === "GM"}
+              canPlanRoute={canPlanRoute}
               {...(embarkedArmyName !== undefined ? { embarkedArmyName } : {})}
               onAction={onAction}
             />
