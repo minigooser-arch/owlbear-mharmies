@@ -4,18 +4,20 @@ import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE } from "../shared
 import {
   COMMAND_PROTOCOL_VERSION,
   type ArmyCommand,
+  type GridCellCoord,
   type NavalBattleState,
   type SceneState,
-  type ShipState
+  type ShipState,
+  type Vector2
 } from "../shared/types";
 import { CommandProcessor, type CommandContext, type CommandState } from "./commandProcessor";
 import { validateArmyCommand } from "./commandValidation";
 
-const centerForCell = (cell: { x: number; y: number }) => ({
+const centerForCell = (cell: GridCellCoord): Vector2 => ({
   x: cell.x * 100 + 50,
   y: cell.y * 100 + 50
 });
-const cellForPosition = (position: { x: number; y: number }) => ({
+const cellForPosition = (position: Vector2): GridCellCoord => ({
   x: Math.floor(position.x / 100),
   y: Math.floor(position.y / 100)
 });
@@ -127,7 +129,13 @@ function context(role: "GM" | "PLAYER", playerId: string): CommandContext {
   };
 }
 
-const processor = new CommandProcessor(() => new Date("2026-09-03T12:00:00Z"), cellForPosition, centerForCell);
+type TacticalCommandProcessorConstructor = new (
+  now?: () => Date,
+  cellForPosition?: (position: Vector2) => GridCellCoord,
+  positionForCell?: (cell: GridCellCoord) => Vector2
+) => CommandProcessor;
+const TacticalCommandProcessor = CommandProcessor as unknown as TacticalCommandProcessorConstructor;
+const processor = new TacticalCommandProcessor(() => new Date("2026-09-03T12:00:00Z"), cellForPosition, centerForCell);
 
 describe("naval tactical command validation", () => {
   it("accepts forward, left/right turn, and explicit end-turn commands", () => {
@@ -150,22 +158,22 @@ describe("naval tactical command processing", () => {
     expect(result.state.positions?.ship).toEqual(centerForCell({ x: 1, y: 0 }));
     expect(result.state.scene.activeNavalBattle?.movementRemainingByShip.ship).toBe(1);
     expect(result.state.scene.activeNavalBattle?.currentShipId).toBe("ship");
-    expect(result.state.scene.ships?.ship.facing).toBe("NORTH");
+    expect(result.state.scene.ships?.ship?.facing).toBe("NORTH");
   });
 
   it("turns left or right in place and spends one tactical movement point", () => {
     const left = processor.execute(context("PLAYER", "leader"), envelope("leader", { type: "NAVAL_TURN_SHIP", shipId: "ship", direction: "LEFT" }));
     expect(left.status).toBe("ACCEPTED");
     if (left.status !== "ACCEPTED") return;
-    expect(left.state.scene.ships?.ship.facing).toBe("WEST");
-    expect(left.state.scene.ships?.ship.revision).toBe(2);
+    expect(left.state.scene.ships?.ship?.facing).toBe("WEST");
+    expect(left.state.scene.ships?.ship?.revision).toBe(2);
     expect(left.state.scene.activeNavalBattle?.movementRemainingByShip.ship).toBe(1);
     expect(left.state.positions?.ship).toEqual(centerForCell({ x: 1, y: 1 }));
 
     const right = processor.execute(context("GM", "gm"), envelope("gm", { type: "NAVAL_TURN_SHIP", shipId: "ship", direction: "RIGHT" }));
     expect(right.status).toBe("ACCEPTED");
     if (right.status !== "ACCEPTED") return;
-    expect(right.state.scene.ships?.ship.facing).toBe("EAST");
+    expect(right.state.scene.ships?.ship?.facing).toBe("EAST");
   });
 
   it("ends a movement-only turn explicitly and advances initiative", () => {
