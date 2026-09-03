@@ -312,6 +312,20 @@ export class CommandProcessor {
           hp: command.hp,
           revision: ship.revision + 1
         };
+        const battle = state.scene.activeNavalBattle;
+        if (
+          command.hp <= 0 &&
+          battle?.status === "ACTIVE" &&
+          battle.currentShipId === command.shipId &&
+          ship.status === "IN_NAVAL_BATTLE" &&
+          ship.battleId === battle.id
+        ) {
+          state.scene.activeNavalBattle = endNavalShipTurn(
+            battle,
+            state.scene.ships,
+            command.shipId
+          );
+        }
         return undefined;
       }
       case "CREATE_SIDE":
