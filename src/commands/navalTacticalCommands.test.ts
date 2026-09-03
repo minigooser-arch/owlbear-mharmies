@@ -200,4 +200,22 @@ describe("naval tactical command processing", () => {
     );
     expect(result).toEqual({ status: "REJECTED", reason: "SHIP_NOT_ACTIVE" });
   });
+
+  it("rejects movement, turning, and end-turn commands from a destroyed active ship", () => {
+    const payloads: Record<string, unknown>[] = [
+      { type: "NAVAL_MOVE_FORWARD", shipId: "ship" },
+      { type: "NAVAL_TURN_SHIP", shipId: "ship", direction: "LEFT" },
+      { type: "END_NAVAL_SHIP_TURN", shipId: "ship" }
+    ];
+
+    for (const payload of payloads) {
+      const commandState = state();
+      if (commandState.scene.ships?.ship) commandState.scene.ships.ship.hp = 0;
+      const result = processor.execute(
+        { ...context("PLAYER", "leader"), state: commandState },
+        envelope("leader", payload)
+      );
+      expect(result).toEqual({ status: "REJECTED", reason: "SHIP_DESTROYED" });
+    }
+  });
 });
