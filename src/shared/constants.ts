@@ -29,6 +29,7 @@ export const MINECRAFT_GRID_TOP_RIGHT = { x: 0, z: -10000 } as const;
 export const METADATA_KEYS = {
   scene: `${EXTENSION_ID}/scene`,
   army: `${EXTENSION_ID}/army`,
+  ship: `${EXTENSION_ID}/ship`,
   barrier: `${EXTENSION_ID}/barrier`,
   localClone: `${EXTENSION_ID}/local-clone`,
   routeOverlay: `${EXTENSION_ID}/route-overlay`,
