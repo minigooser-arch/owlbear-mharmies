@@ -1,4 +1,4 @@
-import type { SceneState, ShipClassId, ShipFacing, ShipState } from "../../shared/types";
+import type { NavalSceneState, ShipClassId, ShipFacing, ShipState } from "../../shared/types";
 import { SHIP_CLASSES } from "./shipClasses";
 
 export function createRegisteredShip(sideId: string, classId: ShipClassId, facing: ShipFacing): ShipState {
@@ -26,11 +26,11 @@ export function createRegisteredShip(sideId: string, classId: ShipClassId, facin
 
 export interface DestroyShipResult {
   destroyed: boolean;
-  scene: SceneState;
+  scene: NavalSceneState;
   itemIdToDelete: string | null;
 }
 
-export function destroyShip(scene: SceneState, shipId: string): DestroyShipResult {
+export function destroyShip(scene: NavalSceneState, shipId: string): DestroyShipResult {
   if (!scene.ships[shipId]) return { destroyed: false, scene, itemIdToDelete: null };
   const next = structuredClone(scene);
   Reflect.deleteProperty(next.ships, shipId);
