@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_TERRAIN } from "../../shared/constants";
-import type { SceneState, TerrainType } from "../../shared/types";
+import type { MovementDomain, SceneState, TerrainType } from "../../shared/types";
 import { createRegisteredShip } from "./shipLifecycle";
 import { commitShipStrategicRoute, planShipStrategicRoute } from "./shipStrategicMovement";
 
-function terrain(id: string, movementDomains: TerrainType["movementDomains"]): TerrainType {
+function terrain(id: string, movementDomains: MovementDomain[]): TerrainType {
   return {
     id,
     name: id,
