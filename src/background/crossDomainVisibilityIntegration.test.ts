@@ -188,6 +188,6 @@ describe("shared army and ship detection", () => {
     expect(visible).toContain("blue-army");
     expect(visible).not.toContain("blue-ship");
     const healthLabels = localItems.filter((item) => item.metadata[METADATA_KEYS.healthOverlay] !== undefined);
-    expect(healthLabels.some((item) => item.text === "50 / 50")).toBe(true);
+    expect(healthLabels.some((item) => item.text === "♥ 50 / 50")).toBe(true);
   });
 });
