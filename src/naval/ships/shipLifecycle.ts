@@ -1,4 +1,5 @@
 import type { NavalSceneState, ShipClassId, ShipFacing, ShipState } from "../../shared/types";
+import { endNavalShipTurn } from "../battle/navalRoundFlow";
 import { SHIP_CLASSES } from "./shipClasses";
 
 export function createRegisteredShip(sideId: string, classId: ShipClassId, facing: ShipFacing): ShipState {
@@ -37,8 +38,15 @@ export function destroyShip(scene: NavalSceneState, shipId: string): DestroyShip
   next.navalBattleRequests = next.navalBattleRequests.filter(
     (request) => request.initiatingShipId !== shipId && request.targetShipId !== shipId
   );
-  const battle = next.activeNavalBattle;
+  let battle = next.activeNavalBattle;
   if (battle) {
+    const activeShipRemoved = battle.status === "ACTIVE" && battle.currentShipId === shipId;
+    if (activeShipRemoved) {
+      const previousRoundNumber = battle.roundNumber;
+      battle = endNavalShipTurn(battle, next.ships, shipId);
+      if (battle.currentShipId === null) battle.roundNumber = previousRoundNumber;
+      next.activeNavalBattle = battle;
+    }
     battle.participantShipIds = battle.participantShipIds.filter((id) => id !== shipId);
     battle.initiative = battle.initiative.filter((entry) => entry.shipId !== shipId);
     battle.completedShipIdsThisRound = battle.completedShipIdsThisRound.filter((id) => id !== shipId);
@@ -47,7 +55,7 @@ export function destroyShip(scene: NavalSceneState, shipId: string): DestroyShip
     Reflect.deleteProperty(battle.movementRemainingByShip, shipId);
     Reflect.deleteProperty(battle.actionUsedByShip, shipId);
     if (battle.currentShipId === shipId) battle.currentShipId = null;
-    battle.revision += 1;
+    if (!activeShipRemoved) battle.revision += 1;
   }
   for (const revealMap of Object.values(next.navalRevealUntilTurn)) {
     Reflect.deleteProperty(revealMap, shipId);
