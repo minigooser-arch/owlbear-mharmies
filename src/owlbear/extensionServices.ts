@@ -4,6 +4,7 @@ import {
   CommandTimeoutError,
   NoCoordinatorError
 } from "../commands/commandGateway";
+import { SHIP_CLASSES } from "../naval/ships/shipClasses";
 import {
   DEFAULT_SETTINGS,
   DEFAULT_TERRAIN,
@@ -32,18 +33,23 @@ import {
 } from "../shared/types";
 import { migrateSceneState } from "../storage/migrations";
 import { isFactionAtWar } from "../wars/warRules";
-import { MetadataRepository, type ArmyRecord } from "../storage/metadataRepository";
+import { MetadataRepository, type ArmyRecord, type ShipRecord } from "../storage/metadataRepository";
 import type {
   ArmyView,
   ExtensionServices,
   PartyPlayerView,
   RawExtensionSnapshot,
+  ShipView,
   UiCommand
 } from "../ui/state/useExtensionState";
 import { DiagnosticsService, type DiagnosticsPort } from "./diagnostics";
 import { notifyRussian } from "./notifications";
 import { createRefreshCoordinator } from "./refreshCoordinator";
-import { RegistrationError, resolveRegistrationSelection } from "./registration";
+import {
+  buildSelectedShipRegistrationPayload,
+  RegistrationError,
+  resolveRegistrationSelection
+} from "./registration";
 import { semanticSnapshotEqual, semanticValueEqual } from "./snapshotEquality";
 
 export interface SnapshotInput {
@@ -52,6 +58,7 @@ export interface SnapshotInput {
   scene: SceneState;
   players: readonly PartyPlayerView[];
   armies: readonly ArmyRecord[];
+  ships?: readonly ShipRecord[];
   mapVisibleSourceIds: ReadonlySet<string>;
 }
 
@@ -67,10 +74,19 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
   const authorizedRecords = input.role === "GM"
     ? input.armies
     : input.armies.filter(({ state }) => memberSideIds.has(state.sideId));
+  const shipRecords = input.ships ?? [];
+  const authorizedShipRecords = input.role === "GM"
+    ? shipRecords
+    : shipRecords.filter(({ state }) => memberSideIds.has(state.sideId));
   const mapVisibleSourceIds = new Set(input.mapVisibleSourceIds);
   for (const army of input.armies) {
     if (input.role === "GM" || memberSideIds.has(army.state.sideId)) {
       mapVisibleSourceIds.add(army.item.id);
+    }
+  }
+  for (const ship of shipRecords) {
+    if (input.role === "GM" || memberSideIds.has(ship.state.sideId)) {
+      mapVisibleSourceIds.add(ship.item.id);
     }
   }
   const sideNames = new Map(input.scene.sides.map((side) => [side.id, side.name]));
@@ -101,6 +117,30 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
       disbandPending: state.disband.pending
     };
   });
+  const ships: ShipView[] = authorizedShipRecords.map(({ item, state }) => {
+    const definition = SHIP_CLASSES[state.classId];
+    return {
+      id: item.id,
+      name: item.name ?? "Безымянный корабль",
+      sideId: state.sideId,
+      sideName: sideNames.get(state.sideId) ?? "Неизвестная сторона",
+      classId: state.classId,
+      className: definition.name,
+      status: state.status,
+      hp: state.hp,
+      maxHp: definition.maxHp,
+      temporaryHp: state.temporaryHp,
+      armor: definition.armor,
+      movementMax: definition.movement,
+      movementRemaining: state.globalMovementRemaining,
+      plannedRouteCellCount: state.plannedRoute.length,
+      facing: state.facing,
+      normalDice: definition.normalDice,
+      normalRangeMin: definition.normalRangeMin,
+      normalRangeMax: definition.normalRangeMax,
+      embarkedArmyId: state.embarkedArmyId
+    };
+  });
   return {
     ready: true,
     sceneReady: true,
@@ -112,6 +152,7 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
     leaderSideIds,
     mapVisibleSourceIds,
     armies,
+    ships,
     sides: input.scene.sides,
     states: input.scene.states,
     relations: input.scene.relations,
@@ -138,6 +179,7 @@ const LOADING_SNAPSHOT: RawExtensionSnapshot = {
   leaderSideIds: new Set(),
   mapVisibleSourceIds: new Set(),
   armies: [],
+  ships: [],
   sides: [],
   states: [],
   relations: {},
@@ -259,8 +301,9 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
         players
       };
     }
-    const [armies, localItems] = await Promise.all([
+    const [armies, ships, localItems] = await Promise.all([
       repository.readArmies(),
+      repository.readShips(),
       adapter.getLocalItems()
     ]);
     observedLocalCloneSourceIds = localCloneSourceIds(localItems);
@@ -270,6 +313,7 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
       scene: migrated.value,
       players,
       armies,
+      ships,
       mapVisibleSourceIds: observedLocalCloneSourceIds
     });
   };
@@ -341,16 +385,27 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
         }
         return undefined;
       }
-      const payload = command.type === "REGISTER_SELECTED_ARMY"
-        ? {
-            type: "REGISTER_ARMY" as const,
-            itemId: resolveRegistrationSelection({
-              selection: (await OBR.player.getSelection()) ?? [],
-              items: await adapter.getSceneItems()
-            }).id,
-            sideId: command.sideId
-          }
-        : command;
+      let payload: ArmyCommand["type"] extends never ? never : unknown;
+      if (command.type === "REGISTER_SELECTED_ARMY") {
+        payload = {
+          type: "REGISTER_ARMY" as const,
+          itemId: resolveRegistrationSelection({
+            selection: (await OBR.player.getSelection()) ?? [],
+            items: await adapter.getSceneItems()
+          }).id,
+          sideId: command.sideId
+        };
+      } else if (command.type === "REGISTER_SELECTED_SHIP") {
+        payload = buildSelectedShipRegistrationPayload({
+          selection: (await OBR.player.getSelection()) ?? [],
+          items: await adapter.getSceneItems(),
+          sideId: command.sideId,
+          classId: command.classId,
+          facing: command.facing
+        });
+      } else {
+        payload = command;
+      }
       const commandScene = snapshot.futureSchema ? undefined : await repository.readScene();
       commandSceneForCoordinator = commandScene;
       const envelope = {
