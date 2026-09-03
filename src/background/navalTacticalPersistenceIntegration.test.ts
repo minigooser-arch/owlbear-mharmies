@@ -12,7 +12,7 @@ import {
 import type { OwlbearPort } from "../owlbear/sdkAdapter";
 import { ProductionEngine } from "./application";
 
-it("persists NAVAL_MOVE_FORWARD to the hidden source ship token without changing its strategic return snapshot", async () => {
+it("persists naval tactical movement and facing rotation without changing the strategic return snapshot", async () => {
   const ship: ShipState = {
     ...createRegisteredShip("red", "CRUISER", "EAST"),
     status: "IN_NAVAL_BATTLE",
@@ -79,6 +79,7 @@ it("persists NAVAL_MOVE_FORWARD to the hidden source ship token without changing
     type: "IMAGE",
     name: "Аврора",
     position: { ...snapshotPosition },
+    rotation: 90,
     visible: false,
     metadata: { [METADATA_KEYS.ship]: structuredClone(ship) }
   }];
@@ -134,6 +135,13 @@ it("persists NAVAL_MOVE_FORWARD to the hidden source ship token without changing
 
   const engine = new ProductionEngine(port);
   engine.setCoordinator(true, "gm-connection");
+  const sender = {
+    role: "GM" as const,
+    playerId: "gm",
+    connectionId: "gm-connection",
+    connectedPlayerIds: new Set(["gm"])
+  };
+
   await engine.processCommand({
     connectionId: "gm-connection",
     data: {
@@ -145,19 +153,40 @@ it("persists NAVAL_MOVE_FORWARD to the hidden source ship token without changing
       type: "NAVAL_MOVE_FORWARD",
       shipId: "ship"
     }
-  }, {
-    role: "GM",
-    playerId: "gm",
-    connectionId: "gm-connection",
-    connectedPlayerIds: new Set(["gm"])
-  });
+  }, sender);
 
   expect(sent.at(-1)).toMatchObject({
     channel: CommandGateway.ACK_CHANNEL,
     data: { requestId: "move-forward", status: "ACCEPTED" }
   });
   expect(items[0]?.position).toEqual({ x: 150, y: 50 });
+  expect(items[0]?.rotation).toBe(90);
   expect(items[0]?.visible).toBe(false);
   expect(scene.activeNavalBattle?.movementRemainingByShip.ship).toBe(2);
   expect(scene.activeNavalBattle?.snapshots.ship?.strategicPosition).toEqual(snapshotPosition);
+
+  await engine.processCommand({
+    connectionId: "gm-connection",
+    data: {
+      protocolVersion: COMMAND_PROTOCOL_VERSION,
+      requestId: "turn-left",
+      senderPlayerId: "gm",
+      senderConnectionId: "gm-connection",
+      expectedRevision: 3,
+      type: "NAVAL_TURN_SHIP",
+      shipId: "ship",
+      direction: "LEFT"
+    }
+  }, sender);
+
+  expect(sent.at(-1)).toMatchObject({
+    channel: CommandGateway.ACK_CHANNEL,
+    data: { requestId: "turn-left", status: "ACCEPTED" }
+  });
+  expect(scene.ships.ship.facing).toBe("NORTH");
+  expect(items[0]?.rotation).toBe(0);
+  expect(items[0]?.position).toEqual({ x: 150, y: 50 });
+  expect(scene.activeNavalBattle?.movementRemainingByShip.ship).toBe(1);
+  expect(scene.activeNavalBattle?.snapshots.ship?.strategicPosition).toEqual(snapshotPosition);
+  expect(scene.activeNavalBattle?.snapshots.ship?.strategicFacing).toBe("EAST");
 });
