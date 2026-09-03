@@ -372,6 +372,16 @@ export class CommandProcessor {
               };
             })
             .filter((group) => group.participantIds.length >= 2);
+
+          const sceneRevision = state.scene.revision;
+          const removedShipIds = Object.entries(state.scene.ships ?? {})
+            .filter(([, ship]) => ship.sideId === command.sideId)
+            .map(([shipId]) => shipId);
+          for (const shipId of removedShipIds) {
+            const destroyed = destroyShip(state.scene as NavalSceneState, shipId);
+            state.scene = destroyed.scene;
+            state.scene.revision = sceneRevision;
+          }
         }
         state.scene.sides = state.scene.sides.filter((side) => side.id !== command.sideId);
         for (const stateEntity of state.scene.states) {
