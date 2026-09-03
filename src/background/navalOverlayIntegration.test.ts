@@ -2,10 +2,14 @@ import { expect, it } from "vitest";
 import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE, METADATA_KEYS } from "../shared/constants";
 import type { NavalSceneState, SceneItemRecord } from "../shared/types";
 import type { OwlbearPort } from "../owlbear/sdkAdapter";
+import { createLocalImageClone } from "../owlbear/sdkAdapter";
 import { createRegisteredShip } from "../naval/ships/shipLifecycle";
 import { ProductionEngine } from "./application";
 
 function fixture() {
+  const redShip = { ...createRegisteredShip("red", "CRUISER", "NORTH"), hp: 18 };
+  const blueShip = createRegisteredShip("blue", "BATTLESHIP", "WEST");
+  const greenShip = createRegisteredShip("green", "IRONCLAD", "SOUTH");
   const scene: NavalSceneState = {
     version: 6,
     revision: 1,
@@ -23,9 +27,9 @@ function fixture() {
     wars: [],
     turn: { ...DEFAULT_TURN_STATE, turnNumber: 4 },
     ships: {
-      "red-ship": { ...createRegisteredShip("red", "CRUISER", "NORTH"), hp: 18 },
-      "blue-ship": createRegisteredShip("blue", "BATTLESHIP", "WEST"),
-      "green-ship": createRegisteredShip("green", "IRONCLAD", "SOUTH")
+      "red-ship": redShip,
+      "blue-ship": blueShip,
+      "green-ship": greenShip
     },
     navalBattleRequests: [],
     activeNavalBattle: null,
@@ -33,9 +37,30 @@ function fixture() {
     navalRevealUntilTurn: { red: { "blue-ship": 5 } }
   };
   const sceneItems: SceneItemRecord[] = [
-    { id: "red-ship", type: "IMAGE", name: "Аврора", position: { x: 100, y: 100 }, metadata: {} },
-    { id: "blue-ship", type: "IMAGE", name: "Блюхер", position: { x: 200, y: 100 }, metadata: {} },
-    { id: "green-ship", type: "IMAGE", name: "Скрытый", position: { x: 300, y: 100 }, metadata: {} }
+    {
+      id: "red-ship",
+      type: "IMAGE",
+      name: "Аврора",
+      position: { x: 100, y: 100 },
+      visible: false,
+      metadata: { [METADATA_KEYS.ship]: redShip }
+    },
+    {
+      id: "blue-ship",
+      type: "IMAGE",
+      name: "Блюхер",
+      position: { x: 200, y: 100 },
+      visible: false,
+      metadata: { [METADATA_KEYS.ship]: blueShip }
+    },
+    {
+      id: "green-ship",
+      type: "IMAGE",
+      name: "Скрытый",
+      position: { x: 300, y: 100 },
+      visible: false,
+      metadata: { [METADATA_KEYS.ship]: greenShip }
+    }
   ];
   const localItems: SceneItemRecord[] = [];
   let nextId = 0;
@@ -63,7 +88,7 @@ function fixture() {
         if (index >= 0) localItems.splice(index, 1);
       }
     },
-    createClone: (source: SceneItemRecord) => ({ ...structuredClone(source), id: `clone-${++nextId}`, visible: true }),
+    createClone: (source: SceneItemRecord) => createLocalImageClone(source, () => `clone-${++nextId}`),
     getGridDistance: async () => 0,
     getGridDpi: async () => 100,
     snapGridCenter: async (position: { x: number; y: number }) => ({ ...position }),
@@ -75,10 +100,15 @@ function fixture() {
   return { port, localItems };
 }
 
-it("renders naval name/HP overlays for own and battle-revealed ships but not hidden enemies", async () => {
+it("renders ship tokens and name/HP overlays only for own and battle-revealed ships", async () => {
   const { port, localItems } = fixture();
   const engine = new ProductionEngine(port);
   await engine.visibilityTick("PLAYER", "player");
+
+  const shipClones = localItems.filter((item) => item.metadata[METADATA_KEYS.localClone] !== undefined);
+  expect(shipClones.map((item) => item.name).sort()).toEqual(["Аврора", "Блюхер"].sort());
+  expect(shipClones.some((item) => item.name === "Скрытый")).toBe(false);
+  expect(shipClones.every((item) => item.visible === true)).toBe(true);
 
   const navalLabels = localItems.filter((item) => item.metadata[METADATA_KEYS.navalShipOverlay] !== undefined);
   expect(navalLabels.map((item) => item.text).sort()).toEqual([
