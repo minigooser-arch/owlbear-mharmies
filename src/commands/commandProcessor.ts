@@ -254,6 +254,7 @@ export class CommandProcessor {
         const ship = state.scene.ships?.[command.shipId];
         if (!ship) return "SHIP_NOT_FOUND";
         if (ship.status !== "IN_NAVAL_BATTLE" || ship.battleId !== battle.id) return "SHIP_NOT_IN_NAVAL_BATTLE";
+        if (ship.hp <= 0) return "SHIP_DESTROYED";
         if (battle.currentShipId !== command.shipId) return "SHIP_NOT_ACTIVE";
         const position = state.positions?.[command.shipId] ?? state.items[command.shipId]?.position;
         if (!position || !this.cellForPosition || !this.positionForCell) return "SHIP_POSITION_UNAVAILABLE";
@@ -276,6 +277,7 @@ export class CommandProcessor {
         const ship = state.scene.ships?.[command.shipId];
         if (!ship) return "SHIP_NOT_FOUND";
         if (ship.status !== "IN_NAVAL_BATTLE" || ship.battleId !== battle.id) return "SHIP_NOT_IN_NAVAL_BATTLE";
+        if (ship.hp <= 0) return "SHIP_DESTROYED";
         if (battle.currentShipId !== command.shipId) return "SHIP_NOT_ACTIVE";
         try {
           const result = applyTacticalTurn(battle, command.shipId, ship, command.direction);
@@ -293,6 +295,7 @@ export class CommandProcessor {
         const ship = state.scene.ships?.[command.shipId];
         if (!ship) return "SHIP_NOT_FOUND";
         if (ship.status !== "IN_NAVAL_BATTLE" || ship.battleId !== battle.id) return "SHIP_NOT_IN_NAVAL_BATTLE";
+        if (ship.hp <= 0) return "SHIP_DESTROYED";
         if (battle.currentShipId !== command.shipId) return "SHIP_NOT_ACTIVE";
         try {
           state.scene.activeNavalBattle = endNavalShipTurn(battle, state.scene.ships ?? {}, command.shipId);
