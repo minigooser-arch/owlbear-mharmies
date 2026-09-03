@@ -105,8 +105,13 @@ it("persists NAVAL_MOVE_FORWARD to the hidden source ship token without changing
       const item = items.find((candidate) => candidate.id === id);
       if (!item) throw new Error(`Missing item ${id}`);
       Object.assign(item, structuredClone(update));
-      if (value === undefined) delete item.metadata[key];
-      else item.metadata[key] = structuredClone(value);
+      if (value === undefined) {
+        item.metadata = Object.fromEntries(
+          Object.entries(item.metadata).filter(([metadataKey]) => metadataKey !== key)
+        );
+      } else {
+        item.metadata[key] = structuredClone(value);
+      }
     },
     getLocalItems: async () => [],
     addLocalItem: async () => undefined,
