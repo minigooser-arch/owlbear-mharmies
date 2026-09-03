@@ -42,9 +42,7 @@ export function destroyShip(scene: NavalSceneState, shipId: string): DestroyShip
   if (battle) {
     const activeShipRemoved = battle.status === "ACTIVE" && battle.currentShipId === shipId;
     if (activeShipRemoved) {
-      const previousRoundNumber = battle.roundNumber;
       battle = endNavalShipTurn(battle, next.ships, shipId);
-      if (battle.currentShipId === null) battle.roundNumber = previousRoundNumber;
       next.activeNavalBattle = battle;
     }
     battle.participantShipIds = battle.participantShipIds.filter((id) => id !== shipId);
