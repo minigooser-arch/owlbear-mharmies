@@ -122,7 +122,7 @@ it("turns troops into an armies and fleet center", () => {
   fireEvent.click(screen.getByRole("button", { name: "Флот" }));
   expect(screen.getByRole("heading", { name: "Флот" })).toBeInTheDocument();
   expect(screen.getByText("Севастополь")).toBeInTheDocument();
-  expect(screen.getByText("Линкор")).toBeInTheDocument();
+  expect(screen.getByText("Линкор", { selector: ".ship-identity strong" })).toBeInTheDocument();
   expect(screen.getByLabelText("Параметры корабля Севастополь")).toHaveTextContent(/30 \/ 30 HP/);
   expect(screen.getByLabelText("Параметры корабля Севастополь")).toHaveTextContent(/Броня\s*3/);
   expect(screen.getByLabelText("Параметры корабля Севастополь")).toHaveTextContent(/2 \/ 2 ОП/);
