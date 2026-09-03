@@ -61,6 +61,7 @@ function fixture() {
     type: "IMAGE",
     name: "Аврора",
     position: { x: 50, y: 50 },
+    rotation: 0,
     visible: true,
     metadata: {}
   }];
@@ -117,7 +118,7 @@ function fixture() {
   return { port, items, sent, get scene() { return scene; } };
 }
 
-it("persists REGISTER_SHIP to token metadata and hides the shared source, then restores it on UNREGISTER_SHIP", async () => {
+it("persists REGISTER_SHIP to token metadata, facing rotation, and hidden source, then restores visibility on UNREGISTER_SHIP", async () => {
   const f = fixture();
   const engine = new ProductionEngine(f.port);
   engine.setCoordinator(true, "gm-connection");
@@ -151,6 +152,7 @@ it("persists REGISTER_SHIP to token metadata and hides the shared source, then r
   expect(f.scene.ships.ship).toMatchObject({ sideId: "red", classId: "CRUISER", facing: "EAST" });
   expect(f.items[0]).toMatchObject({
     visible: false,
+    rotation: 90,
     metadata: { [METADATA_KEYS.ship]: { sideId: "red", classId: "CRUISER", facing: "EAST" } }
   });
 
