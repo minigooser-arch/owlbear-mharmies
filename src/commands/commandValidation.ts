@@ -308,6 +308,10 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
       ? { type: "SET_SHIP_ROUTE", shipId: value.shipId, startCell, cells }
       : undefined;
   },
+  SET_SHIP_HP: (value) =>
+    boundedString(value.shipId) && nonNegativeInteger(value.hp)
+      ? { type: "SET_SHIP_HP", shipId: value.shipId, hp: value.hp }
+      : undefined,
   CREATE_SIDE: (value) => {
     const side = parseSide(value.side);
     return side ? { type: "CREATE_SIDE", side } : undefined;

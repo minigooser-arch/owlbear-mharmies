@@ -8,6 +8,7 @@ import { applyCellPatchBatch, readCell } from "../terrain/gridMap";
 import { validatePlannedRoute } from "../movement/movementRules";
 import { unenteredRouteCells } from "../movement/strategicProgress";
 import { createRegisteredShip, destroyShip } from "../naval/ships/shipLifecycle";
+import { SHIP_CLASSES } from "../naval/ships/shipClasses";
 import { cellSupportsDomain } from "../terrain/movementDomains";
 import { authorizeArmyCommand } from "../shared/permissions";
 import { METADATA_KEYS } from "../shared/constants";
@@ -235,6 +236,19 @@ export class CommandProcessor {
       }
       case "SET_SHIP_ROUTE":
         return applyShipStrategicRouteCommand(state, command, this.cellForPosition);
+      case "SET_SHIP_HP": {
+        const ship = state.scene.ships?.[command.shipId];
+        if (!ship) return "SHIP_NOT_FOUND";
+        const maxHp = SHIP_CLASSES[ship.classId].maxHp;
+        if (command.hp > maxHp) return "INVALID_HP";
+        state.scene.ships ??= {};
+        state.scene.ships[command.shipId] = {
+          ...ship,
+          hp: command.hp,
+          revision: ship.revision + 1
+        };
+        return undefined;
+      }
       case "CREATE_SIDE":
         if (state.scene.sides.some((side) => side.id === command.side.id)) return "SIDE_EXISTS";
         state.scene.sides.push({
