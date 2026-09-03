@@ -63,7 +63,7 @@ export const DEFAULT_TERRAIN: TerrainRegistryState = {
   }
 };
 
-export const DEFAULT_TURN_STATE: TurnState = {
+export const DEFAULT_TURN_STATE: TurnState & { phase: "MOVEMENT" } = {
   turnNumber: 1,
   phase: "MOVEMENT",
   autoTurnsPaused: false,
