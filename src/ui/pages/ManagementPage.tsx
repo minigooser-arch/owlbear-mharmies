@@ -34,7 +34,7 @@ export function ManagementPage({
   const [section, setSection] = useState<ManagementSection>("SIDES");
   return (
     <section aria-labelledby="management-title">
-      <div className="section-heading"><div><p className="eyebrow">Администрирование</p><h2 id="management-title">Управление</h2></div></div>
+      <div className="section-heading wiki-page-heading"><div><p className="eyebrow">Администрирование</p><h2 id="management-title">Управление</h2><p className="page-description">Фракции, дипломатия, войны и технические настройки сцены собраны в одном административном разделе.</p></div></div>
       <nav className="subtabs" aria-label="Разделы управления">
         {(Object.keys(LABELS) as ManagementSection[]).map((item) => <button key={item} type="button" className={section === item ? "active" : ""} onClick={() => setSection(item)}>{LABELS[item]}</button>)}
       </nav>
