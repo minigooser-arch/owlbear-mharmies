@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import type { ShipFacing } from "../../shared/types";
 import type { ShipView, UiCommand } from "../state/useExtensionState";
 
@@ -7,6 +8,61 @@ const FACING_LABELS: Record<ShipFacing, string> = {
   SOUTH: "Юг",
   WEST: "Запад"
 };
+
+function clampHp(value: number, maxHp: number): number {
+  return Math.max(0, Math.min(maxHp, Math.round(value)));
+}
+
+function ShipHealthEditor({
+  ship,
+  onAction
+}: {
+  ship: ShipView;
+  onAction(command: UiCommand): void;
+}) {
+  const [draft, setDraft] = useState(String(ship.hp));
+  useEffect(() => setDraft(String(ship.hp)), [ship.hp]);
+  const parsed = Number(draft);
+  const canSubmit =
+    Number.isInteger(parsed) &&
+    parsed >= 0 &&
+    parsed <= ship.maxHp &&
+    parsed !== ship.hp;
+  const setHp = (hp: number) =>
+    onAction({ type: "SET_SHIP_HP", shipId: ship.id, hp: clampHp(hp, ship.maxHp) });
+
+  return (
+    <div className="hp-editor" aria-label="Управление HP корабля">
+      <div className="hp-editor-heading">
+        <strong>HP корабля</strong>
+        <span>{ship.hp} / {ship.maxHp}</span>
+      </div>
+      <div className="hp-quick-actions">
+        <button type="button" aria-label="-5 HP корабля" onClick={() => setHp(ship.hp - 5)}>−5</button>
+        <button type="button" aria-label="-1 HP корабля" onClick={() => setHp(ship.hp - 1)}>−1</button>
+        <input
+          aria-label={`Текущее HP ${ship.name}`}
+          type="number"
+          min="0"
+          max={ship.maxHp}
+          step="1"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+        />
+        <button type="button" aria-label="+1 HP корабля" onClick={() => setHp(ship.hp + 1)}>+1</button>
+        <button type="button" aria-label="+5 HP корабля" onClick={() => setHp(ship.hp + 5)}>+5</button>
+      </div>
+      <button
+        className="button subtle wide"
+        type="button"
+        disabled={!canSubmit}
+        onClick={() => setHp(parsed)}
+      >
+        Установить HP корабля
+      </button>
+    </div>
+  );
+}
 
 export function ShipCard({
   ship,
@@ -74,10 +130,13 @@ export function ShipCard({
       {isGM && (
         <details className="army-more ship-management">
           <summary>Управление</summary>
-          <div className="card-actions">
-            <button className="button danger subtle" type="button" onClick={() => onAction({ type: "UNREGISTER_SHIP", shipId: ship.id })}>
-              Снять регистрацию
-            </button>
+          <div className="army-control-groups">
+            <ShipHealthEditor ship={ship} onAction={onAction} />
+            <div className="card-actions">
+              <button className="button danger subtle" type="button" onClick={() => onAction({ type: "UNREGISTER_SHIP", shipId: ship.id })}>
+                Снять регистрацию
+              </button>
+            </div>
           </div>
         </details>
       )}
