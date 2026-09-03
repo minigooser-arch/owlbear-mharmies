@@ -185,7 +185,7 @@ describe("SET_SHIP_ROUTE processing", () => {
 
     const plannedState = commandState();
     plannedState.scene.ships!.redShip = { ...plannedState.scene.ships!.redShip!, plannedRoute: [{ x: 1, y: 0 }] };
-    expect(processor.execute(processorContext("leader", "PLAYER", plannedState), shipRouteCommand("redShip", [{ x: 1, y: 0 }))).toEqual({
+    expect(processor.execute(processorContext("leader", "PLAYER", plannedState), shipRouteCommand("redShip", [{ x: 1, y: 0 }]))).toEqual({
       status: "REJECTED",
       reason: "SHIP_ROUTE_ALREADY_PLANNED"
     });
