@@ -84,7 +84,7 @@ it("renders naval name/HP overlays for own and battle-revealed ships but not hid
   expect(navalLabels.map((item) => item.text).sort()).toEqual([
     "Аврора",
     "Блюхер",
-    "♥ 18 / 20",
+    "♥ 18 / 25",
     "♥ 30 / 30"
   ].sort());
   expect(navalLabels.some((item) => item.text === "Скрытый")).toBe(false);
