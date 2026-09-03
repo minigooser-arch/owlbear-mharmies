@@ -1,5 +1,7 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+// @vitest-environment jsdom
+
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Side } from "../../shared/types";
 import type { ShipView } from "../state/useExtensionState";
 import { FleetPage } from "./FleetPage";
@@ -32,6 +34,8 @@ function ship(patch: Partial<ShipView> = {}): ShipView {
     ...patch
   };
 }
+
+afterEach(() => cleanup());
 
 function renderFleet(input: {
   role?: "GM" | "PLAYER";
