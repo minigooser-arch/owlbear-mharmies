@@ -91,6 +91,59 @@ describe("SET_SHIP_HP processing", () => {
     expect(result.state.scene.ships?.ship).toMatchObject({ hp: 0, revision: 2 });
   });
 
+  it("advances the naval activation when the active ship is reduced to zero hp", () => {
+    const ctx = context("GM", "gm");
+    const activeShip = ctx.state.scene.ships?.ship;
+    if (!activeShip) throw new Error("Missing active ship fixture");
+    activeShip.status = "IN_NAVAL_BATTLE";
+    activeShip.battleId = "naval-1";
+
+    const escort = createRegisteredShip("red", "CRUISER", "EAST");
+    escort.status = "IN_NAVAL_BATTLE";
+    escort.battleId = "naval-1";
+    ctx.state.scene.ships ??= {};
+    ctx.state.scene.ships.escort = escort;
+    ctx.state.items.escort = {
+      id: "escort",
+      type: "IMAGE",
+      name: "Аврора",
+      position: { x: 100, y: 0 },
+      metadata: {}
+    };
+    ctx.state.scene.activeNavalBattle = {
+      version: 1,
+      id: "naval-1",
+      requestId: null,
+      initiatorSideId: "red",
+      areaCells: [{ x: 0, y: 0 }, { x: 1, y: 0 }],
+      participantShipIds: ["ship", "escort"],
+      snapshots: {},
+      initiative: [
+        { shipId: "ship", initialRoll: 15, bonus: 2, total: 17, tieBreakRolls: [] },
+        { shipId: "escort", initialRoll: 12, bonus: 0, total: 12, tieBreakRolls: [] }
+      ],
+      roundNumber: 1,
+      currentShipId: "ship",
+      completedShipIdsThisRound: [],
+      movementRemainingByShip: { ship: 2, escort: 3 },
+      actionUsedByShip: { ship: false, escort: false },
+      exitedShipIds: [],
+      status: "ACTIVE",
+      events: [],
+      startedOnTurn: 1,
+      startedAt: 1,
+      revision: 1
+    };
+
+    const result = processor.execute(ctx, command(0));
+    expect(result.status).toBe("ACCEPTED");
+    if (result.status !== "ACCEPTED") return;
+    expect(result.state.scene.ships?.ship?.hp).toBe(0);
+    expect(result.state.scene.activeNavalBattle?.currentShipId).toBe("escort");
+    expect(result.state.scene.activeNavalBattle?.completedShipIdsThisRound).toContain("ship");
+    expect(result.state.scene.activeNavalBattle?.roundNumber).toBe(1);
+  });
+
   it("rejects values above the class maximum", () => {
     expect(processor.execute(context("GM", "gm"), command(31))).toEqual({
       status: "REJECTED",
