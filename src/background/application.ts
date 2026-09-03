@@ -20,6 +20,9 @@ import { applyCellPatchBatch, readCell, type CellPatchOperation } from "../terra
 import { annexingStateForEntry } from "../annexation/annexationRules";
 import { MapOverlayService } from "../terrain/mapOverlayService";
 import { HealthOverlayService } from "../health/healthOverlayService";
+import { NavalShipOverlayService } from "../naval/ships/navalShipOverlayService";
+import { SHIP_CLASSES } from "../naval/ships/shipClasses";
+import { visibleShipIdsForPlayer } from "../naval/detection/navalVisibility";
 import { getDueTurnBoundary } from "../turns/turnSchedule";
 import { completeTurn } from "../turns/turnService";
 import { getDestinationMovementCostUnits } from "../terrain/terrainRegistry";
@@ -193,6 +196,7 @@ export function localOverlayIds(items: readonly SceneItemRecord[]): string[] {
     METADATA_KEYS.barrierOverlay,
     METADATA_KEYS.mapOverlay,
     METADATA_KEYS.healthOverlay,
+    METADATA_KEYS.navalShipOverlay,
     METADATA_KEYS.mapBrushPreview
   ];
   return items
@@ -276,10 +280,11 @@ export class ProductionEngine {
   }
 
   async visibilityTick(role: "GM" | "PLAYER", playerId: string): Promise<void> {
-    const [scene, armies, barriers] = await Promise.all([
+    const [scene, armies, barriers, sceneItems] = await Promise.all([
       this.repository.readScene(),
       this.repository.readArmies(),
-      this.repository.readBarriers()
+      this.repository.readBarriers(),
+      this.port.getSceneItems()
     ]);
     const graph = await buildDetectionGraph({
       mode: scene.settings.detectionMode,
@@ -307,8 +312,26 @@ export class ProductionEngine {
       detectionGraph: graph,
       battleGroups: scene.battleGroups
     });
+    const visibleShips = visibleShipIdsForPlayer({
+      isGM: role === "GM",
+      playerSideIds: memberSideIds,
+      ships: scene.ships ?? {},
+      detectionGraph: { visibleTargetsBySide: new Map(), observersBySide: new Map() },
+      revealUntilTurn: scene.navalRevealUntilTurn ?? {},
+      currentTurn: scene.turn.turnNumber
+    });
     await this.cloneReconciler.reconcile(visible, armies.map((record) => record.item));
-    await this.reconcileOverlays(scene, armies, barriers, role, memberSideIds, leaderSideIds, visible);
+    await this.reconcileOverlays(
+      scene,
+      armies,
+      barriers,
+      role,
+      memberSideIds,
+      leaderSideIds,
+      visible,
+      sceneItems,
+      visibleShips
+    );
   }
 
   movementTick(): Promise<void> {
@@ -993,7 +1016,9 @@ export class ProductionEngine {
     role: "GM" | "PLAYER",
     memberSideIds: readonly string[],
     leaderSideIds: readonly string[],
-    visibleArmyIds: ReadonlySet<string>
+    visibleArmyIds: ReadonlySet<string>,
+    sceneItems: readonly SceneItemRecord[],
+    visibleShipIds: ReadonlySet<string>
   ): Promise<void> {
     const overlayPort = {
       getLocalItems: () => this.port.getLocalItems(),
@@ -1035,6 +1060,24 @@ export class ProductionEngine {
         color: sideColors.get(record.state.sideId) ?? "#ffffff"
       })),
       visibleArmyIds
+    );
+
+    const sceneItemById = new Map(sceneItems.map((item) => [item.id, item]));
+    await new NavalShipOverlayService(overlayPort).reconcile(
+      Object.entries(scene.ships ?? {}).flatMap(([shipId, state]) => {
+        const item = sceneItemById.get(shipId);
+        if (!item) return [];
+        const definition = SHIP_CLASSES[state.classId];
+        return [{
+          shipId,
+          name: item.name?.trim() || definition.name,
+          position: item.position,
+          hp: state.hp,
+          maxHp: definition.maxHp,
+          color: sideColors.get(state.sideId) ?? "#ffffff"
+        }];
+      }),
+      visibleShipIds
     );
 
     const mapOverlayService = new MapOverlayService(overlayPort);
