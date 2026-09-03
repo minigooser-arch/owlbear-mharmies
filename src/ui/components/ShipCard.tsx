@@ -12,12 +12,14 @@ export function ShipCard({
   ship,
   sideColor,
   isGM,
+  canPlanRoute,
   embarkedArmyName,
   onAction
 }: {
   ship: ShipView;
   sideColor: string;
   isGM: boolean;
+  canPlanRoute: boolean;
   embarkedArmyName?: string;
   onAction(command: UiCommand): void;
 }) {
@@ -28,6 +30,7 @@ export function ShipCard({
   const route = ship.plannedRouteCellCount > 0
     ? `Маршрут: ${ship.plannedRouteCellCount} кл.`
     : "Маршрут не задан";
+  const routeUnavailable = inBattle || ship.plannedRouteCellCount > 0 || ship.movementRemaining <= 0;
 
   return (
     <article className={`ship-card${inBattle ? " ship-card-battle" : ""}`}>
@@ -54,6 +57,19 @@ export function ShipCard({
         <span><strong>Переход</strong>{route}</span>
         {ship.embarkedArmyId && <span><strong>На борту</strong>{embarkedArmyName ?? "Перевозимая армия"}</span>}
       </div>
+
+      {canPlanRoute && (
+        <div className="card-actions ship-route-actions">
+          <button
+            className="button primary"
+            type="button"
+            disabled={routeUnavailable}
+            onClick={() => onAction({ type: "EDIT_SHIP_ROUTE", shipId: ship.id })}
+          >
+            Проложить переход
+          </button>
+        </div>
+      )}
 
       {isGM && (
         <details className="army-more ship-management">
