@@ -124,6 +124,18 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
   });
   const ships: ShipView[] = authorizedShipRecords.map(({ item, state }) => {
     const definition = SHIP_CLASSES[state.classId];
+    const battle = input.scene.activeNavalBattle;
+    const tactical = battle?.status === "ACTIVE" &&
+      state.status === "IN_NAVAL_BATTLE" &&
+      state.battleId === battle.id &&
+      battle.participantShipIds.includes(item.id)
+      ? {
+          navalRoundNumber: battle.roundNumber,
+          isCurrentNavalTurn: battle.currentShipId === item.id,
+          navalMovementRemaining: battle.movementRemainingByShip[item.id] ?? 0,
+          navalActionUsed: battle.actionUsedByShip[item.id] ?? false
+        }
+      : {};
     return {
       id: item.id,
       name: item.name ?? "Безымянный корабль",
@@ -143,7 +155,8 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
       normalDice: definition.normalDice,
       normalRangeMin: definition.normalRangeMin,
       normalRangeMax: definition.normalRangeMax,
-      embarkedArmyId: state.embarkedArmyId
+      embarkedArmyId: state.embarkedArmyId,
+      ...tactical
     };
   });
   return {
