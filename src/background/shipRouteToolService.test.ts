@@ -84,7 +84,7 @@ function accepted(command: ArmyCommand): CommandAck {
 describe("ShipRouteToolService", () => {
   it("loads READY ship context for its side leader", async () => {
     const port = new MemoryPort();
-    const service = new ShipRouteToolService(port, { send: async (command) => accepted(command) });
+    const service = new ShipRouteToolService(port, { send: async (command: ArmyCommand) => accepted(command) });
     await expect(service.loadSession("ship")).resolves.toMatchObject({
       shipId: "ship",
       start: { x: 50, y: 50 },
