@@ -15,6 +15,7 @@ export function applyShipStrategicRouteCommand(
 ): string | undefined {
   const ship = state.scene.ships?.[command.shipId];
   if (!ship) return "SHIP_NOT_FOUND";
+  if (ship.hp <= 0) return "SHIP_DESTROYED";
   if (ship.status !== "READY") return "SHIP_NOT_READY";
   if (ship.plannedRoute.length > 0) return "SHIP_ROUTE_ALREADY_PLANNED";
 
