@@ -69,8 +69,10 @@ export interface TerrainType {
   name: string;
   movementCostUnits: number;
   enabled: boolean;
-  movementDomains: MovementDomain[];
-  blocksNavalLos: boolean;
+  /** Missing on legacy v5 inputs; interpreted as LAND until migration. */
+  movementDomains?: MovementDomain[];
+  /** Missing on legacy v5 inputs; interpreted as true until migration. */
+  blocksNavalLos?: boolean;
   color?: string;
 }
 
@@ -107,7 +109,8 @@ export interface WarState {
 
 export interface TurnState {
   turnNumber: number;
-  phase: TurnPhase;
+  /** Missing on legacy v5 inputs; migration supplies MOVEMENT. */
+  phase?: TurnPhase;
   autoTurnsPaused: boolean;
   deferredUntil: string | null;
   lastCompletedAt: string | null;
@@ -179,8 +182,12 @@ export interface NavalBattleState {
   revision: number;
 }
 
+/**
+ * Boundary-compatible scene shape. Legacy v5 data is accepted here so old callers and
+ * migration fixtures remain representable; normalizeSceneState always returns NavalSceneState.
+ */
 export interface SceneState {
-  version: 6;
+  version: 5 | 6;
   revision: number;
   settings: SceneSettings;
   sides: Side[];
@@ -191,12 +198,22 @@ export interface SceneState {
   gridMap: GridMapState;
   wars: WarState[];
   turn: TurnState;
+  ships?: Record<string, ShipState>;
+  navalBattleRequests?: NavalBattleRequest[];
+  activeNavalBattle?: NavalBattleState | null;
+  navalBattleHistory?: NavalBattleState[];
+  navalRevealUntilTurn?: Record<string, Record<string, number>>;
+  coordinatorLease?: CoordinatorLease;
+}
+
+export interface NavalSceneState extends SceneState {
+  version: 6;
   ships: Record<string, ShipState>;
   navalBattleRequests: NavalBattleRequest[];
   activeNavalBattle: NavalBattleState | null;
   navalBattleHistory: NavalBattleState[];
   navalRevealUntilTurn: Record<string, Record<string, number>>;
-  coordinatorLease?: CoordinatorLease;
+  turn: TurnState & { phase: TurnPhase };
 }
 
 export interface ArmyOverrides {
@@ -251,8 +268,9 @@ export interface ArmyDisbandState {
   requestedByPlayerId: string | null;
 }
 
+/** Boundary-compatible army shape; normalization always upgrades to version 4. */
 export interface ArmyState {
-  version: 4;
+  version: 3 | 4;
   registered: true;
   sideId: string;
   status: ArmyStatus;
@@ -265,7 +283,7 @@ export interface ArmyState {
   health: ArmyHealthState;
   supply: ArmySupplyState;
   disband: ArmyDisbandState;
-  embarkedOnShipId: string | null;
+  embarkedOnShipId?: string | null;
   currentWaypointIndex: number;
   segmentProgressCells: number;
   ignoresMovementBarriers: boolean;
