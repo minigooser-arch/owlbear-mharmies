@@ -1,0 +1,32 @@
+name: Apply side ship cleanup
+
+on:
+  push:
+    branches:
+      - feature/naval-combat-v1
+    paths:
+      - scripts/apply-side-ship-cleanup.py
+      - .github/workflows/apply-side-ship-cleanup.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feature/naval-combat-v1
+      - name: Apply side ship cleanup
+        run: python scripts/apply-side-ship-cleanup.py
+      - name: Remove one-shot patch files
+        run: rm scripts/apply-side-ship-cleanup.py .github/workflows/apply-side-ship-cleanup.yml
+      - name: Commit production patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && { echo "Patch produced no changes"; exit 1; }
+          git commit -m "fix: unregister ships when deleting a side"
+          git push origin HEAD:feature/naval-combat-v1
