@@ -6,9 +6,11 @@ import type {
   CellPropertyTarget,
   MovementDenialReason,
   SceneSettings,
+  ShipClassId,
+  ShipFacing,
+  ShipStatus,
   Side,
   StateEntity,
-  SideRelation,
   TerrainRegistryState,
   TurnState,
   Vector2,
@@ -37,6 +39,28 @@ export interface ArmyView {
   disbandPending: boolean;
 }
 
+export interface ShipView {
+  id: string;
+  name: string;
+  sideId: string;
+  sideName: string;
+  classId: ShipClassId;
+  className: string;
+  status: ShipStatus;
+  hp: number;
+  maxHp: number;
+  temporaryHp: number;
+  armor: number;
+  movementMax: number;
+  movementRemaining: number;
+  plannedRouteCellCount: number;
+  facing: ShipFacing;
+  normalDice: number;
+  normalRangeMin: number;
+  normalRangeMax: number;
+  embarkedArmyId: string | null;
+}
+
 export interface PartyPlayerView {
   id: string;
   name: string;
@@ -56,9 +80,10 @@ export interface RawExtensionSnapshot {
   leaderSideIds: ReadonlySet<string>;
   mapVisibleSourceIds: ReadonlySet<string>;
   armies: readonly ArmyView[];
+  ships?: readonly ShipView[];
   sides: readonly Side[];
   states: readonly StateEntity[];
-  relations: Readonly<Record<string, Record<string, SideRelation>>>;
+  relations: Readonly<Record<string, Record<string, import("../../shared/types").SideRelation>>>;
   battleGroups: readonly BattleGroup[];
   settings: SceneSettings;
   terrain: TerrainRegistryState;
@@ -80,6 +105,7 @@ export interface MapBrushUiSettings {
 export type UiCommand =
   | ArmyCommandPayload
   | { type: "REGISTER_SELECTED_ARMY"; sideId: string }
+  | { type: "REGISTER_SELECTED_SHIP"; sideId: string; classId: ShipClassId; facing: ShipFacing }
   | { type: "EDIT_ROUTE"; armyId: string }
   | { type: "OPEN_MAP_BRUSH"; settings: MapBrushUiSettings };
 
@@ -92,6 +118,7 @@ export interface ExtensionServices {
 
 export interface ExtensionViewModel extends RawExtensionSnapshot {
   armies: ArmyView[];
+  ships: ShipView[];
   counters: { total: number; moving: number; inBattle: number };
   send(command: UiCommand): Promise<unknown>;
   runDiagnostic(testId: DiagnosticTestId): Promise<unknown>;
@@ -103,9 +130,13 @@ export function useExtensionState(services: ExtensionServices): ExtensionViewMod
     const armies = snapshot.role === "GM"
       ? [...snapshot.armies]
       : snapshot.armies.filter((army) => snapshot.memberSideIds.has(army.sideId));
+    const ships = snapshot.role === "GM"
+      ? [...(snapshot.ships ?? [])]
+      : (snapshot.ships ?? []).filter((ship) => snapshot.memberSideIds.has(ship.sideId));
     return {
       ...snapshot,
       armies,
+      ships,
       counters: {
         total: armies.length,
         moving: armies.filter((army) => army.status === "MOVING").length,
