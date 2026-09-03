@@ -130,6 +130,22 @@ describe("ShipCard HP management", () => {
   });
 });
 
+describe("ShipCard strategic route controls", () => {
+  it("disables route planning for a destroyed ship", () => {
+    render(
+      <ShipCard
+        ship={{ ...battleship, hp: 0 }}
+        sideColor="#f00"
+        isGM={false}
+        canPlanRoute
+        onAction={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: "Проложить переход" })).toBeDisabled();
+  });
+});
+
 describe("ShipCard naval tactical controls", () => {
   it("lets the side leader or GM maneuver the active ship and end its turn", () => {
     const onAction = vi.fn();
