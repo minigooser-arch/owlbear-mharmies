@@ -27,7 +27,8 @@ describe("notificationMessage", () => {
     ["MOVEMENT_CONSUMED_FOR_TURN", "После начала боя армия потеряла всё движение этого хода."],
     ["ROUTE_NOT_ACTIVE_TURN", "Этот маршрут назначен на другой глобальный ход."],
     ["ROUTE_REQUIRES_REPLAN", "Старый маршрут нужно спланировать заново."],
-    ["TURN_POSITION_UNAVAILABLE", "Не удалось определить стратегическую клетку армии для смены хода."]
+    ["TURN_POSITION_UNAVAILABLE", "Не удалось определить стратегическую клетку армии для смены хода."],
+    ["SHIP_DESTROYED", "Уничтоженный корабль не может выполнять это действие."]
   ])("translates %s into Russian", (code, message) => {
     expect(notificationMessage(code)).toBe(message);
   });
