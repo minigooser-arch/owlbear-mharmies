@@ -39,6 +39,8 @@ it("migrates legacy terrain to land domain without changing movement cost", () =
   const migrated = migrateSceneState(v5SceneFixture(3));
   expect(migrated.ok).toBe(true); if (!migrated.ok) return;
   const terrain = migrated.value.terrain.types.plain;
+  expect(terrain).toBeDefined();
+  if (!terrain) return;
   expect(terrain.movementDomains).toEqual(["LAND"]);
   expect(terrain.blocksNavalLos).toBe(true);
   expect(terrain.movementCostUnits).toBe(3);
