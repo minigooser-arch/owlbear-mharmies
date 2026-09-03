@@ -93,7 +93,8 @@ function fixture() {
       visible: true,
       metadata: { [METADATA_KEYS.localClone]: { sourceItemId: source.id } }
     }),
-    getGridDistance: async () => 0,
+    getGridDistance: async (from: { x: number; y: number }, to: { x: number; y: number }) =>
+      Math.hypot(to.x - from.x, to.y - from.y),
     getGridDpi: async () => 100,
     snapGridCenter: async (position: { x: number; y: number }) => ({ ...position }),
     send: async () => undefined,
