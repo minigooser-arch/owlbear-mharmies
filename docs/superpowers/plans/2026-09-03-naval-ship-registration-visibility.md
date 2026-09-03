@@ -4,7 +4,7 @@
 
 **Goal:** Make ships first-class Owlbear extension objects: GM registration on SEA/channel cells, token metadata persistence, and hidden shared source tokens reconciled into per-player local clones.
 
-**Architecture:** Reuse the existing command processor, scene `ships` registry, token metadata persistence pattern used by armies, and `LocalCloneReconciler`. Ship registration updates the scene registry; `persistCommandState` mirrors each `ShipState` into `METADATA_KEYS.ship` and hides the source item. `visibilityTick` must perform one combined local-clone reconciliation over the union of visible army IDs and visible ship IDs, because both object types share the existing `METADATA_KEYS.localClone` namespace.
+**Architecture:** Reuse the existing command processor, scene `ships` registry, token metadata persistence pattern used by armies, and `LocalCloneReconciler`. Ship registration updates the scene registry; `persistCommandState` mirrors each `ShipState` into `METADATA_KEYS.ship` and hides the source item. `visibilityTick` performs one combined local-clone reconciliation over the union of visible army IDs and visible ship IDs, because both object types share the existing `METADATA_KEYS.localClone` namespace.
 
 **Tech Stack:** TypeScript, Vitest, Owlbear Rodeo SDK adapter, GitHub Actions CI.
 
@@ -62,7 +62,7 @@
 - [x] Export/introduce ship metadata normalization/migration.
 - [x] Add ship repository methods.
 - [x] Extend command persistence with rollback-safe ship metadata writes.
-- [ ] Run full `npm run check` in CI and require GREEN.
+- [x] Run full `npm run check` in CI and require GREEN.
 
 ### Task 3: Per-player ship token clones
 
@@ -73,12 +73,12 @@
 **Interfaces:**
 - Uses existing `visibleShipIdsForPlayer` output and `LocalCloneReconciler`.
 - Ship source list is `sceneItems.filter(item => scene.ships[item.id] !== undefined)`.
-- Reconciliation must be a single call with `visibleArmyIds ∪ visibleShipIds` and army-source items + ship-source items, so one pass cannot delete clones created by the other.
+- Reconciliation is a single call with `visibleArmyIds ∪ visibleShipIds` and army-source items + ship-source items, so one pass cannot delete clones created by the other.
 
-- [ ] Extend the existing integration test so own/revealed ships create local token clones and hidden enemies do not.
-- [ ] Verify RED because only army source items are currently reconciled.
-- [ ] Reconcile the union of visible army and ship source IDs in one `LocalCloneReconciler` call.
-- [ ] Verify ship overlays and ship clones use the same visible ID set.
+- [x] Extend the existing integration test so own/revealed ships create local token clones and hidden enemies do not.
+- [x] Verify RED because only army source items were reconciled: 555 tests passed and only the clone assertion failed.
+- [x] Reconcile the union of visible army and ship source IDs in one `LocalCloneReconciler` call.
+- [x] Verify ship overlays and ship clones use the same visible ID set.
 - [ ] Run full `npm run check` and require GREEN.
 
 ### Task 4: Final verification
