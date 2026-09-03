@@ -304,6 +304,17 @@ export class CommandProcessor {
           return this.navalTacticalFailure(error);
         }
       }
+      case "SET_SHIP_DETECTION_OVERRIDE": {
+        const ship = state.scene.ships?.[command.shipId];
+        if (!ship) return "SHIP_NOT_FOUND";
+        state.scene.ships ??= {};
+        state.scene.ships[command.shipId] = {
+          ...ship,
+          detectionOverride: command.detectionOverride,
+          revision: ship.revision + 1
+        };
+        return undefined;
+      }
       case "SET_SHIP_HP": {
         const ship = state.scene.ships?.[command.shipId];
         if (!ship) return "SHIP_NOT_FOUND";

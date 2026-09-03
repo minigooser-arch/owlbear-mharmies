@@ -312,6 +312,11 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
     boundedString(value.shipId) && nonNegativeInteger(value.hp)
       ? { type: "SET_SHIP_HP", shipId: value.shipId, hp: value.hp }
       : undefined,
+  SET_SHIP_DETECTION_OVERRIDE: (value) =>
+    boundedString(value.shipId) &&
+    (value.detectionOverride === null || finiteAtLeast(value.detectionOverride, 0))
+      ? { type: "SET_SHIP_DETECTION_OVERRIDE", shipId: value.shipId, detectionOverride: value.detectionOverride as number | null }
+      : undefined,
   NAVAL_MOVE_FORWARD: (value) => boundedString(value.shipId)
     ? { type: "NAVAL_MOVE_FORWARD", shipId: value.shipId }
     : undefined,
