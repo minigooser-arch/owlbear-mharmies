@@ -111,7 +111,7 @@ export function ArmiesPage({
             <ArmyCard
               key={army.id}
               army={army}
-              sideColor={side?.color}
+              sideColor={side?.color ?? "#687F91"}
               isGM={role === "GM"}
               canEditRoute={role === "GM" || leaderSideIds.has(army.sideId)}
               canRequestDisband={role === "GM" || memberSideIds.has(army.sideId)}
