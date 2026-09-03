@@ -79,3 +79,26 @@ it("shows the effective scene default and disables reset when no override exists
   expect(screen.getByText("Общая дальность: 6 кл.")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Использовать общую дальность" })).toBeDisabled();
 });
+
+it("can pin the current shared value as an explicit ship override", () => {
+  const onAction = vi.fn();
+  render(
+    <ShipCard
+      ship={{ ...ship, detectionOverride: null, effectiveDetectionRange: 6 } as ShipView}
+      sideColor="#f00"
+      isGM
+      canPlanRoute
+      onAction={onAction}
+    />
+  );
+
+  fireEvent.click(screen.getByText("Управление"));
+  const apply = screen.getByRole("button", { name: "Установить дальность обнаружения" });
+  expect(apply).toBeEnabled();
+  fireEvent.click(apply);
+  expect(onAction).toHaveBeenCalledWith({
+    type: "SET_SHIP_DETECTION_OVERRIDE",
+    shipId: "ship",
+    detectionOverride: 6
+  });
+});
