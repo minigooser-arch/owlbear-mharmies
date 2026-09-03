@@ -144,6 +144,23 @@ describe("ShipCard strategic route controls", () => {
 
     expect(screen.getByRole("button", { name: "Проложить переход" })).toBeDisabled();
   });
+
+  it("marks a destroyed ship explicitly and hides stale tactical controls", () => {
+    render(
+      <ShipCard
+        ship={{ ...activeBattleship, hp: 0 }}
+        sideColor="#f00"
+        isGM={false}
+        canPlanRoute
+        onAction={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("Уничтожен")).toBeInTheDocument();
+    expect(screen.queryByText("Готов")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Вперёд" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Завершить ход" })).toBeNull();
+  });
 });
 
 describe("ShipCard naval tactical controls", () => {
