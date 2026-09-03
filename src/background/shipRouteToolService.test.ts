@@ -103,12 +103,18 @@ describe("ShipRouteToolService", () => {
       .rejects.toEqual(expect.objectContaining({ code: "NOT_SIDE_LEADER" }));
   });
 
-  it("rejects battle ships and ships with an already committed route", async () => {
+  it("rejects battle ships, destroyed ships, and ships with an already committed route", async () => {
     const battlePort = new MemoryPort();
     battlePort.items = [shipItem({ ...shipState, status: "IN_NAVAL_BATTLE", battleId: "battle" })];
     battlePort.scene.ships = { ship: { ...shipState, status: "IN_NAVAL_BATTLE", battleId: "battle" } };
     await expect(new ShipRouteToolService(battlePort, { send: vi.fn() }).loadSession("ship"))
       .rejects.toEqual(expect.objectContaining({ code: "SHIP_NOT_READY" }));
+
+    const destroyedPort = new MemoryPort();
+    destroyedPort.items = [shipItem({ ...shipState, hp: 0 })];
+    destroyedPort.scene.ships = { ship: { ...shipState, hp: 0 } };
+    await expect(new ShipRouteToolService(destroyedPort, { send: vi.fn() }).loadSession("ship"))
+      .rejects.toEqual(expect.objectContaining({ code: "SHIP_DESTROYED" }));
 
     const plannedPort = new MemoryPort();
     plannedPort.items = [shipItem({ ...shipState, plannedRoute: [{ x: 1, y: 0 }] })];
