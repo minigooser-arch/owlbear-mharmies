@@ -1,0 +1,30 @@
+name: Apply wiki ship detection fixture
+
+on:
+  push:
+    branches: [feature/naval-combat-v1]
+    paths:
+      - .github/workflows/apply-wiki-ship-detection-fixture.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feature/naval-combat-v1
+          fetch-depth: 0
+      - name: Apply wiki ship detection fixture
+        run: python3 scripts/apply-wiki-ship-detection-fixture.py
+      - name: Remove one-shot patch files
+        run: git rm scripts/apply-wiki-ship-detection-fixture.py .github/workflows/apply-wiki-ship-detection-fixture.yml
+      - name: Commit fixture patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/ui/wikiLightRedesign.test.tsx
+          git commit -m "test: add ship detection fields to wiki fixture"
+          git push origin HEAD:feature/naval-combat-v1
