@@ -18,7 +18,7 @@ function services(role: "GM" | "PLAYER" = "GM"): ExtensionServices {
     players: [],
     memberSideIds: new Set(["red"]),
     leaderSideIds: new Set(["red"]),
-    mapVisibleSourceIds: new Set(["army"]),
+    mapVisibleSourceIds: new Set(["army", "ship"]),
     armies: [{
       id: "army",
       name: "1-я армия",
@@ -54,8 +54,32 @@ function services(role: "GM" | "PLAYER" = "GM"): ExtensionServices {
     wars: [],
     turn: DEFAULT_TURN_STATE
   };
+  const snapshotWithShips = {
+    ...snapshot,
+    ships: [{
+      id: "ship",
+      name: "Севастополь",
+      sideId: "red",
+      sideName: "Российская империя",
+      classId: "BATTLESHIP" as const,
+      className: "Линкор",
+      status: "READY" as const,
+      hp: 30,
+      maxHp: 30,
+      temporaryHp: 0,
+      armor: 3,
+      movementMax: 2,
+      movementRemaining: 2,
+      plannedRouteCellCount: 0,
+      facing: "EAST" as const,
+      normalDice: 3,
+      normalRangeMin: 2,
+      normalRangeMax: 3,
+      embarkedArmyId: null
+    }]
+  };
   return {
-    getSnapshot: () => snapshot,
+    getSnapshot: () => snapshotWithShips,
     subscribe: () => () => undefined,
     send: async () => undefined,
     runDiagnostic: async () => undefined
@@ -87,4 +111,29 @@ it("uses a compact management disclosure on army cards", () => {
   expect(screen.getByText("1-я армия")).toBeInTheDocument();
   expect(screen.getByText("Управление", { selector: "summary" })).toBeInTheDocument();
   expect(screen.queryByText("Дополнительные действия")).not.toBeInTheDocument();
+});
+
+it("turns troops into an armies and fleet center", () => {
+  render(<App services={services()} />);
+  fireEvent.click(screen.getByRole("button", { name: "Войска" }));
+  const forcesNav = screen.getByRole("navigation", { name: "Виды войск" });
+  expect(forcesNav).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Армии" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Флот" }));
+  expect(screen.getByRole("heading", { name: "Флот" })).toBeInTheDocument();
+  expect(screen.getByText("Севастополь")).toBeInTheDocument();
+  expect(screen.getByText("Линкор")).toBeInTheDocument();
+  expect(screen.getByLabelText("Параметры корабля Севастополь")).toHaveTextContent(/30 \/ 30 HP/);
+  expect(screen.getByLabelText("Параметры корабля Севастополь")).toHaveTextContent(/Броня\s*3/);
+  expect(screen.getByLabelText("Параметры корабля Севастополь")).toHaveTextContent(/2 \/ 2 ОП/);
+});
+
+it("keeps GM ship registration separate from the fleet list", () => {
+  render(<App services={services()} />);
+  fireEvent.click(screen.getByRole("button", { name: "Войска" }));
+  fireEvent.click(screen.getByRole("button", { name: "Флот" }));
+  expect(screen.getByRole("region", { name: "Регистрация корабля" })).toBeInTheDocument();
+  expect(screen.getByLabelText("Класс нового корабля")).toBeInTheDocument();
+  expect(screen.getByLabelText("Курс нового корабля")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Сделать кораблём" })).toBeInTheDocument();
 });
