@@ -19,6 +19,7 @@ export type BroadsideTargetFailure =
   | "ACTION_ALREADY_USED"
   | "SHIP_UNARMED"
   | "TARGET_EXITED"
+  | "TARGET_DESTROYED"
   | "FRIENDLY_TARGET"
   | "OUTSIDE_BROADSIDE_SECTOR"
   | "OUT_OF_RANGE"
@@ -57,6 +58,9 @@ export function validateBroadsideTarget(
   }
   if (input.battle.exitedShipIds.includes(input.targetId)) {
     return { ok: false, reason: "TARGET_EXITED" };
+  }
+  if (input.target.hp <= 0) {
+    return { ok: false, reason: "TARGET_DESTROYED" };
   }
   if (input.attacker.sideId === input.target.sideId) {
     return { ok: false, reason: "FRIENDLY_TARGET" };
