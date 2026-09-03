@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_TERRAIN } from "../shared/constants";
-import type { SceneState, TerrainType } from "../shared/types";
+import type { MovementDomain, SceneState, TerrainType } from "../shared/types";
 import { blocksNavalLos, cellSupportsDomain, terrainSupportsDomain, validateOccupiedDomainChange } from "./movementDomains";
 
-function terrain(movementDomains: TerrainType["movementDomains"], los: boolean): TerrainType {
+function terrain(movementDomains: MovementDomain[], los: boolean): TerrainType {
   return { id: "test", name: "Тест", movementCostUnits: 2, enabled: true, movementDomains, blocksNavalLos: los };
 }
 
