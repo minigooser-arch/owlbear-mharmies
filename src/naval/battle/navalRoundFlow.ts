@@ -59,6 +59,11 @@ function finishTurnMutable(
     return;
   }
 
+  if (eligibleIds.length === 0) {
+    next.currentShipId = null;
+    return;
+  }
+
   next.roundNumber += 1;
   resetPerRoundState(next, ships, eligibleIds);
 }
