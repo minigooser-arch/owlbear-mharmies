@@ -79,6 +79,7 @@ export function ShipCard({
   embarkedArmyName?: string;
   onAction(command: UiCommand): void;
 }) {
+  const destroyed = ship.hp <= 0;
   const inBattle = ship.status === "IN_NAVAL_BATTLE";
   const broadside = ship.normalDice > 0
     ? `${ship.normalDice}d6 · дальность ${ship.normalRangeMin === ship.normalRangeMax ? ship.normalRangeMin : `${ship.normalRangeMin}–${ship.normalRangeMax}`}`
@@ -86,10 +87,20 @@ export function ShipCard({
   const route = ship.plannedRouteCellCount > 0
     ? `Маршрут: ${ship.plannedRouteCellCount} кл.`
     : "Маршрут не задан";
-  const routeUnavailable = ship.hp <= 0 || inBattle || ship.plannedRouteCellCount > 0 || ship.movementRemaining <= 0;
-  const canControlTactical = canPlanRoute && inBattle && ship.isCurrentNavalTurn === true;
+  const routeUnavailable = destroyed || inBattle || ship.plannedRouteCellCount > 0 || ship.movementRemaining <= 0;
+  const canControlTactical = canPlanRoute && !destroyed && inBattle && ship.isCurrentNavalTurn === true;
   const tacticalMovementDisabled =
     (ship.navalMovementRemaining ?? 0) <= 0 || ship.navalActionUsed === true;
+  const statusClass = destroyed
+    ? "status-destroyed"
+    : inBattle
+      ? "status-in_battle"
+      : "status-ready";
+  const statusText = destroyed
+    ? "Уничтожен"
+    : inBattle
+      ? "В морском бою"
+      : "Готов";
 
   return (
     <article className={`ship-card${inBattle ? " ship-card-battle" : ""}`}>
@@ -99,8 +110,8 @@ export function ShipCard({
           <h3 style={{ color: sideColor }}>{ship.name}</h3>
           <p><strong>{ship.className}</strong> · {ship.sideName}</p>
         </div>
-        <span className={`status ${inBattle ? "status-in_battle" : "status-ready"}`}>
-          {inBattle ? "В морском бою" : "Готов"}
+        <span className={`status ${statusClass}`}>
+          {statusText}
         </span>
       </div>
 
