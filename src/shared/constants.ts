@@ -9,6 +9,14 @@ export const ROUTE_FINISH_ACTION_ID = `${ROUTE_TOOL_ID}/finish`;
 export const ROUTE_UNDO_ACTION_ID = `${ROUTE_TOOL_ID}/undo`;
 export const ROUTE_CLEAR_ACTION_ID = `${ROUTE_TOOL_ID}/clear`;
 export const ROUTE_CANCEL_ACTION_ID = `${ROUTE_TOOL_ID}/cancel`;
+export const SHIP_ROUTE_TOOL_ID = `${EXTENSION_ID}/ship-route-tool`;
+export const SHIP_ROUTE_TOOL_MODE_ID = `${SHIP_ROUTE_TOOL_ID}/draw`;
+export const SHIP_ROUTE_SHIP_ID_KEY = `${SHIP_ROUTE_TOOL_ID}/ship-id`;
+export const SHIP_ROUTE_RETURN_TOOL_KEY = `${SHIP_ROUTE_TOOL_ID}/return-tool`;
+export const SHIP_ROUTE_FINISH_ACTION_ID = `${SHIP_ROUTE_TOOL_ID}/finish`;
+export const SHIP_ROUTE_UNDO_ACTION_ID = `${SHIP_ROUTE_TOOL_ID}/undo`;
+export const SHIP_ROUTE_CLEAR_ACTION_ID = `${SHIP_ROUTE_TOOL_ID}/clear`;
+export const SHIP_ROUTE_CANCEL_ACTION_ID = `${SHIP_ROUTE_TOOL_ID}/cancel`;
 export const MAP_BRUSH_TOOL_ID = `${EXTENSION_ID}/map-brush-tool`;
 export const MAP_BRUSH_TOOL_MODE_ID = `${MAP_BRUSH_TOOL_ID}/paint`;
 export const MAP_BRUSH_MODE_KEY = `${MAP_BRUSH_TOOL_ID}/mode`;
@@ -34,6 +42,8 @@ export const METADATA_KEYS = {
   localClone: `${EXTENSION_ID}/local-clone`,
   routeOverlay: `${EXTENSION_ID}/route-overlay`,
   routePreview: `${EXTENSION_ID}/route-preview`,
+  shipRouteOverlay: `${EXTENSION_ID}/ship-route-overlay`,
+  shipRoutePreview: `${EXTENSION_ID}/ship-route-preview`,
   barrierOverlay: `${EXTENSION_ID}/barrier-overlay`,
   mapOverlay: `${EXTENSION_ID}/map-overlay`,
   healthOverlay: `${EXTENSION_ID}/health-overlay`,
