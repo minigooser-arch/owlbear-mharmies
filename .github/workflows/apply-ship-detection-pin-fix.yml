@@ -1,0 +1,30 @@
+name: Apply ship detection pin fix
+
+on:
+  push:
+    branches: [feature/naval-combat-v1]
+    paths:
+      - .github/workflows/apply-ship-detection-pin-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feature/naval-combat-v1
+          fetch-depth: 0
+      - name: Apply ship detection pin fix
+        run: python3 scripts/apply-ship-detection-pin-fix.py
+      - name: Remove one-shot patch files
+        run: git rm scripts/apply-ship-detection-pin-fix.py .github/workflows/apply-ship-detection-pin-fix.yml
+      - name: Commit production patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/ui/components/ShipCard.tsx
+          git commit -m "fix: allow pinning shared ship detection value"
+          git push origin HEAD:feature/naval-combat-v1
