@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   patch:
-    if: ${{ hashFiles('scripts/apply-ship-route-runtime-wiring.py') != '' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
