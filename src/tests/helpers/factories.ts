@@ -37,7 +37,7 @@ export function roomArmy(id: string, sideId: string, name: string, x: number): R
     collisionRangeCells: 0.5,
     speedCellsPerSecond: 1,
     state: {
-      version: 4,
+      version: 3,
       registered: true,
       sideId,
       status: "READY",
@@ -55,7 +55,6 @@ export function roomArmy(id: string, sideId: string, name: string, x: number): R
       health: { hp: 50, maxHp: 50 },
       supply: { supplied: true, checkedOnTurn: 0 },
       disband: { pending: false, requestedOnTurn: null, requestedByPlayerId: null },
-      embarkedOnShipId: null,
       currentWaypointIndex: 0,
       segmentProgressCells: 0,
       ignoresMovementBarriers: false,
@@ -180,7 +179,7 @@ class SideLeaderRoom {
   private requestNumber = 0;
   private state: CommandState = {
     scene: {
-      version: 6,
+      version: 5,
       revision: 1,
       settings: { ...DEFAULT_SETTINGS },
       sides: [
@@ -213,12 +212,7 @@ class SideLeaderRoom {
         }
       },
       wars: [],
-      turn: structuredClone(DEFAULT_TURN_STATE),
-      ships: {},
-      navalBattleRequests: [],
-      activeNavalBattle: null,
-      navalBattleHistory: [],
-      navalRevealUntilTurn: {}
+      turn: structuredClone(DEFAULT_TURN_STATE)
     },
     armies: {},
     barriers: {},
@@ -244,36 +238,58 @@ class SideLeaderRoom {
   async send(client: WorkflowClient, payload: ArmyCommandPayload): Promise<void> {
     this.requestNumber += 1;
     const connectionId = `${client.playerId}-connection`;
-    const command: ArmyCommand = {
+    const command = {
       ...payload,
-      protocolVersion: 4,
       requestId: `request-${this.requestNumber}`,
       senderPlayerId: client.playerId,
       senderConnectionId: connectionId,
       expectedRevision: this.state.scene.revision
-    };
-    const result = this.processor.process({
-      role: client.role,
-      playerId: client.playerId,
-      connectionId,
-      connectedPlayerIds: this.connectedPlayerIds,
-      state: this.state
-    }, command);
-    if (result.status === "ACCEPTED") this.state = result.state;
+    } as ArmyCommand;
+    const result = this.processor.execute(
+      {
+        role: client.role,
+        playerId: client.playerId,
+        connectionId,
+        connectedPlayerIds: this.connectedPlayerIds,
+        state: this.state
+      },
+      command
+    );
+    if (result.status !== "ACCEPTED") {
+      const detail = result.status === "REJECTED" ? result.reason : result.actualRevision;
+      throw new Error(`${command.type} ${result.status}: ${detail}`);
+    }
+    this.state = result.state;
   }
 
-  async routeIds(client: WorkflowClient, port: RouteOverlayPort): Promise<string[]> {
-    const service = new RouteOverlayService(port);
-    await service.sync(
-      Object.entries(this.state.armies).map(([id, army]) => ({ id, army })),
-      this.state.scene.sides,
-      client.role,
-      client.playerId
+  async routeIds(client: WorkflowClient, port: MemoryRouteOverlayPort): Promise<string[]> {
+    const memberSideIds = this.state.scene.sides
+      .filter((side) => side.playerIds.includes(client.playerId))
+      .map((side) => side.id);
+    const leaderSideIds = this.state.scene.sides
+      .filter((side) => side.leaderPlayerIds.includes(client.playerId))
+      .map((side) => side.id);
+    const sideColors = new Map(this.state.scene.sides.map((side) => [side.id, side.color]));
+
+    await new RouteOverlayService(port).reconcile(
+      Object.entries(this.state.armies).map(([armyId, army]) => ({
+        armyId,
+        sideId: army.sideId,
+        status: army.status,
+        color: sideColors.get(army.sideId) ?? "#000",
+        start: { ...(this.state.items[armyId]?.position ?? { x: 0, y: 0 }) },
+        waypoints: army.route.map((point) => ({ ...point }))
+      })),
+      {
+        isGM: client.role === "GM",
+        memberSideIds,
+        leaderSideIds
+      }
     );
-    return (port as MemoryRouteOverlayPort).routeIds();
+    return port.routeIds();
   }
 }
 
-export function createSideLeaderRoom(): SideLeaderRoom {
+export function fourClientRoom(): SideLeaderRoom {
   return new SideLeaderRoom();
 }
