@@ -35,5 +35,6 @@ describe("ship lifecycle", () => {
     expect(result.scene.activeNavalBattle?.participantShipIds).toEqual([]);
     expect(result.scene.activeNavalBattle?.initiative).toEqual([]);
     expect(result.scene.activeNavalBattle?.currentShipId).toBeNull();
+    expect(result.scene.activeNavalBattle?.roundNumber).toBe(1);
   });
 });
