@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createRegisteredShip } from "../naval/ships/shipLifecycle";
 import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE } from "../shared/constants";
 import { authorizeArmyCommand, type AuthorizationContext } from "../shared/permissions";
-import { COMMAND_PROTOCOL_VERSION, type ArmyCommand, type SceneState, type TerrainType } from "../shared/types";
+import { COMMAND_PROTOCOL_VERSION, type ArmyCommand, type SceneState, type ShipState, type TerrainType } from "../shared/types";
 import { CommandProcessor, type CommandContext, type CommandState } from "./commandProcessor";
 import { validateArmyCommand } from "./commandValidation";
 
@@ -55,6 +55,12 @@ function scene(): SceneState {
     navalBattleHistory: [],
     navalRevealUntilTurn: {}
   };
+}
+
+function requireShip(state: CommandState, shipId: string): ShipState {
+  const ship = state.scene.ships?.[shipId];
+  if (!ship) throw new Error(`Missing ship fixture ${shipId}`);
+  return ship;
 }
 
 function shipRouteCommand(shipId = "redShip", cells = [{ x: 1, y: 0 }, { x: 2, y: 0 }], sender = "leader"): ArmyCommand {
@@ -177,14 +183,20 @@ describe("SET_SHIP_ROUTE processing", () => {
     });
 
     const battleState = commandState();
-    battleState.scene.ships!.redShip = { ...battleState.scene.ships!.redShip!, status: "IN_NAVAL_BATTLE", battleId: "battle" };
+    battleState.scene.ships = {
+      ...battleState.scene.ships,
+      redShip: { ...requireShip(battleState, "redShip"), status: "IN_NAVAL_BATTLE", battleId: "battle" }
+    };
     expect(processor.execute(processorContext("leader", "PLAYER", battleState), shipRouteCommand())).toEqual({
       status: "REJECTED",
       reason: "SHIP_NOT_READY"
     });
 
     const plannedState = commandState();
-    plannedState.scene.ships!.redShip = { ...plannedState.scene.ships!.redShip!, plannedRoute: [{ x: 1, y: 0 }] };
+    plannedState.scene.ships = {
+      ...plannedState.scene.ships,
+      redShip: { ...requireShip(plannedState, "redShip"), plannedRoute: [{ x: 1, y: 0 }] }
+    };
     expect(processor.execute(processorContext("leader", "PLAYER", plannedState), shipRouteCommand("redShip", [{ x: 1, y: 0 }]))).toEqual({
       status: "REJECTED",
       reason: "SHIP_ROUTE_ALREADY_PLANNED"
