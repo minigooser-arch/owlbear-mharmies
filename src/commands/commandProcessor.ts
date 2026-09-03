@@ -385,7 +385,10 @@ export class CommandProcessor {
         }
         state.scene.sides = state.scene.sides.filter((side) => side.id !== command.sideId);
         if (state.scene.navalRevealUntilTurn) {
-          delete state.scene.navalRevealUntilTurn[command.sideId];
+          state.scene.navalRevealUntilTurn = Object.fromEntries(
+            Object.entries(state.scene.navalRevealUntilTurn)
+              .filter(([sideId]) => sideId !== command.sideId)
+          );
         }
         for (const stateEntity of state.scene.states) {
           if (stateEntity.rulingFactionId === command.sideId) stateEntity.rulingFactionId = null;
