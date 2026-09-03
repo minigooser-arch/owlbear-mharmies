@@ -23,6 +23,7 @@ import { HealthOverlayService } from "../health/healthOverlayService";
 import { NavalShipOverlayService } from "../naval/ships/navalShipOverlayService";
 import { ShipRouteOverlayService } from "../naval/ships/shipRouteOverlayService";
 import { SHIP_CLASSES } from "../naval/ships/shipClasses";
+import { rotationForFacing } from "../naval/ships/shipRotation";
 import { visibleShipIdsForPlayer } from "../naval/detection/navalVisibility";
 import { getDueTurnBoundary } from "../turns/turnSchedule";
 import { completeTurn } from "../turns/turnService";
@@ -954,14 +955,22 @@ export class ProductionEngine {
           shipId,
           METADATA_KEYS.ship,
           state,
-          { visible: state === undefined, ...(nextPosition ? { position: nextPosition } : {}) },
+          {
+            visible: state === undefined,
+            ...(nextPosition ? { position: nextPosition } : {}),
+            ...(state ? { rotation: rotationForFacing(state.facing) } : {})
+          },
           previousState?.revision ?? null
         );
         applied.push({
           itemId: shipId,
           key: METADATA_KEYS.ship,
           previousValue: previousState,
-          rollbackUpdate: { visible: item.visible ?? true, ...(previousPosition ? { position: previousPosition } : {}) },
+          rollbackUpdate: {
+            visible: item.visible ?? true,
+            ...(previousPosition ? { position: previousPosition } : {}),
+            ...(item.rotation !== undefined ? { rotation: item.rotation } : {})
+          },
           expectedRevision: state?.revision ?? null
         });
       }
