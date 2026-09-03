@@ -14,7 +14,7 @@ type GmTab = "OVERVIEW" | "ARMIES" | "MAP" | "BATTLES" | "MANAGEMENT";
 type Tab = PlayerTab | GmTab;
 const LABELS: Record<Tab, string> = {
   OVERVIEW: "Обзор",
-  ARMIES: "Армии",
+  ARMIES: "Войска",
   TURN: "Ход",
   MAP: "Карта",
   BATTLES: "Бои",
@@ -41,11 +41,27 @@ export function App({ services }: { services: ExtensionServices }) {
     if (["DELETE_SIDE", "STOP_ALL", "RELEASE_BATTLE_GROUP", "COMPLETE_TURN_NOW", "REQUEST_ARMY_DISBAND"].includes(command.type) || (command.type === "SET_ARMY_HP" && command.hp === 0)) setDangerous(command);
     else void state.send(command);
   };
+
   return (
-    <main className="app-shell">
-      <header className="topbar"><img className="brand-mark" src={`${import.meta.env.BASE_URL}icon-1.2.png`} alt="Летопись: Армии" /><div><p>Летопись</p><h1>Армии</h1></div><span className="role-badge">{isGM ? "Ведущий" : "Игрок"}</span></header>
-      <nav className="tabs tabs-primary" aria-label="Разделы">{tabs.map((item) => <button type="button" key={item} className={tab === item ? "active" : ""} onClick={() => selectTab(item)}>{LABELS[item]}</button>)}</nav>
-      <div className="content">
+    <main className="app-shell" data-theme="letopis-wiki-light">
+      <header className="topbar wiki-topbar">
+        <div className="brand-cluster">
+          <img className="brand-mark" src={`${import.meta.env.BASE_URL}icon-1.2.png`} alt="Летопись: Военная панель" />
+          <div className="brand-copy">
+            <p className="brand-kicker">Летопись</p>
+            <h1>Военная панель</h1>
+          </div>
+        </div>
+        <span className="role-badge">{isGM ? "Ведущий" : "Игрок"}</span>
+      </header>
+      <nav className="tabs tabs-primary wiki-nav" aria-label="Разделы Летописи">
+        {tabs.map((item) => (
+          <button type="button" key={item} className={tab === item ? "active" : ""} onClick={() => selectTab(item)}>
+            {LABELS[item]}
+          </button>
+        ))}
+      </nav>
+      <div className="content wiki-content">
         {tab === "OVERVIEW" && isGM && <OverviewPage armies={state.armies} wars={state.wars} turn={state.turn} onAction={send} />}
         {tab === "ARMIES" && <>
           <ArmiesPage armies={state.armies} sides={state.sides} role={state.role} playerId={state.playerId} leaderSideIds={state.leaderSideIds} memberSideIds={state.memberSideIds} onAction={send} />
