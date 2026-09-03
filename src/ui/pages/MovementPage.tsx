@@ -5,10 +5,10 @@ import { formatMovementUnits, movementDenialMessage } from "../presentation/move
 
 export function MovementPage({ armies, turn, isGM, leaderSideIds, onAction }: { armies: readonly ArmyView[]; turn: TurnState; isGM: boolean; leaderSideIds: ReadonlySet<string>; onAction(command: UiCommand): void }) {
   return (
-    <section><div className="section-heading"><div><p className="eyebrow">Подготовка</p><h2>Текущий ход</h2></div></div>
+    <section aria-labelledby="turn-page-title">
+      <div className="section-heading wiki-page-heading"><div><p className="eyebrow">Подготовка</p><h2 id="turn-page-title">Текущий ход</h2><p className="page-description">Проверьте маршруты соединений и подготовьте войска к следующей смене хода.</p></div></div>
       <TurnStatusCard turn={turn} role={isGM ? "GM" : "PLAYER"} onAction={onAction} />
       {isGM && <div className="command-grid"><button onClick={() => onAction({ type: "PAUSE_ALL" })}>Пауза всех</button><button onClick={() => onAction({ type: "STOP_ALL" })}>Остановить все</button></div>}
-      <p className="muted">Проверьте, что для всех нужных армий заявлены маршруты на следующий ход.</p>
       <div className="movement-list">
         {armies.map((army) => {
           const reason = movementDenialMessage(army.routeInvalidReason);
@@ -21,6 +21,7 @@ export function MovementPage({ armies, turn, isGM, leaderSideIds, onAction }: { 
             {canPlan && <button type="button" onClick={() => onAction({ type: "EDIT_ROUTE", armyId: army.id })}>{army.routeCellCount > 0 ? "Изменить маршрут" : "Проложить маршрут"}</button>}
           </article>;
         })}
+        {armies.length === 0 && <p className="empty empty-panel">Нет доступных армий для планирования.</p>}
       </div>
     </section>
   );
