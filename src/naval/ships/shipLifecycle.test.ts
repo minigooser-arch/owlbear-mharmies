@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE } from "../../shared/constants";
-import type { SceneState } from "../../shared/types";
+import type { NavalSceneState } from "../../shared/types";
 import { createRegisteredShip, destroyShip } from "./shipLifecycle";
 
-function scene(): SceneState {
+function scene(): NavalSceneState {
   const ship = createRegisteredShip("red", "CRUISER", "EAST");
   return {
     version: 6, revision: 1, settings: DEFAULT_SETTINGS,
