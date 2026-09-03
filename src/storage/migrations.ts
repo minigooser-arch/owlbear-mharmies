@@ -22,12 +22,29 @@ function versionOf(raw: unknown): number | undefined {
   return isRecord(raw) && typeof raw.version === "number" ? raw.version : undefined;
 }
 
+function migrateLegacyTerrainToNavalSafe(value: unknown): unknown {
+  if (!isRecord(value) || !isRecord(value.types)) return structuredClone(DEFAULT_TERRAIN);
+  const types = Object.fromEntries(
+    Object.entries(value.types).map(([id, rawType]) => [
+      id,
+      isRecord(rawType)
+        ? {
+            ...rawType,
+            movementDomains: Array.isArray(rawType.movementDomains) ? rawType.movementDomains : ["LAND"],
+            blocksNavalLos: typeof rawType.blocksNavalLos === "boolean" ? rawType.blocksNavalLos : true
+          }
+        : rawType
+    ])
+  );
+  return { ...value, types };
+}
+
 export function migrateSceneState(raw: unknown): ValidationResult<SceneState> {
   if (isRecord(raw) && Object.hasOwn(raw, "version") && typeof raw.version !== "number") {
     return { ok: false, issue: { code: "INVALID_VALUE", path: "version" } };
   }
   const version = versionOf(raw);
-  if (version !== undefined && version > 5) {
+  if (version !== undefined && version > 6) {
     return { ok: false, issue: { code: "FUTURE_VERSION", version } };
   }
   if (!isRecord(raw)) return normalizeSceneState(raw);
@@ -84,12 +101,26 @@ export function migrateSceneState(raw: unknown): ValidationResult<SceneState> {
       wars
     };
   }
+  if (migrated.version === 5) {
+    const turn = isRecord(migrated.turn) ? migrated.turn : DEFAULT_TURN_STATE;
+    migrated = {
+      ...migrated,
+      version: 6,
+      terrain: migrateLegacyTerrainToNavalSafe(migrated.terrain),
+      turn: { ...turn, phase: "MOVEMENT" },
+      ships: {},
+      navalBattleRequests: [],
+      activeNavalBattle: null,
+      navalBattleHistory: [],
+      navalRevealUntilTurn: {}
+    };
+  }
   return normalizeSceneState(migrated);
 }
 
 export function migrateArmyState(raw: unknown): ValidationResult<ArmyState> {
   const version = versionOf(raw);
-  if (version !== undefined && version > 3) {
+  if (version !== undefined && version > 4) {
     return { ok: false, issue: { code: "FUTURE_VERSION", version } };
   }
   let migrated = raw;
@@ -138,6 +169,9 @@ export function migrateArmyState(raw: unknown): ValidationResult<ArmyState> {
         requiresReplan: legacyRoute.length > 0 || plannedCells.length > 0
       }
     };
+  }
+  if (isRecord(migrated) && migrated.version === 3) {
+    migrated = { ...migrated, version: 4, embarkedOnShipId: null };
   }
   return normalizeArmyState(migrated);
 }
