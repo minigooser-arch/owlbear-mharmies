@@ -95,6 +95,21 @@ describe("naval broadside targeting", () => {
     })).toEqual({ ok: false, reason: "SHIP_UNARMED" });
   });
 
+  it("rejects destroyed targets before sector, range, or LOS checks", () => {
+    expect(validateBroadsideTarget({
+      battle: battle(),
+      attackerId: "attacker",
+      targetId: "target",
+      attacker: ship("red"),
+      target: { ...ship("blue"), hp: 0 },
+      attackerCell,
+      targetCell: { x: 99, y: 99 },
+      sectorResolver: exactSector([]),
+      distanceCells: () => 99,
+      hasLineOfSight: () => false
+    })).toEqual({ ok: false, reason: "TARGET_DESTROYED" });
+  });
+
   it("rejects targets outside the exact broadside sector mask", () => {
     expect(validateBroadsideTarget({
       battle: battle(),
