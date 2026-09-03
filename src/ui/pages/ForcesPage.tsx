@@ -48,7 +48,14 @@ export function ForcesPage({
           onAction={onAction}
         />
       ) : (
-        <FleetPage ships={ships} armies={armies} sides={sides} role={role} onAction={onAction} />
+        <FleetPage
+          ships={ships}
+          armies={armies}
+          sides={sides}
+          role={role}
+          leaderSideIds={leaderSideIds}
+          onAction={onAction}
+        />
       )}
     </section>
   );
