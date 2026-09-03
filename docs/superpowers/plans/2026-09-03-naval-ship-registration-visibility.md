@@ -40,7 +40,7 @@
 - [x] Add command payload types and parsers.
 - [x] Add `METADATA_KEYS.ship`.
 - [x] Implement processor registration/unregistration using existing naval lifecycle functions.
-- [ ] Run full `npm run check` in CI and require GREEN.
+- [x] Run full `npm run check` in CI and require GREEN.
 
 ### Task 2: Ship token metadata persistence
 
@@ -49,20 +49,20 @@
 - Modify: `src/storage/migrations.ts`
 - Modify: `src/storage/metadataRepository.ts`
 - Modify: `src/background/application.ts`
-- Test: `src/storage/metadataRepository.test.ts`
-- Test: `src/background/application.test.ts`
+- Test: `src/storage/shipMetadataRepository.test.ts`
+- Test: `src/background/shipPersistenceIntegration.test.ts`
 
 **Interfaces:**
 - Produces `ShipRecord`, `readShips`, `writeShip`, `clearShip`, and a token metadata validator for `ShipState`.
 - `persistCommandState` mirrors `next.scene.ships` to `METADATA_KEYS.ship` and writes `visible: state === undefined` exactly like army persistence.
 
-- [ ] Write RED repository tests proving valid ship metadata is read and clear restores source visibility.
-- [ ] Write RED application persistence test proving registration writes ship metadata and hides the source item; unregister clears metadata and restores visibility.
-- [ ] Run CI and confirm RED.
-- [ ] Export/introduce ship metadata normalization/migration.
-- [ ] Add ship repository methods.
-- [ ] Extend command persistence with rollback-safe ship metadata writes.
-- [ ] Run full `npm run check` and require GREEN.
+- [x] Write RED repository tests proving valid ship metadata is read and clear restores source visibility.
+- [x] Write RED application persistence test proving registration writes ship metadata and hides the source item; unregister clears metadata and restores visibility.
+- [x] Run CI and confirm RED.
+- [x] Export/introduce ship metadata normalization/migration.
+- [x] Add ship repository methods.
+- [x] Extend command persistence with rollback-safe ship metadata writes.
+- [ ] Run full `npm run check` in CI and require GREEN.
 
 ### Task 3: Per-player ship token clones
 
