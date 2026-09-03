@@ -86,7 +86,7 @@ export function ShipCard({
   const route = ship.plannedRouteCellCount > 0
     ? `Маршрут: ${ship.plannedRouteCellCount} кл.`
     : "Маршрут не задан";
-  const routeUnavailable = inBattle || ship.plannedRouteCellCount > 0 || ship.movementRemaining <= 0;
+  const routeUnavailable = ship.hp <= 0 || inBattle || ship.plannedRouteCellCount > 0 || ship.movementRemaining <= 0;
   const canControlTactical = canPlanRoute && inBattle && ship.isCurrentNavalTurn === true;
   const tacticalMovementDisabled =
     (ship.navalMovementRemaining ?? 0) <= 0 || ship.navalActionUsed === true;
