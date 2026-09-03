@@ -5,5 +5,10 @@
 - Accept finite non-negative numeric overrides, matching army detection override validation.
 - Update only the selected ship's `detectionOverride` and ship revision; the command transaction increments scene revision once.
 - Keep faction leaders unable to change this administrative value.
+- Expose both the configured override and effective detection range in the role-safe ship snapshot.
+- Show the editor only inside the GM ship management section, with exact numeric input and an explicit reset to the shared range.
 
-Regression coverage: `src/commands/shipDetectionOverrideCommands.test.ts`.
+Regression coverage:
+- `src/commands/shipDetectionOverrideCommands.test.ts`
+- `src/owlbear/shipDetectionSnapshot.test.ts`
+- `src/ui/components/ShipDetectionEditor.test.tsx`
