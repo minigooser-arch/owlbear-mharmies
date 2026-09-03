@@ -21,6 +21,7 @@ import type {
   GridCellCoord,
   Vector2
 } from "../shared/types";
+import { applyShipStrategicRouteCommand } from "./shipStrategicRouteCommand";
 
 export interface CommandState {
   scene: SceneState;
@@ -141,6 +142,7 @@ export class CommandProcessor {
         role: context.role,
         playerId: context.playerId,
         armies: armyMap(context.state),
+        ships: new Map(Object.entries(context.state.scene.ships ?? {})),
         sides: context.state.scene.sides,
         settings: context.state.scene.settings,
         connectedPlayerIds: context.connectedPlayerIds
@@ -231,6 +233,8 @@ export class CommandProcessor {
         state.scene.revision = sceneRevision;
         return undefined;
       }
+      case "SET_SHIP_ROUTE":
+        return applyShipStrategicRouteCommand(state, command, this.cellForPosition);
       case "CREATE_SIDE":
         if (state.scene.sides.some((side) => side.id === command.side.id)) return "SIDE_EXISTS";
         state.scene.sides.push({
