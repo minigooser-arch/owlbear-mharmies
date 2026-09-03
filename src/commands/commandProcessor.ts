@@ -7,6 +7,8 @@ import { parseCellKey } from "../grid/strategicGrid";
 import { applyCellPatchBatch, readCell } from "../terrain/gridMap";
 import { validatePlannedRoute } from "../movement/movementRules";
 import { unenteredRouteCells } from "../movement/strategicProgress";
+import { createRegisteredShip, destroyShip } from "../naval/ships/shipLifecycle";
+import { cellSupportsDomain } from "../terrain/movementDomains";
 import { authorizeArmyCommand } from "../shared/permissions";
 import { METADATA_KEYS } from "../shared/constants";
 import type {
@@ -15,6 +17,7 @@ import type {
   BarrierState,
   SceneItemRecord,
   SceneState,
+  NavalSceneState,
   GridCellCoord,
   Vector2
 } from "../shared/types";
@@ -194,6 +197,38 @@ export class CommandProcessor {
         const destroyed = destroyArmy(state.armies, state.scene.battleGroups, command.armyId);
         state.armies = destroyed.armies;
         state.scene.battleGroups = destroyed.battleGroups;
+        return undefined;
+      }
+      case "REGISTER_SHIP": {
+        const item = state.items[command.itemId];
+        if (!item) return "ITEM_NOT_FOUND";
+        if (item.type !== "IMAGE") return "IMAGE_REQUIRED";
+        state.scene.ships ??= {};
+        if (
+          state.armies[command.itemId] ||
+          item.metadata[METADATA_KEYS.army] !== undefined ||
+          state.scene.ships[command.itemId] ||
+          item.metadata[METADATA_KEYS.ship] !== undefined
+        ) {
+          return "ALREADY_REGISTERED";
+        }
+        if (!state.scene.sides.some((side) => side.id === command.sideId)) return "SIDE_NOT_FOUND";
+        if (!this.cellForPosition) return "SHIP_REQUIRES_SEA";
+        const cell = this.cellForPosition(item.position);
+        if (!cellSupportsDomain(state.scene, cell, "SEA")) return "SHIP_REQUIRES_SEA";
+        state.scene.ships[command.itemId] = createRegisteredShip(
+          command.sideId,
+          command.classId,
+          command.facing
+        );
+        return undefined;
+      }
+      case "UNREGISTER_SHIP": {
+        if (!state.scene.ships?.[command.shipId]) return "SHIP_NOT_FOUND";
+        const sceneRevision = state.scene.revision;
+        const destroyed = destroyShip(state.scene as NavalSceneState, command.shipId);
+        state.scene = destroyed.scene;
+        state.scene.revision = sceneRevision;
         return undefined;
       }
       case "CREATE_SIDE":

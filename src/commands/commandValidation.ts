@@ -328,6 +328,30 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
     const armyId = armyIdOnly(value);
     return armyId ? { type: "UNREGISTER_ARMY", armyId } : undefined;
   },
+  REGISTER_SHIP: (value) =>
+    boundedString(value.itemId) &&
+    sideId(value.sideId) &&
+    (value.classId === "BATTLESHIP" ||
+      value.classId === "CRUISER" ||
+      value.classId === "IRONCLAD" ||
+      value.classId === "HOSPITAL" ||
+      value.classId === "TRANSPORT") &&
+    (value.facing === "NORTH" ||
+      value.facing === "EAST" ||
+      value.facing === "SOUTH" ||
+      value.facing === "WEST")
+      ? {
+          type: "REGISTER_SHIP",
+          itemId: value.itemId,
+          sideId: value.sideId,
+          classId: value.classId,
+          facing: value.facing
+        }
+      : undefined,
+  UNREGISTER_SHIP: (value) =>
+    boundedString(value.shipId)
+      ? { type: "UNREGISTER_SHIP", shipId: value.shipId }
+      : undefined,
   CREATE_SIDE: (value) => {
     const side = parseSide(value.side);
     return side ? { type: "CREATE_SIDE", side } : undefined;
