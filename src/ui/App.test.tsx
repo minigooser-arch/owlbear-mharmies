@@ -50,7 +50,7 @@ it("does not render a hidden enemy in cards, filters, or counters", () => {
 
 it("uses the versioned sword icon in the popover header", () => {
   render(<App services={services()} />);
-  expect(screen.getByRole("img", { name: "Летопись: Армии" })).toHaveAttribute(
+  expect(screen.getByRole("img", { name: "Летопись: Военная панель" })).toHaveAttribute(
     "src",
     "/icon-1.2.png"
   );
@@ -58,7 +58,7 @@ it("uses the versioned sword icon in the popover header", () => {
 
 it("uses a focused player navigation", () => {
   render(<App services={services()} />);
-  expect(screen.getByRole("button", { name: "Армии" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Войска" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Ход" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Бои" })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Стороны" })).not.toBeInTheDocument();
@@ -68,7 +68,7 @@ it("uses a focused player navigation", () => {
 it("uses a separate GM operations navigation", () => {
   render(<App services={services({ role: "GM", mapVisibleSourceIds: new Set() })} />);
   expect(screen.getByRole("button", { name: "Обзор" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Армии" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Войска" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Карта" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Бои" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Управление" })).toBeInTheDocument();
@@ -87,8 +87,7 @@ it("shows turn administration on the turn page only to the GM", () => {
   expect(screen.getByRole("button", { name: "Завершить ход сейчас" })).toBeInTheDocument();
 });
 
-
-it("keeps leader faction management inside the armies screen", () => {
+it("keeps leader faction management inside the troops screen", () => {
   render(<App services={services({ playerId: "leader", leaderSideIds: new Set(["A"]), sides: [{ id: "A", name: "Красные", color: "#f00", playerIds: ["leader"], leaderPlayerIds: ["leader"], stateId: null }] })} />);
   expect(screen.queryByRole("button", { name: "Стороны" })).not.toBeInTheDocument();
   expect(screen.getByText("Управление фракцией")).toBeInTheDocument();
