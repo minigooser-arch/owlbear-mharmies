@@ -23,6 +23,8 @@ import type {
   Vector2
 } from "../shared/types";
 import { applyShipStrategicRouteCommand } from "./shipStrategicRouteCommand";
+import { applyForwardTacticalStep, applyTacticalTurn, forwardCell } from "../naval/battle/navalTacticalMovement";
+import { endNavalShipTurn } from "../naval/battle/navalRoundFlow";
 
 export interface CommandState {
   scene: SceneState;
@@ -125,7 +127,8 @@ function revalidateAllRoutes(state: CommandState): void {
 export class CommandProcessor {
   constructor(
     private readonly now: () => Date = () => new Date(),
-    private readonly cellForPosition?: (position: Vector2) => GridCellCoord
+    private readonly cellForPosition?: (position: Vector2) => GridCellCoord,
+    private readonly positionForCell?: (cell: GridCellCoord) => Vector2
   ) {}
 
   execute(context: CommandContext, command: ArmyCommand): CommandExecutionResult {
@@ -157,6 +160,15 @@ export class CommandProcessor {
     if (rejected) return { status: "REJECTED", reason: rejected };
     state.scene.revision += 1;
     return { status: "ACCEPTED", state };
+  }
+
+  private navalTacticalFailure(error: unknown): string {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message === "Ship is not active") return "SHIP_NOT_ACTIVE";
+    if (message === "Outside naval battle area") return "OUTSIDE_NAVAL_BATTLE_AREA";
+    if (message === "Insufficient naval movement") return "INSUFFICIENT_NAVAL_MOVEMENT";
+    if (message === "Naval action already used") return "NAVAL_ACTION_ALREADY_USED";
+    return "INVALID_NAVAL_TACTICAL_ACTION";
   }
 
   private apply(
@@ -236,6 +248,59 @@ export class CommandProcessor {
       }
       case "SET_SHIP_ROUTE":
         return applyShipStrategicRouteCommand(state, command, this.cellForPosition);
+      case "NAVAL_MOVE_FORWARD": {
+        const battle = state.scene.activeNavalBattle;
+        if (!battle || battle.status !== "ACTIVE") return "NO_ACTIVE_NAVAL_BATTLE";
+        const ship = state.scene.ships?.[command.shipId];
+        if (!ship) return "SHIP_NOT_FOUND";
+        if (ship.status !== "IN_NAVAL_BATTLE" || ship.battleId !== battle.id) return "SHIP_NOT_IN_NAVAL_BATTLE";
+        if (battle.currentShipId !== command.shipId) return "SHIP_NOT_ACTIVE";
+        const position = state.positions?.[command.shipId] ?? state.items[command.shipId]?.position;
+        if (!position || !this.cellForPosition || !this.positionForCell) return "SHIP_POSITION_UNAVAILABLE";
+        const from = this.cellForPosition(position);
+        try {
+          const result = applyForwardTacticalStep(
+            battle, command.shipId, ship, from, forwardCell(from, ship.facing)
+          );
+          state.scene.activeNavalBattle = result.battle;
+          state.positions ??= {};
+          state.positions[command.shipId] = this.positionForCell(result.destination);
+          return undefined;
+        } catch (error) {
+          return this.navalTacticalFailure(error);
+        }
+      }
+      case "NAVAL_TURN_SHIP": {
+        const battle = state.scene.activeNavalBattle;
+        if (!battle || battle.status !== "ACTIVE") return "NO_ACTIVE_NAVAL_BATTLE";
+        const ship = state.scene.ships?.[command.shipId];
+        if (!ship) return "SHIP_NOT_FOUND";
+        if (ship.status !== "IN_NAVAL_BATTLE" || ship.battleId !== battle.id) return "SHIP_NOT_IN_NAVAL_BATTLE";
+        if (battle.currentShipId !== command.shipId) return "SHIP_NOT_ACTIVE";
+        try {
+          const result = applyTacticalTurn(battle, command.shipId, ship, command.direction);
+          state.scene.activeNavalBattle = result.battle;
+          state.scene.ships ??= {};
+          state.scene.ships[command.shipId] = result.ship;
+          return undefined;
+        } catch (error) {
+          return this.navalTacticalFailure(error);
+        }
+      }
+      case "END_NAVAL_SHIP_TURN": {
+        const battle = state.scene.activeNavalBattle;
+        if (!battle || battle.status !== "ACTIVE") return "NO_ACTIVE_NAVAL_BATTLE";
+        const ship = state.scene.ships?.[command.shipId];
+        if (!ship) return "SHIP_NOT_FOUND";
+        if (ship.status !== "IN_NAVAL_BATTLE" || ship.battleId !== battle.id) return "SHIP_NOT_IN_NAVAL_BATTLE";
+        if (battle.currentShipId !== command.shipId) return "SHIP_NOT_ACTIVE";
+        try {
+          state.scene.activeNavalBattle = endNavalShipTurn(battle, state.scene.ships ?? {}, command.shipId);
+          return undefined;
+        } catch (error) {
+          return this.navalTacticalFailure(error);
+        }
+      }
       case "SET_SHIP_HP": {
         const ship = state.scene.ships?.[command.shipId];
         if (!ship) return "SHIP_NOT_FOUND";

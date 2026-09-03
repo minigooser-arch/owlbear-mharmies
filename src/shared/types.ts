@@ -346,6 +346,9 @@ export type ArmyCommandPayload =
     | { type: "UNREGISTER_SHIP"; shipId: string }
     | { type: "SET_SHIP_ROUTE"; shipId: string; startCell: GridCellCoord; cells: GridCellCoord[] }
     | { type: "SET_SHIP_HP"; shipId: string; hp: number }
+    | { type: "NAVAL_MOVE_FORWARD"; shipId: string }
+    | { type: "NAVAL_TURN_SHIP"; shipId: string; direction: "LEFT" | "RIGHT" }
+    | { type: "END_NAVAL_SHIP_TURN"; shipId: string }
     | { type: "CREATE_SIDE"; side: Side }
     | { type: "RENAME_SIDE"; sideId: string; name: string }
     | {

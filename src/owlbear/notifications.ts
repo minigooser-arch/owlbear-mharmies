@@ -40,7 +40,15 @@ export type NotificationCode =
   | "ROUTE_NOT_ACTIVE_TURN"
   | "ROUTE_REQUIRES_REPLAN"
   | "TURN_POSITION_UNAVAILABLE"
-  | "INVALID_METADATA";
+  | "INVALID_METADATA"
+  | "NO_ACTIVE_NAVAL_BATTLE"
+  | "SHIP_NOT_IN_NAVAL_BATTLE"
+  | "SHIP_NOT_ACTIVE"
+  | "SHIP_POSITION_UNAVAILABLE"
+  | "OUTSIDE_NAVAL_BATTLE_AREA"
+  | "INSUFFICIENT_NAVAL_MOVEMENT"
+  | "NAVAL_ACTION_ALREADY_USED"
+  | "INVALID_NAVAL_TACTICAL_ACTION";
 
 const RUSSIAN_MESSAGES: Readonly<Record<NotificationCode, string>> = {
   GM_ONLY: "Это действие доступно только ведущему.",
@@ -84,7 +92,15 @@ const RUSSIAN_MESSAGES: Readonly<Record<NotificationCode, string>> = {
   ROUTE_NOT_ACTIVE_TURN: "Этот маршрут назначен на другой глобальный ход.",
   ROUTE_REQUIRES_REPLAN: "Старый маршрут нужно спланировать заново.",
   TURN_POSITION_UNAVAILABLE: "Не удалось определить стратегическую клетку армии для смены хода.",
-  INVALID_METADATA: "Данные расширения повреждены или имеют неизвестную версию."
+  INVALID_METADATA: "Данные расширения повреждены или имеют неизвестную версию.",
+  NO_ACTIVE_NAVAL_BATTLE: "Сейчас нет активного морского боя.",
+  SHIP_NOT_IN_NAVAL_BATTLE: "Этот корабль не участвует в текущем морском бою.",
+  SHIP_NOT_ACTIVE: "Сейчас ход другого корабля.",
+  SHIP_POSITION_UNAVAILABLE: "Не удалось определить клетку корабля на поле боя.",
+  OUTSIDE_NAVAL_BATTLE_AREA: "Корабль не может выйти за границы поля морского боя.",
+  INSUFFICIENT_NAVAL_MOVEMENT: "У корабля не хватает очков перемещения для этого манёвра.",
+  NAVAL_ACTION_ALREADY_USED: "После активного действия корабль больше не может двигаться в этот ход.",
+  INVALID_NAVAL_TACTICAL_ACTION: "Этот морской манёвр сейчас недоступен."
 };
 
 const UNKNOWN_FAILURE_MESSAGE = "Не удалось выполнить действие.";

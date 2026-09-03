@@ -738,15 +738,17 @@ export class ProductionEngine {
       positions: Object.fromEntries(sceneItems.map((item) => [item.id, item.position]))
     };
     let commandCellForPosition: ((position: Vector2) => import("../shared/types").GridCellCoord) | undefined;
-    if (command.type === "COMPLETE_TURN_NOW" || command.type === "REGISTER_SHIP") {
+    let commandPositionForCell: ((cell: import("../shared/types").GridCellCoord) => Vector2) | undefined;
+    if (command.type === "COMPLETE_TURN_NOW" || command.type === "REGISTER_SHIP" || command.type === "NAVAL_MOVE_FORWARD") {
       try {
         const grid = new StrategicGridAdapter({ dpi: await this.grid.getDpi(), offset: { x: 0, y: 0 } });
         commandCellForPosition = (position) => grid.sceneToCell(position);
+        commandPositionForCell = (cell) => grid.cellToSceneCenter(cell);
       } catch {
         // CommandProcessor rejects commands that require strategic cells when positions cannot be resolved.
       }
     }
-    const result = new CommandProcessor(() => this.wallClock(), commandCellForPosition).execute(
+    const result = new CommandProcessor(() => this.wallClock(), commandCellForPosition, commandPositionForCell).execute(
       {
         role: sender.role,
         playerId: sender.playerId,
@@ -939,7 +941,12 @@ export class ProductionEngine {
       for (const shipId of shipIds) {
         const previousState = previousShips[shipId];
         const state = nextShips[shipId];
-        if (JSON.stringify(previousState) === JSON.stringify(state)) continue;
+        const previousPosition = previous.positions?.[shipId];
+        const nextPosition = next.positions?.[shipId];
+        if (
+          JSON.stringify(previousState) === JSON.stringify(state) &&
+          JSON.stringify(previousPosition) === JSON.stringify(nextPosition)
+        ) continue;
         const item = itemById.get(shipId);
         if (!item) continue;
         if (!canCommit()) throw new Error("Coordinator stopped during persistence");
@@ -947,14 +954,14 @@ export class ProductionEngine {
           shipId,
           METADATA_KEYS.ship,
           state,
-          { visible: state === undefined },
+          { visible: state === undefined, ...(nextPosition ? { position: nextPosition } : {}) },
           previousState?.revision ?? null
         );
         applied.push({
           itemId: shipId,
           key: METADATA_KEYS.ship,
           previousValue: previousState,
-          rollbackUpdate: { visible: item.visible ?? true },
+          rollbackUpdate: { visible: item.visible ?? true, ...(previousPosition ? { position: previousPosition } : {}) },
           expectedRevision: state?.revision ?? null
         });
       }

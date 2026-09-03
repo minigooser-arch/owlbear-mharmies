@@ -312,6 +312,15 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
     boundedString(value.shipId) && nonNegativeInteger(value.hp)
       ? { type: "SET_SHIP_HP", shipId: value.shipId, hp: value.hp }
       : undefined,
+  NAVAL_MOVE_FORWARD: (value) => boundedString(value.shipId)
+    ? { type: "NAVAL_MOVE_FORWARD", shipId: value.shipId }
+    : undefined,
+  NAVAL_TURN_SHIP: (value) => boundedString(value.shipId) && (value.direction === "LEFT" || value.direction === "RIGHT")
+    ? { type: "NAVAL_TURN_SHIP", shipId: value.shipId, direction: value.direction }
+    : undefined,
+  END_NAVAL_SHIP_TURN: (value) => boundedString(value.shipId)
+    ? { type: "END_NAVAL_SHIP_TURN", shipId: value.shipId }
+    : undefined,
   CREATE_SIDE: (value) => {
     const side = parseSide(value.side);
     return side ? { type: "CREATE_SIDE", side } : undefined;
