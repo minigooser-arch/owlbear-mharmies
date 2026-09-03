@@ -1,0 +1,592 @@
+/* Letopis WIKI-inspired light theme. Loaded after app.css as a presentation layer. */
+:root {
+  color-scheme: light;
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #fafaf8;
+  color: #252525;
+  --wiki-bg: #fafaf8;
+  --wiki-panel: #ffffff;
+  --wiki-panel-soft: #f6f6f3;
+  --wiki-panel-hover: #f1f3f3;
+  --wiki-line: #e5e4df;
+  --wiki-line-strong: #d7d6d0;
+  --wiki-text: #252525;
+  --wiki-muted: #76746f;
+  --wiki-faint: #98958f;
+  --wiki-accent: #687f91;
+  --wiki-accent-strong: #4f687a;
+  --wiki-accent-soft: #edf2f5;
+  --wiki-success: #3f7659;
+  --wiki-success-soft: #edf6f0;
+  --wiki-warning: #9a681c;
+  --wiki-warning-soft: #fbf3e4;
+  --wiki-danger: #aa4848;
+  --wiki-danger-soft: #fbefef;
+  --wiki-shadow: 0 1px 2px rgba(36, 39, 40, .04), 0 5px 16px rgba(36, 39, 40, .035);
+  --panel: var(--wiki-panel);
+  --panel-2: var(--wiki-panel-soft);
+  --line: var(--wiki-line);
+  --gold: var(--wiki-accent);
+  --muted: var(--wiki-muted);
+}
+
+* { scrollbar-color: #d6d7d5 transparent; }
+html, body, #root { min-height: 100%; }
+body {
+  margin: 0;
+  min-width: 320px;
+  background: var(--wiki-bg);
+  color: var(--wiki-text);
+  line-height: 1.45;
+}
+button, input, select { font: inherit; }
+button { color: var(--wiki-text); }
+button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible {
+  outline: 2px solid rgba(104,127,145,.34);
+  outline-offset: 2px;
+}
+
+.app-shell[data-theme="letopis-wiki-light"] {
+  min-height: 100vh;
+  background: var(--wiki-bg);
+  color: var(--wiki-text);
+}
+
+/* Header */
+.wiki-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 15px 12px;
+  background: rgba(255,255,255,.96);
+  border-bottom: 1px solid var(--wiki-line);
+}
+.brand-cluster { display: flex; align-items: center; min-width: 0; gap: 10px; }
+.brand-mark {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  object-fit: contain;
+  image-rendering: auto;
+  filter: saturate(.72) contrast(.96);
+}
+.brand-copy { min-width: 0; }
+.topbar .brand-kicker {
+  margin: 0 0 1px;
+  color: var(--wiki-accent);
+  font-size: 10px;
+  line-height: 1.2;
+  letter-spacing: .11em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+.topbar .brand-copy h1 {
+  margin: 0;
+  color: var(--wiki-text);
+  font: 650 17px/1.2 Inter, ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -.015em;
+}
+.role-badge {
+  margin-left: auto;
+  border: 1px solid var(--wiki-line-strong);
+  color: var(--wiki-muted);
+  background: var(--wiki-panel-soft);
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+/* Main navigation */
+.wiki-nav {
+  display: flex;
+  gap: 2px;
+  padding: 5px 8px 0;
+  overflow-x: auto;
+  background: var(--wiki-panel);
+  border-bottom: 1px solid var(--wiki-line);
+  scrollbar-width: none;
+}
+.wiki-nav::-webkit-scrollbar { display: none; }
+.wiki-nav button {
+  position: relative;
+  flex: 0 0 auto;
+  min-width: 0;
+  min-height: 38px;
+  padding: 8px 10px 9px;
+  border: 0;
+  border-radius: 7px 7px 0 0;
+  background: transparent;
+  color: var(--wiki-muted);
+  font-size: 11px;
+  font-weight: 570;
+  cursor: pointer;
+}
+.wiki-nav button:hover { background: #f7f7f5; color: var(--wiki-text); }
+.wiki-nav button.active {
+  background: var(--wiki-accent-soft);
+  color: var(--wiki-accent-strong);
+  font-weight: 700;
+  box-shadow: inset 0 -2px var(--wiki-accent);
+}
+
+/* Page rhythm */
+.wiki-content { padding: 17px 14px 24px; overflow: auto; }
+.wiki-page, .wiki-content > section { max-width: 720px; margin: 0 auto; }
+.section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.section-heading h2 {
+  margin: 2px 0 0;
+  color: var(--wiki-text);
+  font: 680 22px/1.18 Inter, ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -.025em;
+}
+.eyebrow {
+  margin: 0;
+  color: var(--wiki-accent);
+  font-size: 9px;
+  line-height: 1.4;
+  font-weight: 750;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+}
+.page-description {
+  max-width: 480px;
+  margin: 6px 0 0;
+  color: var(--wiki-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.count-pill {
+  min-width: 29px;
+  height: 29px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--wiki-line);
+  border-radius: 9px;
+  background: var(--wiki-panel);
+  color: var(--wiki-accent-strong);
+  font-size: 11px;
+  font-weight: 750;
+  box-shadow: 0 1px 2px rgba(0,0,0,.02);
+}
+.muted, .empty { color: var(--wiki-muted); }
+.empty-panel {
+  margin: 0;
+  padding: 20px 14px;
+  border: 1px dashed var(--wiki-line-strong);
+  border-radius: 10px;
+  background: rgba(255,255,255,.55);
+  text-align: center;
+  font-size: 11px;
+}
+
+/* Inputs and buttons */
+input, select,
+.filters input, .filters select, .form-grid input,
+.side-create-form input, .relation-row select,
+.map-editor-card .form-grid select, .war-create-card input,
+.war-name-field input, .terrain-create input, .terrain-row input,
+.battle-management select {
+  min-width: 0;
+  border: 1px solid var(--wiki-line-strong);
+  border-radius: 8px;
+  padding: 8px 9px;
+  background: var(--wiki-panel);
+  color: var(--wiki-text);
+  box-shadow: 0 1px 1px rgba(0,0,0,.015);
+}
+input::placeholder { color: #aaa7a1; }
+input:hover, select:hover { border-color: #c9cac7; }
+
+.button, .card-actions button, .command-grid button,
+.battle-management button, .battle-assignment-row button,
+.brush-size button, .movement-row > button {
+  border: 1px solid var(--wiki-line-strong);
+  border-radius: 8px;
+  background: var(--wiki-panel);
+  color: var(--wiki-text);
+  padding: 7px 10px;
+  cursor: pointer;
+  box-shadow: 0 1px 1px rgba(0,0,0,.015);
+  transition: background .12s ease, border-color .12s ease, color .12s ease;
+}
+.button:hover, .card-actions button:hover, .command-grid button:hover,
+.battle-management button:hover, .battle-assignment-row button:hover,
+.brush-size button:hover, .movement-row > button:hover {
+  border-color: #c9cbc8;
+  background: var(--wiki-panel-hover);
+}
+.button.primary {
+  border-color: var(--wiki-accent);
+  background: var(--wiki-accent);
+  color: #fff;
+  font-weight: 700;
+  box-shadow: 0 1px 2px rgba(58,77,91,.12);
+}
+.button.primary:hover { border-color: var(--wiki-accent-strong); background: var(--wiki-accent-strong); }
+.button.ghost { background: transparent; color: var(--wiki-muted); }
+.button.danger {
+  border-color: #e5c5c5;
+  background: var(--wiki-danger-soft);
+  color: var(--wiki-danger);
+}
+button:disabled { opacity: .48; cursor: not-allowed; }
+.wide { width: 100%; min-height: 39px; }
+
+/* Army discovery toolbar */
+.army-toolbar {
+  margin-bottom: 12px;
+  padding: 10px;
+  border: 1px solid var(--wiki-line);
+  border-radius: 11px;
+  background: var(--wiki-panel-soft);
+}
+.army-toolbar .filters {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 130px;
+  gap: 7px;
+  margin: 0 0 8px;
+}
+.filter-chips {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  scrollbar-width: none;
+}
+.filter-chips::-webkit-scrollbar { display: none; }
+.filter-chips button {
+  min-height: 30px;
+  padding: 6px 9px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--wiki-muted);
+  font-size: 10px;
+  cursor: pointer;
+}
+.filter-chips button:hover { background: rgba(255,255,255,.8); }
+.filter-chips button.active {
+  border-color: #d6e0e6;
+  background: var(--wiki-accent-soft);
+  color: var(--wiki-accent-strong);
+  font-weight: 700;
+}
+
+/* Registration callout */
+.registration-card {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) auto;
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 14px;
+  padding: 12px;
+  border: 1px solid #dce4e8;
+  border-radius: 11px;
+  background: linear-gradient(135deg, #f6f9fa, #edf2f5);
+}
+.registration-copy { display: grid; gap: 2px; min-width: 0; }
+.registration-kicker {
+  color: var(--wiki-accent);
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.registration-copy strong { font-size: 12px; color: var(--wiki-text); }
+.registration-copy small { max-width: 390px; color: var(--wiki-muted); font-size: 10px; line-height: 1.4; }
+.registration-actions { display: grid; grid-template-columns: minmax(110px,1fr) auto; gap: 7px; align-items: center; }
+
+/* Cards */
+.card-list { display: grid; gap: 9px; }
+.army-card, .settings-card, .relation-row, .side-card, .war-card,
+.overview-panel, .turn-card, .terrain-row, .movement-row {
+  border: 1px solid var(--wiki-line);
+  background: var(--wiki-panel);
+  color: var(--wiki-text);
+  box-shadow: var(--wiki-shadow);
+}
+.army-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: 11px;
+  padding: 12px 12px 11px 14px;
+}
+.army-side-mark {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  opacity: .85;
+}
+.army-card-warning { border-color: #ead9b7; background: #fffdf8; }
+.army-card-heading { display: flex; justify-content: space-between; gap: 10px; }
+.army-identity h3 { margin: 0; color: var(--wiki-text); font-size: 14px; line-height: 1.25; }
+.army-identity p { margin: 3px 0 0; color: var(--wiki-muted); font-size: 10px; }
+.status-stack { display: grid; justify-items: end; gap: 4px; }
+.status {
+  padding: 3px 6px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: #f1f1ef;
+  color: var(--wiki-muted);
+  font-size: 9px;
+  line-height: 1.25;
+  font-weight: 750;
+}
+.status-ready { border-color: #d4e6da; background: var(--wiki-success-soft); color: var(--wiki-success); }
+.status-moving { border-color: #d6e4ec; background: #eef6fa; color: #4b7088; }
+.status-paused { border-color: #e1ded6; background: #f6f4ef; color: #786f60; }
+.status-in_battle { border-color: #e9caca; background: var(--wiki-danger-soft); color: var(--wiki-danger); }
+.status-war { border-color: #ead8b8; background: var(--wiki-warning-soft); color: var(--wiki-warning); }
+
+.army-stat-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+  margin: 11px 0 8px;
+}
+.army-stat {
+  display: grid;
+  gap: 2px;
+  padding: 8px 9px;
+  border: 1px solid #ecebe7;
+  border-radius: 8px;
+  background: var(--wiki-panel-soft);
+}
+.army-stat span { color: var(--wiki-muted); font-size: 9px; }
+.army-stat strong { color: var(--wiki-text); font-size: 12px; }
+.army-state-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 7px 0 9px;
+  color: var(--wiki-muted);
+  font-size: 10px;
+}
+.state-good { color: var(--wiki-success); }
+.state-warning { color: var(--wiki-warning); }
+.primary-card-action { margin-top: 9px; }
+.primary-card-action .wide { flex: 1 1 180px; }
+.route-warning {
+  margin: 7px 0;
+  padding: 7px 8px;
+  border: 1px solid #ead9b7;
+  border-radius: 7px;
+  background: var(--wiki-warning-soft);
+  color: #805a21;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.army-more, .turn-more, .leader-management, .reference-management {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--wiki-line);
+}
+.army-more summary, .turn-more > summary, .leader-management > summary,
+.reference-management > summary {
+  cursor: pointer;
+  color: var(--wiki-muted);
+  font-size: 10px;
+  font-weight: 650;
+  list-style: none;
+}
+.army-more summary::after, .turn-more > summary::after { content: "  ···"; color: var(--wiki-accent); }
+.army-more[open] summary, .turn-more[open] > summary { margin-bottom: 8px; color: var(--wiki-text); }
+.army-control-groups { display: grid; gap: 8px; }
+.hp-editor {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 9px;
+  border: 1px solid var(--wiki-line);
+  border-radius: 8px;
+  background: var(--wiki-panel-soft);
+}
+.hp-editor-heading { display: flex; justify-content: space-between; align-items: center; font-size: 10px; }
+.hp-editor-heading span { color: var(--wiki-muted); }
+.hp-quick-actions { display: grid; grid-template-columns: 38px 38px minmax(58px,1fr) 38px 38px; gap: 4px; }
+.hp-quick-actions button, .hp-quick-actions input {
+  min-width: 0;
+  min-height: 33px;
+  border: 1px solid var(--wiki-line-strong);
+  border-radius: 7px;
+  background: var(--wiki-panel);
+  color: var(--wiki-text);
+  text-align: center;
+}
+
+/* Overview / operational surfaces */
+.overview-metrics {
+  display: grid;
+  grid-template-columns: repeat(4,minmax(0,1fr));
+  gap: 7px;
+  margin-bottom: 10px;
+}
+.overview-metrics > div {
+  display: grid;
+  gap: 1px;
+  padding: 10px 7px;
+  border: 1px solid var(--wiki-line);
+  border-radius: 9px;
+  background: var(--wiki-panel);
+  text-align: center;
+  box-shadow: var(--wiki-shadow);
+}
+.overview-metrics strong { color: var(--wiki-text); font-size: 18px; }
+.overview-metrics span { color: var(--wiki-muted); font-size: 9px; }
+.overview-metrics .metric-warning { border-color: #ead9b7; background: var(--wiki-warning-soft); }
+.overview-grid { display: grid; gap: 9px; }
+.overview-panel { padding: 11px; border-radius: 10px; }
+.overview-panel-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.overview-panel-heading h3 { margin: 0; color: var(--wiki-text); font-size: 12px; }
+.overview-panel-heading span { color: var(--wiki-accent); font-size: 10px; font-weight: 750; }
+.attention-list, .war-summary-list, .overview-facts { display: grid; gap: 6px; margin-top: 9px; }
+.attention-list > div, .war-summary-list > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 8px;
+  border: 1px solid #ecebe7;
+  border-radius: 7px;
+  background: var(--wiki-panel-soft);
+  font-size: 10px;
+}
+.attention-list span, .war-summary-list span { color: var(--wiki-muted); text-align: right; }
+.overview-facts span { display: flex; justify-content: space-between; gap: 10px; color: var(--wiki-muted); font-size: 10px; }
+.overview-facts strong { color: var(--wiki-text); }
+.turn-card { gap: 10px; margin: 0 0 12px; padding: 11px; border-radius: 10px; }
+.turn-card-heading h3 { color: var(--wiki-text); }
+.turn-status { color: var(--wiki-muted); font-size: 10px; }
+.turn-deferred { border-color: #ead9b7; background: #fffdf8; }
+
+/* Management and nested navigation */
+.subtabs {
+  display: flex;
+  gap: 3px;
+  overflow-x: auto;
+  margin: 0 0 13px;
+  padding: 4px;
+  border: 1px solid var(--wiki-line);
+  border-radius: 9px;
+  background: var(--wiki-panel-soft);
+  scrollbar-width: none;
+}
+.subtabs::-webkit-scrollbar { display: none; }
+.subtabs button {
+  border: 0;
+  border-radius: 6px;
+  padding: 7px 9px;
+  background: transparent;
+  color: var(--wiki-muted);
+  font-size: 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.subtabs button.active { background: var(--wiki-panel); color: var(--wiki-accent-strong); font-weight: 700; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+.management-content > section > .section-heading:first-child { display: none; }
+
+.settings-card { padding: 11px; border-radius: 10px; }
+.side-card, .war-card { border-radius: 10px; padding: 11px; }
+.side-create-form {
+  padding: 10px;
+  border: 1px solid var(--wiki-line);
+  border-radius: 10px;
+  background: var(--wiki-panel-soft);
+}
+.color-dot { border-radius: 999px; }
+.relation-row { border-radius: 10px; padding: 10px; }
+.diagnostic-row { border-color: var(--wiki-line); background: var(--wiki-panel); color: var(--wiki-text); }
+.diagnostic-row span:last-child { color: var(--wiki-accent); }
+
+/* Battles */
+.battle-participants { display: grid; gap: 6px; margin-top: 9px; }
+.battle-participant-row, .battle-assignment-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid #ecebe7;
+  border-radius: 8px;
+  background: var(--wiki-panel-soft);
+  color: var(--wiki-text);
+  font-size: 10px;
+}
+.battle-participant-row > div { display: grid; gap: 1px; }
+.battle-participant-row span { color: var(--wiki-muted); font-size: 9px; }
+.battle-management, .battle-assignments { border-top-color: var(--wiki-line); }
+.battle-management label { color: var(--wiki-muted); }
+
+/* Map editor */
+.map-editor-card { display: block; padding: 11px; border-radius: 10px; }
+.form-grid { display: grid; gap: 10px; }
+.form-grid label, .war-create-card > label, .war-name-field, .compact-field {
+  color: var(--wiki-muted);
+  font-size: 10px;
+}
+.brush-size { display: flex; align-items: center; gap: 6px; margin-top: 10px; }
+.brush-size span { margin-right: auto; color: var(--wiki-muted); font-size: 10px; }
+.brush-size button { min-width: 46px; min-height: 34px; }
+.brush-size button.active { border-color: #d2dfe6; background: var(--wiki-accent-soft); color: var(--wiki-accent-strong); font-weight: 700; }
+.helper-text {
+  margin: 10px 0;
+  padding: 8px 9px;
+  border: 1px solid var(--wiki-line);
+  border-radius: 8px;
+  background: var(--wiki-panel-soft);
+  color: var(--wiki-muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+.reference-management > summary { color: var(--wiki-accent-strong); }
+.terrain-row { gap: 7px; padding: 9px; border-radius: 9px; }
+.checkbox-list label { border-color: var(--wiki-line); background: var(--wiki-panel-soft); color: var(--wiki-text); }
+
+/* Dialog and system states */
+.state-screen { background: var(--wiki-bg); color: var(--wiki-muted); }
+.state-screen.warning { color: var(--wiki-warning); }
+.dialog-backdrop { background: rgba(34,36,37,.32); backdrop-filter: blur(2px); }
+.dialog {
+  max-width: 360px;
+  border: 1px solid var(--wiki-line-strong);
+  border-radius: 12px;
+  padding: 16px;
+  background: var(--wiki-panel);
+  color: var(--wiki-text);
+  box-shadow: 0 20px 60px rgba(39,43,45,.18);
+}
+.dialog h2 { margin-top: 0; color: var(--wiki-text); font: 680 18px/1.2 Inter, ui-sans-serif, system-ui, sans-serif; }
+.dialog-actions { justify-content: flex-end; }
+
+@media (max-width: 520px) {
+  .registration-card { grid-template-columns: 1fr; align-items: stretch; }
+  .registration-actions { grid-template-columns: minmax(0,1fr) auto; }
+}
+
+@media (max-width: 420px) {
+  .wiki-content { padding: 14px 11px 22px; }
+  .wiki-topbar { padding: 12px 12px 10px; }
+  .brand-mark { width: 31px; height: 31px; flex-basis: 31px; }
+  .topbar .brand-copy h1 { font-size: 16px; }
+  .wiki-nav { padding-left: 6px; padding-right: 6px; }
+  .wiki-nav button { padding-left: 9px; padding-right: 9px; }
+  .army-toolbar .filters { grid-template-columns: 1fr; }
+  .registration-actions { grid-template-columns: 1fr; }
+  .overview-metrics { grid-template-columns: repeat(2,1fr); }
+  .army-state-line { flex-direction: column; gap: 3px; }
+  .hp-quick-actions { grid-template-columns: 35px 35px minmax(54px,1fr) 35px 35px; }
+  .terrain-create { grid-template-columns: 1fr 70px 44px; }
+  .terrain-create .button { grid-column: 1/-1; }
+  .movement-row { grid-template-columns: 1fr; }
+  .movement-row-stats { justify-items: start; }
+}
