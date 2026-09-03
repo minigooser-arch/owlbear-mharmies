@@ -78,7 +78,10 @@ function state(): CommandState {
     ],
     activeNavalBattle: activeBattle(),
     navalBattleHistory: [],
-    navalRevealUntilTurn: { blue: { "red-ship": 5 } }
+    navalRevealUntilTurn: {
+      red: { "blue-ship": 5 },
+      blue: { "red-ship": 5 }
+    }
   };
 
   return {
@@ -127,6 +130,7 @@ describe("DELETE_SIDE naval cleanup", () => {
     expect(result.state.scene.ships?.["blue-ship"]).toBeDefined();
     expect(result.state.scene.navalBattleRequests).toEqual([]);
     expect(result.state.scene.navalRevealUntilTurn?.blue?.["red-ship"]).toBeUndefined();
+    expect(result.state.scene.navalRevealUntilTurn?.red).toBeUndefined();
     expect(result.state.scene.activeNavalBattle).toMatchObject({
       participantShipIds: ["blue-ship"],
       currentShipId: "blue-ship"
