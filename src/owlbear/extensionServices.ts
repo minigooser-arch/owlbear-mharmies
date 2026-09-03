@@ -28,6 +28,7 @@ import {
 import {
   COMMAND_PROTOCOL_VERSION,
   type ArmyCommand,
+  type ArmyCommandPayload,
   type SceneItemRecord,
   type SceneState
 } from "../shared/types";
@@ -385,10 +386,10 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
         }
         return undefined;
       }
-      let payload: ArmyCommand["type"] extends never ? never : unknown;
+      let payload: ArmyCommandPayload;
       if (command.type === "REGISTER_SELECTED_ARMY") {
         payload = {
-          type: "REGISTER_ARMY" as const,
+          type: "REGISTER_ARMY",
           itemId: resolveRegistrationSelection({
             selection: (await OBR.player.getSelection()) ?? [],
             items: await adapter.getSceneItems()
