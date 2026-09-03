@@ -41,7 +41,7 @@ function scene(): SceneState {
         "0,0": { terrainId: "sea", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null },
         "1,0": { terrainId: "sea", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null },
         "2,0": { terrainId: "sea", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null },
-        "1,1": { terrainId: null, impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null }
+        "0,1": { terrainId: null, impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null }
       }
     },
     wars: [],
@@ -177,7 +177,7 @@ describe("SET_SHIP_ROUTE processing", () => {
   });
 
   it("rejects LAND cells, ships in battle, and replacing an already committed route", () => {
-    expect(processor.execute(processorContext(), shipRouteCommand("redShip", [{ x: 1, y: 1 }]))).toEqual({
+    expect(processor.execute(processorContext(), shipRouteCommand("redShip", [{ x: 0, y: 1 }]))).toEqual({
       status: "REJECTED",
       reason: "NON_NAVAL_TERRAIN"
     });
