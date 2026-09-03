@@ -176,7 +176,7 @@ describe("SET_SHIP_ROUTE processing", () => {
     });
   });
 
-  it("rejects LAND cells, ships in battle, and replacing an already committed route", () => {
+  it("rejects LAND cells, ships in battle, destroyed ships, and replacing an already committed route", () => {
     expect(processor.execute(processorContext(), shipRouteCommand("redShip", [{ x: 0, y: 1 }]))).toEqual({
       status: "REJECTED",
       reason: "NON_NAVAL_TERRAIN"
@@ -190,6 +190,16 @@ describe("SET_SHIP_ROUTE processing", () => {
     expect(processor.execute(processorContext("leader", "PLAYER", battleState), shipRouteCommand())).toEqual({
       status: "REJECTED",
       reason: "SHIP_NOT_READY"
+    });
+
+    const destroyedState = commandState();
+    destroyedState.scene.ships = {
+      ...destroyedState.scene.ships,
+      redShip: { ...requireShip(destroyedState, "redShip"), hp: 0 }
+    };
+    expect(processor.execute(processorContext("leader", "PLAYER", destroyedState), shipRouteCommand())).toEqual({
+      status: "REJECTED",
+      reason: "SHIP_DESTROYED"
     });
 
     const plannedState = commandState();
