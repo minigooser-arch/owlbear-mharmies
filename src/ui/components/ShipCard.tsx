@@ -87,6 +87,9 @@ export function ShipCard({
     ? `Маршрут: ${ship.plannedRouteCellCount} кл.`
     : "Маршрут не задан";
   const routeUnavailable = inBattle || ship.plannedRouteCellCount > 0 || ship.movementRemaining <= 0;
+  const canControlTactical = canPlanRoute && inBattle && ship.isCurrentNavalTurn === true;
+  const tacticalMovementDisabled =
+    (ship.navalMovementRemaining ?? 0) <= 0 || ship.navalActionUsed === true;
 
   return (
     <article className={`ship-card${inBattle ? " ship-card-battle" : ""}`}>
@@ -113,6 +116,47 @@ export function ShipCard({
         <span><strong>Переход</strong>{route}</span>
         {ship.embarkedArmyId && <span><strong>На борту</strong>{embarkedArmyName ?? "Перевозимая армия"}</span>}
       </div>
+
+      {canControlTactical && (
+        <div className="ship-tactical-panel" aria-label={`Тактическое управление ${ship.name}`}>
+          <div className="ship-tactical-status">
+            Раунд {ship.navalRoundNumber ?? "?"} · ОП {ship.navalMovementRemaining ?? 0}
+          </div>
+          <div className="card-actions ship-tactical-actions">
+            <button
+              className="button ghost"
+              type="button"
+              disabled={tacticalMovementDisabled}
+              onClick={() => onAction({ type: "NAVAL_TURN_SHIP", shipId: ship.id, direction: "LEFT" })}
+            >
+              Повернуть влево
+            </button>
+            <button
+              className="button primary"
+              type="button"
+              disabled={tacticalMovementDisabled}
+              onClick={() => onAction({ type: "NAVAL_MOVE_FORWARD", shipId: ship.id })}
+            >
+              Вперёд
+            </button>
+            <button
+              className="button ghost"
+              type="button"
+              disabled={tacticalMovementDisabled}
+              onClick={() => onAction({ type: "NAVAL_TURN_SHIP", shipId: ship.id, direction: "RIGHT" })}
+            >
+              Повернуть вправо
+            </button>
+          </div>
+          <button
+            className="button subtle wide"
+            type="button"
+            onClick={() => onAction({ type: "END_NAVAL_SHIP_TURN", shipId: ship.id })}
+          >
+            Завершить ход
+          </button>
+        </div>
+      )}
 
       {canPlanRoute && (
         <div className="card-actions ship-route-actions">
