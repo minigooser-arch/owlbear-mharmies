@@ -320,7 +320,12 @@ export class ProductionEngine {
       revealUntilTurn: scene.navalRevealUntilTurn ?? {},
       currentTurn: scene.turn.turnNumber
     });
-    await this.cloneReconciler.reconcile(visible, armies.map((record) => record.item));
+    const shipSources = sceneItems.filter((item) => (scene.ships ?? {})[item.id] !== undefined);
+    const visibleSourceIds = new Set([...visible, ...visibleShips]);
+    await this.cloneReconciler.reconcile(
+      visibleSourceIds,
+      [...armies.map((record) => record.item), ...shipSources]
+    );
     await this.reconcileOverlays(
       scene,
       armies,
