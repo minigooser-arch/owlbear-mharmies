@@ -5,9 +5,10 @@ import type {
   ItemUpdate,
   SceneItemRecord,
   SceneState,
+  ShipState,
   ValidationResult
 } from "../shared/types";
-import { migrateArmyState, migrateBarrierState, migrateSceneState } from "./migrations";
+import { migrateArmyState, migrateBarrierState, migrateSceneState, migrateShipState } from "./migrations";
 
 export interface MetadataPort {
   getSceneMetadata(): Promise<Record<string, unknown>>;
@@ -69,6 +70,11 @@ function assertRevision(actual: number, expected: number): void {
 export interface ArmyRecord {
   item: SceneItemRecord;
   state: ArmyState;
+}
+
+export interface ShipRecord {
+  item: SceneItemRecord;
+  state: ShipState;
 }
 
 export interface BarrierRecord {
@@ -145,6 +151,57 @@ export class MetadataRepository {
     }
     const metadata = Object.fromEntries(
       Object.entries(item.metadata).filter(([key]) => key !== METADATA_KEYS.army)
+    );
+    await this.port.updateSceneItem(itemId, { metadata, visible: true });
+  }
+
+  async readShips(): Promise<ShipRecord[]> {
+    const items = await this.port.getSceneItems();
+    const records: ShipRecord[] = [];
+    for (const item of items) {
+      const raw = item.metadata[METADATA_KEYS.ship];
+      if (raw === undefined) continue;
+      const result = migrateShipState(raw);
+      if (result.ok) records.push({ item, state: result.value });
+    }
+    return records;
+  }
+
+  async writeShip(itemId: string, state: ShipState, expectedRevision: number): Promise<void> {
+    const item = await this.findItem(itemId);
+    const raw = item.metadata[METADATA_KEYS.ship];
+    const actualRevision =
+      raw === undefined ? 0 : requireValid(migrateShipState(raw), METADATA_KEYS.ship).revision;
+    assertRevision(actualRevision, expectedRevision);
+    if (this.port.patchSceneItemMetadata) {
+      await this.port.patchSceneItemMetadata(
+        itemId,
+        METADATA_KEYS.ship,
+        state,
+        {},
+        raw === undefined ? null : expectedRevision
+      );
+      return;
+    }
+    await this.port.updateSceneItem(itemId, {
+      metadata: { ...item.metadata, [METADATA_KEYS.ship]: state }
+    });
+  }
+
+  async clearShip(itemId: string): Promise<void> {
+    const item = await this.findItem(itemId);
+    if (this.port.patchSceneItemMetadata) {
+      const raw = item.metadata[METADATA_KEYS.ship];
+      const expectedRevision = raw === undefined
+        ? null
+        : requireValid(migrateShipState(raw), METADATA_KEYS.ship).revision;
+      await this.port.patchSceneItemMetadata(itemId, METADATA_KEYS.ship, undefined, {
+        visible: true
+      }, expectedRevision);
+      return;
+    }
+    const metadata = Object.fromEntries(
+      Object.entries(item.metadata).filter(([key]) => key !== METADATA_KEYS.ship)
     );
     await this.port.updateSceneItem(itemId, { metadata, visible: true });
   }

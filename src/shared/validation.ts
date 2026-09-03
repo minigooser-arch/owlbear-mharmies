@@ -411,6 +411,17 @@ function normalizeShip(value: unknown): ShipState | undefined {
   };
 }
 
+export function normalizeShipState(raw: unknown): ValidationResult<ShipState> {
+  if (!isRecord(raw)) return { ok: false, issue: { code: "INVALID_VALUE", path: "ship" } };
+  if (finiteNumber(raw.version) && raw.version > 1) {
+    return { ok: false, issue: { code: "FUTURE_VERSION", version: raw.version } };
+  }
+  const ship = normalizeShip(raw);
+  return ship
+    ? { ok: true, value: ship }
+    : { ok: false, issue: { code: "INVALID_VALUE", path: "ship.required" } };
+}
+
 function normalizeShips(value: unknown): Record<string, ShipState> {
   if (!isRecord(value)) return {};
   const ships: Record<string, ShipState> = {};

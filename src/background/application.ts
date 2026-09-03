@@ -712,12 +712,12 @@ export class ProductionEngine {
       positions: Object.fromEntries(sceneItems.map((item) => [item.id, item.position]))
     };
     let commandCellForPosition: ((position: Vector2) => import("../shared/types").GridCellCoord) | undefined;
-    if (command.type === "COMPLETE_TURN_NOW") {
+    if (command.type === "COMPLETE_TURN_NOW" || command.type === "REGISTER_SHIP") {
       try {
         const grid = new StrategicGridAdapter({ dpi: await this.grid.getDpi(), offset: { x: 0, y: 0 } });
         commandCellForPosition = (position) => grid.sceneToCell(position);
       } catch {
-        // CommandProcessor will reject state-bound turn completion when positions cannot be resolved.
+        // CommandProcessor rejects commands that require strategic cells when positions cannot be resolved.
       }
     }
     const result = new CommandProcessor(() => this.wallClock(), commandCellForPosition).execute(
@@ -904,6 +904,31 @@ export class ProductionEngine {
             visible: item.visible ?? true,
             ...(previousPosition ? { position: previousPosition } : {})
           },
+          expectedRevision: state?.revision ?? null
+        });
+      }
+      const previousShips = previous.scene.ships ?? {};
+      const nextShips = next.scene.ships ?? {};
+      const shipIds = new Set([...Object.keys(previousShips), ...Object.keys(nextShips)]);
+      for (const shipId of shipIds) {
+        const previousState = previousShips[shipId];
+        const state = nextShips[shipId];
+        if (JSON.stringify(previousState) === JSON.stringify(state)) continue;
+        const item = itemById.get(shipId);
+        if (!item) continue;
+        if (!canCommit()) throw new Error("Coordinator stopped during persistence");
+        await this.port.patchSceneItemMetadata(
+          shipId,
+          METADATA_KEYS.ship,
+          state,
+          { visible: state === undefined },
+          previousState?.revision ?? null
+        );
+        applied.push({
+          itemId: shipId,
+          key: METADATA_KEYS.ship,
+          previousValue: previousState,
+          rollbackUpdate: { visible: item.visible ?? true },
           expectedRevision: state?.revision ?? null
         });
       }

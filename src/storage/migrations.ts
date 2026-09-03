@@ -2,6 +2,7 @@ import type {
   ArmyState,
   BarrierState,
   SceneState,
+  ShipState,
   ValidationResult
 } from "../shared/types";
 import { compareOrdinal } from "../shared/ordering";
@@ -9,7 +10,8 @@ import { DEFAULT_TERRAIN, DEFAULT_TURN_STATE } from "../shared/constants";
 import {
   normalizeArmyState,
   normalizeBarrierState,
-  normalizeSceneState
+  normalizeSceneState,
+  normalizeShipState
 } from "../shared/validation";
 
 type UnknownRecord = Record<string, unknown>;
@@ -174,6 +176,14 @@ export function migrateArmyState(raw: unknown): ValidationResult<ArmyState> {
     migrated = { ...migrated, version: 4, embarkedOnShipId: null };
   }
   return normalizeArmyState(migrated);
+}
+
+export function migrateShipState(raw: unknown): ValidationResult<ShipState> {
+  const version = versionOf(raw);
+  if (version !== undefined && version > 1) {
+    return { ok: false, issue: { code: "FUTURE_VERSION", version } };
+  }
+  return normalizeShipState(raw);
 }
 
 export function migrateBarrierState(raw: unknown): ValidationResult<BarrierState> {
