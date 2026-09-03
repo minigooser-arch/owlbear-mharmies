@@ -107,6 +107,7 @@ export type UiCommand =
   | { type: "REGISTER_SELECTED_ARMY"; sideId: string }
   | { type: "REGISTER_SELECTED_SHIP"; sideId: string; classId: ShipClassId; facing: ShipFacing }
   | { type: "EDIT_ROUTE"; armyId: string }
+  | { type: "EDIT_SHIP_ROUTE"; shipId: string }
   | { type: "OPEN_MAP_BRUSH"; settings: MapBrushUiSettings };
 
 export interface ExtensionServices {
