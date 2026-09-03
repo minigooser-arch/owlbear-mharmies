@@ -17,6 +17,16 @@ describe("movement domains", () => {
     expect(terrainSupportsDomain(terrain(["LAND"], true), "SEA")).toBe(false);
     expect(terrainSupportsDomain(terrain(["SEA"], false), "LAND")).toBe(false);
   });
+  it("treats legacy terrain without naval metadata as LAND and blocks naval LOS", () => {
+    const legacy: TerrainType = { id: "legacy", name: "Старая местность", movementCostUnits: 2, enabled: true };
+    expect(terrainSupportsDomain(legacy, "LAND")).toBe(true);
+    expect(terrainSupportsDomain(legacy, "SEA")).toBe(false);
+    const scene = {
+      terrain: { defaultTerrainId: "legacy", types: { legacy } },
+      gridMap: { version: 1, revision: 0, cells: {} }
+    } as Pick<SceneState, "terrain" | "gridMap">;
+    expect(blocksNavalLos(scene, { x: 0, y: 0 })).toBe(true);
+  });
   it("resolves the effective terrain for a cell", () => {
     const scene = { terrain: { ...DEFAULT_TERRAIN, types: { ...DEFAULT_TERRAIN.types, sea: terrain(["SEA"], false), canal: terrain(["LAND", "SEA"], false) } }, gridMap: { version: 1, revision: 1, cells: { "4,5": { terrainId: "sea", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null }, "6,5": { terrainId: "canal", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null } } } } as Pick<SceneState, "terrain" | "gridMap">;
     expect(cellSupportsDomain(scene, { x: 4, y: 5 }, "SEA")).toBe(true);
