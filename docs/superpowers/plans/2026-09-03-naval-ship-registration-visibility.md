@@ -4,7 +4,7 @@
 
 **Goal:** Make ships first-class Owlbear extension objects: GM registration on SEA/channel cells, token metadata persistence, and hidden shared source tokens reconciled into per-player local clones.
 
-**Architecture:** Reuse the existing command processor, scene `ships` registry, token metadata persistence pattern used by armies, and `LocalCloneReconciler`. Ship registration updates the scene registry; `persistCommandState` mirrors each `ShipState` into `METADATA_KEYS.ship` and hides the source item. `visibilityTick` reconciles a second clone stream for ship source items using `visibleShipIdsForPlayer`.
+**Architecture:** Reuse the existing command processor, scene `ships` registry, token metadata persistence pattern used by armies, and `LocalCloneReconciler`. Ship registration updates the scene registry; `persistCommandState` mirrors each `ShipState` into `METADATA_KEYS.ship` and hides the source item. `visibilityTick` must perform one combined local-clone reconciliation over the union of visible army IDs and visible ship IDs, because both object types share the existing `METADATA_KEYS.localClone` namespace.
 
 **Tech Stack:** TypeScript, Vitest, Owlbear Rodeo SDK adapter, GitHub Actions CI.
 
@@ -29,18 +29,17 @@
 - Modify: `src/shared/constants.ts`
 - Modify: `src/commands/commandValidation.ts`
 - Modify: `src/commands/commandProcessor.ts`
-- Test: `src/commands/commandValidation.test.ts`
-- Test: `src/commands/commandProcessor.test.ts`
+- Test: `src/naval/ships/shipRegistrationCommands.test.ts`
 
 **Interfaces:**
 - Produces `REGISTER_SHIP { itemId, sideId, classId, facing }` and `UNREGISTER_SHIP { shipId }`.
 - Uses `createRegisteredShip`, `destroyShip`, `cellSupportsDomain`, and the processor's existing `cellForPosition` adapter.
 
-- [ ] Write RED tests for payload parsing, GM-only permission, IMAGE/side validation, SEA/channel requirement, army/ship exclusivity, successful registration, and unregister.
-- [ ] Run CI and confirm failures are caused by missing ship commands.
-- [ ] Add command payload types and parsers.
-- [ ] Add `METADATA_KEYS.ship`.
-- [ ] Implement processor registration/unregistration using existing naval lifecycle functions.
+- [x] Write RED tests for payload parsing, GM-only permission, IMAGE/side validation, SEA/channel requirement, army/ship exclusivity, successful registration, and unregister.
+- [x] Run CI and confirm failures are caused by missing ship commands.
+- [x] Add command payload types and parsers.
+- [x] Add `METADATA_KEYS.ship`.
+- [x] Implement processor registration/unregistration using existing naval lifecycle functions.
 - [ ] Run full `npm run check` in CI and require GREEN.
 
 ### Task 2: Ship token metadata persistence
@@ -74,10 +73,11 @@
 **Interfaces:**
 - Uses existing `visibleShipIdsForPlayer` output and `LocalCloneReconciler`.
 - Ship source list is `sceneItems.filter(item => scene.ships[item.id] !== undefined)`.
+- Reconciliation must be a single call with `visibleArmyIds ∪ visibleShipIds` and army-source items + ship-source items, so one pass cannot delete clones created by the other.
 
 - [ ] Extend the existing integration test so own/revealed ships create local token clones and hidden enemies do not.
-- [ ] Verify RED because only army clones are currently reconciled.
-- [ ] Reconcile ship clones with the existing clone reconciler after army clone reconciliation.
+- [ ] Verify RED because only army source items are currently reconciled.
+- [ ] Reconcile the union of visible army and ship source IDs in one `LocalCloneReconciler` call.
 - [ ] Verify ship overlays and ship clones use the same visible ID set.
 - [ ] Run full `npm run check` and require GREEN.
 
