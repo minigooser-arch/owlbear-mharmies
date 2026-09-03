@@ -59,6 +59,10 @@ export interface ShipView {
   normalRangeMin: number;
   normalRangeMax: number;
   embarkedArmyId: string | null;
+  navalRoundNumber?: number;
+  isCurrentNavalTurn?: boolean;
+  navalMovementRemaining?: number;
+  navalActionUsed?: boolean;
 }
 
 export interface PartyPlayerView {
