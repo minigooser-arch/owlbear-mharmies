@@ -17,7 +17,11 @@ import {
   ROUTE_ARMY_ID_KEY,
   ROUTE_RETURN_TOOL_KEY,
   ROUTE_TOOL_ID,
-  ROUTE_TOOL_MODE_ID
+  ROUTE_TOOL_MODE_ID,
+  SHIP_ROUTE_RETURN_TOOL_KEY,
+  SHIP_ROUTE_SHIP_ID_KEY,
+  SHIP_ROUTE_TOOL_ID,
+  SHIP_ROUTE_TOOL_MODE_ID
 } from "../shared/constants";
 import {
   COMMAND_PROTOCOL_VERSION,
@@ -696,6 +700,23 @@ describe("extension command feedback", () => {
     expect(serviceHarness.sdk.tool.activateTool.mock.invocationCallOrder[0]).toBeLessThan(
       serviceHarness.sdk.tool.activateMode.mock.invocationCallOrder[0] ?? Infinity
     );
+  });
+
+  it("activates the ship route tool with the ship and previous tool metadata", async () => {
+    const running = await startServices();
+
+    await running.send({ type: "EDIT_SHIP_ROUTE", shipId: "ship-a" });
+
+    expect(serviceHarness.sdk.tool.setMetadata).toHaveBeenCalledWith(SHIP_ROUTE_TOOL_ID, {
+      [SHIP_ROUTE_SHIP_ID_KEY]: "ship-a",
+      [SHIP_ROUTE_RETURN_TOOL_KEY]: "select-tool"
+    });
+    expect(serviceHarness.sdk.tool.activateTool).toHaveBeenCalledWith(SHIP_ROUTE_TOOL_ID);
+    expect(serviceHarness.sdk.tool.activateMode).toHaveBeenCalledWith(
+      SHIP_ROUTE_TOOL_ID,
+      SHIP_ROUTE_TOOL_MODE_ID
+    );
+    expect(serviceHarness.adapter.send).not.toHaveBeenCalled();
   });
 
   it("clears route metadata when tool activation fails", async () => {

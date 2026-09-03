@@ -23,7 +23,11 @@ import {
   ROUTE_ARMY_ID_KEY,
   ROUTE_RETURN_TOOL_KEY,
   ROUTE_TOOL_ID,
-  ROUTE_TOOL_MODE_ID
+  ROUTE_TOOL_MODE_ID,
+  SHIP_ROUTE_RETURN_TOOL_KEY,
+  SHIP_ROUTE_SHIP_ID_KEY,
+  SHIP_ROUTE_TOOL_ID,
+  SHIP_ROUTE_TOOL_MODE_ID
 } from "../shared/constants";
 import {
   COMMAND_PROTOCOL_VERSION,
@@ -378,6 +382,28 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
             await OBR.tool.setMetadata(ROUTE_TOOL_ID, {
               [ROUTE_ARMY_ID_KEY]: null,
               [ROUTE_RETURN_TOOL_KEY]: null
+            });
+          } catch {
+            // The original activation failure is more useful to the caller.
+          }
+          throw error;
+        }
+        return undefined;
+      }
+      if (command.type === "EDIT_SHIP_ROUTE") {
+        const returnToolId = await OBR.tool.getActiveTool();
+        try {
+          await OBR.tool.setMetadata(SHIP_ROUTE_TOOL_ID, {
+            [SHIP_ROUTE_SHIP_ID_KEY]: command.shipId,
+            [SHIP_ROUTE_RETURN_TOOL_KEY]: returnToolId
+          });
+          await OBR.tool.activateTool(SHIP_ROUTE_TOOL_ID);
+          await OBR.tool.activateMode(SHIP_ROUTE_TOOL_ID, SHIP_ROUTE_TOOL_MODE_ID);
+        } catch (error) {
+          try {
+            await OBR.tool.setMetadata(SHIP_ROUTE_TOOL_ID, {
+              [SHIP_ROUTE_SHIP_ID_KEY]: null,
+              [SHIP_ROUTE_RETURN_TOOL_KEY]: null
             });
           } catch {
             // The original activation failure is more useful to the caller.

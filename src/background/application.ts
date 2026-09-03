@@ -21,6 +21,7 @@ import { annexingStateForEntry } from "../annexation/annexationRules";
 import { MapOverlayService } from "../terrain/mapOverlayService";
 import { HealthOverlayService } from "../health/healthOverlayService";
 import { NavalShipOverlayService } from "../naval/ships/navalShipOverlayService";
+import { ShipRouteOverlayService } from "../naval/ships/shipRouteOverlayService";
 import { SHIP_CLASSES } from "../naval/ships/shipClasses";
 import { visibleShipIdsForPlayer } from "../naval/detection/navalVisibility";
 import { getDueTurnBoundary } from "../turns/turnSchedule";
@@ -35,9 +36,14 @@ import {
   type RouteToolRegistration
 } from "../owlbear/routeToolIntegration";
 import {
+  registerShipRouteTool,
+  type ShipRouteToolRegistration
+} from "../owlbear/shipRouteToolIntegration";
+import {
   RouteToolService,
   snapRouteToGrid
 } from "./routeToolService";
+import { ShipRouteToolService } from "./shipRouteToolService";
 import { MapBrushToolService } from "./mapBrushToolService";
 import { registerMapBrushTool, type MapBrushToolRegistration } from "../owlbear/mapBrushTool";
 import { METADATA_KEYS } from "../shared/constants";
@@ -193,6 +199,8 @@ export function localOverlayIds(items: readonly SceneItemRecord[]): string[] {
     METADATA_KEYS.localClone,
     METADATA_KEYS.routeOverlay,
     METADATA_KEYS.routePreview,
+    METADATA_KEYS.shipRouteOverlay,
+    METADATA_KEYS.shipRoutePreview,
     METADATA_KEYS.barrierOverlay,
     METADATA_KEYS.mapOverlay,
     METADATA_KEYS.healthOverlay,
@@ -1084,6 +1092,33 @@ export class ProductionEngine {
         })),
       { isGM: role === "GM", memberSideIds, leaderSideIds }
     );
+    const plannedShips = Object.entries(scene.ships ?? {}).filter(([, state]) => state.plannedRoute.length > 0);
+    const shipRouteViewer = { isGM: role === "GM", leaderSideIds };
+    if (plannedShips.length === 0) {
+      await new ShipRouteOverlayService(overlayPort).reconcile([], shipRouteViewer);
+    } else {
+      try {
+        const routeGrid = new StrategicGridAdapter({ dpi: await this.grid.getDpi(), offset: { x: 0, y: 0 } });
+        const routeItemById = new Map(sceneItems.map((item) => [item.id, item]));
+        await new ShipRouteOverlayService(overlayPort).reconcile(
+          plannedShips.flatMap(([shipId, state]) => {
+            const item = routeItemById.get(shipId);
+            if (!item) return [];
+            return [{
+              shipId,
+              sideId: state.sideId,
+              color: sideColors.get(state.sideId) ?? "#607d8b",
+              start: item.position,
+              waypoints: state.plannedRoute.map((cell) => routeGrid.cellToSceneCenter(cell))
+            }];
+          }),
+          shipRouteViewer
+        );
+      } catch {
+        // Preserve the last valid route overlay while Owlbear grid geometry is unavailable.
+      }
+    }
+
     await new BarrierOverlayService(overlayPort).reconcile(
       barriers.map((record) => ({
         id: record.item.id,
@@ -1204,6 +1239,20 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
     routeGateway.stop();
     throw error;
   }
+  const shipRouteService = new ShipRouteToolService(toolPort, routeGateway);
+  let removeShipRouteTool: ShipRouteToolRegistration;
+  try {
+    removeShipRouteTool = await registerShipRouteTool(
+      OBR.tool,
+      shipRouteService,
+      { snapGridCenter: (position) => port.snapGridCenter(position) },
+      `${import.meta.env.BASE_URL}icon-1.2.png`
+    );
+  } catch (error) {
+    await removeRouteTool();
+    routeGateway.stop();
+    throw error;
+  }
   let removeMapBrushTool: MapBrushToolRegistration;
   try {
     removeMapBrushTool = await registerMapBrushTool(
@@ -1212,6 +1261,7 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
       `${import.meta.env.BASE_URL}icon-1.2.png`
     );
   } catch (error) {
+    await removeShipRouteTool();
     await removeRouteTool();
     routeGateway.stop();
     throw error;
@@ -1237,7 +1287,10 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
     onSceneOpen: async () => {
       lease.start();
       try {
-        await removeRouteTool.cancelSession();
+        await Promise.all([
+          removeRouteTool.cancelSession(),
+          removeShipRouteTool.cancelSession()
+        ]);
       } catch {
         // A stale preview must not disable command delivery or coordinator heartbeats.
       }
@@ -1249,7 +1302,10 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
       await sceneWork.drain();
       await engine.whenIdle();
       try {
-        await removeRouteTool.cancelSession();
+        await Promise.all([
+          removeRouteTool.cancelSession(),
+          removeShipRouteTool.cancelSession()
+        ]);
       } catch {
         // Scene teardown continues so subscriptions and overlays can still be cleaned up.
       }
@@ -1310,6 +1366,7 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
         await lease.stop();
         try {
           await removeMapBrushTool();
+          await removeShipRouteTool();
           await removeRouteTool();
         } finally {
           routeGateway.stop();
