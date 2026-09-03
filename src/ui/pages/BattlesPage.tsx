@@ -23,9 +23,9 @@ function BattleCard({ battle, armies, isGM, onAction }: BattleCardProps) {
   const participantArmies = battle.participantIds.map((armyId) => armyById.get(armyId)).filter((army): army is ArmyView => army !== undefined);
 
   return (
-    <article className="army-card">
+    <article className="army-card wiki-card battle-card">
       {isGM ? (
-        <form
+        <form className="battle-name-form"
           onSubmit={(event) => {
             event.preventDefault();
             if (canSave) {
@@ -41,7 +41,7 @@ function BattleCard({ battle, armies, isGM, onAction }: BattleCardProps) {
               onChange={(event) => setDraft(event.target.value)}
             />
           </label>
-          <button type="submit" disabled={!canSave}>Сохранить название</button>
+          <button className="button ghost" type="submit" disabled={!canSave}>Сохранить название</button>
         </form>
       ) : (
         <h3>{battle.name}</h3>
@@ -57,12 +57,12 @@ function BattleCard({ battle, armies, isGM, onAction }: BattleCardProps) {
       {isGM && (
         <div className="battle-management">
           <button
+            className="button danger subtle"
             type="button"
             onClick={() => onAction({ type: "RELEASE_BATTLE_GROUP", battleId: battle.battleId })}
           >
             Развести армии
           </button>
-
         </div>
       )}
     </article>
@@ -81,8 +81,9 @@ export function BattlesPage({
   onAction(command: UiCommand): void;
 }) {
   return (
-    <section><div className="section-heading"><div><p className="eyebrow">Контакты</p><h2>Бои</h2></div></div>
-      <div className="card-list">{battles.map((battle) => <BattleCard battle={battle} armies={armies} isGM={isGM} onAction={onAction} key={battle.battleId} />)}{battles.length === 0 && <p className="empty">Активных боёв нет.</p>}</div>
+    <section aria-labelledby="battles-title">
+      <div className="section-heading wiki-page-heading"><div><p className="eyebrow">Контакты</p><h2 id="battles-title">Бои</h2><p className="page-description">Активные столкновения, участвующие армии и быстрые действия ведущего.</p></div></div>
+      <div className="card-list">{battles.map((battle) => <BattleCard battle={battle} armies={armies} isGM={isGM} onAction={onAction} key={battle.battleId} />)}{battles.length === 0 && <p className="empty empty-panel">Активных боёв нет.</p>}</div>
     </section>
   );
 }
