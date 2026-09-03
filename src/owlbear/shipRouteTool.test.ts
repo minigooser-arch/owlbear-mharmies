@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_TERRAIN } from "../shared/constants";
-import type { TerrainType } from "../shared/types";
+import type { TerrainType, Vector2 } from "../shared/types";
 import { ShipRouteToolController } from "./shipRouteTool";
 
 function terrain(id: string, movementDomains: Array<"LAND" | "SEA">): TerrainType {
@@ -46,7 +46,7 @@ function activation() {
 
 function controller() {
   return new ShipRouteToolController({
-    snapGridCenter: async (point) => ({ ...point })
+    snapGridCenter: async (point: Vector2) => ({ ...point })
   });
 }
 
