@@ -112,15 +112,14 @@ export function FleetPage({
       <div className="card-list fleet-list">
         {filtered.map((ship) => {
           const sideColor = sides.find((side) => side.id === ship.sideId)?.color ?? "#687F91";
+          const embarkedArmyName = ship.embarkedArmyId ? armyNames.get(ship.embarkedArmyId) : undefined;
           return (
             <ShipCard
               key={ship.id}
               ship={ship}
               sideColor={sideColor}
               isGM={role === "GM"}
-              {...(ship.embarkedArmyId && armyNames.get(ship.embarkedArmyId)
-                ? { embarkedArmyName: armyNames.get(ship.embarkedArmyId) }
-                : {})}
+              {...(embarkedArmyName !== undefined ? { embarkedArmyName } : {})}
               onAction={onAction}
             />
           );
