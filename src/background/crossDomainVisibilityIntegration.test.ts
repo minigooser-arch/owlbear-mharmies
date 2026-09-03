@@ -168,7 +168,9 @@ describe("shared army and ship detection", () => {
     });
     await new ProductionEngine(port).visibilityTick("PLAYER", "player");
 
-    expect(visibleCloneSourceIds(localItems)).toContain("blue-ship");
+    const visible = visibleCloneSourceIds(localItems);
+    expect(visible).toContain("blue-ship");
+    expect(visible).not.toContain("blue-army");
     const shipLabels = localItems.filter((item) => item.metadata[METADATA_KEYS.navalShipOverlay] !== undefined);
     expect(shipLabels.some((item) => item.text === "Синий крейсер")).toBe(true);
   });
@@ -182,7 +184,9 @@ describe("shared army and ship detection", () => {
     });
     await new ProductionEngine(port).visibilityTick("PLAYER", "player");
 
-    expect(visibleCloneSourceIds(localItems)).toContain("blue-army");
+    const visible = visibleCloneSourceIds(localItems);
+    expect(visible).toContain("blue-army");
+    expect(visible).not.toContain("blue-ship");
     const healthLabels = localItems.filter((item) => item.metadata[METADATA_KEYS.healthOverlay] !== undefined);
     expect(healthLabels.some((item) => item.text === "50 / 50")).toBe(true);
   });
