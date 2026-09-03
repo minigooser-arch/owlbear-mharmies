@@ -24,7 +24,9 @@ const battleship: ShipView = {
   normalDice: 3,
   normalRangeMin: 2,
   normalRangeMax: 3,
-  embarkedArmyId: null
+  embarkedArmyId: null,
+  detectionOverride: null,
+  effectiveDetectionRange: 6
 };
 
 const activeBattleship: ShipView = {

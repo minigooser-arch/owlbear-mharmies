@@ -156,6 +156,8 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
       normalRangeMin: definition.normalRangeMin,
       normalRangeMax: definition.normalRangeMax,
       embarkedArmyId: state.embarkedArmyId,
+      detectionOverride: state.detectionOverride,
+      effectiveDetectionRange: state.detectionOverride ?? input.scene.settings.defaultDetectionRangeCells,
       ...tactical
     };
   });

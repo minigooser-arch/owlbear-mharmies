@@ -13,6 +13,68 @@ function clampHp(value: number, maxHp: number): number {
   return Math.max(0, Math.min(maxHp, Math.round(value)));
 }
 
+function ShipDetectionEditor({
+  ship,
+  onAction
+}: {
+  ship: ShipView;
+  onAction(command: UiCommand): void;
+}) {
+  const [draft, setDraft] = useState(String(ship.effectiveDetectionRange));
+  useEffect(() => setDraft(String(ship.effectiveDetectionRange)), [ship.effectiveDetectionRange]);
+  const parsed = Number(draft);
+  const canSubmit =
+    draft.trim() !== "" &&
+    Number.isFinite(parsed) &&
+    parsed >= 0 &&
+    parsed !== ship.effectiveDetectionRange;
+
+  return (
+    <div className="hp-editor" aria-label="Управление дальностью обнаружения корабля">
+      <div className="hp-editor-heading">
+        <strong>Дальность обнаружения</strong>
+        <span>
+          {ship.detectionOverride === null
+            ? `Общая дальность: ${ship.effectiveDetectionRange} кл.`
+            : `Индивидуальная: ${ship.effectiveDetectionRange} кл.`}
+        </span>
+      </div>
+      <input
+        aria-label={`Дальность обнаружения ${ship.name}`}
+        type="number"
+        min="0"
+        step="any"
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+      />
+      <button
+        className="button subtle wide"
+        type="button"
+        disabled={!canSubmit}
+        onClick={() => onAction({
+          type: "SET_SHIP_DETECTION_OVERRIDE",
+          shipId: ship.id,
+          detectionOverride: parsed
+        })}
+      >
+        Установить дальность обнаружения
+      </button>
+      <button
+        className="button subtle wide"
+        type="button"
+        disabled={ship.detectionOverride === null}
+        onClick={() => onAction({
+          type: "SET_SHIP_DETECTION_OVERRIDE",
+          shipId: ship.id,
+          detectionOverride: null
+        })}
+      >
+        Использовать общую дальность
+      </button>
+    </div>
+  );
+}
+
 function ShipHealthEditor({
   ship,
   onAction
@@ -187,6 +249,7 @@ export function ShipCard({
           <summary>Управление</summary>
           <div className="army-control-groups">
             <ShipHealthEditor ship={ship} onAction={onAction} />
+            <ShipDetectionEditor ship={ship} onAction={onAction} />
             <div className="card-actions">
               <button className="button danger subtle" type="button" onClick={() => onAction({ type: "UNREGISTER_SHIP", shipId: ship.id })}>
                 Снять регистрацию

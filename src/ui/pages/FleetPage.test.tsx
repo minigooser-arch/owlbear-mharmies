@@ -31,6 +31,8 @@ function ship(patch: Partial<ShipView> = {}): ShipView {
     normalRangeMin: 1,
     normalRangeMax: 2,
     embarkedArmyId: null,
+    detectionOverride: null,
+    effectiveDetectionRange: 6,
     ...patch
   };
 }
