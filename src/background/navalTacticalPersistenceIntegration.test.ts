@@ -183,7 +183,7 @@ it("persists naval tactical movement and facing rotation without changing the st
     channel: CommandGateway.ACK_CHANNEL,
     data: { requestId: "turn-left", status: "ACCEPTED" }
   });
-  expect(scene.ships.ship.facing).toBe("NORTH");
+  expect(scene.ships.ship?.facing).toBe("NORTH");
   expect(items[0]?.rotation).toBe(0);
   expect(items[0]?.position).toEqual({ x: 150, y: 50 });
   expect(scene.activeNavalBattle?.movementRemainingByShip.ship).toBe(1);
