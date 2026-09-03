@@ -2,7 +2,6 @@ import { expect, it } from "vitest";
 import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE, METADATA_KEYS } from "../shared/constants";
 import type { NavalSceneState, SceneItemRecord } from "../shared/types";
 import type { OwlbearPort } from "../owlbear/sdkAdapter";
-import { createLocalImageClone } from "../owlbear/sdkAdapter";
 import { createRegisteredShip } from "../naval/ships/shipLifecycle";
 import { ProductionEngine } from "./application";
 
@@ -88,7 +87,12 @@ function fixture() {
         if (index >= 0) localItems.splice(index, 1);
       }
     },
-    createClone: (source: SceneItemRecord) => createLocalImageClone(source, () => `clone-${++nextId}`),
+    createClone: (source: SceneItemRecord) => ({
+      ...structuredClone(source),
+      id: `clone-${++nextId}`,
+      visible: true,
+      metadata: { [METADATA_KEYS.localClone]: { sourceItemId: source.id } }
+    }),
     getGridDistance: async () => 0,
     getGridDpi: async () => 100,
     snapGridCenter: async (position: { x: number; y: number }) => ({ ...position }),
