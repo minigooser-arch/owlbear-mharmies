@@ -5,7 +5,7 @@ import { getTerrain } from "./terrainRegistry";
 type TerrainScene = Pick<SceneState, "terrain" | "gridMap">;
 
 export function terrainSupportsDomain(terrain: TerrainType, domain: MovementDomain): boolean {
-  return terrain.movementDomains.includes(domain);
+  return (terrain.movementDomains ?? ["LAND"]).includes(domain);
 }
 
 export function cellSupportsDomain(
@@ -19,7 +19,7 @@ export function cellSupportsDomain(
 
 export function blocksNavalLos(scene: TerrainScene, cell: GridCellCoord): boolean {
   const resolved = getTerrain(scene.terrain, readCell(scene.gridMap, cell).terrainId);
-  return !resolved.ok || resolved.terrain.blocksNavalLos;
+  return !resolved.ok || (resolved.terrain.blocksNavalLos ?? true);
 }
 
 export interface MovementDomainOccupancy {
