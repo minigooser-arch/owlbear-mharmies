@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { GridCellCoord, NavalBattleState, ShipState } from "../../shared/types";
 import { createRegisteredShip } from "../ships/shipLifecycle";
 import {
@@ -78,6 +78,31 @@ describe("naval broadside targeting", () => {
       distanceCells: () => 2,
       hasLineOfSight: () => true
     })).toEqual({ ok: false, reason: "SHIP_NOT_ACTIVE" });
+  });
+
+  it("rejects a destroyed active attacker before action, weapon, sector, range, or LOS checks", () => {
+    const sectorResolver = vi.fn(() => true);
+    const distanceCells = vi.fn(() => 2);
+    const hasLineOfSight = vi.fn(() => true);
+    const input = battle();
+    input.actionUsedByShip.attacker = true;
+
+    expect(validateBroadsideTarget({
+      battle: input,
+      attackerId: "attacker",
+      targetId: "target",
+      attacker: { ...ship("red"), hp: 0 },
+      target: ship("blue"),
+      attackerCell,
+      targetCell: broadsideTarget,
+      sectorResolver,
+      distanceCells,
+      hasLineOfSight
+    })).toEqual({ ok: false, reason: "SHIP_DESTROYED" });
+
+    expect(sectorResolver).not.toHaveBeenCalled();
+    expect(distanceCells).not.toHaveBeenCalled();
+    expect(hasLineOfSight).not.toHaveBeenCalled();
   });
 
   it("rejects unarmed ship classes", () => {
