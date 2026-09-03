@@ -115,4 +115,15 @@ describe("naval round flow", () => {
     expect(result.actionUsedByShip).toEqual({ cruiser: false, battleship: false });
     expect(result.initiative).toEqual(initial.initiative);
   });
+
+  it("does not create an empty new round when no eligible ships remain", () => {
+    const ships = { cruiser: ship("red", "CRUISER") };
+    const active = startNavalRound(battle(["cruiser"]), ships);
+    const destroyedShips = { cruiser: { ...ships.cruiser, hp: 0 } };
+    const result = endNavalShipTurn(active, destroyedShips, "cruiser");
+
+    expect(result.currentShipId).toBeNull();
+    expect(result.roundNumber).toBe(1);
+    expect(result.completedShipIdsThisRound).toEqual(["cruiser"]);
+  });
 });
