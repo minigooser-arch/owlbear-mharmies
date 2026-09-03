@@ -27,7 +27,7 @@ function ShipDetectionEditor({
     draft.trim() !== "" &&
     Number.isFinite(parsed) &&
     parsed >= 0 &&
-    parsed !== ship.effectiveDetectionRange;
+    (ship.detectionOverride === null || parsed !== ship.detectionOverride);
 
   return (
     <div className="hp-editor" aria-label="Управление дальностью обнаружения корабля">
