@@ -1,9 +1,10 @@
-import type { ArmyCommand, ArmyState, SceneSettings, Side } from "./types";
+import type { ArmyCommand, ArmyState, SceneSettings, ShipState, Side } from "./types";
 
 export interface AuthorizationContext {
   role: "GM" | "PLAYER";
   playerId: string;
   armies: ReadonlyMap<string, ArmyState>;
+  ships?: ReadonlyMap<string, ShipState>;
   sides: readonly Side[];
   settings: SceneSettings;
   connectedPlayerIds: ReadonlySet<string>;
@@ -17,6 +18,7 @@ export type AuthorizationResult =
         | "GM_ONLY"
         | "NOT_SIDE_LEADER"
         | "ARMY_NOT_FOUND"
+        | "SHIP_NOT_FOUND"
         | "SIDE_NOT_FOUND"
         | "NOT_FACTION_MEMBER"
         | "SENDER_MISMATCH";
@@ -44,7 +46,6 @@ export function authorizeArmyCommand(
     return ledBy(context, command.sideId);
   }
 
-
   if (command.type === "REQUEST_ARMY_DISBAND") {
     const army = context.armies.get(command.armyId);
     if (!army) return { allowed: false, reason: "ARMY_NOT_FOUND" };
@@ -59,6 +60,12 @@ export function authorizeArmyCommand(
     const army = context.armies.get(command.armyId);
     if (!army) return { allowed: false, reason: "ARMY_NOT_FOUND" };
     return ledBy(context, army.sideId);
+  }
+
+  if (command.type === "SET_SHIP_ROUTE") {
+    const ship = context.ships?.get(command.shipId);
+    if (!ship) return { allowed: false, reason: "SHIP_NOT_FOUND" };
+    return ledBy(context, ship.sideId);
   }
 
   return { allowed: false, reason: "GM_ONLY" };
