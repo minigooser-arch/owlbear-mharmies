@@ -286,16 +286,29 @@ export class ProductionEngine {
       this.repository.readBarriers(),
       this.port.getSceneItems()
     ]);
-    const graph = await buildDetectionGraph({
-      mode: scene.settings.detectionMode,
-      armies: armies.map(({ item, state }) => ({
-        id: item.id,
+    const sceneItemById = new Map(sceneItems.map((item) => [item.id, item]));
+    const armyDetectionUnits = armies.map(({ item, state }) => ({
+      id: item.id,
+      sideId: state.sideId,
+      position: item.position,
+      detectionRangeCells:
+        state.overrides.detectionRangeCells ?? scene.settings.defaultDetectionRangeCells,
+      ignoresVisionBarriers: state.ignoresVisionBarriers
+    }));
+    const shipDetectionUnits = Object.entries(scene.ships ?? {}).flatMap(([shipId, state]) => {
+      const item = sceneItemById.get(shipId);
+      if (!item) return [];
+      return [{
+        id: shipId,
         sideId: state.sideId,
         position: item.position,
-        detectionRangeCells:
-          state.overrides.detectionRangeCells ?? scene.settings.defaultDetectionRangeCells,
-        ignoresVisionBarriers: state.ignoresVisionBarriers
-      })),
+        detectionRangeCells: state.detectionOverride ?? scene.settings.defaultDetectionRangeCells,
+        ignoresVisionBarriers: false
+      }];
+    });
+    const graph = await buildDetectionGraph({
+      mode: scene.settings.detectionMode,
+      units: [...armyDetectionUnits, ...shipDetectionUnits],
       distancePort: this.grid,
       visionBarriers: extractBarrierSegments(barriers, "vision")
     });
@@ -316,7 +329,7 @@ export class ProductionEngine {
       isGM: role === "GM",
       playerSideIds: memberSideIds,
       ships: scene.ships ?? {},
-      detectionGraph: { visibleTargetsBySide: new Map(), observersBySide: new Map() },
+      detectionGraph: graph,
       revealUntilTurn: scene.navalRevealUntilTurn ?? {},
       currentTurn: scene.turn.turnNumber
     });
