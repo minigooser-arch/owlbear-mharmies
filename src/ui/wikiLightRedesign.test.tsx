@@ -75,7 +75,9 @@ function services(role: "GM" | "PLAYER" = "GM"): ExtensionServices {
       normalDice: 3,
       normalRangeMin: 2,
       normalRangeMax: 3,
-      embarkedArmyId: null
+      embarkedArmyId: null,
+      detectionOverride: null,
+      effectiveDetectionRange: DEFAULT_SETTINGS.defaultDetectionRangeCells
     }]
   };
   return {
