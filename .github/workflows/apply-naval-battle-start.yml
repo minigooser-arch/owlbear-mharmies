@@ -1,0 +1,146 @@
+name: Apply naval battle start
+
+on:
+  push:
+    branches: [feature/naval-combat-v1]
+    paths:
+      - .github/workflows/apply-naval-battle-start.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feature/naval-combat-v1
+          fetch-depth: 0
+      - name: Patch authoritative naval battle start
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one anchor, found {count}: {old[:100]!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          replace_once(
+              "src/shared/types.ts",
+              '    | { type: "END_NAVAL_SHIP_TURN"; shipId: string }\n    | { type: "COMPLETE_NAVAL_BATTLE" }',
+              '    | { type: "END_NAVAL_SHIP_TURN"; shipId: string }\n'
+              '    | {\n'
+              '        type: "START_NAVAL_BATTLE";\n'
+              '        battleId: string;\n'
+              '        navalRequestId: string | null;\n'
+              '        initiatingShipId: string;\n'
+              '        participantShipIds: string[];\n'
+              '        areaCells: GridCellCoord[];\n'
+              '      }\n'
+              '    | { type: "COMPLETE_NAVAL_BATTLE" }'
+          )
+
+          replace_once(
+              "src/commands/commandValidation.ts",
+              '  END_NAVAL_SHIP_TURN: (value) => boundedString(value.shipId)\n'
+              '    ? { type: "END_NAVAL_SHIP_TURN", shipId: value.shipId }\n'
+              '    : undefined,\n'
+              '  COMPLETE_NAVAL_BATTLE: () => ({ type: "COMPLETE_NAVAL_BATTLE" }),',
+              '  END_NAVAL_SHIP_TURN: (value) => boundedString(value.shipId)\n'
+              '    ? { type: "END_NAVAL_SHIP_TURN", shipId: value.shipId }\n'
+              '    : undefined,\n'
+              '  START_NAVAL_BATTLE: (value) => {\n'
+              '    const participantShipIds = parseStringArray(value.participantShipIds);\n'
+              '    const areaCells = parseCells(value.areaCells);\n'
+              '    const navalRequestId = value.navalRequestId === null\n'
+              '      ? null\n'
+              '      : boundedString(value.navalRequestId) ? value.navalRequestId : undefined;\n'
+              '    return boundedString(value.battleId) && boundedString(value.initiatingShipId) &&\n'
+              '      participantShipIds && participantShipIds.length > 0 &&\n'
+              '      areaCells && areaCells.length > 0 && navalRequestId !== undefined\n'
+              '        ? {\n'
+              '            type: "START_NAVAL_BATTLE",\n'
+              '            battleId: value.battleId,\n'
+              '            navalRequestId,\n'
+              '            initiatingShipId: value.initiatingShipId,\n'
+              '            participantShipIds,\n'
+              '            areaCells\n'
+              '          }\n'
+              '        : undefined;\n'
+              '  },\n'
+              '  COMPLETE_NAVAL_BATTLE: () => ({ type: "COMPLETE_NAVAL_BATTLE" }),'
+          )
+
+          replace_once(
+              "src/commands/commandProcessor.ts",
+              'import { completeNavalBattle } from "../naval/battle/navalBattleLifecycle";',
+              'import { completeNavalBattle, startNavalBattle } from "../naval/battle/navalBattleLifecycle";'
+          )
+
+          replace_once(
+              "src/commands/commandProcessor.ts",
+              '      case "COMPLETE_NAVAL_BATTLE": {\n',
+              '      case "START_NAVAL_BATTLE": {\n'
+              '        if (!this.cellForPosition) return "SHIP_POSITION_UNAVAILABLE";\n'
+              '        const snapshots: Record<string, import("../shared/types").NavalBattleShipSnapshot> = {};\n'
+              '        for (const shipId of command.participantShipIds) {\n'
+              '          const ship = state.scene.ships?.[shipId];\n'
+              '          if (!ship) return "SHIP_NOT_FOUND";\n'
+              '          const position = state.positions?.[shipId] ?? state.items[shipId]?.position;\n'
+              '          if (!position) return "SHIP_POSITION_UNAVAILABLE";\n'
+              '          snapshots[shipId] = {\n'
+              '            shipId,\n'
+              '            strategicCell: this.cellForPosition(position),\n'
+              '            strategicPosition: { ...position },\n'
+              '            strategicFacing: ship.facing\n'
+              '          };\n'
+              '        }\n'
+              '        const sceneRevision = state.scene.revision;\n'
+              '        try {\n'
+              '          const started = startNavalBattle(state.scene as NavalSceneState, {\n'
+              '            battleId: command.battleId,\n'
+              '            requestId: command.navalRequestId,\n'
+              '            initiatingShipId: command.initiatingShipId,\n'
+              '            participantShipIds: command.participantShipIds,\n'
+              '            areaCells: command.areaCells,\n'
+              '            snapshots,\n'
+              '            startedAt: this.now().getTime(),\n'
+              '            rollD20: () => Math.floor(Math.random() * 20) + 1\n'
+              '          });\n'
+              '          started.revision = sceneRevision;\n'
+              '          state.scene = started;\n'
+              '          return undefined;\n'
+              '        } catch (error) {\n'
+              '          const message = error instanceof Error ? error.message : String(error);\n'
+              '          if (message === "Naval battle already active") return "NAVAL_BATTLE_ALREADY_ACTIVE";\n'
+              '          if (message.startsWith("Destroyed naval battle participant:")) return "SHIP_DESTROYED";\n'
+              '          if (message.startsWith("Missing naval battle participant:")) return "SHIP_NOT_FOUND";\n'
+              '          return "INVALID_NAVAL_BATTLE";\n'
+              '        }\n'
+              '      }\n'
+              '      case "COMPLETE_NAVAL_BATTLE": {\n'
+          )
+
+          replace_once(
+              "src/background/application.ts",
+              '    if (command.type === "COMPLETE_TURN_NOW" || command.type === "REGISTER_SHIP" || command.type === "SET_SHIP_ROUTE" || command.type === "NAVAL_MOVE_FORWARD") {',
+              '    if (command.type === "COMPLETE_TURN_NOW" || command.type === "REGISTER_SHIP" || command.type === "SET_SHIP_ROUTE" || command.type === "NAVAL_MOVE_FORWARD" || command.type === "START_NAVAL_BATTLE") {'
+          )
+          PY
+      - name: Remove one-shot workflow
+        run: rm .github/workflows/apply-naval-battle-start.yml
+      - name: Commit production implementation
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "feat: wire authoritative naval battle start"
+          git push origin HEAD:feature/naval-combat-v1
