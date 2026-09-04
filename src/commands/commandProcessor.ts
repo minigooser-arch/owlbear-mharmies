@@ -25,6 +25,7 @@ import type {
 import { applyShipStrategicRouteCommand } from "./shipStrategicRouteCommand";
 import { applyForwardTacticalStep, applyTacticalTurn, forwardCell } from "../naval/battle/navalTacticalMovement";
 import { endNavalShipTurn } from "../naval/battle/navalRoundFlow";
+import { completeNavalBattle } from "../naval/battle/navalBattleLifecycle";
 
 export interface CommandState {
   scene: SceneState;
@@ -303,6 +304,25 @@ export class CommandProcessor {
         } catch (error) {
           return this.navalTacticalFailure(error);
         }
+      }
+      case "COMPLETE_NAVAL_BATTLE": {
+        const battle = state.scene.activeNavalBattle;
+        if (!battle || battle.status !== "ACTIVE") return "NO_ACTIVE_NAVAL_BATTLE";
+        const sceneRevision = state.scene.revision;
+        const completed = completeNavalBattle(state.scene as NavalSceneState);
+        completed.revision = sceneRevision;
+        state.scene = completed;
+        state.positions ??= {};
+        for (const [shipId, snapshot] of Object.entries(battle.snapshots)) {
+          const ship = state.scene.ships?.[shipId];
+          if (!ship) continue;
+          state.scene.ships[shipId] = {
+            ...ship,
+            facing: snapshot.strategicFacing
+          };
+          state.positions[shipId] = { ...snapshot.strategicPosition };
+        }
+        return undefined;
       }
       case "SET_SHIP_DETECTION_OVERRIDE": {
         const ship = state.scene.ships?.[command.shipId];

@@ -326,6 +326,7 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
   END_NAVAL_SHIP_TURN: (value) => boundedString(value.shipId)
     ? { type: "END_NAVAL_SHIP_TURN", shipId: value.shipId }
     : undefined,
+  COMPLETE_NAVAL_BATTLE: () => ({ type: "COMPLETE_NAVAL_BATTLE" }),
   CREATE_SIDE: (value) => {
     const side = parseSide(value.side);
     return side ? { type: "CREATE_SIDE", side } : undefined;
