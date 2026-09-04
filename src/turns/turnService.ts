@@ -1,6 +1,7 @@
 import { destroyArmy } from "../armies/armyLifecycle";
 import { applyEncirclementDamage } from "../health/armyHealth";
 import { validatePlannedRoute } from "../movement/movementRules";
+import { SHIP_CLASSES } from "../naval/ships/shipClasses";
 import { stateForFaction } from "../states/stateRules";
 import { hasSupplyRoute } from "../supply/supplyRules";
 import { readCell } from "../terrain/gridMap";
@@ -145,6 +146,18 @@ export function completeTurn(
       continue;
     }
     nextArmies[armyId] = prepared;
+  }
+
+  // Restore each ship's class strategic movement budget without changing its order or combat state.
+  if (nextScene.ships) {
+    for (const [shipId, ship] of Object.entries(nextScene.ships)) {
+      nextScene.ships[shipId] = {
+        ...ship,
+        globalMovementRemaining: SHIP_CLASSES[ship.classId].movement,
+        movementSpentThisTurn: false,
+        revision: ship.revision + 1
+      };
+    }
   }
 
   const completedAtIso = input.completedAt.toISOString();
