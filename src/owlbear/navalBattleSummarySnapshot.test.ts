@@ -11,15 +11,18 @@ function activeBattle(): NavalBattleState {
     requestId: null,
     initiatorSideId: "red",
     areaCells: [{ x: 0, y: 0 }],
-    participantShipIds: [],
+    participantShipIds: ["first", "second"],
     snapshots: {},
-    initiative: [],
+    initiative: [
+      { shipId: "first", initialRoll: 18, bonus: 2, total: 20, tieBreakRolls: [] },
+      { shipId: "second", initialRoll: 14, bonus: 0, total: 14, tieBreakRolls: [] }
+    ],
     roundNumber: 4,
-    currentShipId: null,
-    completedShipIdsThisRound: [],
-    movementRemainingByShip: {},
-    actionUsedByShip: {},
-    exitedShipIds: [],
+    currentShipId: "second",
+    completedShipIdsThisRound: ["first"],
+    movementRemainingByShip: { first: 0, second: 2 },
+    actionUsedByShip: { first: true, second: false },
+    exitedShipIds: ["first"],
     status: "ACTIVE",
     events: [],
     startedOnTurn: 7,
@@ -60,13 +63,19 @@ const input = (role: "GM" | "PLAYER", playerId: string) => ({
 });
 
 describe("GM-only naval battle summary", () => {
-  it("keeps an active battle visible to the GM even when no registered participant ships remain", () => {
+  it("keeps initiative and per-round status visible to the GM even if participant records are missing", () => {
     const snapshot = buildRoleSafeSnapshot(input("GM", "gm"));
     expect(snapshot.activeNavalBattle).toEqual({
       id: "naval-1",
       roundNumber: 4,
-      participantCount: 0,
-      currentShipId: null
+      participantCount: 2,
+      currentShipId: "second",
+      initiative: [
+        { shipId: "first", total: 20 },
+        { shipId: "second", total: 14 }
+      ],
+      completedShipIdsThisRound: ["first"],
+      exitedShipIds: ["first"]
     });
   });
 
