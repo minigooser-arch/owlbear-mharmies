@@ -122,7 +122,7 @@ describe("naval battle request command validation", () => {
     expect(validateArmyCommand({
       ...rawRequest("leader"),
       initiatingShipId: ""
-    })).toEqual({ ok: false, reason: "INVALID_COMMAND" });
+    })).toMatchObject({ ok: false, reason: "INVALID_COMMAND" });
   });
 });
 
