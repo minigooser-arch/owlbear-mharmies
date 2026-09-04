@@ -1,0 +1,29 @@
+name: Add naval battle summary
+
+on:
+  push:
+    branches: [feature/naval-combat-v1]
+    paths:
+      - scripts/add-naval-battle-summary.py
+      - .github/workflows/add-naval-battle-summary.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feature/naval-combat-v1
+      - run: python scripts/add-naval-battle-summary.py
+      - run: rm scripts/add-naval-battle-summary.py .github/workflows/add-naval-battle-summary.yml
+      - name: Commit summary wiring
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && exit 1
+          git commit -m "feat: expose GM naval battle summary"
+          git push
