@@ -1,0 +1,31 @@
+name: Apply naval completion command
+
+on:
+  push:
+    branches: [feature/naval-combat-v1]
+    paths:
+      - scripts/apply-naval-completion-command.py
+      - .github/workflows/apply-naval-completion-command.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feature/naval-combat-v1
+      - name: Apply patch
+        run: python scripts/apply-naval-completion-command.py
+      - name: Remove one-shot files
+        run: rm scripts/apply-naval-completion-command.py .github/workflows/apply-naval-completion-command.yml
+      - name: Commit production changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && exit 1
+          git commit -m "feat: complete naval battles manually"
+          git push
