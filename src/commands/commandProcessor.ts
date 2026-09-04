@@ -25,7 +25,7 @@ import type {
 import { applyShipStrategicRouteCommand } from "./shipStrategicRouteCommand";
 import { applyForwardTacticalStep, applyTacticalTurn, forwardCell } from "../naval/battle/navalTacticalMovement";
 import { endNavalShipTurn } from "../naval/battle/navalRoundFlow";
-import { completeNavalBattle } from "../naval/battle/navalBattleLifecycle";
+import { completeNavalBattle, startNavalBattle } from "../naval/battle/navalBattleLifecycle";
 
 export interface CommandState {
   scene: SceneState;
@@ -303,6 +303,44 @@ export class CommandProcessor {
           return undefined;
         } catch (error) {
           return this.navalTacticalFailure(error);
+        }
+      }
+      case "START_NAVAL_BATTLE": {
+        if (!this.cellForPosition) return "SHIP_POSITION_UNAVAILABLE";
+        const snapshots: Record<string, import("../shared/types").NavalBattleShipSnapshot> = {};
+        for (const shipId of command.participantShipIds) {
+          const ship = state.scene.ships?.[shipId];
+          if (!ship) return "SHIP_NOT_FOUND";
+          const position = state.positions?.[shipId] ?? state.items[shipId]?.position;
+          if (!position) return "SHIP_POSITION_UNAVAILABLE";
+          snapshots[shipId] = {
+            shipId,
+            strategicCell: this.cellForPosition(position),
+            strategicPosition: { ...position },
+            strategicFacing: ship.facing
+          };
+        }
+        const sceneRevision = state.scene.revision;
+        try {
+          const started = startNavalBattle(state.scene as NavalSceneState, {
+            battleId: command.battleId,
+            requestId: command.navalRequestId,
+            initiatingShipId: command.initiatingShipId,
+            participantShipIds: command.participantShipIds,
+            areaCells: command.areaCells,
+            snapshots,
+            startedAt: this.now().getTime(),
+            rollD20: () => Math.floor(Math.random() * 20) + 1
+          });
+          started.revision = sceneRevision;
+          state.scene = started;
+          return undefined;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (message === "Naval battle already active") return "NAVAL_BATTLE_ALREADY_ACTIVE";
+          if (message.startsWith("Destroyed naval battle participant:")) return "SHIP_DESTROYED";
+          if (message.startsWith("Missing naval battle participant:")) return "SHIP_NOT_FOUND";
+          return "INVALID_NAVAL_BATTLE";
         }
       }
       case "COMPLETE_NAVAL_BATTLE": {

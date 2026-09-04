@@ -326,6 +326,25 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
   END_NAVAL_SHIP_TURN: (value) => boundedString(value.shipId)
     ? { type: "END_NAVAL_SHIP_TURN", shipId: value.shipId }
     : undefined,
+  START_NAVAL_BATTLE: (value) => {
+    const participantShipIds = parseStringArray(value.participantShipIds);
+    const areaCells = parseCells(value.areaCells);
+    const navalRequestId = value.navalRequestId === null
+      ? null
+      : boundedString(value.navalRequestId) ? value.navalRequestId : undefined;
+    return boundedString(value.battleId) && boundedString(value.initiatingShipId) &&
+      participantShipIds && participantShipIds.length > 0 &&
+      areaCells && areaCells.length > 0 && navalRequestId !== undefined
+        ? {
+            type: "START_NAVAL_BATTLE",
+            battleId: value.battleId,
+            navalRequestId,
+            initiatingShipId: value.initiatingShipId,
+            participantShipIds,
+            areaCells
+          }
+        : undefined;
+  },
   COMPLETE_NAVAL_BATTLE: () => ({ type: "COMPLETE_NAVAL_BATTLE" }),
   CREATE_SIDE: (value) => {
     const side = parseSide(value.side);

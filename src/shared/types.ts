@@ -350,6 +350,14 @@ export type ArmyCommandPayload =
     | { type: "NAVAL_MOVE_FORWARD"; shipId: string }
     | { type: "NAVAL_TURN_SHIP"; shipId: string; direction: "LEFT" | "RIGHT" }
     | { type: "END_NAVAL_SHIP_TURN"; shipId: string }
+    | {
+        type: "START_NAVAL_BATTLE";
+        battleId: string;
+        navalRequestId: string | null;
+        initiatingShipId: string;
+        participantShipIds: string[];
+        areaCells: GridCellCoord[];
+      }
     | { type: "COMPLETE_NAVAL_BATTLE" }
     | { type: "CREATE_SIDE"; side: Side }
     | { type: "RENAME_SIDE"; sideId: string; name: string }
