@@ -1,0 +1,31 @@
+name: Apply naval initiative summary
+
+on:
+  push:
+    branches: [feature/naval-combat-v1]
+    paths:
+      - scripts/apply-naval-initiative-summary.py
+      - .github/workflows/apply-naval-initiative-summary.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feature/naval-combat-v1
+          fetch-depth: 0
+      - name: Apply initiative summary patch
+        run: python3 scripts/apply-naval-initiative-summary.py
+      - name: Remove one-shot patch files
+        run: git rm scripts/apply-naval-initiative-summary.py .github/workflows/apply-naval-initiative-summary.yml
+      - name: Commit production change
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/ui/state/useExtensionState.ts src/owlbear/extensionServices.ts src/ui/pages/BattlesPage.tsx
+          git commit -m "feat: show naval initiative in GM battle summary"
+          git push origin HEAD:feature/naval-combat-v1
