@@ -170,7 +170,10 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
         id: input.scene.activeNavalBattle.id,
         roundNumber: input.scene.activeNavalBattle.roundNumber,
         participantCount: input.scene.activeNavalBattle.participantShipIds.length,
-        currentShipId: input.scene.activeNavalBattle.currentShipId
+        currentShipId: input.scene.activeNavalBattle.currentShipId,
+        initiative: input.scene.activeNavalBattle.initiative.map(({ shipId, total }) => ({ shipId, total })),
+        completedShipIdsThisRound: [...input.scene.activeNavalBattle.completedShipIdsThisRound],
+        exitedShipIds: [...input.scene.activeNavalBattle.exitedShipIds]
       }
     : undefined;
   return {

@@ -81,6 +81,10 @@ function NavalBattleCard({
   const currentShip = battle.currentShipId
     ? ships.find((ship) => ship.id === battle.currentShipId)
     : ships.find((ship) => ship.isCurrentNavalTurn);
+  const shipById = new Map(ships.map((ship) => [ship.id, ship]));
+  const completedShipIds = new Set(battle.completedShipIdsThisRound ?? []);
+  const exitedShipIds = new Set(battle.exitedShipIds ?? []);
+  const initiative = battle.initiative ?? [];
 
   return (
     <article className="army-card wiki-card battle-card naval-battle-card">
@@ -95,6 +99,26 @@ function NavalBattleCard({
         <p>Кораблей: {battle.participantCount}</p>
         <p>Ход: {currentShip?.name ?? "—"}</p>
       </div>
+      {initiative.length > 0 && (
+        <ol className="battle-participants naval-initiative-list" aria-label="Порядок инициативы">
+          {initiative.map((entry, index) => {
+            const ship = shipById.get(entry.shipId);
+            const status = exitedShipIds.has(entry.shipId)
+              ? "Вышел"
+              : battle.currentShipId === entry.shipId
+                ? "Ход"
+                : completedShipIds.has(entry.shipId)
+                  ? "Ход завершён"
+                  : "Ожидает";
+            return (
+              <li className="battle-participant-row" key={entry.shipId}>
+                <div><strong>{index + 1}. {ship?.name ?? entry.shipId}</strong><span>{status}</span></div>
+                <strong>{entry.total}</strong>
+              </li>
+            );
+          })}
+        </ol>
+      )}
       <p className="muted">Завершение вручную вернёт зарегистрированные корабли на стратегические позиции и курсы, сохранённые при начале боя.</p>
       <div className="battle-management">
         <button

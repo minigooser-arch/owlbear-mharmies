@@ -73,6 +73,9 @@ export interface NavalBattleView {
   roundNumber: number;
   participantCount: number;
   currentShipId: string | null;
+  initiative?: Array<{ shipId: string; total: number }>;
+  completedShipIdsThisRound?: string[];
+  exitedShipIds?: string[];
 }
 
 export interface PartyPlayerView {
