@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { BattleGroup } from "../../shared/types";
-import type { ArmyView, UiCommand } from "../state/useExtensionState";
+import type { ArmyView, NavalBattleView, ShipView, UiCommand } from "../state/useExtensionState";
 
 interface BattleCardProps {
   battle: BattleGroup;
@@ -69,21 +69,84 @@ function BattleCard({ battle, armies, isGM, onAction }: BattleCardProps) {
   );
 }
 
+function NavalBattleCard({
+  battle,
+  ships,
+  onAction
+}: {
+  battle: NavalBattleView;
+  ships: readonly ShipView[];
+  onAction(command: UiCommand): void;
+}) {
+  const currentShip = battle.currentShipId
+    ? ships.find((ship) => ship.id === battle.currentShipId)
+    : ships.find((ship) => ship.isCurrentNavalTurn);
+
+  return (
+    <article className="army-card wiki-card battle-card naval-battle-card">
+      <div className="section-heading compact-heading">
+        <div>
+          <p className="eyebrow">Флот</p>
+          <h3>Морской бой</h3>
+        </div>
+      </div>
+      <div className="battle-participants" aria-label="Состояние морского боя">
+        <div className="battle-participant-row"><span>Раунд</span><strong>{battle.roundNumber}</strong></div>
+        <div className="battle-participant-row"><span>Кораблей</span><strong>{battle.participantCount}</strong></div>
+        <div className="battle-participant-row"><span>Ход</span><strong>{currentShip?.name ?? "—"}</strong></div>
+      </div>
+      <p className="muted">Завершение вручную вернёт зарегистрированные корабли на стратегические позиции и курсы, сохранённые при начале боя.</p>
+      <div className="battle-management">
+        <button
+          className="button danger subtle"
+          type="button"
+          onClick={() => onAction({ type: "COMPLETE_NAVAL_BATTLE" })}
+        >
+          Завершить морской бой
+        </button>
+      </div>
+    </article>
+  );
+}
+
 export function BattlesPage({
   battles,
   armies = [],
+  ships = [],
+  activeNavalBattle,
   isGM,
   onAction
 }: {
   battles: readonly BattleGroup[];
   armies?: readonly ArmyView[];
+  ships?: readonly ShipView[];
+  activeNavalBattle?: NavalBattleView;
   isGM: boolean;
   onAction(command: UiCommand): void;
 }) {
+  const tacticalShips = ships.filter((ship) => ship.status === "IN_NAVAL_BATTLE");
+  const inferredCurrentShip = tacticalShips.find((ship) => ship.isCurrentNavalTurn);
+  const inferredRound = tacticalShips.find((ship) => ship.navalRoundNumber !== undefined)?.navalRoundNumber;
+  const navalBattle = isGM
+    ? activeNavalBattle ?? (tacticalShips.length > 0
+      ? {
+          id: "active-naval-battle",
+          roundNumber: inferredRound ?? 1,
+          participantCount: tacticalShips.length,
+          currentShipId: inferredCurrentShip?.id ?? null
+        }
+      : undefined)
+    : undefined;
+  const hasVisibleBattle = battles.length > 0 || navalBattle !== undefined;
+
   return (
     <section aria-labelledby="battles-title">
       <div className="section-heading wiki-page-heading"><div><p className="eyebrow">Контакты</p><h2 id="battles-title">Бои</h2><p className="page-description">Активные столкновения, участвующие армии и быстрые действия ведущего.</p></div></div>
-      <div className="card-list">{battles.map((battle) => <BattleCard battle={battle} armies={armies} isGM={isGM} onAction={onAction} key={battle.battleId} />)}{battles.length === 0 && <p className="empty empty-panel">Активных боёв нет.</p>}</div>
+      <div className="card-list">
+        {navalBattle && <NavalBattleCard battle={navalBattle} ships={ships} onAction={onAction} />}
+        {battles.map((battle) => <BattleCard battle={battle} armies={armies} isGM={isGM} onAction={onAction} key={battle.battleId} />)}
+        {!hasVisibleBattle && <p className="empty empty-panel">Активных боёв нет.</p>}
+      </div>
     </section>
   );
 }
