@@ -38,7 +38,7 @@ export function App({ services }: { services: ExtensionServices }) {
   const selectTab = (next: Tab) => isGM ? setGmTab(next as GmTab) : setPlayerTab(next as PlayerTab);
 
   const send = (command: UiCommand) => {
-    if (["DELETE_SIDE", "STOP_ALL", "RELEASE_BATTLE_GROUP", "COMPLETE_TURN_NOW", "REQUEST_ARMY_DISBAND", "UNREGISTER_SHIP"].includes(command.type) || (command.type === "SET_ARMY_HP" && command.hp === 0)) setDangerous(command);
+    if (["DELETE_SIDE", "STOP_ALL", "RELEASE_BATTLE_GROUP", "COMPLETE_TURN_NOW", "REQUEST_ARMY_DISBAND", "UNREGISTER_SHIP", "COMPLETE_NAVAL_BATTLE"].includes(command.type) || (command.type === "SET_ARMY_HP" && command.hp === 0)) setDangerous(command);
     else void state.send(command);
   };
 
@@ -69,10 +69,10 @@ export function App({ services }: { services: ExtensionServices }) {
         </>}
         {tab === "TURN" && !isGM && <MovementPage armies={state.armies} turn={state.turn} isGM={false} leaderSideIds={state.leaderSideIds} onAction={send} />}
         {tab === "MAP" && isGM && <MapEditorPage terrain={state.terrain} sides={state.sides} states={state.states} onAction={send} />}
-        {tab === "BATTLES" && <BattlesPage battles={state.battleGroups} armies={state.armies} isGM={isGM} onAction={send} />}
+        {tab === "BATTLES" && <BattlesPage battles={state.battleGroups} armies={state.armies} ships={state.ships} activeNavalBattle={state.activeNavalBattle} isGM={isGM} onAction={send} />}
         {tab === "MANAGEMENT" && isGM && <ManagementPage playerId={state.playerId} sides={state.sides} states={state.states} players={state.players} relations={state.relations} wars={state.wars} settings={state.settings} leaderSideIds={state.leaderSideIds} onAction={send} runDiagnostic={state.runDiagnostic} />}
       </div>
-      <ConfirmDialog open={dangerous !== undefined} title="Подтвердите действие" message={dangerous?.type === "REQUEST_ARMY_DISBAND" ? "Армия будет распущена в начале следующего глобального хода. Отменить роспуск после подтверждения невозможно." : dangerous?.type === "UNREGISTER_SHIP" ? "Корабль будет снят с регистрации. Его токен останется на карте как обычный объект." : dangerous?.type === "SET_ARMY_HP" && dangerous.hp === 0 ? "Установка 0 HP уничтожит армию и удалит её с карты. Продолжить?" : "Это действие изменит общее состояние сцены."} onCancel={() => setDangerous(undefined)} onConfirm={() => { if (dangerous) void state.send(dangerous); setDangerous(undefined); }} />
+      <ConfirmDialog open={dangerous !== undefined} title="Подтвердите действие" message={dangerous?.type === "REQUEST_ARMY_DISBAND" ? "Армия будет распущена в начале следующего глобального хода. Отменить роспуск после подтверждения невозможно." : dangerous?.type === "UNREGISTER_SHIP" ? "Корабль будет снят с регистрации. Его токен останется на карте как обычный объект." : dangerous?.type === "COMPLETE_NAVAL_BATTLE" ? "Морской бой будет завершён вручную. Зарегистрированные корабли вернутся на стратегические позиции и курсы, сохранённые при начале боя. Продолжить?" : dangerous?.type === "SET_ARMY_HP" && dangerous.hp === 0 ? "Установка 0 HP уничтожит армию и удалит её с карты. Продолжить?" : "Это действие изменит общее состояние сцены."} onCancel={() => setDangerous(undefined)} onConfirm={() => { if (dangerous) void state.send(dangerous); setDangerous(undefined); }} />
     </main>
   );
 }
