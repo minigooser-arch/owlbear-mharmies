@@ -49,7 +49,8 @@ export type NotificationCode =
   | "OUTSIDE_NAVAL_BATTLE_AREA"
   | "INSUFFICIENT_NAVAL_MOVEMENT"
   | "NAVAL_ACTION_ALREADY_USED"
-  | "INVALID_NAVAL_TACTICAL_ACTION";
+  | "INVALID_NAVAL_TACTICAL_ACTION"
+  | "INVALID_NAVAL_BATTLE_AREA";
 
 const RUSSIAN_MESSAGES: Readonly<Record<NotificationCode, string>> = {
   GM_ONLY: "Это действие доступно только ведущему.",
@@ -102,7 +103,8 @@ const RUSSIAN_MESSAGES: Readonly<Record<NotificationCode, string>> = {
   OUTSIDE_NAVAL_BATTLE_AREA: "Корабль не может выйти за границы поля морского боя.",
   INSUFFICIENT_NAVAL_MOVEMENT: "У корабля не хватает очков перемещения для этого манёвра.",
   NAVAL_ACTION_ALREADY_USED: "После активного действия корабль больше не может двигаться в этот ход.",
-  INVALID_NAVAL_TACTICAL_ACTION: "Этот морской манёвр сейчас недоступен."
+  INVALID_NAVAL_TACTICAL_ACTION: "Этот морской манёвр сейчас недоступен.",
+  INVALID_NAVAL_BATTLE_AREA: "Поле морского боя может состоять только из морских клеток."
 };
 
 const UNKNOWN_FAILURE_MESSAGE = "Не удалось выполнить действие.";

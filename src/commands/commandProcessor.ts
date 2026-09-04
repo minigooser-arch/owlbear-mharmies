@@ -306,6 +306,9 @@ export class CommandProcessor {
         }
       }
       case "START_NAVAL_BATTLE": {
+        if (command.areaCells.some((cell) => !cellSupportsDomain(state.scene, cell, "SEA"))) {
+          return "INVALID_NAVAL_BATTLE_AREA";
+        }
         if (!this.cellForPosition) return "SHIP_POSITION_UNAVAILABLE";
         const snapshots: Record<string, import("../shared/types").NavalBattleShipSnapshot> = {};
         for (const shipId of command.participantShipIds) {
