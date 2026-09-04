@@ -65,6 +65,7 @@ export interface ShipView {
   isCurrentNavalTurn?: boolean;
   navalMovementRemaining?: number;
   navalActionUsed?: boolean;
+  navalExited?: boolean;
 }
 
 export interface NavalBattleView {

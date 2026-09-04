@@ -346,6 +346,7 @@ button:disabled { opacity: .48; cursor: not-allowed; }
 .status-moving { border-color: #d6e4ec; background: #eef6fa; color: #4b7088; }
 .status-paused { border-color: #e1ded6; background: #f6f4ef; color: #786f60; }
 .status-in_battle { border-color: #e9caca; background: var(--wiki-danger-soft); color: var(--wiki-danger); }
+.status-exited { border-color: #d6e4ec; background: #eef6fa; color: #4b7088; }
 .status-war { border-color: #ead8b8; background: var(--wiki-warning-soft); color: var(--wiki-warning); }
 
 .army-stat-row {

@@ -20,7 +20,21 @@ it("starts and persists a naval battle through ProductionEngine using real ship 
     states: [],
     relations: {},
     battleGroups: [],
-    terrain: structuredClone(DEFAULT_TERRAIN),
+    terrain: {
+      ...structuredClone(DEFAULT_TERRAIN),
+      defaultTerrainId: "sea",
+      types: {
+        ...structuredClone(DEFAULT_TERRAIN.types),
+        sea: {
+          id: "sea",
+          name: "Море",
+          movementCostUnits: 1,
+          enabled: true,
+          movementDomains: ["SEA"],
+          blocksNavalLos: false
+        }
+      }
+    },
     gridMap: { version: 1, revision: 0, cells: {} },
     wars: [],
     turn: { ...DEFAULT_TURN_STATE, turnNumber: 4, phase: "MOVEMENT" },

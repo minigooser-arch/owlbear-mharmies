@@ -25,7 +25,21 @@ it("starts and persists a naval battle from authoritative Owlbear ship positions
     states: [],
     relations: {},
     battleGroups: [],
-    terrain: structuredClone(DEFAULT_TERRAIN),
+    terrain: {
+      ...structuredClone(DEFAULT_TERRAIN),
+      defaultTerrainId: "sea",
+      types: {
+        ...structuredClone(DEFAULT_TERRAIN.types),
+        sea: {
+          id: "sea",
+          name: "Море",
+          movementCostUnits: 1,
+          enabled: true,
+          movementDomains: ["SEA"],
+          blocksNavalLos: false
+        }
+      }
+    },
     gridMap: { version: 1, revision: 0, cells: {} },
     wars: [],
     turn: { ...structuredClone(DEFAULT_TURN_STATE), turnNumber: 3, phase: "MOVEMENT" },

@@ -129,12 +129,16 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
       state.status === "IN_NAVAL_BATTLE" &&
       state.battleId === battle.id &&
       battle.participantShipIds.includes(item.id)
-      ? {
-          navalRoundNumber: battle.roundNumber,
-          isCurrentNavalTurn: battle.currentShipId === item.id,
-          navalMovementRemaining: battle.movementRemainingByShip[item.id] ?? 0,
-          navalActionUsed: battle.actionUsedByShip[item.id] ?? false
-        }
+      ? (() => {
+          const navalExited = battle.exitedShipIds.includes(item.id);
+          return {
+            navalRoundNumber: battle.roundNumber,
+            isCurrentNavalTurn: !navalExited && battle.currentShipId === item.id,
+            navalMovementRemaining: battle.movementRemainingByShip[item.id] ?? 0,
+            navalActionUsed: battle.actionUsedByShip[item.id] ?? false,
+            navalExited
+          };
+        })()
       : {};
     return {
       id: item.id,

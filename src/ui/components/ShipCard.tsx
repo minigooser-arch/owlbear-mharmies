@@ -142,6 +142,7 @@ export function ShipCard({
   onAction(command: UiCommand): void;
 }) {
   const destroyed = ship.hp <= 0;
+  const exited = ship.navalExited === true;
   const inBattle = ship.status === "IN_NAVAL_BATTLE";
   const broadside = ship.normalDice > 0
     ? `${ship.normalDice}d6 · дальность ${ship.normalRangeMin === ship.normalRangeMax ? ship.normalRangeMin : `${ship.normalRangeMin}–${ship.normalRangeMax}`}`
@@ -150,19 +151,24 @@ export function ShipCard({
     ? `Маршрут: ${ship.plannedRouteCellCount} кл.`
     : "Маршрут не задан";
   const routeUnavailable = destroyed || inBattle || ship.plannedRouteCellCount > 0 || ship.movementRemaining <= 0;
-  const canControlTactical = canPlanRoute && !destroyed && inBattle && ship.isCurrentNavalTurn === true;
+  const canControlTactical = canPlanRoute && !destroyed && !exited && inBattle && ship.isCurrentNavalTurn === true;
+  const canConfirmExit = isGM && !destroyed && !exited && inBattle && ship.isCurrentNavalTurn === true;
   const tacticalMovementDisabled =
     (ship.navalMovementRemaining ?? 0) <= 0 || ship.navalActionUsed === true;
   const statusClass = destroyed
     ? "status-destroyed"
-    : inBattle
-      ? "status-in_battle"
-      : "status-ready";
+    : exited
+      ? "status-exited"
+      : inBattle
+        ? "status-in_battle"
+        : "status-ready";
   const statusText = destroyed
     ? "Уничтожен"
-    : inBattle
-      ? "В морском бою"
-      : "Готов";
+    : exited
+      ? "Вышел из боя"
+      : inBattle
+        ? "В морском бою"
+        : "Готов";
 
   return (
     <article className={`ship-card${inBattle ? " ship-card-battle" : ""}`}>
@@ -227,6 +233,18 @@ export function ShipCard({
             onClick={() => onAction({ type: "END_NAVAL_SHIP_TURN", shipId: ship.id })}
           >
             Завершить ход
+          </button>
+        </div>
+      )}
+
+      {canConfirmExit && (
+        <div className="card-actions ship-exit-actions">
+          <button
+            className="button subtle wide"
+            type="button"
+            onClick={() => onAction({ type: "CONFIRM_NAVAL_SHIP_EXIT", shipId: ship.id })}
+          >
+            Подтвердить выход из боя
           </button>
         </div>
       )}
