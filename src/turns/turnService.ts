@@ -36,13 +36,18 @@ function prepareArmyForNewTurn(
   nextTurn: number
 ): ArmyState {
   const factionState = stateForFaction(scene, army.sideId);
-  const supplied = factionState && armyCell
-    ? hasSupplyRoute({
-        start: armyCell,
-        stateId: factionState.id,
-        readCell: (cell) => readCell(scene.gridMap, cell)
-      })
-    : true;
+  const embarkedShipId = army.embarkedOnShipId ?? null;
+  const genuinelyEmbarked = embarkedShipId !== null &&
+    scene.ships?.[embarkedShipId]?.embarkedArmyId === armyId;
+  const supplied = genuinelyEmbarked
+    ? true
+    : factionState && armyCell
+      ? hasSupplyRoute({
+          start: armyCell,
+          stateId: factionState.id,
+          readCell: (cell) => readCell(scene.gridMap, cell)
+        })
+      : true;
 
   let next: ArmyState = {
     ...army,
