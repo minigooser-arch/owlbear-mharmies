@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE } from "../../shared/constants";
-import type { NavalSceneState } from "../../shared/types";
+import type { NavalSceneState, ShipState } from "../../shared/types";
 import { createRegisteredShip } from "../ships/shipLifecycle";
 import { createNavalBattleRequest, validateNavalBattleRequest } from "./navalBattleRequest";
 
@@ -26,6 +26,12 @@ function sceneFixture(): NavalSceneState {
     navalBattleHistory: [],
     navalRevealUntilTurn: {}
   };
+}
+
+function ship(scene: NavalSceneState, shipId: string): ShipState {
+  const value = scene.ships[shipId];
+  if (!value) throw new Error(`Missing test ship: ${shipId}`);
+  return value;
 }
 
 it("creates a pending request for a currently detected living target without starting battle", () => {
@@ -65,7 +71,7 @@ it("rejects a target that is no longer detected", () => {
 
 it("rejects a destroyed initiating ship", () => {
   const scene = sceneFixture();
-  scene.ships.red!.hp = 0;
+  ship(scene, "red").hp = 0;
 
   const result = createNavalBattleRequest({
     scene,
@@ -87,14 +93,14 @@ it("revalidates target existence, hp and detection before a pending request is u
     createdOnTurn: 7
   };
 
-  scene.ships.blue!.hp = 0;
+  ship(scene, "blue").hp = 0;
   expect(validateNavalBattleRequest({
     scene,
     request,
     detectedTargetShipIds: new Set(["blue"])
   })).toEqual({ ok: false, reason: "TARGET_SHIP_DESTROYED" });
 
-  scene.ships.blue!.hp = 1;
+  ship(scene, "blue").hp = 1;
   expect(validateNavalBattleRequest({
     scene,
     request,
