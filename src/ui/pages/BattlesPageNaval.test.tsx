@@ -91,6 +91,73 @@ it("shows persistent initiative order and round status to the GM", () => {
   expect(initiative).toHaveTextContent("Ход");
 });
 
+it("lets the GM make a pending eligible ship active from the initiative list", () => {
+  const onAction = vi.fn();
+  const red = ship("red", "Аврора", true);
+  const blue = ship("blue", "Варяг", false);
+  const battle: NavalBattleView = {
+    id: "naval-1",
+    roundNumber: 3,
+    participantCount: 2,
+    currentShipId: "red",
+    initiative: [
+      { shipId: "red", total: 20 },
+      { shipId: "blue", total: 14 }
+    ],
+    completedShipIdsThisRound: [],
+    exitedShipIds: []
+  };
+
+  render(
+    <BattlesPage
+      battles={[]}
+      ships={[red, blue]}
+      activeNavalBattle={battle}
+      isGM
+      onAction={onAction}
+    />
+  );
+
+  expect(screen.queryByRole("button", { name: "Сделать активным: Аврора" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Сделать активным: Варяг" }));
+  expect(onAction).toHaveBeenCalledWith({ type: "SET_ACTIVE_NAVAL_SHIP", shipId: "blue" });
+});
+
+it("does not offer active-ship override for completed, exited, or destroyed ships", () => {
+  const red = ship("red", "Аврора", true);
+  const completed = ship("completed", "Гром", false);
+  const exited = ship("exited", "Шторм", false);
+  exited.navalExited = true;
+  const destroyed = ship("destroyed", "Буря", false);
+  destroyed.hp = 0;
+  const battle: NavalBattleView = {
+    id: "naval-1",
+    roundNumber: 3,
+    participantCount: 4,
+    currentShipId: "red",
+    initiative: [
+      { shipId: "red", total: 20 },
+      { shipId: "completed", total: 17 },
+      { shipId: "exited", total: 15 },
+      { shipId: "destroyed", total: 11 }
+    ],
+    completedShipIdsThisRound: ["completed"],
+    exitedShipIds: ["exited"]
+  };
+
+  render(
+    <BattlesPage
+      battles={[]}
+      ships={[red, completed, exited, destroyed]}
+      activeNavalBattle={battle}
+      isGM
+      onAction={vi.fn()}
+    />
+  );
+
+  expect(screen.queryByRole("button", { name: /Сделать активным:/ })).not.toBeInTheDocument();
+});
+
 it("does not expose the global naval completion control to a player", () => {
   const props = {
     battles: [],
