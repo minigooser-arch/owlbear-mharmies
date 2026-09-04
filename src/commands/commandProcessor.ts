@@ -311,17 +311,17 @@ export class CommandProcessor {
         const sceneRevision = state.scene.revision;
         const completed = completeNavalBattle(state.scene as NavalSceneState);
         completed.revision = sceneRevision;
-        state.scene = completed;
         state.positions ??= {};
         for (const [shipId, snapshot] of Object.entries(battle.snapshots)) {
-          const ship = state.scene.ships?.[shipId];
+          const ship = completed.ships[shipId];
           if (!ship) continue;
-          state.scene.ships[shipId] = {
+          completed.ships[shipId] = {
             ...ship,
             facing: snapshot.strategicFacing
           };
           state.positions[shipId] = { ...snapshot.strategicPosition };
         }
+        state.scene = completed;
         return undefined;
       }
       case "SET_SHIP_DETECTION_OVERRIDE": {
