@@ -161,6 +161,14 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
       ...tactical
     };
   });
+  const activeNavalBattle = input.role === "GM" && input.scene.activeNavalBattle?.status === "ACTIVE"
+    ? {
+        id: input.scene.activeNavalBattle.id,
+        roundNumber: input.scene.activeNavalBattle.roundNumber,
+        participantCount: input.scene.activeNavalBattle.participantShipIds.length,
+        currentShipId: input.scene.activeNavalBattle.currentShipId
+      }
+    : undefined;
   return {
     ready: true,
     sceneReady: true,
@@ -173,6 +181,7 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
     mapVisibleSourceIds,
     armies,
     ships,
+    ...(activeNavalBattle ? { activeNavalBattle } : {}),
     sides: input.scene.sides,
     states: input.scene.states,
     relations: input.scene.relations,
