@@ -103,17 +103,42 @@ function NavalBattleCard({
         <ol className="battle-participants naval-initiative-list" aria-label="Порядок инициативы">
           {initiative.map((entry, index) => {
             const ship = shipById.get(entry.shipId);
-            const status = exitedShipIds.has(entry.shipId)
+            const exited = exitedShipIds.has(entry.shipId) || ship?.navalExited === true;
+            const completed = completedShipIds.has(entry.shipId);
+            const current = battle.currentShipId === entry.shipId;
+            const status = exited
               ? "Вышел"
-              : battle.currentShipId === entry.shipId
+              : current
                 ? "Ход"
-                : completedShipIds.has(entry.shipId)
+                : completed
                   ? "Ход завершён"
-                  : "Ожидает";
+                  : ship && ship.hp <= 0
+                    ? "Уничтожен"
+                    : "Ожидает";
+            const canMakeActive = Boolean(
+              ship &&
+              !current &&
+              !completed &&
+              !exited &&
+              ship.hp > 0 &&
+              ship.status === "IN_NAVAL_BATTLE"
+            );
             return (
               <li className="battle-participant-row" key={entry.shipId}>
                 <div><strong>{index + 1}. {ship?.name ?? entry.shipId}</strong><span>{status}</span></div>
-                <strong>{entry.total}</strong>
+                <div className="naval-initiative-actions">
+                  <strong>{entry.total}</strong>
+                  {canMakeActive && ship && (
+                    <button
+                      className="button ghost subtle"
+                      type="button"
+                      aria-label={`Сделать активным: ${ship.name}`}
+                      onClick={() => onAction({ type: "SET_ACTIVE_NAVAL_SHIP", shipId: ship.id })}
+                    >
+                      Сделать активным
+                    </button>
+                  )}
+                </div>
               </li>
             );
           })}
