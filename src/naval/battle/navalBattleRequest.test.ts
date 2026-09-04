@@ -65,7 +65,7 @@ it("rejects a target that is no longer detected", () => {
 
 it("rejects a destroyed initiating ship", () => {
   const scene = sceneFixture();
-  scene.ships.red.hp = 0;
+  scene.ships.red!.hp = 0;
 
   const result = createNavalBattleRequest({
     scene,
@@ -87,14 +87,14 @@ it("revalidates target existence, hp and detection before a pending request is u
     createdOnTurn: 7
   };
 
-  scene.ships.blue.hp = 0;
+  scene.ships.blue!.hp = 0;
   expect(validateNavalBattleRequest({
     scene,
     request,
     detectedTargetShipIds: new Set(["blue"])
   })).toEqual({ ok: false, reason: "TARGET_SHIP_DESTROYED" });
 
-  scene.ships.blue.hp = 1;
+  scene.ships.blue!.hp = 1;
   expect(validateNavalBattleRequest({
     scene,
     request,
