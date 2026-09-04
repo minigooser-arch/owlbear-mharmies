@@ -25,6 +25,7 @@ import type {
 import { applyShipStrategicRouteCommand } from "./shipStrategicRouteCommand";
 import { applyForwardTacticalStep, applyTacticalTurn, forwardCell } from "../naval/battle/navalTacticalMovement";
 import { endNavalShipTurn } from "../naval/battle/navalRoundFlow";
+import { setActiveNavalShipOverride } from "../naval/battle/navalTurnOverride";
 import { confirmNavalShipExit } from "../naval/battle/navalExit";
 import { completeNavalBattle, startNavalBattle } from "../naval/battle/navalBattleLifecycle";
 
@@ -324,6 +325,18 @@ export class CommandProcessor {
         } catch (error) {
           return this.navalTacticalFailure(error);
         }
+      }
+      case "SET_ACTIVE_NAVAL_SHIP": {
+        const battle = state.scene.activeNavalBattle;
+        if (!battle || battle.status !== "ACTIVE") return "NO_ACTIVE_NAVAL_BATTLE";
+        const override = setActiveNavalShipOverride(
+          battle,
+          state.scene.ships ?? {},
+          command.shipId
+        );
+        if (!override.ok) return override.reason;
+        state.scene.activeNavalBattle = override.battle;
+        return undefined;
       }
       case "START_NAVAL_BATTLE": {
         if (command.areaCells.some((cell) => !cellSupportsDomain(state.scene, cell, "SEA"))) {
