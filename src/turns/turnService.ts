@@ -131,6 +131,7 @@ export function completeTurn(
   let nextArmies = structuredClone(armies) as Record<string, ArmyState>;
   let nextBattleGroups = structuredClone(scene.battleGroups);
   const nextTurn = scene.turn.turnNumber + 1;
+  if (nextScene.navalBattleRequests) nextScene.navalBattleRequests = [];
 
   // Disband happens before supply and any other new-turn processing.
   for (const [armyId, army] of Object.entries(nextArmies)) {
