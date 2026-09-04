@@ -35,7 +35,7 @@ const ship = (id: string, name: string, isCurrentNavalTurn: boolean): ShipView =
 
 afterEach(cleanup);
 
-it("shows a GM the active naval battle and sends manual completion", () => {
+it("requires explicit GM confirmation before manual naval battle completion", () => {
   const onAction = vi.fn();
   const props = {
     battles: [],
@@ -52,6 +52,15 @@ it("shows a GM the active naval battle and sends manual completion", () => {
   expect(screen.getByText("Ход: Аврора")).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole("button", { name: "Завершить морской бой" }));
+  expect(onAction).not.toHaveBeenCalledWith({ type: "COMPLETE_NAVAL_BATTLE" });
+  expect(screen.getByText(/корабли вернутся на сохранённые стратегические позиции/i)).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "Отмена завершения боя" }));
+  expect(screen.queryByRole("button", { name: "Подтвердить завершение морского боя" })).not.toBeInTheDocument();
+  expect(onAction).not.toHaveBeenCalledWith({ type: "COMPLETE_NAVAL_BATTLE" });
+
+  fireEvent.click(screen.getByRole("button", { name: "Завершить морской бой" }));
+  fireEvent.click(screen.getByRole("button", { name: "Подтвердить завершение морского боя" }));
   expect(onAction).toHaveBeenCalledWith({ type: "COMPLETE_NAVAL_BATTLE" });
 });
 
