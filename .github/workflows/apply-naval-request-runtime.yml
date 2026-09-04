@@ -1,0 +1,133 @@
+name: Apply naval request runtime patch
+
+on:
+  push:
+    branches:
+      - feature/naval-battle-request-runtime
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feature/naval-battle-request-runtime
+          fetch-depth: 0
+      - name: Apply focused runtime patch
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("src/background/application.ts")
+          text = path.read_text()
+
+          import_anchor = 'import { visibleShipIdsForPlayer } from "../naval/detection/navalVisibility";\n'
+          import_replacement = import_anchor + 'import { validateNavalBattleRequest } from "../naval/battle/navalBattleRequest";\n'
+          if 'validateNavalBattleRequest' not in text:
+              if import_anchor not in text:
+                  raise SystemExit("naval visibility import anchor not found")
+              text = text.replace(import_anchor, import_replacement, 1)
+
+          graph_anchor = 'import { buildDetectionGraph } from "../visibility/detectionGraph";\n'
+          graph_replacement = graph_anchor + 'import { buildSceneDetectionGraph, detectedShipIdsForSide } from "../visibility/sceneDetectionGraph";\n'
+          if 'buildSceneDetectionGraph' not in text:
+              if graph_anchor not in text:
+                  raise SystemExit("detection graph import anchor not found")
+              text = text.replace(graph_anchor, graph_replacement, 1)
+
+          processor_anchor = '''    const result = new CommandProcessor(() => this.wallClock(), commandCellForPosition, commandPositionForCell).execute(\n'''
+          processor_replacement = '''    let detectedNavalTargetsForSide: (sideId: string) => ReadonlySet<string> = () => new Set<string>();
+    if (
+      command.type === "REQUEST_NAVAL_BATTLE" ||
+      (command.type === "START_NAVAL_BATTLE" && command.navalRequestId !== null)
+    ) {
+      try {
+        const detectionGraph = await buildSceneDetectionGraph({
+          scene,
+          armies: armyRecords,
+          sceneItems,
+          distancePort: this.grid,
+          visionBarriers: extractBarrierSegments(barrierRecords, "vision")
+        });
+        detectedNavalTargetsForSide = (sideId) =>
+          detectedShipIdsForSide(detectionGraph, scene.ships ?? {}, sideId);
+      } catch {
+        // Detection-dependent commands fail closed while authoritative geometry is unavailable.
+      }
+    }
+    if (command.type === "START_NAVAL_BATTLE" && command.navalRequestId !== null) {
+      const navalRequest = scene.navalBattleRequests?.find(
+        (candidate) => candidate.id === command.navalRequestId
+      );
+      if (!navalRequest) {
+        await sendCommandAck(this.port, {
+          requestId: command.requestId,
+          status: "REJECTED",
+          reason: "NAVAL_BATTLE_REQUEST_NOT_FOUND",
+          coordinatorConnectionId: await this.currentConnectionId(),
+          recipientConnectionId: sender.connectionId
+        });
+        return;
+      }
+      if (
+        navalRequest.initiatingShipId !== command.initiatingShipId ||
+        !command.participantShipIds.includes(navalRequest.targetShipId)
+      ) {
+        await sendCommandAck(this.port, {
+          requestId: command.requestId,
+          status: "REJECTED",
+          reason: "INVALID_NAVAL_BATTLE_REQUEST",
+          coordinatorConnectionId: await this.currentConnectionId(),
+          recipientConnectionId: sender.connectionId
+        });
+        return;
+      }
+      const initiatingShip = scene.ships?.[navalRequest.initiatingShipId];
+      const requestValidation = validateNavalBattleRequest({
+        scene: scene as import("../shared/types").NavalSceneState,
+        request: navalRequest,
+        detectedTargetShipIds: initiatingShip
+          ? detectedNavalTargetsForSide(initiatingShip.sideId)
+          : new Set<string>()
+      });
+      if (!requestValidation.ok) {
+        await sendCommandAck(this.port, {
+          requestId: command.requestId,
+          status: "REJECTED",
+          reason: requestValidation.reason,
+          coordinatorConnectionId: await this.currentConnectionId(),
+          recipientConnectionId: sender.connectionId
+        });
+        return;
+      }
+    }
+    const result = new CommandProcessor(
+      () => this.wallClock(),
+      commandCellForPosition,
+      commandPositionForCell,
+      detectedNavalTargetsForSide
+    ).execute(
+'''
+          if 'detectedNavalTargetsForSide' not in text:
+              if processor_anchor not in text:
+                  raise SystemExit("CommandProcessor anchor not found")
+              text = text.replace(processor_anchor, processor_replacement, 1)
+
+          path.write_text(text)
+          PY
+      - name: Commit patch
+        shell: bash
+        run: |
+          if git diff --quiet -- src/background/application.ts; then
+            echo "No patch required"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/background/application.ts
+          git commit -m "feat: validate naval requests against live detection"
+          git push origin HEAD:feature/naval-battle-request-runtime
