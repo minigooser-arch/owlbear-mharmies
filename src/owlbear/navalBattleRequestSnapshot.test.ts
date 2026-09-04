@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { createRegisteredShip } from "../naval/ships/shipLifecycle";
 import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE } from "../shared/constants";
-import type { NavalSceneState, SceneItemRecord } from "../shared/types";
+import type { NavalSceneState, SceneItemRecord, ShipState } from "../shared/types";
 import { buildRoleSafeSnapshot } from "./extensionServices";
 
 function item(id: string, name: string): SceneItemRecord {
@@ -57,10 +57,16 @@ function scene(): NavalSceneState {
   };
 }
 
+function ship(current: NavalSceneState, id: string): ShipState {
+  const value = current.ships[id];
+  if (!value) throw new Error(`Missing ship fixture: ${id}`);
+  return value;
+}
+
 const shipRecords = (current: NavalSceneState) => [
-  { item: item("red-ship", "Аврора"), state: current.ships["red-ship"]! },
-  { item: item("blue-visible", "Видимый линкор"), state: current.ships["blue-visible"]! },
-  { item: item("blue-hidden", "Скрытый броненосец"), state: current.ships["blue-hidden"]! }
+  { item: item("red-ship", "Аврора"), state: ship(current, "red-ship") },
+  { item: item("blue-visible", "Видимый линкор"), state: ship(current, "blue-visible") },
+  { item: item("blue-hidden", "Скрытый броненосец"), state: ship(current, "blue-hidden") }
 ];
 
 it("gives a leader only minimal map-visible enemy ships as naval request targets", () => {
@@ -87,7 +93,7 @@ it("gives a leader only minimal map-visible enemy ships as naval request targets
   });
   const targets = (snapshot as unknown as { navalRequestTargets: Array<Record<string, unknown>> }).navalRequestTargets;
   expect(Object.keys(targets[0] ?? {}).sort()).toEqual(["id", "name", "sideId", "sideName"]);
-  expect(snapshot.ships?.map((ship) => ship.id)).toEqual(["red-ship"]);
+  expect(snapshot.ships?.map((candidate) => candidate.id)).toEqual(["red-ship"]);
   expect(JSON.stringify(snapshot)).not.toContain("Скрытый броненосец");
 });
 
