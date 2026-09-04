@@ -28,6 +28,7 @@ import { endNavalShipTurn } from "../naval/battle/navalRoundFlow";
 import { setActiveNavalShipOverride } from "../naval/battle/navalTurnOverride";
 import { confirmNavalShipExit } from "../naval/battle/navalExit";
 import { completeNavalBattle, startNavalBattle } from "../naval/battle/navalBattleLifecycle";
+import { createNavalBattleRequest } from "../naval/battle/navalBattleRequest";
 
 export interface CommandState {
   scene: SceneState;
@@ -131,7 +132,8 @@ export class CommandProcessor {
   constructor(
     private readonly now: () => Date = () => new Date(),
     private readonly cellForPosition?: (position: Vector2) => GridCellCoord,
-    private readonly positionForCell?: (cell: GridCellCoord) => Vector2
+    private readonly positionForCell?: (cell: GridCellCoord) => Vector2,
+    private readonly detectedNavalTargetsForSide: (sideId: string) => ReadonlySet<string> = () => new Set()
   ) {}
 
   execute(context: CommandContext, command: ArmyCommand): CommandExecutionResult {
@@ -252,6 +254,21 @@ export class CommandProcessor {
       }
       case "SET_SHIP_ROUTE":
         return applyShipStrategicRouteCommand(state, command, this.cellForPosition);
+      case "REQUEST_NAVAL_BATTLE": {
+        const initiatingShip = state.scene.ships?.[command.initiatingShipId];
+        if (!initiatingShip) return "SHIP_NOT_FOUND";
+        const result = createNavalBattleRequest({
+          scene: state.scene as NavalSceneState,
+          requestId: command.requestId,
+          initiatingShipId: command.initiatingShipId,
+          targetShipId: command.targetShipId,
+          detectedTargetShipIds: this.detectedNavalTargetsForSide(initiatingShip.sideId)
+        });
+        if (!result.ok) return result.reason;
+        state.scene.navalBattleRequests ??= [];
+        state.scene.navalBattleRequests.push(result.request);
+        return undefined;
+      }
       case "NAVAL_MOVE_FORWARD": {
         const battle = state.scene.activeNavalBattle;
         if (!battle || battle.status !== "ACTIVE") return "NO_ACTIVE_NAVAL_BATTLE";
