@@ -91,9 +91,9 @@ function NavalBattleCard({
         </div>
       </div>
       <div className="battle-participants" aria-label="Состояние морского боя">
-        <div className="battle-participant-row"><span>Раунд</span><strong>{battle.roundNumber}</strong></div>
-        <div className="battle-participant-row"><span>Кораблей</span><strong>{battle.participantCount}</strong></div>
-        <div className="battle-participant-row"><span>Ход</span><strong>{currentShip?.name ?? "—"}</strong></div>
+        <p>Раунд: {battle.roundNumber}</p>
+        <p>Кораблей: {battle.participantCount}</p>
+        <p>Ход: {currentShip?.name ?? "—"}</p>
       </div>
       <p className="muted">Завершение вручную вернёт зарегистрированные корабли на стратегические позиции и курсы, сохранённые при начале боя.</p>
       <div className="battle-management">
