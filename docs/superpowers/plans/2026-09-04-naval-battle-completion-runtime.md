@@ -15,7 +15,8 @@
 
 - Show the active naval battle to the GM in the Battles page.
 - Provide a dangerous `Завершить морской бой` action with confirmation.
-- Do not expose a global participant count or completion control to non-GM players from a partial role-safe snapshot.
+- Give the GM a role-safe battle summary independent of the visible/registered ship list, so the manual completion control remains available even when the final participant was unregistered.
+- Do not expose the global naval battle summary, participant count, or completion control to non-GM players from a partial role-safe snapshot.
 
 ## Verification
 
