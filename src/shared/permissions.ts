@@ -62,6 +62,12 @@ export function authorizeArmyCommand(
     return ledBy(context, army.sideId);
   }
 
+  if (command.type === "REQUEST_NAVAL_BATTLE") {
+    const ship = context.ships?.get(command.initiatingShipId);
+    if (!ship) return { allowed: false, reason: "SHIP_NOT_FOUND" };
+    return ledBy(context, ship.sideId);
+  }
+
   if (
     command.type === "SET_SHIP_ROUTE" ||
     command.type === "NAVAL_MOVE_FORWARD" ||
