@@ -78,6 +78,9 @@ function NavalBattleCard({
   ships: readonly ShipView[];
   onAction(command: UiCommand): void;
 }) {
+  const [confirmingCompletion, setConfirmingCompletion] = useState(false);
+  useEffect(() => setConfirmingCompletion(false), [battle.id]);
+
   const currentShip = battle.currentShipId
     ? ships.find((ship) => ship.id === battle.currentShipId)
     : ships.find((ship) => ship.isCurrentNavalTurn);
@@ -146,13 +149,40 @@ function NavalBattleCard({
       )}
       <p className="muted">Завершение вручную вернёт зарегистрированные корабли на стратегические позиции и курсы, сохранённые при начале боя.</p>
       <div className="battle-management">
-        <button
-          className="button danger subtle"
-          type="button"
-          onClick={() => onAction({ type: "COMPLETE_NAVAL_BATTLE" })}
-        >
-          Завершить морской бой
-        </button>
+        {confirmingCompletion ? (
+          <div className="naval-completion-confirmation" role="alert">
+            <p><strong>Завершить морской бой?</strong> Корабли вернутся на сохранённые стратегические позиции и курсы.</p>
+            <div className="card-actions">
+              <button
+                className="button ghost"
+                type="button"
+                aria-label="Отмена завершения боя"
+                onClick={() => setConfirmingCompletion(false)}
+              >
+                Отмена
+              </button>
+              <button
+                className="button danger subtle"
+                type="button"
+                aria-label="Подтвердить завершение морского боя"
+                onClick={() => {
+                  setConfirmingCompletion(false);
+                  onAction({ type: "COMPLETE_NAVAL_BATTLE" });
+                }}
+              >
+                Подтвердить завершение
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            className="button danger subtle"
+            type="button"
+            onClick={() => setConfirmingCompletion(true)}
+          >
+            Завершить морской бой
+          </button>
+        )}
       </div>
     </article>
   );
