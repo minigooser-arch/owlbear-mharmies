@@ -67,6 +67,13 @@ export interface ShipView {
   navalActionUsed?: boolean;
 }
 
+export interface NavalBattleView {
+  id: string;
+  roundNumber: number;
+  participantCount: number;
+  currentShipId: string | null;
+}
+
 export interface PartyPlayerView {
   id: string;
   name: string;
@@ -87,6 +94,7 @@ export interface RawExtensionSnapshot {
   mapVisibleSourceIds: ReadonlySet<string>;
   armies: readonly ArmyView[];
   ships?: readonly ShipView[];
+  activeNavalBattle?: NavalBattleView;
   sides: readonly Side[];
   states: readonly StateEntity[];
   relations: Readonly<Record<string, Record<string, import("../../shared/types").SideRelation>>>;
