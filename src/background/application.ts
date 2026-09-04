@@ -25,6 +25,7 @@ import { ShipRouteOverlayService } from "../naval/ships/shipRouteOverlayService"
 import { SHIP_CLASSES } from "../naval/ships/shipClasses";
 import { rotationForFacing } from "../naval/ships/shipRotation";
 import { visibleShipIdsForPlayer } from "../naval/detection/navalVisibility";
+import { validateNavalBattleRequest } from "../naval/battle/navalBattleRequest";
 import { getDueTurnBoundary } from "../turns/turnSchedule";
 import { completeTurn } from "../turns/turnService";
 import { getDestinationMovementCostUnits } from "../terrain/terrainRegistry";
@@ -59,6 +60,7 @@ import {
 } from "../shared/types";
 import { MetadataRepository, type ArmyRecord, type BarrierRecord } from "../storage/metadataRepository";
 import { buildDetectionGraph } from "../visibility/detectionGraph";
+import { buildSceneDetectionGraph, detectedShipIdsForSide } from "../visibility/sceneDetectionGraph";
 import { LocalCloneReconciler, UpdateOriginGuard } from "../visibility/localCloneReconciler";
 import { visibleArmyIdsForPlayer } from "../visibility/visibilityEngine";
 import type { OwlbearPort } from "../owlbear/sdkAdapter";
@@ -749,7 +751,77 @@ export class ProductionEngine {
         // CommandProcessor rejects commands that require strategic cells when positions cannot be resolved.
       }
     }
-    const result = new CommandProcessor(() => this.wallClock(), commandCellForPosition, commandPositionForCell).execute(
+    let detectedNavalTargetsForSide: (sideId: string) => ReadonlySet<string> = () => new Set<string>();
+    if (
+      command.type === "REQUEST_NAVAL_BATTLE" ||
+      (command.type === "START_NAVAL_BATTLE" && command.navalRequestId !== null)
+    ) {
+      try {
+        const detectionGraph = await buildSceneDetectionGraph({
+          scene,
+          armies: armyRecords,
+          sceneItems,
+          distancePort: this.grid,
+          visionBarriers: extractBarrierSegments(barrierRecords, "vision")
+        });
+        detectedNavalTargetsForSide = (sideId) =>
+          detectedShipIdsForSide(detectionGraph, scene.ships ?? {}, sideId);
+      } catch {
+        // Detection-dependent commands fail closed while authoritative geometry is unavailable.
+      }
+    }
+    if (command.type === "START_NAVAL_BATTLE" && command.navalRequestId !== null) {
+      const navalRequest = scene.navalBattleRequests?.find(
+        (candidate) => candidate.id === command.navalRequestId
+      );
+      if (!navalRequest) {
+        await sendCommandAck(this.port, {
+          requestId: command.requestId,
+          status: "REJECTED",
+          reason: "NAVAL_BATTLE_REQUEST_NOT_FOUND",
+          coordinatorConnectionId: await this.currentConnectionId(),
+          recipientConnectionId: sender.connectionId
+        });
+        return;
+      }
+      if (
+        navalRequest.initiatingShipId !== command.initiatingShipId ||
+        !command.participantShipIds.includes(navalRequest.targetShipId)
+      ) {
+        await sendCommandAck(this.port, {
+          requestId: command.requestId,
+          status: "REJECTED",
+          reason: "INVALID_NAVAL_BATTLE_REQUEST",
+          coordinatorConnectionId: await this.currentConnectionId(),
+          recipientConnectionId: sender.connectionId
+        });
+        return;
+      }
+      const initiatingShip = scene.ships?.[navalRequest.initiatingShipId];
+      const requestValidation = validateNavalBattleRequest({
+        scene: scene as import("../shared/types").NavalSceneState,
+        request: navalRequest,
+        detectedTargetShipIds: initiatingShip
+          ? detectedNavalTargetsForSide(initiatingShip.sideId)
+          : new Set<string>()
+      });
+      if (!requestValidation.ok) {
+        await sendCommandAck(this.port, {
+          requestId: command.requestId,
+          status: "REJECTED",
+          reason: requestValidation.reason,
+          coordinatorConnectionId: await this.currentConnectionId(),
+          recipientConnectionId: sender.connectionId
+        });
+        return;
+      }
+    }
+    const result = new CommandProcessor(
+      () => this.wallClock(),
+      commandCellForPosition,
+      commandPositionForCell,
+      detectedNavalTargetsForSide
+    ).execute(
       {
         role: sender.role,
         playerId: sender.playerId,
