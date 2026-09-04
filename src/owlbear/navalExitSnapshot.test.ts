@@ -73,7 +73,5 @@ it("marks an already-visible ship as exited without exposing broader battle stat
     navalExited: true,
     isCurrentNavalTurn: false
   });
-  expect(snapshot.activeNavalBattle).toBeDefined();
-  expect(snapshot.activeNavalBattle).not.toHaveProperty("participantShipIds");
-  expect(snapshot.activeNavalBattle).not.toHaveProperty("areaCells");
+  expect(snapshot.activeNavalBattle).toBeUndefined();
 });
