@@ -112,8 +112,8 @@ export interface RawExtensionSnapshot {
   mapVisibleSourceIds: ReadonlySet<string>;
   armies: readonly ArmyView[];
   ships?: readonly ShipView[];
-  navalRequestTargets: readonly NavalRequestTargetView[];
-  pendingNavalBattleRequests: readonly NavalBattleRequestView[];
+  navalRequestTargets?: readonly NavalRequestTargetView[];
+  pendingNavalBattleRequests?: readonly NavalBattleRequestView[];
   activeNavalBattle?: NavalBattleView;
   sides: readonly Side[];
   states: readonly StateEntity[];
@@ -154,6 +154,8 @@ export interface ExtensionServices {
 export interface ExtensionViewModel extends RawExtensionSnapshot {
   armies: ArmyView[];
   ships: ShipView[];
+  navalRequestTargets: NavalRequestTargetView[];
+  pendingNavalBattleRequests: NavalBattleRequestView[];
   counters: { total: number; moving: number; inBattle: number };
   send(command: UiCommand): Promise<unknown>;
   runDiagnostic(testId: DiagnosticTestId): Promise<unknown>;
@@ -172,6 +174,8 @@ export function useExtensionState(services: ExtensionServices): ExtensionViewMod
       ...snapshot,
       armies,
       ships,
+      navalRequestTargets: [...(snapshot.navalRequestTargets ?? [])],
+      pendingNavalBattleRequests: [...(snapshot.pendingNavalBattleRequests ?? [])],
       counters: {
         total: armies.length,
         moving: armies.filter((army) => army.status === "MOVING").length,
