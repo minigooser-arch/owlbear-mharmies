@@ -2,7 +2,7 @@
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import type { ShipView } from "../state/useExtensionState";
+import type { NavalBattleView, ShipView } from "../state/useExtensionState";
 import { BattlesPage } from "./BattlesPage";
 
 const ship = (id: string, name: string, isCurrentNavalTurn: boolean): ShipView => ({
@@ -53,6 +53,42 @@ it("shows a GM the active naval battle and sends manual completion", () => {
 
   fireEvent.click(screen.getByRole("button", { name: "Завершить морской бой" }));
   expect(onAction).toHaveBeenCalledWith({ type: "COMPLETE_NAVAL_BATTLE" });
+});
+
+it("shows persistent initiative order and round status to the GM", () => {
+  const red = ship("red", "Аврора", false);
+  red.navalExited = true;
+  const blue = ship("blue", "Варяг", true);
+  const battle = {
+    id: "naval-1",
+    roundNumber: 3,
+    participantCount: 2,
+    currentShipId: "blue",
+    initiative: [
+      { shipId: "red", total: 20 },
+      { shipId: "blue", total: 14 }
+    ],
+    completedShipIdsThisRound: ["red"],
+    exitedShipIds: ["red"]
+  } as NavalBattleView;
+
+  render(
+    <BattlesPage
+      battles={[]}
+      ships={[red, blue]}
+      activeNavalBattle={battle}
+      isGM
+      onAction={vi.fn()}
+    />
+  );
+
+  const initiative = screen.getByRole("list", { name: "Порядок инициативы" });
+  expect(initiative).toHaveTextContent("1. Аврора");
+  expect(initiative).toHaveTextContent("20");
+  expect(initiative).toHaveTextContent("Вышел");
+  expect(initiative).toHaveTextContent("2. Варяг");
+  expect(initiative).toHaveTextContent("14");
+  expect(initiative).toHaveTextContent("Ход");
 });
 
 it("does not expose the global naval completion control to a player", () => {
