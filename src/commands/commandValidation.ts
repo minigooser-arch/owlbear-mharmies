@@ -326,6 +326,9 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
   END_NAVAL_SHIP_TURN: (value) => boundedString(value.shipId)
     ? { type: "END_NAVAL_SHIP_TURN", shipId: value.shipId }
     : undefined,
+  CONFIRM_NAVAL_SHIP_EXIT: (value) => boundedString(value.shipId)
+    ? { type: "CONFIRM_NAVAL_SHIP_EXIT", shipId: value.shipId }
+    : undefined,
   START_NAVAL_BATTLE: (value) => {
     const participantShipIds = parseStringArray(value.participantShipIds);
     const areaCells = parseCells(value.areaCells);

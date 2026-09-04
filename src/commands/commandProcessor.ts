@@ -25,6 +25,7 @@ import type {
 import { applyShipStrategicRouteCommand } from "./shipStrategicRouteCommand";
 import { applyForwardTacticalStep, applyTacticalTurn, forwardCell } from "../naval/battle/navalTacticalMovement";
 import { endNavalShipTurn } from "../naval/battle/navalRoundFlow";
+import { confirmNavalShipExit } from "../naval/battle/navalExit";
 import { completeNavalBattle, startNavalBattle } from "../naval/battle/navalBattleLifecycle";
 
 export interface CommandState {
@@ -166,6 +167,7 @@ export class CommandProcessor {
   private navalTacticalFailure(error: unknown): string {
     const message = error instanceof Error ? error.message : String(error);
     if (message === "Ship is not active") return "SHIP_NOT_ACTIVE";
+    if (message === "Ship already exited naval battle") return "SHIP_ALREADY_EXITED";
     if (message === "Outside naval battle area") return "OUTSIDE_NAVAL_BATTLE_AREA";
     if (message === "Insufficient naval movement") return "INSUFFICIENT_NAVAL_MOVEMENT";
     if (message === "Naval action already used") return "NAVAL_ACTION_ALREADY_USED";
@@ -285,6 +287,24 @@ export class CommandProcessor {
           state.scene.activeNavalBattle = result.battle;
           state.scene.ships ??= {};
           state.scene.ships[command.shipId] = result.ship;
+          return undefined;
+        } catch (error) {
+          return this.navalTacticalFailure(error);
+        }
+      }
+      case "CONFIRM_NAVAL_SHIP_EXIT": {
+        const battle = state.scene.activeNavalBattle;
+        if (!battle || battle.status !== "ACTIVE") return "NO_ACTIVE_NAVAL_BATTLE";
+        const ship = state.scene.ships?.[command.shipId];
+        if (!ship) return "SHIP_NOT_FOUND";
+        if (ship.status !== "IN_NAVAL_BATTLE" || ship.battleId !== battle.id) return "SHIP_NOT_IN_NAVAL_BATTLE";
+        if (ship.hp <= 0) return "SHIP_DESTROYED";
+        try {
+          state.scene.activeNavalBattle = confirmNavalShipExit(
+            battle,
+            state.scene.ships ?? {},
+            command.shipId
+          );
           return undefined;
         } catch (error) {
           return this.navalTacticalFailure(error);
