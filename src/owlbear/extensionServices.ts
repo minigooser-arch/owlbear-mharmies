@@ -42,6 +42,8 @@ import { MetadataRepository, type ArmyRecord, type ShipRecord } from "../storage
 import type {
   ArmyView,
   ExtensionServices,
+  NavalBattleRequestView,
+  NavalRequestTargetView,
   PartyPlayerView,
   RawExtensionSnapshot,
   ShipView,
@@ -95,6 +97,28 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
     }
   }
   const sideNames = new Map(input.scene.sides.map((side) => [side.id, side.name]));
+  const navalRequestTargets: NavalRequestTargetView[] = input.role === "PLAYER" && leaderSideIds.size > 0
+    ? shipRecords
+        .filter(({ item, state }) =>
+          state.hp > 0 &&
+          !memberSideIds.has(state.sideId) &&
+          mapVisibleSourceIds.has(item.id)
+        )
+        .map(({ item, state }) => ({
+          id: item.id,
+          name: item.name ?? "Безымянный корабль",
+          sideId: state.sideId,
+          sideName: sideNames.get(state.sideId) ?? "Неизвестная сторона"
+        }))
+    : [];
+  const pendingNavalBattleRequests: NavalBattleRequestView[] = input.role === "GM"
+    ? (input.scene.navalBattleRequests ?? []).map((request) => ({
+        id: request.id,
+        initiatingShipId: request.initiatingShipId,
+        targetShipId: request.targetShipId,
+        ...(request.createdOnTurn !== undefined ? { createdOnTurn: request.createdOnTurn } : {})
+      }))
+    : [];
   const armies: ArmyView[] = authorizedRecords.map(({ item, state }) => {
     const routeVisible = input.role === "GM" || (
       state.status === "READY"
@@ -188,6 +212,8 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
     mapVisibleSourceIds,
     armies,
     ships,
+    navalRequestTargets,
+    pendingNavalBattleRequests,
     ...(activeNavalBattle ? { activeNavalBattle } : {}),
     sides: input.scene.sides,
     states: input.scene.states,
@@ -216,6 +242,8 @@ const LOADING_SNAPSHOT: RawExtensionSnapshot = {
   mapVisibleSourceIds: new Set(),
   armies: [],
   ships: [],
+  navalRequestTargets: [],
+  pendingNavalBattleRequests: [],
   sides: [],
   states: [],
   relations: {},
