@@ -68,6 +68,20 @@ export interface ShipView {
   navalExited?: boolean;
 }
 
+export interface NavalRequestTargetView {
+  id: string;
+  name: string;
+  sideId: string;
+  sideName: string;
+}
+
+export interface NavalBattleRequestView {
+  id: string;
+  initiatingShipId: string;
+  targetShipId: string;
+  createdOnTurn?: number;
+}
+
 export interface NavalBattleView {
   id: string;
   roundNumber: number;
@@ -98,6 +112,8 @@ export interface RawExtensionSnapshot {
   mapVisibleSourceIds: ReadonlySet<string>;
   armies: readonly ArmyView[];
   ships?: readonly ShipView[];
+  navalRequestTargets: readonly NavalRequestTargetView[];
+  pendingNavalBattleRequests: readonly NavalBattleRequestView[];
   activeNavalBattle?: NavalBattleView;
   sides: readonly Side[];
   states: readonly StateEntity[];
