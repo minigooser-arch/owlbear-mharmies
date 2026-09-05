@@ -211,7 +211,7 @@ describe("naval battle lifecycle", () => {
     })).toThrow("Initiating ship must participate");
   });
 
-  it("completes and archives the battle, releases surviving ships, restores movement phase, and preserves strategic snapshots", () => {
+  it("completes and archives the battle, releases surviving ships, clears temporary hp, restores movement phase, and preserves strategic snapshots", () => {
     const active = startNavalBattle(scene(), {
       battleId: "battle-1",
       requestId: "request",
@@ -222,12 +222,17 @@ describe("naval battle lifecycle", () => {
       startedAt: 123,
       rollD20: rolls(18, 10)
     });
+    const red = active.ships.red;
+    const blue = active.ships.blue;
+    if (!red || !blue) throw new Error("Missing battle participant fixture");
+    active.ships.red = { ...red, temporaryHp: 4 };
+    active.ships.blue = { ...blue, temporaryHp: 7 };
 
     const result = completeNavalBattle(active);
     expect(result.activeNavalBattle).toBeNull();
     expect(result.turn.phase).toBe("MOVEMENT");
-    expect(result.ships.red).toMatchObject({ status: "READY", battleId: null });
-    expect(result.ships.blue).toMatchObject({ status: "READY", battleId: null });
+    expect(result.ships.red).toMatchObject({ status: "READY", battleId: null, temporaryHp: 0 });
+    expect(result.ships.blue).toMatchObject({ status: "READY", battleId: null, temporaryHp: 0 });
     expect(result.navalBattleHistory).toHaveLength(1);
     expect(result.navalBattleHistory[0]).toMatchObject({
       id: "battle-1",
