@@ -3,7 +3,9 @@ import type {
   NavalBattleState,
   ShipState
 } from "../../shared/types";
+import { applyShipDamage } from "../ships/shipDamage";
 import { SHIP_CLASSES } from "../ships/shipClasses";
+import { isInIroncladAdjacentSpecialMask, isInNormalBroadsideMask } from "./broadsideMask";
 import { useNavalAction } from "./navalRoundFlow";
 
 export interface BroadsideSectorInput {
@@ -38,9 +40,25 @@ export interface ValidateBroadsideTargetInput {
   target: ShipState;
   attackerCell: GridCellCoord;
   targetCell: GridCellCoord;
-  sectorResolver: BroadsideSectorResolver;
+  sectorResolver?: BroadsideSectorResolver;
   distanceCells(from: GridCellCoord, to: GridCellCoord): number;
   hasLineOfSight(from: GridCellCoord, to: GridCellCoord): boolean;
+}
+
+function targetInBroadsideSector(input: ValidateBroadsideTargetInput): boolean {
+  if (input.sectorResolver) {
+    return input.sectorResolver({
+      attackerCell: input.attackerCell,
+      targetCell: input.targetCell,
+      facing: input.attacker.facing
+    });
+  }
+  return isInNormalBroadsideMask(
+    input.attacker.classId,
+    input.attacker.facing,
+    input.attackerCell,
+    input.targetCell
+  );
 }
 
 export function validateBroadsideTarget(
@@ -69,11 +87,7 @@ export function validateBroadsideTarget(
   if (input.attacker.sideId === input.target.sideId) {
     return { ok: false, reason: "FRIENDLY_TARGET" };
   }
-  if (!input.sectorResolver({
-    attackerCell: input.attackerCell,
-    targetCell: input.targetCell,
-    facing: input.attacker.facing
-  })) {
+  if (!targetInBroadsideSector(input)) {
     return { ok: false, reason: "OUTSIDE_BROADSIDE_SECTOR" };
   }
 
@@ -95,7 +109,7 @@ export interface CommitBroadsideActionInput {
   targetId: string;
   attackerCell: GridCellCoord;
   targetCell: GridCellCoord;
-  sectorResolver: BroadsideSectorResolver;
+  sectorResolver?: BroadsideSectorResolver;
   distanceCells(from: GridCellCoord, to: GridCellCoord): number;
   hasLineOfSight(from: GridCellCoord, to: GridCellCoord): boolean;
 }
@@ -130,5 +144,75 @@ export function commitBroadsideAction(
     ok: true,
     range: validation.range,
     battle: useNavalAction(input.battle, input.ships, input.attackerId)
+  };
+}
+
+export interface CommitBroadsideAttackInput extends CommitBroadsideActionInput {
+  rollD6(): number;
+}
+
+export type CommitBroadsideAttackResult =
+  | {
+      ok: true;
+      range: number;
+      rolledDamage: number;
+      armor: number;
+      damage: number;
+      special: boolean;
+      target: ShipState;
+      battle: NavalBattleState;
+    }
+  | { ok: false; reason: BroadsideTargetFailure; range?: number };
+
+export function commitBroadsideAttack(
+  input: CommitBroadsideAttackInput
+): CommitBroadsideAttackResult {
+  const attacker = input.ships[input.attackerId];
+  const target = input.ships[input.targetId];
+  if (!attacker) return { ok: false, reason: "SHIP_NOT_ACTIVE" };
+  if (!target) return { ok: false, reason: "OUTSIDE_BROADSIDE_SECTOR" };
+
+  const validation = validateBroadsideTarget({
+    battle: input.battle,
+    attackerId: input.attackerId,
+    targetId: input.targetId,
+    attacker,
+    target,
+    attackerCell: input.attackerCell,
+    targetCell: input.targetCell,
+    sectorResolver: input.sectorResolver,
+    distanceCells: input.distanceCells,
+    hasLineOfSight: input.hasLineOfSight
+  });
+  if (!validation.ok) return validation;
+
+  const special =
+    attacker.classId === "IRONCLAD" &&
+    isInIroncladAdjacentSpecialMask(
+      attacker.facing,
+      input.attackerCell,
+      input.targetCell
+    );
+  const dice = special ? 3 : SHIP_CLASSES[attacker.classId].normalDice;
+  let rolledDamage = 0;
+  for (let index = 0; index < dice; index += 1) rolledDamage += input.rollD6();
+
+  const armor = special ? 0 : SHIP_CLASSES[target.classId].armor;
+  const damage = Math.max(0, rolledDamage - armor);
+  const updatedTarget = applyShipDamage(target, damage);
+  const updatedShips = {
+    ...input.ships,
+    [input.targetId]: updatedTarget
+  };
+
+  return {
+    ok: true,
+    range: validation.range,
+    rolledDamage,
+    armor,
+    damage,
+    special,
+    target: updatedTarget,
+    battle: useNavalAction(input.battle, updatedShips, input.attackerId)
   };
 }
