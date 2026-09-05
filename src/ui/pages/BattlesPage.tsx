@@ -1,6 +1,12 @@
 import { useEffect, useState } from "react";
 import type { BattleGroup } from "../../shared/types";
-import type { ArmyView, NavalBattleView, ShipView, UiCommand } from "../state/useExtensionState";
+import type {
+  ArmyView,
+  NavalBattleRequestView,
+  NavalBattleView,
+  ShipView,
+  UiCommand
+} from "../state/useExtensionState";
 
 interface BattleCardProps {
   battle: BattleGroup;
@@ -65,6 +71,47 @@ function BattleCard({ battle, armies, isGM, onAction }: BattleCardProps) {
           </button>
         </div>
       )}
+    </article>
+  );
+}
+
+function NavalBattleRequestQueue({
+  requests,
+  ships
+}: {
+  requests: readonly NavalBattleRequestView[];
+  ships: readonly ShipView[];
+}) {
+  const shipById = new Map(ships.map((ship) => [ship.id, ship]));
+
+  return (
+    <article className="army-card wiki-card battle-card naval-request-queue">
+      <div className="section-heading compact-heading">
+        <div>
+          <p className="eyebrow">Флот</p>
+          <h3>Заявки на морской бой</h3>
+        </div>
+        <span className="count-pill">{requests.length}</span>
+      </div>
+      <div className="battle-participants" aria-label="Ожидающие заявки на морской бой">
+        {requests.map((request) => {
+          const initiatingShip = shipById.get(request.initiatingShipId);
+          const targetShip = shipById.get(request.targetShipId);
+          return (
+            <div className="battle-participant-row" key={request.id}>
+              <div>
+                <strong>{initiatingShip?.name ?? request.initiatingShipId}</strong>
+                <span>{initiatingShip?.sideName ?? "Неизвестная сторона"}</span>
+              </div>
+              <div>
+                <strong>{targetShip?.name ?? request.targetShipId}</strong>
+                <span>{targetShip?.sideName ?? "Неизвестная сторона"}</span>
+              </div>
+              {request.createdOnTurn !== undefined && <span>Ход {request.createdOnTurn}</span>}
+            </div>
+          );
+        })}
+      </div>
     </article>
   );
 }
@@ -192,6 +239,7 @@ export function BattlesPage({
   battles,
   armies = [],
   ships = [],
+  pendingNavalBattleRequests = [],
   activeNavalBattle,
   isGM,
   onAction
@@ -199,6 +247,7 @@ export function BattlesPage({
   battles: readonly BattleGroup[];
   armies?: readonly ArmyView[];
   ships?: readonly ShipView[];
+  pendingNavalBattleRequests?: readonly NavalBattleRequestView[];
   activeNavalBattle?: NavalBattleView;
   isGM: boolean;
   onAction(command: UiCommand): void;
@@ -216,12 +265,14 @@ export function BattlesPage({
         }
       : undefined)
     : undefined;
-  const hasVisibleBattle = battles.length > 0 || navalBattle !== undefined;
+  const visibleNavalRequests = isGM ? pendingNavalBattleRequests : [];
+  const hasVisibleBattle = battles.length > 0 || navalBattle !== undefined || visibleNavalRequests.length > 0;
 
   return (
     <section aria-labelledby="battles-title">
       <div className="section-heading wiki-page-heading"><div><p className="eyebrow">Контакты</p><h2 id="battles-title">Бои</h2><p className="page-description">Активные столкновения, участвующие армии и быстрые действия ведущего.</p></div></div>
       <div className="card-list">
+        {visibleNavalRequests.length > 0 && <NavalBattleRequestQueue requests={visibleNavalRequests} ships={ships} />}
         {navalBattle && <NavalBattleCard battle={navalBattle} ships={ships} onAction={onAction} />}
         {battles.map((battle) => <BattleCard battle={battle} armies={armies} isGM={isGM} onAction={onAction} key={battle.battleId} />)}
         {!hasVisibleBattle && <p className="empty empty-panel">Активных боёв нет.</p>}
