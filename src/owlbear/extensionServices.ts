@@ -33,7 +33,12 @@ import {
   SHIP_ROUTE_RETURN_TOOL_KEY,
   SHIP_ROUTE_SHIP_ID_KEY,
   SHIP_ROUTE_TOOL_ID,
-  SHIP_ROUTE_TOOL_MODE_ID
+  SHIP_ROUTE_TOOL_MODE_ID,
+  TRANSPORT_LANDING_ARMY_ID_KEY,
+  TRANSPORT_LANDING_RETURN_TOOL_KEY,
+  TRANSPORT_LANDING_SHIP_ID_KEY,
+  TRANSPORT_LANDING_TOOL_ID,
+  TRANSPORT_LANDING_TOOL_MODE_ID
 } from "../shared/constants";
 import {
   COMMAND_PROTOCOL_VERSION,
@@ -587,6 +592,30 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
             await OBR.tool.setMetadata(SHIP_ROUTE_TOOL_ID, {
               [SHIP_ROUTE_SHIP_ID_KEY]: null,
               [SHIP_ROUTE_RETURN_TOOL_KEY]: null
+            });
+          } catch {
+            // The original activation failure is more useful to the caller.
+          }
+          throw error;
+        }
+        return undefined;
+      }
+      if (command.type === "OPEN_TRANSPORT_LANDING") {
+        const returnToolId = await OBR.tool.getActiveTool();
+        try {
+          await OBR.tool.setMetadata(TRANSPORT_LANDING_TOOL_ID, {
+            [TRANSPORT_LANDING_SHIP_ID_KEY]: command.shipId,
+            [TRANSPORT_LANDING_ARMY_ID_KEY]: command.armyId,
+            [TRANSPORT_LANDING_RETURN_TOOL_KEY]: returnToolId
+          });
+          await OBR.tool.activateTool(TRANSPORT_LANDING_TOOL_ID);
+          await OBR.tool.activateMode(TRANSPORT_LANDING_TOOL_ID, TRANSPORT_LANDING_TOOL_MODE_ID);
+        } catch (error) {
+          try {
+            await OBR.tool.setMetadata(TRANSPORT_LANDING_TOOL_ID, {
+              [TRANSPORT_LANDING_SHIP_ID_KEY]: null,
+              [TRANSPORT_LANDING_ARMY_ID_KEY]: null,
+              [TRANSPORT_LANDING_RETURN_TOOL_KEY]: null
             });
           } catch {
             // The original activation failure is more useful to the caller.

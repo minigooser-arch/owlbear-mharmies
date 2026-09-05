@@ -88,6 +88,14 @@ export function FleetPage({
     ? embarkArmyId
     : (embarkTargets[0]?.id ?? "");
   const canEmbark = selectedEmbarkShipId !== "" && selectedEmbarkArmyId !== "";
+  const disembarkTransports = ships.filter((ship) =>
+    ship.classId === "TRANSPORT" &&
+    ship.status === "READY" &&
+    ship.hp > 0 &&
+    ship.embarkedArmyId !== null &&
+    ship.movementRemaining > 0 &&
+    (role === "GM" || leaderSideIds.has(ship.sideId))
+  );
 
   return (
     <section aria-labelledby="fleet-title" className="wiki-page fleet-page">
@@ -195,6 +203,35 @@ export function FleetPage({
             >
               Погрузить армию
             </button>
+          </div>
+        </section>
+      )}
+
+      {disembarkTransports.length > 0 && (
+        <section className="registration-card fleet-registration" aria-labelledby="transport-disembark-title">
+          <div className="registration-copy">
+            <span className="registration-kicker">Перевозка войск</span>
+            <h3 id="transport-disembark-title">Высадка армии</h3>
+            <small>Выберите место высадки кликом по клетке карты. Допустимость клетки проверяется сервером.</small>
+          </div>
+          <div className="registration-actions fleet-registration-actions">
+            {disembarkTransports.map((ship) => (
+              <button
+                key={ship.id}
+                className="button primary"
+                type="button"
+                onClick={() => {
+                  if (!ship.embarkedArmyId) return;
+                  onAction({
+                    type: "OPEN_TRANSPORT_LANDING",
+                    shipId: ship.id,
+                    armyId: ship.embarkedArmyId
+                  });
+                }}
+              >
+                Выбрать место высадки
+              </button>
+            ))}
           </div>
         </section>
       )}

@@ -42,10 +42,15 @@ import {
   type ShipRouteToolRegistration
 } from "../owlbear/shipRouteToolIntegration";
 import {
+  registerTransportLandingTool,
+  type TransportLandingToolRegistration
+} from "../owlbear/transportLandingTool";
+import {
   RouteToolService,
   snapRouteToGrid
 } from "./routeToolService";
 import { ShipRouteToolService } from "./shipRouteToolService";
+import { TransportLandingToolService } from "./transportLandingToolService";
 import { MapBrushToolService } from "./mapBrushToolService";
 import { NavalBattleAreaToolService } from "./navalBattleAreaToolService";
 import { registerMapBrushTool, type MapBrushToolRegistration } from "../owlbear/mapBrushTool";
@@ -1364,6 +1369,20 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
     routeGateway.stop();
     throw error;
   }
+  const transportLandingService = new TransportLandingToolService(toolPort, routeGateway);
+  let removeTransportLandingTool: TransportLandingToolRegistration;
+  try {
+    removeTransportLandingTool = await registerTransportLandingTool(
+      OBR.tool,
+      transportLandingService,
+      `${import.meta.env.BASE_URL}icon-1.2.png`
+    );
+  } catch (error) {
+    await removeShipRouteTool();
+    await removeRouteTool();
+    routeGateway.stop();
+    throw error;
+  }
   let removeMapBrushTool: MapBrushToolRegistration;
   try {
     removeMapBrushTool = await registerMapBrushTool(
@@ -1372,6 +1391,7 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
       `${import.meta.env.BASE_URL}icon-1.2.png`
     );
   } catch (error) {
+    await removeTransportLandingTool();
     await removeShipRouteTool();
     await removeRouteTool();
     routeGateway.stop();
@@ -1386,6 +1406,7 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
     );
   } catch (error) {
     await removeMapBrushTool();
+    await removeTransportLandingTool();
     await removeShipRouteTool();
     await removeRouteTool();
     routeGateway.stop();
@@ -1414,7 +1435,9 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
       try {
         await Promise.all([
           removeRouteTool.cancelSession(),
-          removeShipRouteTool.cancelSession()
+          removeShipRouteTool.cancelSession(),
+          removeTransportLandingTool.cancelSession(),
+          removeTransportLandingTool.cancelSession()
         ]);
       } catch {
         // A stale preview must not disable command delivery or coordinator heartbeats.
@@ -1492,6 +1515,7 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
         try {
           await removeNavalBattleAreaTool();
           await removeMapBrushTool();
+          await removeTransportLandingTool();
           await removeShipRouteTool();
           await removeRouteTool();
         } finally {
