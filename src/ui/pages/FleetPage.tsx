@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { SHIP_CLASSES } from "../../naval/ships/shipClasses";
 import type { ShipClassId, ShipFacing, Side } from "../../shared/types";
 import { ShipCard } from "../components/ShipCard";
-import type { ArmyView, ShipView, UiCommand } from "../state/useExtensionState";
+import type { ArmyView, NavalRequestTargetView, ShipView, UiCommand } from "../state/useExtensionState";
 
 const CLASS_IDS = Object.keys(SHIP_CLASSES) as ShipClassId[];
 const FACING_OPTIONS: Array<{ value: ShipFacing; label: string }> = [
@@ -18,6 +18,7 @@ export function FleetPage({
   sides,
   role,
   leaderSideIds,
+  navalRequestTargets = [],
   onAction
 }: {
   ships: readonly ShipView[];
@@ -25,6 +26,7 @@ export function FleetPage({
   sides: readonly Side[];
   role: "GM" | "PLAYER";
   leaderSideIds: ReadonlySet<string>;
+  navalRequestTargets?: readonly NavalRequestTargetView[];
   onAction(command: UiCommand): void;
 }) {
   const [query, setQuery] = useState("");
@@ -33,6 +35,8 @@ export function FleetPage({
   const [registrationSideId, setRegistrationSideId] = useState(sides[0]?.id ?? "");
   const [registrationClassId, setRegistrationClassId] = useState<ShipClassId>("BATTLESHIP");
   const [registrationFacing, setRegistrationFacing] = useState<ShipFacing>("NORTH");
+  const [requestInitiatingShipId, setRequestInitiatingShipId] = useState("");
+  const [requestTargetShipId, setRequestTargetShipId] = useState("");
 
   const selectedRegistrationSideId = sides.some((side) => side.id === registrationSideId)
     ? registrationSideId
@@ -43,6 +47,16 @@ export function FleetPage({
     ship.name.toLocaleLowerCase("ru").includes(query.toLocaleLowerCase("ru"))
   ), [classFilter, filterSideId, query, ships]);
   const armyNames = new Map(armies.map((army) => [army.id, army.name]));
+  const requestInitiators = ships.filter((ship) =>
+    leaderSideIds.has(ship.sideId) && ship.status === "READY" && ship.hp > 0
+  );
+  const selectedRequestInitiatingShipId = requestInitiators.some((ship) => ship.id === requestInitiatingShipId)
+    ? requestInitiatingShipId
+    : (requestInitiators[0]?.id ?? "");
+  const selectedRequestTargetShipId = navalRequestTargets.some((target) => target.id === requestTargetShipId)
+    ? requestTargetShipId
+    : (navalRequestTargets[0]?.id ?? "");
+  const canRequestNavalBattle = selectedRequestInitiatingShipId !== "" && selectedRequestTargetShipId !== "";
 
   return (
     <section aria-labelledby="fleet-title" className="wiki-page fleet-page">
@@ -68,6 +82,52 @@ export function FleetPage({
           </select>
         </div>
       </div>
+
+      {role === "PLAYER" && leaderSideIds.size > 0 && (
+        <section className="registration-card fleet-registration" aria-labelledby="naval-request-title">
+          <div className="registration-copy">
+            <span className="registration-kicker">Флот</span>
+            <h3 id="naval-request-title">Запрос морского боя</h3>
+            <small>Выберите свой готовый корабль и обнаруженную вражескую цель. Начало боя подтверждает ведущий.</small>
+          </div>
+          <div className="registration-actions fleet-registration-actions">
+            <select
+              aria-label="Корабль-инициатор"
+              value={selectedRequestInitiatingShipId}
+              disabled={requestInitiators.length === 0}
+              onChange={(event) => setRequestInitiatingShipId(event.target.value)}
+            >
+              {requestInitiators.length === 0 && <option value="">Нет готовых кораблей</option>}
+              {requestInitiators.map((ship) => <option key={ship.id} value={ship.id}>{ship.name} — {ship.sideName}</option>)}
+            </select>
+            <select
+              aria-label="Цель морского боя"
+              value={selectedRequestTargetShipId}
+              disabled={navalRequestTargets.length === 0}
+              onChange={(event) => setRequestTargetShipId(event.target.value)}
+            >
+              {navalRequestTargets.length === 0 && <option value="">Обнаруженных целей нет</option>}
+              {navalRequestTargets.map((target) => <option key={target.id} value={target.id}>{target.name} — {target.sideName}</option>)}
+            </select>
+            {navalRequestTargets.length === 0 && <small>Обнаруженных целей нет.</small>}
+            <button
+              className="button primary"
+              type="button"
+              disabled={!canRequestNavalBattle}
+              onClick={() => {
+                if (!canRequestNavalBattle) return;
+                onAction({
+                  type: "REQUEST_NAVAL_BATTLE",
+                  initiatingShipId: selectedRequestInitiatingShipId,
+                  targetShipId: selectedRequestTargetShipId
+                });
+              }}
+            >
+              Инициировать морской бой
+            </button>
+          </div>
+        </section>
+      )}
 
       {role === "GM" && (
         <section className="registration-card fleet-registration" aria-label="Регистрация корабля">
