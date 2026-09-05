@@ -27,6 +27,11 @@ export const MAP_BRUSH_SIZE_KEY = `${MAP_BRUSH_TOOL_ID}/size`;
 export const MAP_BRUSH_FACTION_OPERATION_KEY = `${MAP_BRUSH_TOOL_ID}/faction-operation`;
 export const MAP_BRUSH_IMPASSABLE_VALUE_KEY = `${MAP_BRUSH_TOOL_ID}/impassable-value`;
 export const MAP_BRUSH_ERASER_TARGET_KEY = `${MAP_BRUSH_TOOL_ID}/eraser-target`;
+export const NAVAL_BATTLE_AREA_TOOL_ID = `${EXTENSION_ID}/naval-battle-area-tool`;
+export const NAVAL_BATTLE_AREA_TOOL_MODE_ID = `${NAVAL_BATTLE_AREA_TOOL_ID}/paint`;
+export const NAVAL_BATTLE_AREA_REQUEST_ID_KEY = `${NAVAL_BATTLE_AREA_TOOL_ID}/request-id`;
+export const NAVAL_BATTLE_AREA_SESSION_ID_KEY = `${NAVAL_BATTLE_AREA_TOOL_ID}/session-id`;
+export const NAVAL_BATTLE_AREA_DRAFT_CHANNEL = `${NAVAL_BATTLE_AREA_TOOL_ID}/draft`;
 
 export const MOVEMENT_UNITS_PER_OP = 2;
 export const STRATEGIC_CELL_CHUNKS = 10;
@@ -48,7 +53,8 @@ export const METADATA_KEYS = {
   mapOverlay: `${EXTENSION_ID}/map-overlay`,
   healthOverlay: `${EXTENSION_ID}/health-overlay`,
   navalShipOverlay: `${EXTENSION_ID}/naval-ship-overlay`,
-  mapBrushPreview: `${EXTENSION_ID}/map-brush-preview`
+  mapBrushPreview: `${EXTENSION_ID}/map-brush-preview`,
+  navalBattleAreaPreview: `${EXTENSION_ID}/naval-battle-area-preview`
 } as const;
 
 export const DEFAULT_SETTINGS: SceneSettings = {
