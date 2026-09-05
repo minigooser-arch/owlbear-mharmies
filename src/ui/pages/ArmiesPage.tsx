@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import type { Side } from "../../shared/types";
 import { ArmyCard } from "../components/ArmyCard";
-import type { ArmyView, UiCommand } from "../state/useExtensionState";
+import type { ArmyView, TransportEmbarkRequestView, UiCommand } from "../state/useExtensionState";
 
 interface ArmiesPageProps {
   armies: readonly ArmyView[];
@@ -10,6 +10,7 @@ interface ArmiesPageProps {
   playerId: string;
   leaderSideIds: ReadonlySet<string>;
   memberSideIds: ReadonlySet<string>;
+  pendingTransportEmbarkRequests?: readonly TransportEmbarkRequestView[];
   onAction(command: UiCommand): void;
 }
 
@@ -19,6 +20,7 @@ export function ArmiesPage({
   role,
   leaderSideIds,
   memberSideIds,
+  pendingTransportEmbarkRequests = [],
   onAction
 }: ArmiesPageProps) {
   const [query, setQuery] = useState("");
@@ -100,6 +102,36 @@ export function ArmiesPage({
             >
               Сделать армией
             </button>
+          </div>
+        </section>
+      )}
+
+      {pendingTransportEmbarkRequests.length > 0 && (
+        <section className="registration-card" aria-labelledby="transport-consent-title">
+          <div className="registration-copy">
+            <span className="registration-kicker">Перевозка войск</span>
+            <h3 id="transport-consent-title">Запросы на перевозку</h3>
+            <small>Иностранный транспорт ожидает согласия на погрузку вашей армии.</small>
+          </div>
+          <div className="registration-actions">
+            {pendingTransportEmbarkRequests.map((request) => (
+              <div key={request.id} className="transport-consent-request">
+                <span>{request.armyName} → {request.shipName} · {request.shipSideName}</span>
+                <button
+                  className="button primary"
+                  type="button"
+                  aria-label={`Разрешить погрузку ${request.armyName} на ${request.shipName}`}
+                  onClick={() => onAction({
+                    type: "ACCEPT_EMBARK_ARMY",
+                    embarkRequestId: request.id,
+                    shipId: request.shipId,
+                    armyId: request.armyId
+                  })}
+                >
+                  Разрешить погрузку
+                </button>
+              </div>
+            ))}
           </div>
         </section>
       )}

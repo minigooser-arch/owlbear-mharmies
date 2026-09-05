@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { SHIP_CLASSES } from "../../naval/ships/shipClasses";
 import type { ShipClassId, ShipFacing, Side } from "../../shared/types";
 import { ShipCard } from "../components/ShipCard";
-import type { ArmyView, NavalRequestTargetView, ShipView, UiCommand } from "../state/useExtensionState";
+import type { ArmyView, NavalRequestTargetView, ShipView, TransportEmbarkTargetView, UiCommand } from "../state/useExtensionState";
 
 const CLASS_IDS = Object.keys(SHIP_CLASSES) as ShipClassId[];
 const FACING_OPTIONS: Array<{ value: ShipFacing; label: string }> = [
@@ -19,6 +19,7 @@ export function FleetPage({
   role,
   leaderSideIds,
   navalRequestTargets = [],
+  transportEmbarkTargets = [],
   onAction
 }: {
   ships: readonly ShipView[];
@@ -27,6 +28,7 @@ export function FleetPage({
   role: "GM" | "PLAYER";
   leaderSideIds: ReadonlySet<string>;
   navalRequestTargets?: readonly NavalRequestTargetView[];
+  transportEmbarkTargets?: readonly TransportEmbarkTargetView[];
   onAction(command: UiCommand): void;
 }) {
   const [query, setQuery] = useState("");
@@ -37,6 +39,8 @@ export function FleetPage({
   const [registrationFacing, setRegistrationFacing] = useState<ShipFacing>("NORTH");
   const [requestInitiatingShipId, setRequestInitiatingShipId] = useState("");
   const [requestTargetShipId, setRequestTargetShipId] = useState("");
+  const [embarkShipId, setEmbarkShipId] = useState("");
+  const [embarkArmyId, setEmbarkArmyId] = useState("");
 
   const selectedRegistrationSideId = sides.some((side) => side.id === registrationSideId)
     ? registrationSideId
@@ -57,6 +61,33 @@ export function FleetPage({
     ? requestTargetShipId
     : (navalRequestTargets[0]?.id ?? "");
   const canRequestNavalBattle = selectedRequestInitiatingShipId !== "" && selectedRequestTargetShipId !== "";
+  const embarkTransports = ships.filter((ship) =>
+    ship.classId === "TRANSPORT" &&
+    ship.status === "READY" &&
+    ship.hp > 0 &&
+    ship.embarkedArmyId === null &&
+    ship.movementRemaining > 0 &&
+    (role === "GM" || leaderSideIds.has(ship.sideId))
+  );
+  const ownEmbarkTargets = armies
+    .filter((army) =>
+      army.healthHp > 0 &&
+      army.embarkedOnShipId == null &&
+      (role === "GM" || leaderSideIds.has(army.sideId))
+    )
+    .map((army) => ({ id: army.id, name: army.name, sideId: army.sideId, sideName: army.sideName }));
+  const embarkTargetById = new Map([
+    ...ownEmbarkTargets.map((target) => [target.id, target] as const),
+    ...transportEmbarkTargets.map((target) => [target.id, target] as const)
+  ]);
+  const embarkTargets = [...embarkTargetById.values()];
+  const selectedEmbarkShipId = embarkTransports.some((ship) => ship.id === embarkShipId)
+    ? embarkShipId
+    : (embarkTransports[0]?.id ?? "");
+  const selectedEmbarkArmyId = embarkTargets.some((army) => army.id === embarkArmyId)
+    ? embarkArmyId
+    : (embarkTargets[0]?.id ?? "");
+  const canEmbark = selectedEmbarkShipId !== "" && selectedEmbarkArmyId !== "";
 
   return (
     <section aria-labelledby="fleet-title" className="wiki-page fleet-page">
@@ -124,6 +155,45 @@ export function FleetPage({
               }}
             >
               Инициировать морской бой
+            </button>
+          </div>
+        </section>
+      )}
+
+      {embarkTransports.length > 0 && (
+        <section className="registration-card fleet-registration" aria-labelledby="transport-embark-title">
+          <div className="registration-copy">
+            <span className="registration-kicker">Перевозка войск</span>
+            <h3 id="transport-embark-title">Погрузка армии</h3>
+            <small>Выберите свободный транспорт и армию. Для иностранной армии потребуется подтверждение её лидера.</small>
+          </div>
+          <div className="registration-actions fleet-registration-actions">
+            <select
+              aria-label="Транспорт для погрузки"
+              value={selectedEmbarkShipId}
+              onChange={(event) => setEmbarkShipId(event.target.value)}
+            >
+              {embarkTransports.map((ship) => <option key={ship.id} value={ship.id}>{ship.name} — {ship.sideName}</option>)}
+            </select>
+            <select
+              aria-label="Армия для погрузки"
+              value={selectedEmbarkArmyId}
+              disabled={embarkTargets.length === 0}
+              onChange={(event) => setEmbarkArmyId(event.target.value)}
+            >
+              {embarkTargets.length === 0 && <option value="">Доступных армий нет</option>}
+              {embarkTargets.map((army) => <option key={army.id} value={army.id}>{army.name} — {army.sideName}</option>)}
+            </select>
+            <button
+              className="button primary"
+              type="button"
+              disabled={!canEmbark}
+              onClick={() => {
+                if (!canEmbark) return;
+                onAction({ type: "EMBARK_ARMY", shipId: selectedEmbarkShipId, armyId: selectedEmbarkArmyId });
+              }}
+            >
+              Погрузить армию
             </button>
           </div>
         </section>

@@ -64,7 +64,7 @@ export function App({ services }: { services: ExtensionServices }) {
       <div className="content wiki-content">
         {tab === "OVERVIEW" && isGM && <OverviewPage armies={state.armies} wars={state.wars} turn={state.turn} onAction={send} />}
         {tab === "ARMIES" && <>
-          <ForcesPage armies={state.armies} ships={state.ships} sides={state.sides} role={state.role} playerId={state.playerId} leaderSideIds={state.leaderSideIds} memberSideIds={state.memberSideIds} navalRequestTargets={state.navalRequestTargets} onAction={send} />
+          <ForcesPage armies={state.armies} ships={state.ships} sides={state.sides} role={state.role} playerId={state.playerId} leaderSideIds={state.leaderSideIds} memberSideIds={state.memberSideIds} navalRequestTargets={state.navalRequestTargets} transportEmbarkTargets={state.transportEmbarkTargets} pendingTransportEmbarkRequests={state.pendingTransportEmbarkRequests} onAction={send} />
           {!isGM && state.leaderSideIds.size > 0 && <details className="leader-management"><summary>Управление фракцией</summary><SidesPage role="PLAYER" playerId={state.playerId} sides={state.sides.filter((side) => state.leaderSideIds.has(side.id))} players={state.players} leaderSideIds={state.leaderSideIds} onAction={send} /></details>}
         </>}
         {tab === "TURN" && !isGM && <MovementPage armies={state.armies} turn={state.turn} isGM={false} leaderSideIds={state.leaderSideIds} onAction={send} />}
