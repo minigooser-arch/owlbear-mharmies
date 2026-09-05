@@ -140,7 +140,7 @@ it("restores ship position and rotation when a GM completes an active naval batt
     data: { requestId: "complete-naval", status: "ACCEPTED" }
   });
   expect(scene.revision).toBe(8);
-  expect(scene.turn.phase).toBe("MOVEMENT");
+  expect(scene.turn.phase).toBe("POST_MOVEMENT");
   expect(scene.activeNavalBattle).toBeNull();
   expect(scene.navalBattleHistory).toHaveLength(1);
   expect(scene.ships.ship).toMatchObject({ status: "READY", battleId: null, facing: "EAST" });

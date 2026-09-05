@@ -119,7 +119,7 @@ describe("COMPLETE_NAVAL_BATTLE", () => {
     expect(result.status).toBe("ACCEPTED");
     if (result.status !== "ACCEPTED") return;
     expect(result.state.scene.revision).toBe(8);
-    expect(result.state.scene.turn.phase).toBe("MOVEMENT");
+    expect(result.state.scene.turn.phase).toBe("POST_MOVEMENT");
     expect(result.state.scene.activeNavalBattle).toBeNull();
     expect(result.state.scene.navalBattleHistory).toHaveLength(1);
     expect(result.state.scene.navalBattleHistory?.[0]).toMatchObject({
