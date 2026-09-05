@@ -47,7 +47,9 @@ import {
 } from "./routeToolService";
 import { ShipRouteToolService } from "./shipRouteToolService";
 import { MapBrushToolService } from "./mapBrushToolService";
+import { NavalBattleAreaToolService } from "./navalBattleAreaToolService";
 import { registerMapBrushTool, type MapBrushToolRegistration } from "../owlbear/mapBrushTool";
+import { registerNavalBattleAreaTool, type NavalBattleAreaToolRegistration } from "../owlbear/navalBattleAreaTool";
 import { METADATA_KEYS } from "../shared/constants";
 import {
   COMMAND_PROTOCOL_VERSION,
@@ -208,7 +210,8 @@ export function localOverlayIds(items: readonly SceneItemRecord[]): string[] {
     METADATA_KEYS.mapOverlay,
     METADATA_KEYS.healthOverlay,
     METADATA_KEYS.navalShipOverlay,
-    METADATA_KEYS.mapBrushPreview
+    METADATA_KEYS.mapBrushPreview,
+    METADATA_KEYS.navalBattleAreaPreview
   ];
   return items
     .filter((item) => keys.some((key) => item.metadata[key] !== undefined))
@@ -1354,6 +1357,20 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
     routeGateway.stop();
     throw error;
   }
+  let removeNavalBattleAreaTool: NavalBattleAreaToolRegistration;
+  try {
+    removeNavalBattleAreaTool = await registerNavalBattleAreaTool(
+      OBR.tool,
+      new NavalBattleAreaToolService(toolPort),
+      `${import.meta.env.BASE_URL}icon-1.2.png`
+    );
+  } catch (error) {
+    await removeMapBrushTool();
+    await removeShipRouteTool();
+    await removeRouteTool();
+    routeGateway.stop();
+    throw error;
+  }
   const coordinatorListeners = new Set<(active: boolean) => void>();
   const sceneWork = new SceneWorkTracker();
   let commandReady = false;
@@ -1453,6 +1470,7 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
         await runtime.stop();
         await lease.stop();
         try {
+          await removeNavalBattleAreaTool();
           await removeMapBrushTool();
           await removeShipRouteTool();
           await removeRouteTool();

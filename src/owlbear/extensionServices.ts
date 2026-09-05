@@ -5,6 +5,7 @@ import {
   NoCoordinatorError
 } from "../commands/commandGateway";
 import { SHIP_CLASSES } from "../naval/ships/shipClasses";
+import { buildRequestBackedNavalBattleStart, parseNavalBattleAreaDraft } from "./navalBattleAreaBridge";
 import {
   DEFAULT_SETTINGS,
   DEFAULT_TERRAIN,
@@ -20,6 +21,11 @@ import {
   MAP_BRUSH_TERRAIN_ID_KEY,
   MAP_BRUSH_TOOL_ID,
   MAP_BRUSH_TOOL_MODE_ID,
+  NAVAL_BATTLE_AREA_DRAFT_CHANNEL,
+  NAVAL_BATTLE_AREA_REQUEST_ID_KEY,
+  NAVAL_BATTLE_AREA_SESSION_ID_KEY,
+  NAVAL_BATTLE_AREA_TOOL_ID,
+  NAVAL_BATTLE_AREA_TOOL_MODE_ID,
   ROUTE_ARMY_ID_KEY,
   ROUTE_RETURN_TOOL_KEY,
   ROUTE_TOOL_ID,
@@ -371,7 +377,7 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
       adapter.getLocalItems()
     ]);
     observedLocalCloneSourceIds = localCloneSourceIds(localItems);
-    return buildRoleSafeSnapshot({
+    const nextSnapshot = buildRoleSafeSnapshot({
       role,
       playerId,
       scene: migrated.value,
@@ -380,6 +386,18 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
       ships,
       mapVisibleSourceIds: observedLocalCloneSourceIds
     });
+    const currentDraft = snapshot.navalBattleAreaDraft;
+    const keepDraft = role === "GM" && currentDraft !== undefined &&
+      nextSnapshot.pendingNavalBattleRequests?.some((request) => request.id === currentDraft.requestId) === true;
+    return keepDraft
+      ? {
+          ...nextSnapshot,
+          navalBattleAreaDraft: {
+            requestId: currentDraft.requestId,
+            cells: currentDraft.cells.map((cell) => ({ ...cell }))
+          }
+        }
+      : nextSnapshot;
   };
   const refreshCoordinator = createRefreshCoordinator(
     loadSnapshot,
@@ -400,13 +418,38 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
     OBR.scene.local.onChange(triggerLocalRefresh),
     OBR.scene.onMetadataChange(triggerRefresh),
     OBR.player.onChange(triggerRefresh),
-    OBR.party.onChange(triggerRefresh)
+    OBR.party.onChange(triggerRefresh),
+    adapter.on(NAVAL_BATTLE_AREA_DRAFT_CHANNEL, (event) => {
+      if (snapshot.role !== "GM") return;
+      const draft = parseNavalBattleAreaDraft(event.data, snapshot.playerId);
+      if (!draft) return;
+      if (!snapshot.pendingNavalBattleRequests?.some((request) => request.id === draft.requestId)) return;
+      publish({ ...snapshot, navalBattleAreaDraft: draft });
+    })
   );
   refreshCoordinator.request();
   await refreshCoordinator.whenIdle();
+  let navalBattleAreaReturnToolId: string | undefined;
 
   const send = async (command: UiCommand): Promise<unknown> => {
     try {
+      if (command.type === "OPEN_NAVAL_BATTLE_AREA") {
+        if (snapshot.role !== "GM") {
+          await notifyRussian(adapter, "GM_ONLY");
+          return undefined;
+        }
+        const returnToolId = await OBR.tool.getActiveTool();
+        navalBattleAreaReturnToolId = returnToolId === NAVAL_BATTLE_AREA_TOOL_ID
+          ? navalBattleAreaReturnToolId
+          : returnToolId;
+        await OBR.tool.setMetadata(NAVAL_BATTLE_AREA_TOOL_ID, {
+          [NAVAL_BATTLE_AREA_REQUEST_ID_KEY]: command.requestId,
+          [NAVAL_BATTLE_AREA_SESSION_ID_KEY]: crypto.randomUUID()
+        });
+        await OBR.tool.activateTool(NAVAL_BATTLE_AREA_TOOL_ID);
+        await OBR.tool.activateMode(NAVAL_BATTLE_AREA_TOOL_ID, NAVAL_BATTLE_AREA_TOOL_MODE_ID);
+        return undefined;
+      }
       if (command.type === "OPEN_MAP_BRUSH") {
         if (snapshot.role !== "GM") {
           await notifyRussian(adapter, "GM_ONLY");
@@ -472,7 +515,16 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
         return undefined;
       }
       let payload: ArmyCommandPayload;
-      if (command.type === "REGISTER_SELECTED_ARMY") {
+      if (command.type === "START_NAVAL_BATTLE_FROM_REQUEST") {
+        payload = buildRequestBackedNavalBattleStart({
+          battleId: crypto.randomUUID(),
+          requestId: command.requestId,
+          initiatingShipId: command.initiatingShipId,
+          targetShipId: command.targetShipId,
+          participantShipIds: command.participantShipIds,
+          areaCells: command.areaCells
+        });
+      } else if (command.type === "REGISTER_SELECTED_ARMY") {
         payload = {
           type: "REGISTER_ARMY",
           itemId: resolveRegistrationSelection({
@@ -507,6 +559,10 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
       } else if (acknowledgement.status === "CONFLICT") {
         await notifyRussian(adapter, "REVISION_CONFLICT");
       } else {
+        if (command.type === "START_NAVAL_BATTLE_FROM_REQUEST" && navalBattleAreaReturnToolId) {
+          await OBR.tool.activateTool(navalBattleAreaReturnToolId);
+          navalBattleAreaReturnToolId = undefined;
+        }
         refreshCoordinator.request();
         await refreshCoordinator.whenIdle();
       }
