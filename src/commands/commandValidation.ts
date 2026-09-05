@@ -326,6 +326,10 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
   END_NAVAL_SHIP_TURN: (value) => boundedString(value.shipId)
     ? { type: "END_NAVAL_SHIP_TURN", shipId: value.shipId }
     : undefined,
+  NAVAL_HOSPITAL_SUPPORT: (value) =>
+    boundedString(value.shipId) && boundedString(value.targetShipId)
+      ? { type: "NAVAL_HOSPITAL_SUPPORT", shipId: value.shipId, targetShipId: value.targetShipId }
+      : undefined,
   SET_ACTIVE_NAVAL_SHIP: (value) => boundedString(value.shipId)
     ? { type: "SET_ACTIVE_NAVAL_SHIP", shipId: value.shipId }
     : undefined,

@@ -31,6 +31,7 @@ import { confirmNavalShipExit } from "../naval/battle/navalExit";
 import { completeNavalBattle, startNavalBattle } from "../naval/battle/navalBattleLifecycle";
 import { createNavalBattleRequest } from "../naval/battle/navalBattleRequest";
 import { embarkArmy, disembarkArmy, validateTransportInteraction } from "../naval/transport/transportRules";
+import { commitHospitalSupport } from "../naval/hospital/hospitalSupport";
 
 export interface CommandState {
   scene: SceneState;
@@ -164,7 +165,8 @@ export class CommandProcessor {
     private readonly now: () => Date = () => new Date(),
     private readonly cellForPosition?: (position: Vector2) => GridCellCoord,
     private readonly positionForCell?: (cell: GridCellCoord) => Vector2,
-    private readonly detectedNavalTargetsForSide: (sideId: string) => ReadonlySet<string> = () => new Set()
+    private readonly detectedNavalTargetsForSide: (sideId: string) => ReadonlySet<string> = () => new Set(),
+    private readonly rollD6: () => number = () => Math.floor(Math.random() * 6) + 1
   ) {}
 
   execute(context: CommandContext, command: ArmyCommand): CommandExecutionResult {
@@ -486,6 +488,44 @@ export class CommandProcessor {
         } catch (error) {
           return this.navalTacticalFailure(error);
         }
+      }
+      case "NAVAL_HOSPITAL_SUPPORT": {
+        const battle = state.scene.activeNavalBattle;
+        if (!battle || battle.status !== "ACTIVE") return "NO_ACTIVE_NAVAL_BATTLE";
+        const hospital = state.scene.ships?.[command.shipId];
+        if (!hospital) return "SHIP_NOT_FOUND";
+        const target = state.scene.ships?.[command.targetShipId];
+        if (!target) return "TARGET_SHIP_NOT_FOUND";
+        if (
+          hospital.status !== "IN_NAVAL_BATTLE" ||
+          hospital.battleId !== battle.id ||
+          !battle.participantShipIds.includes(command.shipId)
+        ) return "SHIP_NOT_IN_NAVAL_BATTLE";
+        if (
+          target.status !== "IN_NAVAL_BATTLE" ||
+          target.battleId !== battle.id ||
+          !battle.participantShipIds.includes(command.targetShipId)
+        ) return "TARGET_NOT_IN_NAVAL_BATTLE";
+        if (!this.cellForPosition) return "NAVAL_POSITION_UNAVAILABLE";
+        const hospitalPosition = commandPosition(state, command.shipId);
+        const targetPosition = commandPosition(state, command.targetShipId);
+        if (!hospitalPosition || !targetPosition) return "NAVAL_POSITION_UNAVAILABLE";
+        const result = commitHospitalSupport({
+          battle,
+          ships: state.scene.ships ?? {},
+          hospitalId: command.shipId,
+          targetId: command.targetShipId,
+          hospital,
+          target,
+          hospitalCell: this.cellForPosition(hospitalPosition),
+          targetCell: this.cellForPosition(targetPosition),
+          rollD6: this.rollD6
+        });
+        if (!result.ok) return result.reason;
+        state.scene.ships ??= {};
+        state.scene.ships[command.targetShipId] = result.target;
+        state.scene.activeNavalBattle = result.battle;
+        return undefined;
       }
       case "CONFIRM_NAVAL_SHIP_EXIT": {
         const battle = state.scene.activeNavalBattle;

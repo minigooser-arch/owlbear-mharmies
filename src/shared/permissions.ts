@@ -84,7 +84,8 @@ export function authorizeArmyCommand(
     command.type === "SET_SHIP_ROUTE" ||
     command.type === "NAVAL_MOVE_FORWARD" ||
     command.type === "NAVAL_TURN_SHIP" ||
-    command.type === "END_NAVAL_SHIP_TURN"
+    command.type === "END_NAVAL_SHIP_TURN" ||
+    command.type === "NAVAL_HOSPITAL_SUPPORT"
   ) {
     const ship = context.ships?.get(command.shipId);
     if (!ship) return { allowed: false, reason: "SHIP_NOT_FOUND" };
