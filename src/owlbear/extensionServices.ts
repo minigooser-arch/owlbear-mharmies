@@ -93,9 +93,23 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
   const authorizedShipRecords = input.role === "GM"
     ? shipRecords
     : shipRecords.filter(({ state }) => memberSideIds.has(state.sideId));
-  const mapVisibleSourceIds = new Set(input.mapVisibleSourceIds);
+  const shipById = new Map(shipRecords.map((record) => [record.item.id, record.state]));
+  const reciprocallyEmbarkedArmyIds = new Set(
+    input.armies
+      .filter(({ item, state }) =>
+        state.embarkedOnShipId != null &&
+        shipById.get(state.embarkedOnShipId)?.embarkedArmyId === item.id
+      )
+      .map(({ item }) => item.id)
+  );
+  const mapVisibleSourceIds = new Set(
+    [...input.mapVisibleSourceIds].filter((id) => !reciprocallyEmbarkedArmyIds.has(id))
+  );
   for (const army of input.armies) {
-    if (input.role === "GM" || memberSideIds.has(army.state.sideId)) {
+    if (
+      !reciprocallyEmbarkedArmyIds.has(army.item.id) &&
+      (input.role === "GM" || memberSideIds.has(army.state.sideId))
+    ) {
       mapVisibleSourceIds.add(army.item.id);
     }
   }
