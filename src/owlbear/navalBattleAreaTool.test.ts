@@ -124,7 +124,7 @@ describe("naval battle area selection tool", () => {
 
     api.mode.onToolClick?.(ctx, event(50, 50));
     await new Promise((resolve) => setTimeout(resolve, 0));
-    api.mode.onDeactivate?.();
+    api.mode.onDeactivate?.(ctx);
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(port.preview).toEqual([]);
