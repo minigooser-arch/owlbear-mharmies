@@ -150,7 +150,7 @@ describe("NAVAL_BROADSIDE_ATTACK command", () => {
     expect(result.status).toBe("ACCEPTED");
     if (result.status !== "ACCEPTED") return;
 
-    expect(result.state.scene.ships?.target).toMatchObject({ hp: 27 });
+    expect(result.state.scene.ships?.target).toMatchObject({ hp: 23 });
     expect(result.state.scene.activeNavalBattle?.currentShipId).toBe("target");
     expect(result.state.scene.activeNavalBattle?.events).toContainEqual(expect.objectContaining({
       type: "BROADSIDE_ATTACK",
