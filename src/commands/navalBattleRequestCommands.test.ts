@@ -40,7 +40,7 @@ function scene(): SceneState {
     terrain: structuredClone(DEFAULT_TERRAIN),
     gridMap: { version: 1, revision: 0, cells: {} },
     wars: [],
-    turn: { ...structuredClone(DEFAULT_TURN_STATE), turnNumber: 7, phase: "MOVEMENT" },
+    turn: { ...structuredClone(DEFAULT_TURN_STATE), turnNumber: 7, phase: "POST_MOVEMENT" },
     ships: {
       "red-ship": createRegisteredShip("red", "CRUISER", "EAST"),
       "blue-ship": createRegisteredShip("blue", "BATTLESHIP", "WEST")
@@ -141,7 +141,7 @@ describe("naval battle request command processing", () => {
       }
     ]);
     expect(result.state.scene.activeNavalBattle).toBeNull();
-    expect(result.state.scene.turn.phase).toBe("MOVEMENT");
+    expect(result.state.scene.turn.phase).toBe("POST_MOVEMENT");
   });
 
   it("rejects an ordinary member of the initiating side", () => {

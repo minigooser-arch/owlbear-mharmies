@@ -67,7 +67,7 @@ function fixture(options: { blueX: number; withPendingRequest?: boolean }): Fixt
     },
     gridMap: { version: 1, revision: 0, cells: {} },
     wars: [],
-    turn: { ...structuredClone(DEFAULT_TURN_STATE), turnNumber: 3, phase: "MOVEMENT" },
+    turn: { ...structuredClone(DEFAULT_TURN_STATE), turnNumber: 3, phase: "POST_MOVEMENT" },
     ships: { "red-ship": redShip, "blue-ship": blueShip },
     navalBattleRequests: options.withPendingRequest
       ? [{ id: "req-1", initiatingShipId: "red-ship", targetShipId: "blue-ship", createdOnTurn: 3 }]

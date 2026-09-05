@@ -134,7 +134,7 @@ export function completeNavalBattle(scene: NavalSceneState): NavalSceneState {
 
   next.navalBattleHistory.push(completedBattle);
   next.activeNavalBattle = null;
-  next.turn.phase = "MOVEMENT";
+  next.turn.phase = "POST_MOVEMENT";
   next.revision += 1;
   return next;
 }
