@@ -500,12 +500,14 @@ export class CommandProcessor {
             state.scene.ships ?? {},
             command.shipId
           );
-          state.scene.ships ??= {};
-          state.scene.ships[command.shipId] = {
-            ...ship,
-            temporaryHp: 0,
-            revision: ship.revision + 1
-          };
+          if (ship.temporaryHp > 0) {
+            state.scene.ships ??= {};
+            state.scene.ships[command.shipId] = {
+              ...ship,
+              temporaryHp: 0,
+              revision: ship.revision + 1
+            };
+          }
           return undefined;
         } catch (error) {
           return this.navalTacticalFailure(error);
