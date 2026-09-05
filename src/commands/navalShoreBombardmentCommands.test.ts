@@ -6,9 +6,7 @@ import {
   type ArmyCommand,
   type ArmyState,
   type GridCellCoord,
-  type NavalBattleState,
   type SceneState,
-  type ShipState,
   type Vector2
 } from "../shared/types";
 import { CommandProcessor, type CommandContext, type CommandState } from "./commandProcessor";
@@ -42,44 +40,6 @@ function army(sideId = "blue", hp = 20): ArmyState {
   };
 }
 
-function inBattleShip(sideId = "red", classId: ShipState["classId"] = "BATTLESHIP"): ShipState {
-  return {
-    ...createRegisteredShip(sideId, classId, "NORTH"),
-    status: "IN_NAVAL_BATTLE",
-    battleId: "naval-1"
-  };
-}
-
-function battle(): NavalBattleState {
-  return {
-    version: 1,
-    id: "naval-1",
-    requestId: null,
-    initiatorSideId: "red",
-    areaCells: [{ x: 1, y: 1 }, { x: 2, y: 1 }],
-    participantShipIds: ["attacker", "other"],
-    snapshots: {
-      attacker: { shipId: "attacker", strategicCell: { x: 1, y: 1 }, strategicPosition: centerForCell({ x: 1, y: 1 }), strategicFacing: "NORTH" },
-      other: { shipId: "other", strategicCell: { x: 2, y: 1 }, strategicPosition: centerForCell({ x: 2, y: 1 }), strategicFacing: "SOUTH" }
-    },
-    initiative: [
-      { shipId: "attacker", initialRoll: 20, bonus: 2, total: 22, tieBreakRolls: [] },
-      { shipId: "other", initialRoll: 10, bonus: 0, total: 10, tieBreakRolls: [] }
-    ],
-    roundNumber: 1,
-    currentShipId: "attacker",
-    completedShipIdsThisRound: [],
-    movementRemainingByShip: { attacker: 3, other: 3 },
-    actionUsedByShip: { attacker: false, other: false },
-    exitedShipIds: [],
-    status: "ACTIVE",
-    events: [],
-    startedOnTurn: 7,
-    startedAt: 1,
-    revision: 1
-  };
-}
-
 function scene(): SceneState {
   const terrain = structuredClone(DEFAULT_TERRAIN);
   terrain.types.sea = {
@@ -103,6 +63,7 @@ function scene(): SceneState {
       revision: 0,
       cells: {
         "1,1": { terrainId: "sea", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null },
+        "2,1": { terrainId: "sea", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null },
         "3,1": { terrainId: "plain", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null },
         "4,1": { terrainId: "plain", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null }
       }
@@ -110,12 +71,11 @@ function scene(): SceneState {
     wars: [],
     turn: { ...structuredClone(DEFAULT_TURN_STATE), turnNumber: 7, phase: "POST_MOVEMENT" },
     ships: {
-      attacker: inBattleShip(),
-      other: inBattleShip("blue", "CRUISER")
+      attacker: createRegisteredShip("red", "BATTLESHIP", "NORTH")
     },
     transportEmbarkRequests: [],
     navalBattleRequests: [],
-    activeNavalBattle: battle(),
+    activeNavalBattle: null,
     navalBattleHistory: [],
     navalRevealUntilTurn: {}
   };
@@ -131,13 +91,11 @@ function state(targetHp = 20): CommandState {
     barriers: {},
     items: {
       attacker: { id: "attacker", type: "IMAGE", position: centerForCell({ x: 1, y: 1 }), metadata: {} },
-      other: { id: "other", type: "IMAGE", position: centerForCell({ x: 2, y: 1 }), metadata: {} },
       army: { id: "army", type: "IMAGE", position: centerForCell({ x: 3, y: 1 }), metadata: {} },
       "second-army": { id: "second-army", type: "IMAGE", position: centerForCell({ x: 4, y: 1 }), metadata: {} }
     },
     positions: {
       attacker: centerForCell({ x: 1, y: 1 }),
-      other: centerForCell({ x: 2, y: 1 }),
       army: centerForCell({ x: 3, y: 1 }),
       "second-army": centerForCell({ x: 4, y: 1 })
     }
@@ -172,10 +130,7 @@ function processor(rolls = [3, 4, 5]) {
     centerForCell,
     () => new Set(),
     () => rolls.shift() ?? 1,
-    () => new Set(["army"]),
-    () => true,
-    () => 2,
-    () => true
+    () => new Set(["army"])
   );
 }
 
@@ -191,7 +146,7 @@ describe("naval shore bombardment command", () => {
     });
   });
 
-  it("applies deterministic shore damage, marks the turn use and completes the active ship turn", () => {
+  it("applies deterministic shore damage and marks the one-use-per-global-turn action", () => {
     const result = processor().execute(context("leader"), envelope("leader", {
       type: "NAVAL_SHORE_BOMBARDMENT",
       shipId: "attacker",
@@ -203,8 +158,7 @@ describe("naval shore bombardment command", () => {
     expect(result.state.armies.army?.health.hp).toBe(8);
     expect(result.state.scene.ships?.attacker?.shoreBombardmentUsedOnTurn).toBe(7);
     expect(result.state.scene.navalRevealUntilTurn).toEqual({ blue: { attacker: 8 } });
-    expect(result.state.scene.activeNavalBattle?.completedShipIdsThisRound).toContain("attacker");
-    expect(result.state.scene.activeNavalBattle?.currentShipId).toBe("other");
+    expect(result.state.scene.activeNavalBattle).toBeNull();
   });
 
   it("destroys a zero-hp army through the normal army lifecycle and cleans its land battle", () => {
@@ -220,20 +174,23 @@ describe("naval shore bombardment command", () => {
     expect(result.state.scene.battleGroups).toEqual([]);
   });
 
-  it("fails closed when the exact broadside resolver is unavailable", () => {
-    const failClosed = new CommandProcessor(
+  it("uses the canonical exact broadside without an injected resolver", () => {
+    const result = new CommandProcessor(
       () => new Date(),
       cellForPosition,
       centerForCell,
       () => new Set(),
       () => 1,
       () => new Set(["army"])
-    );
-    expect(failClosed.execute(context("leader"), envelope("leader", {
+    ).execute(context("leader"), envelope("leader", {
       type: "NAVAL_SHORE_BOMBARDMENT",
       shipId: "attacker",
       armyId: "army"
-    }))).toEqual({ status: "REJECTED", reason: "OUTSIDE_BROADSIDE_SECTOR" });
+    }));
+
+    expect(result.status).toBe("ACCEPTED");
+    if (result.status !== "ACCEPTED") return;
+    expect(result.state.armies.army?.health.hp).toBe(17);
   });
 
   it("uses ship-side leader authorization", () => {
