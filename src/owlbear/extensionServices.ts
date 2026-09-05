@@ -220,6 +220,32 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
           };
         })()
       : {};
+    const hospitalSupportTargets =
+      battle?.status === "ACTIVE" &&
+      state.classId === "HOSPITAL" &&
+      state.hp > 0 &&
+      state.status === "IN_NAVAL_BATTLE" &&
+      state.battleId === battle.id &&
+      battle.currentShipId === item.id &&
+      !battle.actionUsedByShip[item.id] &&
+      (input.role === "GM" || leaderSideIds.has(state.sideId))
+        ? shipRecords
+            .filter(({ item: targetItem, state: targetState }) =>
+              targetItem.id !== item.id &&
+              battle.participantShipIds.includes(targetItem.id) &&
+              targetState.status === "IN_NAVAL_BATTLE" &&
+              targetState.battleId === battle.id &&
+              targetState.hp > 0 &&
+              !battle.exitedShipIds.includes(targetItem.id) &&
+              (input.role === "GM" || memberSideIds.has(targetState.sideId) || mapVisibleSourceIds.has(targetItem.id))
+            )
+            .map(({ item: targetItem, state: targetState }) => ({
+              id: targetItem.id,
+              name: targetItem.name ?? "Безымянный корабль",
+              sideId: targetState.sideId,
+              sideName: sideNames.get(targetState.sideId) ?? "Неизвестная сторона"
+            }))
+        : [];
     return {
       id: item.id,
       name: item.name ?? "Безымянный корабль",
@@ -242,6 +268,7 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
       embarkedArmyId: state.embarkedArmyId,
       detectionOverride: state.detectionOverride,
       effectiveDetectionRange: state.detectionOverride ?? input.scene.settings.defaultDetectionRangeCells,
+      hospitalSupportTargets,
       ...tactical
     };
   });

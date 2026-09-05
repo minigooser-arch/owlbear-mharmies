@@ -153,6 +153,16 @@ export function ShipCard({
   const routeUnavailable = destroyed || inBattle || ship.plannedRouteCellCount > 0 || ship.movementRemaining <= 0;
   const canControlTactical = canPlanRoute && !destroyed && !exited && inBattle && ship.isCurrentNavalTurn === true;
   const canConfirmExit = isGM && !destroyed && !exited && inBattle && ship.isCurrentNavalTurn === true;
+  const hospitalSupportTargets = ship.hospitalSupportTargets ?? [];
+  const [hospitalTargetId, setHospitalTargetId] = useState("");
+  const selectedHospitalTargetId = hospitalSupportTargets.some((target) => target.id === hospitalTargetId)
+    ? hospitalTargetId
+    : (hospitalSupportTargets[0]?.id ?? "");
+  const canUseHospitalSupport =
+    canControlTactical &&
+    ship.classId === "HOSPITAL" &&
+    ship.navalActionUsed !== true &&
+    selectedHospitalTargetId !== "";
   const tacticalMovementDisabled =
     (ship.navalMovementRemaining ?? 0) <= 0 || ship.navalActionUsed === true;
   const statusClass = destroyed
@@ -227,6 +237,34 @@ export function ShipCard({
               Повернуть вправо
             </button>
           </div>
+          {ship.classId === "HOSPITAL" && hospitalSupportTargets.length > 0 && (
+            <div className="ship-hospital-support" aria-label={`Поддержка госпитального судна ${ship.name}`}>
+              <select
+                aria-label={`Цель госпитального судна ${ship.name}`}
+                value={selectedHospitalTargetId}
+                onChange={(event) => setHospitalTargetId(event.target.value)}
+              >
+                {hospitalSupportTargets.map((target) => (
+                  <option key={target.id} value={target.id}>{target.name} — {target.sideName}</option>
+                ))}
+              </select>
+              <button
+                className="button primary wide"
+                type="button"
+                disabled={!canUseHospitalSupport}
+                onClick={() => {
+                  if (!canUseHospitalSupport) return;
+                  onAction({
+                    type: "NAVAL_HOSPITAL_SUPPORT",
+                    shipId: ship.id,
+                    targetShipId: selectedHospitalTargetId
+                  });
+                }}
+              >
+                Оказать поддержку (2d6)
+              </button>
+            </div>
+          )}
           <button
             className="button subtle wide"
             type="button"

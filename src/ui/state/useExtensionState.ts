@@ -68,6 +68,12 @@ export interface ShipView {
   navalMovementRemaining?: number;
   navalActionUsed?: boolean;
   navalExited?: boolean;
+  hospitalSupportTargets?: Array<{
+    id: string;
+    name: string;
+    sideId: string;
+    sideName: string;
+  }>;
 }
 
 export interface NavalRequestTargetView {
