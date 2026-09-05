@@ -138,8 +138,10 @@ function state(options: {
 } = {}): CommandState {
   const reciprocal = options.reciprocal ?? false;
   const commandScene = scene();
-  if (reciprocal) commandScene.ships!.transport = {
-    ...commandScene.ships!.transport!,
+  const transportShip = commandScene.ships?.transport;
+  if (!transportShip) throw new Error("Expected transport fixture");
+  if (reciprocal && commandScene.ships) commandScene.ships.transport = {
+    ...transportShip,
     embarkedArmyId: "army"
   };
   const armies: Record<string, ArmyState> = {
