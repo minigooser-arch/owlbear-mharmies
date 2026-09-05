@@ -444,7 +444,12 @@ export class ProductionEngine {
       this.repository.readArmies(),
       this.repository.readBarriers()
     ]);
-    const moving = armies.filter((record) => record.state.status === "MOVING");
+    const moving = armies.filter((record) => {
+      if (record.state.status !== "MOVING") return false;
+      const shipId = record.state.embarkedOnShipId;
+      if (shipId == null) return true;
+      return scene.ships?.[shipId]?.embarkedArmyId !== record.item.id;
+    });
     if (moving.length === 0) return;
     const movementBarriers = extractBarrierSegments(barriers, "movement");
     let strategicGrid: StrategicGridAdapter;
