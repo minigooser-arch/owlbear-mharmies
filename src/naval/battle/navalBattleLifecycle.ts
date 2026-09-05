@@ -128,6 +128,7 @@ export function completeNavalBattle(scene: NavalSceneState): NavalSceneState {
     if (!participant || participant.battleId !== activeBattle.id) continue;
     participant.status = "READY";
     participant.battleId = null;
+    participant.temporaryHp = 0;
     participant.revision += 1;
   }
 
