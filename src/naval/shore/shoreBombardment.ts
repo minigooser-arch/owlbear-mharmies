@@ -5,6 +5,7 @@ import type {
   ShipState
 } from "../../shared/types";
 import { useNavalAction } from "../battle/navalRoundFlow";
+import { isInNormalBroadsideMask } from "../battle/broadsideMask";
 import { SHIP_CLASSES } from "../ships/shipClasses";
 
 export interface ShoreBombardmentSectorInput {
@@ -41,7 +42,7 @@ export interface ValidateShoreBombardmentTargetInput {
   currentTurn: number;
   targetVisible: boolean;
   targetCellSupportsLand: boolean;
-  sectorResolver: ShoreBombardmentSectorResolver;
+  sectorResolver?: ShoreBombardmentSectorResolver;
   distanceCells(from: GridCellCoord, to: GridCellCoord): number;
   hasLineOfSight(from: GridCellCoord, to: GridCellCoord): boolean;
   battle?: NavalBattleState;
@@ -91,11 +92,19 @@ export function validateShoreBombardmentTarget(
   if (input.attacker.shoreBombardmentUsedOnTurn === input.currentTurn) {
     return { ok: false, reason: "BOMBARDMENT_ALREADY_USED" };
   }
-  if (!input.sectorResolver({
-    attackerCell: input.attackerCell,
-    targetCell: input.targetCell,
-    facing: input.attacker.facing
-  })) {
+  const inBroadsideSector = input.sectorResolver
+    ? input.sectorResolver({
+        attackerCell: input.attackerCell,
+        targetCell: input.targetCell,
+        facing: input.attacker.facing
+      })
+    : isInNormalBroadsideMask(
+        input.attacker.classId,
+        input.attacker.facing,
+        input.attackerCell,
+        input.targetCell
+      );
+  if (!inBroadsideSector) {
     return { ok: false, reason: "OUTSIDE_BROADSIDE_SECTOR" };
   }
 

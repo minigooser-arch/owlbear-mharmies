@@ -172,11 +172,18 @@ export class CommandProcessor {
     private readonly detectedNavalTargetsForSide: (sideId: string) => ReadonlySet<string> = () => new Set(),
     private readonly rollD6: () => number = () => Math.floor(Math.random() * 6) + 1,
     private readonly visibleArmyTargetsForSide: (sideId: string) => ReadonlySet<string> = () => new Set(),
-    private readonly shoreBombardmentSectorResolver: ShoreBombardmentSectorResolver = () => false,
-    private readonly shoreBombardmentDistanceCells: (from: GridCellCoord, to: GridCellCoord) => number = () => Number.POSITIVE_INFINITY,
-    private readonly shoreBombardmentHasLineOfSight: (from: GridCellCoord, to: GridCellCoord) => boolean = () => false,
-    private readonly shoreBombardmentWindowOpen: () => boolean = () => false
-  ) {}
+    shoreBombardmentSectorResolver: ShoreBombardmentSectorResolver = () => false,
+    shoreBombardmentDistanceCells: (from: GridCellCoord, to: GridCellCoord) => number = () => Number.POSITIVE_INFINITY,
+    shoreBombardmentHasLineOfSight: (from: GridCellCoord, to: GridCellCoord) => boolean = () => false,
+    shoreBombardmentWindowOpen: () => boolean = () => false
+  ) {
+    // Retain the legacy positional signature while the old tests/UI are migrated.
+    // Final shore validation is authoritative and does not depend on injected shims.
+    void shoreBombardmentSectorResolver;
+    void shoreBombardmentDistanceCells;
+    void shoreBombardmentHasLineOfSight;
+    void shoreBombardmentWindowOpen;
+  }
 
   execute(context: CommandContext, command: ArmyCommand): CommandExecutionResult {
     if (
@@ -576,6 +583,8 @@ export class CommandProcessor {
         return undefined;
       }
       case "NAVAL_SHORE_BOMBARDMENT": {
+        if (state.scene.turn.phase !== "POST_MOVEMENT") return "NOT_POST_MOVEMENT_PHASE";
+        if (state.scene.activeNavalBattle?.status === "ACTIVE") return "NAVAL_BATTLE_ACTIVE";
         const ship = state.scene.ships?.[command.shipId];
         if (!ship) return "SHIP_NOT_FOUND";
         const target = state.armies[command.armyId];
@@ -586,12 +595,14 @@ export class CommandProcessor {
         if (!shipPosition || !targetPosition) return "NAVAL_POSITION_UNAVAILABLE";
         const shipCell = this.cellForPosition(shipPosition);
         const targetCell = this.cellForPosition(targetPosition);
-        const activeBattle = state.scene.activeNavalBattle?.status === "ACTIVE"
-          ? state.scene.activeNavalBattle
-          : undefined;
-        if (!activeBattle && !this.shoreBombardmentWindowOpen()) {
-          return "SHORE_BOMBARDMENT_WINDOW_CLOSED";
-        }
+        const occupiedShipCells = Object.entries(state.scene.ships ?? {})
+          .filter(([shipId, candidate]) => shipId !== command.shipId && candidate.hp > 0)
+          .flatMap(([shipId]) => {
+            const position = commandPosition(state, shipId);
+            return position
+              ? [this.cellForPosition?.(position)].filter((cell): cell is GridCellCoord => cell !== undefined)
+              : [];
+          });
         const result = commitShoreBombardment({
           attackerId: command.shipId,
           attacker: ship,
@@ -603,10 +614,13 @@ export class CommandProcessor {
           targetVisible: this.visibleArmyTargetsForSide(ship.sideId).has(command.armyId),
           targetCellSupportsLand:
             target.embarkedOnShipId == null && cellSupportsDomain(state.scene, targetCell, "LAND"),
-          sectorResolver: this.shoreBombardmentSectorResolver,
-          distanceCells: this.shoreBombardmentDistanceCells,
-          hasLineOfSight: this.shoreBombardmentHasLineOfSight,
-          ...(activeBattle ? { battle: activeBattle, battleShips: state.scene.ships ?? {} } : {}),
+          distanceCells: (from, to) => Math.max(Math.abs(to.x - from.x), Math.abs(to.y - from.y)),
+          hasLineOfSight: (from, to) => hasNavalBattleLineOfSight({
+            scene: state.scene,
+            from,
+            to,
+            occupiedShipCells
+          }),
           rollD6: this.rollD6
         });
         if (!result.ok) return result.reason;
@@ -625,7 +639,6 @@ export class CommandProcessor {
         } else {
           state.armies[command.armyId] = result.target;
         }
-        if (result.battle) state.scene.activeNavalBattle = result.battle;
         return undefined;
       }
       case "NAVAL_HOSPITAL_SUPPORT": {
