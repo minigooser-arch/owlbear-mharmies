@@ -29,6 +29,7 @@ import { setActiveNavalShipOverride } from "../naval/battle/navalTurnOverride";
 import { confirmNavalShipExit } from "../naval/battle/navalExit";
 import { completeNavalBattle, startNavalBattle } from "../naval/battle/navalBattleLifecycle";
 import { createNavalBattleRequest } from "../naval/battle/navalBattleRequest";
+import { embarkArmy, disembarkArmy } from "../naval/transport/transportRules";
 
 export interface CommandState {
   scene: SceneState;
@@ -254,6 +255,69 @@ export class CommandProcessor {
       }
       case "SET_SHIP_ROUTE":
         return applyShipStrategicRouteCommand(state, command, this.cellForPosition);
+      case "EMBARK_ARMY": {
+        if (state.scene.turn.phase !== "MOVEMENT") return "NOT_MOVEMENT_PHASE";
+        const ship = state.scene.ships?.[command.shipId];
+        if (!ship) return "SHIP_NOT_FOUND";
+        const army = state.armies[command.armyId];
+        if (!army) return "ARMY_NOT_FOUND";
+        if (ship.classId !== "TRANSPORT") return "SHIP_NOT_TRANSPORT";
+        if (ship.embarkedArmyId !== null) return "TRANSPORT_OCCUPIED";
+        if (army.embarkedOnShipId != null) return "ARMY_ALREADY_EMBARKED";
+        if (ship.sideId !== army.sideId) {
+          state.scene.transportEmbarkRequests ??= [];
+          state.scene.transportEmbarkRequests = state.scene.transportEmbarkRequests
+            .filter((request) => request.shipId !== command.shipId && request.armyId !== command.armyId);
+          state.scene.transportEmbarkRequests.push({
+            id: command.requestId,
+            shipId: command.shipId,
+            armyId: command.armyId
+          });
+          return undefined;
+        }
+        const embarked = embarkArmy(command.shipId, ship, command.armyId, army);
+        state.scene.ships ??= {};
+        state.scene.ships[command.shipId] = embarked.ship;
+        state.armies[command.armyId] = embarked.army;
+        return undefined;
+      }
+      case "ACCEPT_EMBARK_ARMY": {
+        if (state.scene.turn.phase !== "MOVEMENT") return "NOT_MOVEMENT_PHASE";
+        const request = state.scene.transportEmbarkRequests?.find((candidate) =>
+          candidate.id === command.embarkRequestId &&
+          candidate.shipId === command.shipId &&
+          candidate.armyId === command.armyId
+        );
+        if (!request) return "EMBARK_REQUEST_NOT_FOUND";
+        const ship = state.scene.ships?.[command.shipId];
+        if (!ship) return "SHIP_NOT_FOUND";
+        const army = state.armies[command.armyId];
+        if (!army) return "ARMY_NOT_FOUND";
+        if (ship.classId !== "TRANSPORT") return "SHIP_NOT_TRANSPORT";
+        if (ship.embarkedArmyId !== null) return "TRANSPORT_OCCUPIED";
+        if (army.embarkedOnShipId != null) return "ARMY_ALREADY_EMBARKED";
+        const embarked = embarkArmy(command.shipId, ship, command.armyId, army);
+        state.scene.ships ??= {};
+        state.scene.ships[command.shipId] = embarked.ship;
+        state.armies[command.armyId] = embarked.army;
+        state.scene.transportEmbarkRequests = (state.scene.transportEmbarkRequests ?? [])
+          .filter((candidate) => candidate.id !== request.id);
+        return undefined;
+      }
+      case "DISEMBARK_ARMY": {
+        if (state.scene.turn.phase !== "MOVEMENT") return "NOT_MOVEMENT_PHASE";
+        const ship = state.scene.ships?.[command.shipId];
+        if (!ship) return "SHIP_NOT_FOUND";
+        const army = state.armies[command.armyId];
+        if (!army) return "ARMY_NOT_FOUND";
+        if (ship.classId !== "TRANSPORT") return "SHIP_NOT_TRANSPORT";
+        const disembarked = disembarkArmy(command.shipId, ship, command.armyId, army);
+        if (!disembarked.ok) return disembarked.reason;
+        state.scene.ships ??= {};
+        state.scene.ships[command.shipId] = disembarked.ship;
+        state.armies[command.armyId] = disembarked.army;
+        return undefined;
+      }
       case "REQUEST_NAVAL_BATTLE": {
         const initiatingShip = state.scene.ships?.[command.initiatingShipId];
         if (!initiatingShip) return "SHIP_NOT_FOUND";

@@ -145,6 +145,12 @@ export interface NavalBattleRequest {
   createdOnTurn?: number;
 }
 
+export interface TransportEmbarkRequest {
+  id: string;
+  shipId: string;
+  armyId: string;
+}
+
 export interface NavalBattleShipSnapshot {
   shipId: string;
   strategicCell: GridCellCoord;
@@ -200,6 +206,7 @@ export interface SceneState {
   turn: TurnState;
   ships?: Record<string, ShipState>;
   navalBattleRequests?: NavalBattleRequest[];
+  transportEmbarkRequests?: TransportEmbarkRequest[];
   activeNavalBattle?: NavalBattleState | null;
   navalBattleHistory?: NavalBattleState[];
   navalRevealUntilTurn?: Record<string, Record<string, number>>;
@@ -352,6 +359,9 @@ export type ArmyCommandPayload =
     | { type: "END_NAVAL_SHIP_TURN"; shipId: string }
     | { type: "SET_ACTIVE_NAVAL_SHIP"; shipId: string }
     | { type: "CONFIRM_NAVAL_SHIP_EXIT"; shipId: string }
+    | { type: "EMBARK_ARMY"; shipId: string; armyId: string }
+    | { type: "ACCEPT_EMBARK_ARMY"; embarkRequestId: string; shipId: string; armyId: string }
+    | { type: "DISEMBARK_ARMY"; shipId: string; armyId: string }
     | { type: "REQUEST_NAVAL_BATTLE"; initiatingShipId: string; targetShipId: string }
     | {
         type: "START_NAVAL_BATTLE";

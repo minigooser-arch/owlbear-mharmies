@@ -332,6 +332,23 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
   CONFIRM_NAVAL_SHIP_EXIT: (value) => boundedString(value.shipId)
     ? { type: "CONFIRM_NAVAL_SHIP_EXIT", shipId: value.shipId }
     : undefined,
+  EMBARK_ARMY: (value) =>
+    boundedString(value.shipId) && boundedString(value.armyId)
+      ? { type: "EMBARK_ARMY", shipId: value.shipId, armyId: value.armyId }
+      : undefined,
+  ACCEPT_EMBARK_ARMY: (value) =>
+    boundedString(value.embarkRequestId) && boundedString(value.shipId) && boundedString(value.armyId)
+      ? {
+          type: "ACCEPT_EMBARK_ARMY",
+          embarkRequestId: value.embarkRequestId,
+          shipId: value.shipId,
+          armyId: value.armyId
+        }
+      : undefined,
+  DISEMBARK_ARMY: (value) =>
+    boundedString(value.shipId) && boundedString(value.armyId)
+      ? { type: "DISEMBARK_ARMY", shipId: value.shipId, armyId: value.armyId }
+      : undefined,
   REQUEST_NAVAL_BATTLE: (value) =>
     boundedString(value.initiatingShipId) && boundedString(value.targetShipId)
       ? {

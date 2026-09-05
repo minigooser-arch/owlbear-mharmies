@@ -68,6 +68,18 @@ export function authorizeArmyCommand(
     return ledBy(context, ship.sideId);
   }
 
+  if (command.type === "EMBARK_ARMY" || command.type === "DISEMBARK_ARMY") {
+    const ship = context.ships?.get(command.shipId);
+    if (!ship) return { allowed: false, reason: "SHIP_NOT_FOUND" };
+    return ledBy(context, ship.sideId);
+  }
+
+  if (command.type === "ACCEPT_EMBARK_ARMY") {
+    const army = context.armies.get(command.armyId);
+    if (!army) return { allowed: false, reason: "ARMY_NOT_FOUND" };
+    return ledBy(context, army.sideId);
+  }
+
   if (
     command.type === "SET_SHIP_ROUTE" ||
     command.type === "NAVAL_MOVE_FORWARD" ||
