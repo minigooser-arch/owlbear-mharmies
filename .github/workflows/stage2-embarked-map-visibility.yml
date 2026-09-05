@@ -1,0 +1,32 @@
+name: Stage2 Embarked Map Visibility Patch
+
+on:
+  push:
+    branches: [feature/naval-stage2-runtime]
+    paths:
+      - scripts/stage2-embarked-map-visibility.mjs
+      - .github/workflows/stage2-embarked-map-visibility.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feature/naval-stage2-runtime
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - run: node scripts/stage2-embarked-map-visibility.mjs
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/owlbear/extensionServices.ts
+          git diff --cached --quiet && exit 1
+          git commit -m "feat: hide embarked armies from map visibility"
+          git push origin HEAD:feature/naval-stage2-runtime
