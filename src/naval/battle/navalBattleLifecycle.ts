@@ -97,7 +97,7 @@ export function startNavalBattle(
 
   const activeBattle = startNavalRound(baseBattle, next.ships);
   next.activeNavalBattle = activeBattle;
-  next.turn.phase = "NAVAL_BATTLE";
+  next.turn.phase = "POST_MOVEMENT";
   if (input.requestId !== null) {
     next.navalBattleRequests = next.navalBattleRequests.filter(
       (request) => request.id !== input.requestId

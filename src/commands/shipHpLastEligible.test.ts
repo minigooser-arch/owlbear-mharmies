@@ -21,7 +21,7 @@ it("keeps the current round number when the last eligible active ship reaches ze
     terrain: structuredClone(DEFAULT_TERRAIN),
     gridMap: { version: 1, revision: 0, cells: {} },
     wars: [],
-    turn: { ...structuredClone(DEFAULT_TURN_STATE), phase: "NAVAL_BATTLE" },
+    turn: { ...structuredClone(DEFAULT_TURN_STATE), phase: "POST_MOVEMENT" },
     ships: { ship },
     navalBattleRequests: [],
     activeNavalBattle: {

@@ -132,7 +132,7 @@ it("starts and persists a naval battle through ProductionEngine using real ship 
     channel: CommandGateway.ACK_CHANNEL,
     data: { requestId: "start-naval-battle", status: "ACCEPTED" }
   });
-  expect(scene.turn.phase).toBe("NAVAL_BATTLE");
+  expect(scene.turn.phase).toBe("POST_MOVEMENT");
   expect(scene.activeNavalBattle).toMatchObject({
     id: "battle-1",
     participantShipIds: ["redShip", "blueShip"],

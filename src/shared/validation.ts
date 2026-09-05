@@ -291,7 +291,7 @@ function validIsoTimestamp(value: unknown): value is string {
 
 function normalizeTurn(value: unknown): TurnState {
   if (!isRecord(value)) return { ...DEFAULT_TURN_STATE };
-  const phase: TurnPhase = enumValue<TurnPhase>(value.phase, ["MOVEMENT", "NAVAL_BATTLE"])
+  const phase: TurnPhase = enumValue<TurnPhase>(value.phase, ["MOVEMENT", "POST_MOVEMENT"])
     ? value.phase
     : DEFAULT_TURN_STATE.phase;
   return {

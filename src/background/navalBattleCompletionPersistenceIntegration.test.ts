@@ -57,7 +57,7 @@ it("restores ship position and rotation when a GM completes an active naval batt
     terrain: structuredClone(DEFAULT_TERRAIN),
     gridMap: { version: 1, revision: 0, cells: {} },
     wars: [],
-    turn: { ...structuredClone(DEFAULT_TURN_STATE), turnNumber: 3, phase: "NAVAL_BATTLE" },
+    turn: { ...structuredClone(DEFAULT_TURN_STATE), turnNumber: 3, phase: "POST_MOVEMENT" },
     ships: { ship },
     navalBattleRequests: [],
     activeNavalBattle: battle,

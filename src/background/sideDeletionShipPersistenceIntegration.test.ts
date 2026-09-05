@@ -65,7 +65,7 @@ it("deleting a side clears its ship metadata, restores the source, and persists 
     terrain: structuredClone(DEFAULT_TERRAIN),
     gridMap: { version: 1, revision: 0, cells: {} },
     wars: [],
-    turn: { ...structuredClone(DEFAULT_TURN_STATE), turnNumber: 2, phase: "NAVAL_BATTLE" },
+    turn: { ...structuredClone(DEFAULT_TURN_STATE), turnNumber: 2, phase: "POST_MOVEMENT" },
     ships: { first, second },
     navalBattleRequests: [
       { id: "request-1", initiatingShipId: "first", targetShipId: "second", createdOnTurn: 2 }

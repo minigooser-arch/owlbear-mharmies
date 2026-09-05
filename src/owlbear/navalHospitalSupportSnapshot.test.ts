@@ -64,7 +64,7 @@ function scene(): SceneState {
     terrain: structuredClone(DEFAULT_TERRAIN),
     gridMap: { version: 1, revision: 0, cells: {} },
     wars: [],
-    turn: { ...structuredClone(DEFAULT_TURN_STATE), turnNumber: 4, phase: "NAVAL_BATTLE" },
+    turn: { ...structuredClone(DEFAULT_TURN_STATE), turnNumber: 4, phase: "POST_MOVEMENT" },
     ships: {
       hospital: ship("red", "HOSPITAL"),
       friendly: { ...ship("red", "CRUISER"), hp: 15 },

@@ -66,7 +66,7 @@ it("persists naval tactical movement and facing rotation without changing the st
     terrain: structuredClone(DEFAULT_TERRAIN),
     gridMap: { version: 1, revision: 0, cells: {} },
     wars: [],
-    turn: { ...structuredClone(DEFAULT_TURN_STATE), turnNumber: 2, phase: "NAVAL_BATTLE" },
+    turn: { ...structuredClone(DEFAULT_TURN_STATE), turnNumber: 2, phase: "POST_MOVEMENT" },
     ships: { ship },
     navalBattleRequests: [],
     activeNavalBattle: battle,

@@ -142,7 +142,7 @@ it("starts and persists a naval battle from authoritative Owlbear ship positions
     data: { requestId: "start-naval", status: "ACCEPTED" }
   });
   expect(scene.revision).toBe(10);
-  expect(scene.turn.phase).toBe("NAVAL_BATTLE");
+  expect(scene.turn.phase).toBe("POST_MOVEMENT");
   expect(scene.navalBattleRequests).toEqual([]);
   expect(scene.activeNavalBattle).toMatchObject({
     id: "naval-1",

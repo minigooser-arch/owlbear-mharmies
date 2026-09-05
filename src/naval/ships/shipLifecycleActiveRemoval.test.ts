@@ -25,7 +25,7 @@ it("advances to the next initiative ship when the active ship is unregistered", 
     terrain: DEFAULT_TERRAIN,
     gridMap: { version: 1, revision: 0, cells: {} },
     wars: [],
-    turn: { ...DEFAULT_TURN_STATE, phase: "NAVAL_BATTLE" },
+    turn: { ...DEFAULT_TURN_STATE, phase: "POST_MOVEMENT" },
     ships: { first, second },
     navalBattleRequests: [],
     activeNavalBattle: {

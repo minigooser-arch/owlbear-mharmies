@@ -95,7 +95,7 @@ describe("transport interaction validation", () => {
 
     expect(validateTransportInteraction({
       action: "EMBARK",
-      phase: "NAVAL_BATTLE",
+      phase: "POST_MOVEMENT",
       ship: transport(),
       army: army(),
       shipCell: { x: 0, y: 0 },

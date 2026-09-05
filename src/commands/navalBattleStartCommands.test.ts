@@ -91,7 +91,7 @@ it("starts a precomputed naval battle from authoritative ship positions and cons
   expect(result.status).toBe("ACCEPTED");
   if (result.status !== "ACCEPTED") return;
   expect(result.state.scene.revision).toBe(5);
-  expect(result.state.scene.turn.phase).toBe("NAVAL_BATTLE");
+  expect(result.state.scene.turn.phase).toBe("POST_MOVEMENT");
   expect(result.state.scene.navalBattleRequests).toEqual([]);
   expect(result.state.scene.ships?.["red-ship"]).toMatchObject({ status: "IN_NAVAL_BATTLE", battleId: "naval-1" });
   expect(result.state.scene.ships?.["blue-ship"]).toMatchObject({ status: "IN_NAVAL_BATTLE", battleId: "naval-1" });

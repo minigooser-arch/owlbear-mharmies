@@ -89,7 +89,7 @@ describe("naval battle lifecycle", () => {
       rollD20: rolls(18, 10)
     });
 
-    expect(result.turn.phase).toBe("NAVAL_BATTLE");
+    expect(result.turn.phase).toBe("POST_MOVEMENT");
     expect(result.activeNavalBattle).toMatchObject({
       id: "battle-1",
       requestId: "request",
