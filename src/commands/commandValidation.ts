@@ -387,6 +387,8 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
         : undefined;
   },
   COMPLETE_NAVAL_BATTLE: () => ({ type: "COMPLETE_NAVAL_BATTLE" }),
+  COMPLETE_MOVEMENT_PHASE: () => ({ type: "COMPLETE_MOVEMENT_PHASE" }),
+  REOPEN_MOVEMENT_PHASE: () => ({ type: "REOPEN_MOVEMENT_PHASE" }),
   CREATE_SIDE: (value) => {
     const side = parseSide(value.side);
     return side ? { type: "CREATE_SIDE", side } : undefined;

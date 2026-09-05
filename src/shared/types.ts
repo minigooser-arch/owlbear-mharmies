@@ -374,6 +374,8 @@ export type ArmyCommandPayload =
         areaCells: GridCellCoord[];
       }
     | { type: "COMPLETE_NAVAL_BATTLE" }
+    | { type: "COMPLETE_MOVEMENT_PHASE" }
+    | { type: "REOPEN_MOVEMENT_PHASE" }
     | { type: "CREATE_SIDE"; side: Side }
     | { type: "RENAME_SIDE"; sideId: string; name: string }
     | {

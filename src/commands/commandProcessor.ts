@@ -441,6 +441,7 @@ export class CommandProcessor {
         return undefined;
       }
       case "REQUEST_NAVAL_BATTLE": {
+        if (state.scene.turn.phase !== "POST_MOVEMENT") return "NOT_POST_MOVEMENT_PHASE";
         const initiatingShip = state.scene.ships?.[command.initiatingShipId];
         if (!initiatingShip) return "SHIP_NOT_FOUND";
         const result = createNavalBattleRequest({
@@ -686,6 +687,17 @@ export class CommandProcessor {
           return "INVALID_NAVAL_BATTLE";
         }
       }
+      case "COMPLETE_MOVEMENT_PHASE":
+        if (state.scene.turn.phase !== "MOVEMENT") return "NOT_MOVEMENT_PHASE";
+        state.scene.turn.phase = "POST_MOVEMENT";
+        state.scene.transportEmbarkRequests = [];
+        return undefined;
+      case "REOPEN_MOVEMENT_PHASE":
+        if (state.scene.turn.phase !== "POST_MOVEMENT") return "NOT_POST_MOVEMENT_PHASE";
+        if (state.scene.activeNavalBattle?.status === "ACTIVE") return "NAVAL_BATTLE_ACTIVE";
+        state.scene.turn.phase = "MOVEMENT";
+        state.scene.navalBattleRequests = [];
+        return undefined;
       case "COMPLETE_NAVAL_BATTLE": {
         const battle = state.scene.activeNavalBattle;
         if (!battle || battle.status !== "ACTIVE") return "NO_ACTIVE_NAVAL_BATTLE";
@@ -1208,6 +1220,8 @@ export class CommandProcessor {
         state.scene.turn = resumeAutoTurns(state.scene.turn, this.now());
         return undefined;
       case "COMPLETE_TURN_NOW": {
+        if (state.scene.activeNavalBattle?.status === "ACTIVE") return "NAVAL_BATTLE_ACTIVE";
+        if (state.scene.turn.phase !== "POST_MOVEMENT") return "NOT_POST_MOVEMENT_PHASE";
         const armyCells = Object.fromEntries(Object.entries(state.armies).flatMap(([armyId]) => {
           const position = state.positions?.[armyId];
           if (!position || !this.cellForPosition) return [];
