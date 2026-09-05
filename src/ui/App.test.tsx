@@ -132,6 +132,72 @@ it("passes detected naval targets from the snapshot into leader fleet controls",
   expect(screen.getByRole("option", { name: "Видимый линкор — Синие" })).toBeInTheDocument();
 });
 
+it("passes pending naval requests from the GM snapshot into the battles page", () => {
+  render(<App services={services({
+    role: "GM",
+    mapVisibleSourceIds: new Set(),
+    ships: [
+      {
+        id: "red-ship",
+        name: "Аврора",
+        sideId: "A",
+        sideName: "Красные",
+        classId: "CRUISER",
+        className: "Крейсер",
+        status: "READY",
+        hp: 20,
+        maxHp: 20,
+        temporaryHp: 0,
+        armor: 1,
+        movementMax: 5,
+        movementRemaining: 5,
+        plannedRouteCellCount: 0,
+        facing: "EAST",
+        normalDice: 2,
+        normalRangeMin: 1,
+        normalRangeMax: 3,
+        embarkedArmyId: null,
+        detectionOverride: null,
+        effectiveDetectionRange: 6
+      },
+      {
+        id: "blue-ship",
+        name: "Баян",
+        sideId: "B",
+        sideName: "Синие",
+        classId: "CRUISER",
+        className: "Крейсер",
+        status: "READY",
+        hp: 20,
+        maxHp: 20,
+        temporaryHp: 0,
+        armor: 1,
+        movementMax: 5,
+        movementRemaining: 5,
+        plannedRouteCellCount: 0,
+        facing: "WEST",
+        normalDice: 2,
+        normalRangeMin: 1,
+        normalRangeMax: 3,
+        embarkedArmyId: null,
+        detectionOverride: null,
+        effectiveDetectionRange: 6
+      }
+    ],
+    pendingNavalBattleRequests: [{
+      id: "request-1",
+      initiatingShipId: "red-ship",
+      targetShipId: "blue-ship",
+      createdOnTurn: 7
+    }]
+  })} />);
+
+  fireEvent.click(screen.getByRole("button", { name: "Бои" }));
+  expect(screen.getByRole("heading", { name: "Заявки на морской бой" })).toBeInTheDocument();
+  expect(screen.getByText("Аврора")).toBeInTheDocument();
+  expect(screen.getByText("Баян")).toBeInTheDocument();
+});
+
 it("renders loading, no-scene, and future-schema states", () => {
   const { rerender } = render(<App services={services({ ready: false })} />);
   expect(screen.getByText("Загрузка…")).toBeInTheDocument();
