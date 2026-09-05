@@ -38,7 +38,7 @@ export interface ArmyView {
   supplied: boolean;
   supplyCheckedOnTurn: number;
   disbandPending: boolean;
-  embarkedOnShipId: string | null;
+  embarkedOnShipId?: string | null;
 }
 
 export interface ShipView {
