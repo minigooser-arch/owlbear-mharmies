@@ -88,6 +88,7 @@ function scene(phase: "MOVEMENT" | "POST_MOVEMENT", activeNavalBattle: NavalBatt
       revision: 0,
       cells: {
         "0,0": { terrainId: "sea", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null },
+        "1,0": { terrainId: "sea", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null },
         "2,0": { terrainId: "plain", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null }
       }
     },
