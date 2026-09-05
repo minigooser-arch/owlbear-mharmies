@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { createRegisteredShip } from "../naval/ships/shipLifecycle";
 import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE } from "../shared/constants";
-import { COMMAND_PROTOCOL_VERSION, type ArmyCommand, type ArmyState, type GridCellCoord, type SceneState, type Vector2 } from "../shared/types";
+import {
+  COMMAND_PROTOCOL_VERSION,
+  type ArmyCommand,
+  type ArmyState,
+  type GridCellCoord,
+  type NavalBattleState,
+  type SceneState,
+  type Vector2
+} from "../shared/types";
 import { CommandProcessor, type CommandContext, type CommandState } from "./commandProcessor";
 
 const cellForPosition = (position: Vector2): GridCellCoord => ({ x: Math.floor(position.x / 100), y: Math.floor(position.y / 100) });
@@ -32,13 +40,37 @@ function targetArmy(): ArmyState {
   };
 }
 
-function scene(): SceneState {
+function battle(): NavalBattleState {
+  return {
+    version: 1,
+    id: "battle",
+    requestId: null,
+    initiatorSideId: "red",
+    areaCells: [],
+    participantShipIds: ["attacker"],
+    snapshots: {},
+    initiative: [{ shipId: "attacker", initialRoll: 10, bonus: 0, total: 10, tieBreakRolls: [] }],
+    roundNumber: 1,
+    currentShipId: "attacker",
+    completedShipIdsThisRound: [],
+    movementRemainingByShip: { attacker: 2 },
+    actionUsedByShip: { attacker: false },
+    exitedShipIds: [],
+    status: "ACTIVE",
+    events: [],
+    startedOnTurn: 7,
+    startedAt: 1,
+    revision: 1
+  };
+}
+
+function scene(phase: "MOVEMENT" | "POST_MOVEMENT", activeNavalBattle: NavalBattleState | null = null): SceneState {
   const terrain = structuredClone(DEFAULT_TERRAIN);
   terrain.types.sea = {
     id: "sea", name: "Море", movementCostUnits: 2, enabled: true,
     movementDomains: ["SEA"], blocksNavalLos: false
   };
-  const attacker = createRegisteredShip("red", "BATTLESHIP", "EAST");
+  const attacker = createRegisteredShip("red", "BATTLESHIP", "NORTH");
   return {
     version: 6,
     revision: 1,
@@ -60,19 +92,19 @@ function scene(): SceneState {
       }
     },
     wars: [],
-    turn: { ...structuredClone(DEFAULT_TURN_STATE), turnNumber: 7, phase: "MOVEMENT" },
+    turn: { ...structuredClone(DEFAULT_TURN_STATE), turnNumber: 7, phase },
     ships: { attacker },
     transportEmbarkRequests: [],
     navalBattleRequests: [],
-    activeNavalBattle: null,
+    activeNavalBattle,
     navalBattleHistory: [],
     navalRevealUntilTurn: {}
   };
 }
 
-function state(): CommandState {
+function state(phase: "MOVEMENT" | "POST_MOVEMENT", activeNavalBattle: NavalBattleState | null = null): CommandState {
   return {
-    scene: scene(),
+    scene: scene(phase, activeNavalBattle),
     armies: { army: targetArmy() },
     barriers: {},
     items: {
@@ -99,41 +131,47 @@ function command(): ArmyCommand {
   };
 }
 
-function context(): CommandContext {
+function context(commandState: CommandState): CommandContext {
   return {
     role: "PLAYER",
     playerId: "leader",
     connectionId: "leader-connection",
     connectedPlayerIds: new Set(["leader"]),
-    state: state()
+    state: commandState
   };
 }
 
-function processor(windowOpen: boolean) {
+function processor() {
   return new CommandProcessor(
     () => new Date("2026-09-05T08:00:00Z"),
     cellForPosition,
     positionForCell,
     () => new Set(),
     () => 1,
-    () => new Set(["army"]),
-    () => true,
-    () => 2,
-    () => true,
-    () => windowOpen
+    () => new Set(["army"])
   );
 }
 
-describe("shore bombardment global action window", () => {
-  it("fails closed outside active naval combat when the approved global window is unavailable", () => {
-    expect(processor(false).execute(context(), command())).toEqual({
+describe("shore bombardment final global action window", () => {
+  it("rejects shore bombardment during MOVEMENT", () => {
+    expect(processor().execute(context(state("MOVEMENT")), command())).toEqual({
       status: "REJECTED",
-      reason: "SHORE_BOMBARDMENT_WINDOW_CLOSED"
+      reason: "NOT_POST_MOVEMENT_PHASE"
     });
   });
 
-  it("allows the same authoritative shot when an approved global action window is injected", () => {
-    const result = processor(true).execute(context(), command());
+  it("allows shore bombardment during POST_MOVEMENT without an active naval battle", () => {
+    const result = processor().execute(context(state("POST_MOVEMENT")), command());
     expect(result.status).toBe("ACCEPTED");
+    if (result.status !== "ACCEPTED") return;
+    expect(result.state.scene.activeNavalBattle).toBeNull();
+    expect(result.state.scene.ships?.attacker?.shoreBombardmentUsedOnTurn).toBe(7);
+  });
+
+  it("rejects shore bombardment while a naval battle is active", () => {
+    expect(processor().execute(context(state("POST_MOVEMENT", battle())), command())).toEqual({
+      status: "REJECTED",
+      reason: "NAVAL_BATTLE_ACTIVE"
+    });
   });
 });
