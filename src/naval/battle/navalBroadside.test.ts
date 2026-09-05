@@ -180,7 +180,7 @@ describe("naval broadside targeting", () => {
     })).toEqual({ ok: false, reason: "NO_NAVAL_LOS" });
   });
 
-  it("rejects same-side targets", () => {
+  it("leaves friendly-fire confirmation to the authoritative command layer", () => {
     expect(validateBroadsideTarget({
       battle: battle(),
       attackerId: "attacker",
@@ -192,7 +192,7 @@ describe("naval broadside targeting", () => {
       sectorResolver: exactSector([broadsideTarget]),
       distanceCells: () => 2,
       hasLineOfSight: () => true
-    })).toEqual({ ok: false, reason: "FRIENDLY_TARGET" });
+    })).toEqual({ ok: true, range: 2 });
   });
 
   it("committing a valid broadside consumes the action and automatically advances the activation", () => {

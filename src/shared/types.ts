@@ -356,6 +356,7 @@ export type ArmyCommandPayload =
     | { type: "SET_SHIP_DETECTION_OVERRIDE"; shipId: string; detectionOverride: number | null }
     | { type: "NAVAL_MOVE_FORWARD"; shipId: string }
     | { type: "NAVAL_TURN_SHIP"; shipId: string; direction: "LEFT" | "RIGHT" }
+    | { type: "NAVAL_BROADSIDE_ATTACK"; shipId: string; targetShipId: string; friendlyFireConfirmed: boolean }
     | { type: "END_NAVAL_SHIP_TURN"; shipId: string }
     | { type: "NAVAL_HOSPITAL_SUPPORT"; shipId: string; targetShipId: string }
     | { type: "NAVAL_SHORE_BOMBARDMENT"; shipId: string; armyId: string }

@@ -323,6 +323,15 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
   NAVAL_TURN_SHIP: (value) => boundedString(value.shipId) && (value.direction === "LEFT" || value.direction === "RIGHT")
     ? { type: "NAVAL_TURN_SHIP", shipId: value.shipId, direction: value.direction }
     : undefined,
+  NAVAL_BROADSIDE_ATTACK: (value) =>
+    boundedString(value.shipId) && boundedString(value.targetShipId) && typeof value.friendlyFireConfirmed === "boolean"
+      ? {
+          type: "NAVAL_BROADSIDE_ATTACK",
+          shipId: value.shipId,
+          targetShipId: value.targetShipId,
+          friendlyFireConfirmed: value.friendlyFireConfirmed
+        }
+      : undefined,
   END_NAVAL_SHIP_TURN: (value) => boundedString(value.shipId)
     ? { type: "END_NAVAL_SHIP_TURN", shipId: value.shipId }
     : undefined,
