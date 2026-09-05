@@ -93,6 +93,45 @@ it("keeps leader faction management inside the troops screen", () => {
   expect(screen.getByText("Управление фракцией")).toBeInTheDocument();
 });
 
+it("passes detected naval targets from the snapshot into leader fleet controls", () => {
+  render(<App services={services({
+    playerId: "leader",
+    memberSideIds: new Set(["A"]),
+    leaderSideIds: new Set(["A"]),
+    sides: [
+      { id: "A", name: "Красные", color: "#f00", playerIds: ["leader"], leaderPlayerIds: ["leader"], stateId: null },
+      { id: "B", name: "Синие", color: "#00f", playerIds: ["enemy"], leaderPlayerIds: ["enemy"], stateId: null }
+    ],
+    ships: [{
+      id: "own-ship",
+      name: "Аврора",
+      sideId: "A",
+      sideName: "Красные",
+      classId: "CRUISER",
+      className: "Крейсер",
+      status: "READY",
+      hp: 20,
+      maxHp: 20,
+      temporaryHp: 0,
+      armor: 1,
+      movementMax: 5,
+      movementRemaining: 5,
+      plannedRouteCellCount: 0,
+      facing: "EAST",
+      normalDice: 2,
+      normalRangeMin: 1,
+      normalRangeMax: 3,
+      embarkedArmyId: null,
+      detectionOverride: null,
+      effectiveDetectionRange: 6
+    }],
+    navalRequestTargets: [{ id: "enemy-visible", name: "Видимый линкор", sideId: "B", sideName: "Синие" }]
+  })} />);
+
+  fireEvent.click(screen.getByRole("button", { name: "Флот" }));
+  expect(screen.getByRole("option", { name: "Видимый линкор — Синие" })).toBeInTheDocument();
+});
+
 it("renders loading, no-scene, and future-schema states", () => {
   const { rerender } = render(<App services={services({ ready: false })} />);
   expect(screen.getByText("Загрузка…")).toBeInTheDocument();
