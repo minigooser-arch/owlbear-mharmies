@@ -134,7 +134,7 @@ export function commitBroadsideAction(
     target,
     attackerCell: input.attackerCell,
     targetCell: input.targetCell,
-    sectorResolver: input.sectorResolver,
+    ...(input.sectorResolver ? { sectorResolver: input.sectorResolver } : {}),
     distanceCells: input.distanceCells,
     hasLineOfSight: input.hasLineOfSight
   });
@@ -180,7 +180,7 @@ export function commitBroadsideAttack(
     target,
     attackerCell: input.attackerCell,
     targetCell: input.targetCell,
-    sectorResolver: input.sectorResolver,
+    ...(input.sectorResolver ? { sectorResolver: input.sectorResolver } : {}),
     distanceCells: input.distanceCells,
     hasLineOfSight: input.hasLineOfSight
   });
