@@ -33,6 +33,7 @@ import { createNavalBattleRequest } from "../naval/battle/navalBattleRequest";
 import { embarkArmy, disembarkArmy, validateTransportInteraction } from "../naval/transport/transportRules";
 import { commitHospitalSupport } from "../naval/hospital/hospitalSupport";
 import { commitShoreBombardment, type ShoreBombardmentSectorResolver } from "../naval/shore/shoreBombardment";
+import { applyShipRevealUntilNextTurn } from "../naval/detection/navalVisibility";
 
 export interface CommandState {
   scene: SceneState;
@@ -528,6 +529,12 @@ export class CommandProcessor {
         if (!result.ok) return result.reason;
         state.scene.ships ??= {};
         state.scene.ships[command.shipId] = result.attacker;
+        state.scene.navalRevealUntilTurn = applyShipRevealUntilNextTurn({
+          shipId: command.shipId,
+          observerSideId: target.sideId,
+          revealUntilTurn: state.scene.navalRevealUntilTurn ?? {},
+          currentTurn: state.scene.turn.turnNumber
+        });
         if (result.target.health.hp <= 0) {
           const destroyed = destroyArmy(state.armies, state.scene.battleGroups, command.armyId);
           state.armies = destroyed.armies;

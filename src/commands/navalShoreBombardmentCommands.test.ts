@@ -202,6 +202,7 @@ describe("naval shore bombardment command", () => {
     if (result.status !== "ACCEPTED") return;
     expect(result.state.armies.army?.health.hp).toBe(8);
     expect(result.state.scene.ships?.attacker?.shoreBombardmentUsedOnTurn).toBe(7);
+    expect(result.state.scene.navalRevealUntilTurn).toEqual({ blue: { attacker: 8 } });
     expect(result.state.scene.activeNavalBattle?.completedShipIdsThisRound).toContain("attacker");
     expect(result.state.scene.activeNavalBattle?.currentShipId).toBe("other");
   });
