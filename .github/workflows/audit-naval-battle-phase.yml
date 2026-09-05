@@ -1,0 +1,20 @@
+name: Audit Naval Battle Phase
+
+on:
+  push:
+    branches: [feature/naval-stage2-runtime]
+    paths:
+      - scripts/audit-naval-battle-phase.mjs
+      - .github/workflows/audit-naval-battle-phase.yml
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feature/naval-stage2-runtime
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - run: node scripts/audit-naval-battle-phase.mjs
