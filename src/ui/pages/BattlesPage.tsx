@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { BattleGroup } from "../../shared/types";
 import type {
   ArmyView,
+  NavalBattleAreaDraftView,
   NavalBattleRequestView,
   NavalBattleView,
   ShipView,
@@ -75,15 +76,142 @@ function BattleCard({ battle, armies, isGM, onAction }: BattleCardProps) {
   );
 }
 
+function cellWord(count: number): string {
+  const mod100 = count % 100;
+  const mod10 = count % 10;
+  if (mod100 >= 11 && mod100 <= 14) return "клеток";
+  if (mod10 === 1) return "клетка";
+  if (mod10 >= 2 && mod10 <= 4) return "клетки";
+  return "клеток";
+}
+
+function NavalBattleRequestCard({
+  request,
+  ships,
+  areaDraft,
+  activeNavalBattle,
+  onAction
+}: {
+  request: NavalBattleRequestView;
+  ships: readonly ShipView[];
+  areaDraft?: NavalBattleAreaDraftView;
+  activeNavalBattle: boolean;
+  onAction(command: UiCommand): void;
+}) {
+  const [extraParticipantIds, setExtraParticipantIds] = useState<Set<string>>(() => new Set());
+  useEffect(() => setExtraParticipantIds(new Set()), [request.id]);
+
+  const shipById = new Map(ships.map((ship) => [ship.id, ship]));
+  const initiatingShip = shipById.get(request.initiatingShipId);
+  const targetShip = shipById.get(request.targetShipId);
+  const matchingDraft = areaDraft?.requestId === request.id ? areaDraft : undefined;
+  const extraCandidates = ships.filter((ship) =>
+    ship.hp > 0 &&
+    ship.id !== request.initiatingShipId &&
+    ship.id !== request.targetShipId
+  );
+  const participantShipIds = [
+    request.initiatingShipId,
+    request.targetShipId,
+    ...extraCandidates
+      .filter((ship) => extraParticipantIds.has(ship.id))
+      .map((ship) => ship.id)
+  ];
+  const canStart = !activeNavalBattle && Boolean(
+    initiatingShip && initiatingShip.hp > 0 &&
+    targetShip && targetShip.hp > 0 &&
+    matchingDraft && matchingDraft.cells.length > 0
+  );
+
+  return (
+    <div className="naval-request-card">
+      <div className="battle-participant-row">
+        <div>
+          <strong>{initiatingShip?.name ?? request.initiatingShipId}</strong>
+          <span>{initiatingShip?.sideName ?? "Неизвестная сторона"}</span>
+        </div>
+        <div>
+          <strong>{targetShip?.name ?? request.targetShipId}</strong>
+          <span>{targetShip?.sideName ?? "Неизвестная сторона"}</span>
+        </div>
+        {request.createdOnTurn !== undefined && <span>Ход {request.createdOnTurn}</span>}
+      </div>
+      <div className="battle-management naval-request-actions">
+        <button
+          className="button ghost"
+          type="button"
+          onClick={() => onAction({ type: "OPEN_NAVAL_BATTLE_AREA", requestId: request.id })}
+          disabled={activeNavalBattle}
+        >
+          Выбрать область боя
+        </button>
+        <span className="muted">
+          {matchingDraft
+            ? `Область: ${matchingDraft.cells.length} ${cellWord(matchingDraft.cells.length)}`
+            : "Область не выбрана"}
+        </span>
+      </div>
+      {extraCandidates.length > 0 && (
+        <fieldset className="naval-request-participants">
+          <legend>Дополнительные корабли</legend>
+          {extraCandidates.map((ship) => (
+            <label key={ship.id}>
+              <input
+                type="checkbox"
+                aria-label={`Добавить в бой: ${ship.name} — ${ship.sideName}`}
+                checked={extraParticipantIds.has(ship.id)}
+                disabled={activeNavalBattle}
+                onChange={(event) => {
+                  setExtraParticipantIds((current) => {
+                    const next = new Set(current);
+                    if (event.target.checked) next.add(ship.id);
+                    else next.delete(ship.id);
+                    return next;
+                  });
+                }}
+              />
+              <span>{ship.name} — {ship.sideName}</span>
+            </label>
+          ))}
+        </fieldset>
+      )}
+      <div className="battle-management">
+        <button
+          className="button primary"
+          type="button"
+          disabled={!canStart}
+          onClick={() => {
+            if (!matchingDraft || !canStart) return;
+            onAction({
+              type: "START_NAVAL_BATTLE_FROM_REQUEST",
+              requestId: request.id,
+              initiatingShipId: request.initiatingShipId,
+              targetShipId: request.targetShipId,
+              participantShipIds,
+              areaCells: matchingDraft.cells.map((cell) => ({ ...cell }))
+            });
+          }}
+        >
+          Начать морской бой
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function NavalBattleRequestQueue({
   requests,
-  ships
+  ships,
+  areaDraft,
+  activeNavalBattle,
+  onAction
 }: {
   requests: readonly NavalBattleRequestView[];
   ships: readonly ShipView[];
+  areaDraft?: NavalBattleAreaDraftView;
+  activeNavalBattle: boolean;
+  onAction(command: UiCommand): void;
 }) {
-  const shipById = new Map(ships.map((ship) => [ship.id, ship]));
-
   return (
     <article className="army-card wiki-card battle-card naval-request-queue">
       <div className="section-heading compact-heading">
@@ -94,23 +222,16 @@ function NavalBattleRequestQueue({
         <span className="count-pill">{requests.length}</span>
       </div>
       <div className="battle-participants" aria-label="Ожидающие заявки на морской бой">
-        {requests.map((request) => {
-          const initiatingShip = shipById.get(request.initiatingShipId);
-          const targetShip = shipById.get(request.targetShipId);
-          return (
-            <div className="battle-participant-row" key={request.id}>
-              <div>
-                <strong>{initiatingShip?.name ?? request.initiatingShipId}</strong>
-                <span>{initiatingShip?.sideName ?? "Неизвестная сторона"}</span>
-              </div>
-              <div>
-                <strong>{targetShip?.name ?? request.targetShipId}</strong>
-                <span>{targetShip?.sideName ?? "Неизвестная сторона"}</span>
-              </div>
-              {request.createdOnTurn !== undefined && <span>Ход {request.createdOnTurn}</span>}
-            </div>
-          );
-        })}
+        {requests.map((request) => (
+          <NavalBattleRequestCard
+            key={request.id}
+            request={request}
+            ships={ships}
+            {...(areaDraft ? { areaDraft } : {})}
+            activeNavalBattle={activeNavalBattle}
+            onAction={onAction}
+          />
+        ))}
       </div>
     </article>
   );
@@ -240,6 +361,7 @@ export function BattlesPage({
   armies = [],
   ships = [],
   pendingNavalBattleRequests = [],
+  navalBattleAreaDraft,
   activeNavalBattle,
   isGM,
   onAction
@@ -248,6 +370,7 @@ export function BattlesPage({
   armies?: readonly ArmyView[];
   ships?: readonly ShipView[];
   pendingNavalBattleRequests?: readonly NavalBattleRequestView[];
+  navalBattleAreaDraft?: NavalBattleAreaDraftView;
   activeNavalBattle?: NavalBattleView;
   isGM: boolean;
   onAction(command: UiCommand): void;
@@ -272,7 +395,15 @@ export function BattlesPage({
     <section aria-labelledby="battles-title">
       <div className="section-heading wiki-page-heading"><div><p className="eyebrow">Контакты</p><h2 id="battles-title">Бои</h2><p className="page-description">Активные столкновения, участвующие армии и быстрые действия ведущего.</p></div></div>
       <div className="card-list">
-        {visibleNavalRequests.length > 0 && <NavalBattleRequestQueue requests={visibleNavalRequests} ships={ships} />}
+        {visibleNavalRequests.length > 0 && (
+          <NavalBattleRequestQueue
+            requests={visibleNavalRequests}
+            ships={ships}
+            {...(navalBattleAreaDraft ? { areaDraft: navalBattleAreaDraft } : {})}
+            activeNavalBattle={navalBattle !== undefined}
+            onAction={onAction}
+          />
+        )}
         {navalBattle && <NavalBattleCard battle={navalBattle} ships={ships} onAction={onAction} />}
         {battles.map((battle) => <BattleCard battle={battle} armies={armies} isGM={isGM} onAction={onAction} key={battle.battleId} />)}
         {!hasVisibleBattle && <p className="empty empty-panel">Активных боёв нет.</p>}
