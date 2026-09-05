@@ -88,8 +88,8 @@ export async function registerNavalBattleAreaTool(
 
   const previewCells = (): GridCellCoord[] => {
     const combined = new Map<string, GridCellCoord>();
-    mergeCells(combined, selected.values().toArray());
-    mergeCells(combined, stroke.values().toArray());
+    mergeCells(combined, [...selected.values()]);
+    mergeCells(combined, [...stroke.values()]);
     return [...combined.values()];
   };
 
