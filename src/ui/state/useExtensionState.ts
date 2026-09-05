@@ -4,6 +4,7 @@ import type {
   ArmyStatus,
   BattleGroup,
   CellPropertyTarget,
+  GridCellCoord,
   MovementDenialReason,
   SceneSettings,
   ShipClassId,
@@ -82,6 +83,11 @@ export interface NavalBattleRequestView {
   createdOnTurn?: number;
 }
 
+export interface NavalBattleAreaDraftView {
+  requestId: string;
+  cells: GridCellCoord[];
+}
+
 export interface NavalBattleView {
   id: string;
   roundNumber: number;
@@ -114,6 +120,7 @@ export interface RawExtensionSnapshot {
   ships?: readonly ShipView[];
   navalRequestTargets?: readonly NavalRequestTargetView[];
   pendingNavalBattleRequests?: readonly NavalBattleRequestView[];
+  navalBattleAreaDraft?: NavalBattleAreaDraftView;
   activeNavalBattle?: NavalBattleView;
   sides: readonly Side[];
   states: readonly StateEntity[];
@@ -142,7 +149,16 @@ export type UiCommand =
   | { type: "REGISTER_SELECTED_SHIP"; sideId: string; classId: ShipClassId; facing: ShipFacing }
   | { type: "EDIT_ROUTE"; armyId: string }
   | { type: "EDIT_SHIP_ROUTE"; shipId: string }
-  | { type: "OPEN_MAP_BRUSH"; settings: MapBrushUiSettings };
+  | { type: "OPEN_MAP_BRUSH"; settings: MapBrushUiSettings }
+  | { type: "OPEN_NAVAL_BATTLE_AREA"; requestId: string }
+  | {
+      type: "START_NAVAL_BATTLE_FROM_REQUEST";
+      requestId: string;
+      initiatingShipId: string;
+      targetShipId: string;
+      participantShipIds: string[];
+      areaCells: GridCellCoord[];
+    };
 
 export interface ExtensionServices {
   getSnapshot(): RawExtensionSnapshot;
