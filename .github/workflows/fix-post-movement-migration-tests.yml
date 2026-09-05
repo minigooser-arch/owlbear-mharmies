@@ -1,0 +1,32 @@
+name: Fix Post Movement Migration Tests
+
+on:
+  push:
+    branches: [feature/naval-stage2-runtime]
+    paths:
+      - scripts/fix-post-movement-migration-tests.mjs
+      - .github/workflows/fix-post-movement-migration-tests.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feature/naval-stage2-runtime
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - run: node scripts/fix-post-movement-migration-tests.mjs
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/naval/battle/navalBattleLifecycle.ts src/commands/navalBattleRequestCommands.test.ts src/background/navalBattleRequestPersistenceIntegration.test.ts src/commands/commandProcessor.test.ts src/tests/fourClient.integration.test.ts
+          git diff --cached --quiet && exit 1
+          git commit -m "fix: complete post-movement phase migration"
+          git push origin HEAD:feature/naval-stage2-runtime
