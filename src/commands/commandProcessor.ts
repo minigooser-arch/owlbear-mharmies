@@ -20,6 +20,7 @@ import type {
   SceneState,
   NavalSceneState,
   GridCellCoord,
+  ShipState,
   Vector2
 } from "../shared/types";
 import { applyShipStrategicRouteCommand } from "./shipStrategicRouteCommand";
