@@ -80,7 +80,7 @@ function battle(): NavalBattleState {
   };
 }
 
-function scene(targetHp = 20): SceneState {
+function scene(): SceneState {
   const terrain = structuredClone(DEFAULT_TERRAIN);
   terrain.types.sea = {
     id: "sea", name: "Море", movementCostUnits: 2, enabled: true,
@@ -123,7 +123,7 @@ function scene(targetHp = 20): SceneState {
 
 function state(targetHp = 20): CommandState {
   return {
-    scene: scene(targetHp),
+    scene: scene(),
     armies: {
       army: army("blue", targetHp),
       "second-army": army("red", 50)
