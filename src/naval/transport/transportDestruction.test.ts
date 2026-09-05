@@ -34,7 +34,7 @@ function army(embarkedOnShipId: string | null): ArmyState {
   };
 }
 
-function scene(reciprocal = true): SceneState {
+function scene(): SceneState {
   const transport = createRegisteredShip("red", "TRANSPORT", "EAST");
   transport.embarkedArmyId = "cargo";
   return {
@@ -57,7 +57,7 @@ function scene(reciprocal = true): SceneState {
 
 function state(reciprocal = true): CommandState {
   return {
-    scene: scene(reciprocal),
+    scene: scene(),
     armies: { cargo: army(reciprocal ? "transport" : null) },
     barriers: {},
     items: {}
