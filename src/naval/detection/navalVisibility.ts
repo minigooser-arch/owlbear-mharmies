@@ -33,6 +33,28 @@ export function visibleShipIdsForPlayer(input: NavalVisibilityInput): Set<string
   return visible;
 }
 
+export interface ApplyShipRevealInput {
+  shipId: string;
+  observerSideId: string;
+  revealUntilTurn: Readonly<Record<string, Readonly<Record<string, number>>>>;
+  currentTurn: number;
+}
+
+export function applyShipRevealUntilNextTurn(
+  input: ApplyShipRevealInput
+): Record<string, Record<string, number>> {
+  const next: Record<string, Record<string, number>> = Object.fromEntries(
+    Object.entries(input.revealUntilTurn).map(([sideId, reveals]) => [sideId, { ...reveals }])
+  );
+  const sideReveals = next[input.observerSideId] ?? {};
+  sideReveals[input.shipId] = Math.max(
+    sideReveals[input.shipId] ?? 0,
+    input.currentTurn + 1
+  );
+  next[input.observerSideId] = sideReveals;
+  return next;
+}
+
 export interface ApplyBattleRevealInput {
   ships: Readonly<Record<string, ShipState>>;
   battle: Pick<NavalBattleState, "participantShipIds">;
