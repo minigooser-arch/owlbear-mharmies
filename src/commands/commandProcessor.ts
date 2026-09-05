@@ -269,6 +269,7 @@ export class CommandProcessor {
       case "SET_SHIP_ROUTE":
         return applyShipStrategicRouteCommand(state, command, this.cellForPosition);
       case "EMBARK_ARMY": {
+        if (state.scene.turn.phase !== "MOVEMENT") return "NOT_MOVEMENT_PHASE";
         const ship = state.scene.ships?.[command.shipId];
         if (!ship) return "SHIP_NOT_FOUND";
         const army = state.armies[command.armyId];
@@ -309,6 +310,7 @@ export class CommandProcessor {
         return undefined;
       }
       case "ACCEPT_EMBARK_ARMY": {
+        if (state.scene.turn.phase !== "MOVEMENT") return "NOT_MOVEMENT_PHASE";
         const request = state.scene.transportEmbarkRequests?.find((candidate) =>
           candidate.id === command.embarkRequestId &&
           candidate.shipId === command.shipId &&
@@ -346,6 +348,7 @@ export class CommandProcessor {
         return undefined;
       }
       case "DISEMBARK_ARMY": {
+        if (state.scene.turn.phase !== "MOVEMENT") return "NOT_MOVEMENT_PHASE";
         const ship = state.scene.ships?.[command.shipId];
         if (!ship) return "SHIP_NOT_FOUND";
         const army = state.armies[command.armyId];
