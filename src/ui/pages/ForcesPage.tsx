@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Side } from "../../shared/types";
-import type { ArmyView, ShipView, UiCommand } from "../state/useExtensionState";
+import type { ArmyView, NavalRequestTargetView, ShipView, UiCommand } from "../state/useExtensionState";
 import { ArmiesPage } from "./ArmiesPage";
 import { FleetPage } from "./FleetPage";
 
@@ -14,6 +14,7 @@ export function ForcesPage({
   playerId,
   leaderSideIds,
   memberSideIds,
+  navalRequestTargets = [],
   onAction
 }: {
   armies: readonly ArmyView[];
@@ -23,6 +24,7 @@ export function ForcesPage({
   playerId: string;
   leaderSideIds: ReadonlySet<string>;
   memberSideIds: ReadonlySet<string>;
+  navalRequestTargets?: readonly NavalRequestTargetView[];
   onAction(command: UiCommand): void;
 }) {
   const [section, setSection] = useState<ForcesSection>("ARMIES");
@@ -54,6 +56,7 @@ export function ForcesPage({
           sides={sides}
           role={role}
           leaderSideIds={leaderSideIds}
+          navalRequestTargets={navalRequestTargets}
           onAction={onAction}
         />
       )}
