@@ -83,6 +83,31 @@ function consumeTransportMovement(ship: ShipState): ShipState {
   };
 }
 
+function pauseArmyForTransport(army: ArmyState, shipId: string): ArmyState {
+  return {
+    ...army,
+    status: "PAUSED",
+    route: [],
+    plannedRoute: {
+      startCell: { ...army.plannedRoute.startCell },
+      executeOnTurn: army.plannedRoute.executeOnTurn,
+      cells: [],
+      totalCostUnits: 0,
+      validatedRevision: army.plannedRoute.validatedRevision,
+      requiresReplan: false
+    },
+    movement: {
+      ...army.movement,
+      enteredRouteCellCount: 0
+    },
+    embarkedOnShipId: shipId,
+    currentWaypointIndex: 0,
+    segmentProgressCells: 0,
+    stopReason: "MANUAL",
+    revision: army.revision + 1
+  };
+}
+
 export function embarkArmy(
   shipId: string,
   ship: ShipState,
@@ -94,11 +119,7 @@ export function embarkArmy(
       ...consumeTransportMovement(ship),
       embarkedArmyId: armyId
     },
-    army: {
-      ...army,
-      embarkedOnShipId: shipId,
-      revision: army.revision + 1
-    }
+    army: pauseArmyForTransport(army, shipId)
   };
 }
 
