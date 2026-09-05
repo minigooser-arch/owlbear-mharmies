@@ -84,6 +84,22 @@ function relationForSides(scene: SceneState, leftSideId: string, rightSideId: st
   return scene.relations[leftSideId]?.[rightSideId] ?? scene.relations[rightSideId]?.[leftSideId] ?? "NEUTRAL";
 }
 
+function destroyReciprocalTransportCargo(
+  state: CommandState,
+  shipId: string,
+  ship: ShipState
+): void {
+  if (ship.classId !== "TRANSPORT" || ship.embarkedArmyId == null) return;
+  const cargoId = ship.embarkedArmyId;
+  const cargo = state.armies[cargoId];
+  if (!cargo || cargo.embarkedOnShipId !== shipId) return;
+  const destroyed = destroyArmy(state.armies, state.scene.battleGroups, cargoId);
+  state.armies = destroyed.armies;
+  state.scene.battleGroups = destroyed.battleGroups;
+  state.scene.transportEmbarkRequests = (state.scene.transportEmbarkRequests ?? [])
+    .filter((request) => request.shipId !== shipId && request.armyId !== cargoId);
+}
+
 function emptyPlannedRoute(startCell: GridCellCoord = { x: 0, y: 0 }): ArmyState["plannedRoute"] {
   return {
     startCell: { ...startCell },
@@ -259,7 +275,9 @@ export class CommandProcessor {
         return undefined;
       }
       case "UNREGISTER_SHIP": {
-        if (!state.scene.ships?.[command.shipId]) return "SHIP_NOT_FOUND";
+        const ship = state.scene.ships?.[command.shipId];
+        if (!ship) return "SHIP_NOT_FOUND";
+        destroyReciprocalTransportCargo(state, command.shipId, ship);
         const sceneRevision = state.scene.revision;
         const destroyed = destroyShip(state.scene as NavalSceneState, command.shipId);
         state.scene = destroyed.scene;
@@ -589,10 +607,16 @@ export class CommandProcessor {
         if (!ship) return "SHIP_NOT_FOUND";
         const maxHp = SHIP_CLASSES[ship.classId].maxHp;
         if (command.hp > maxHp) return "INVALID_HP";
+        if (command.hp <= 0) {
+          destroyReciprocalTransportCargo(state, command.shipId, ship);
+        }
         state.scene.ships ??= {};
         state.scene.ships[command.shipId] = {
           ...ship,
           hp: command.hp,
+          embarkedArmyId: command.hp <= 0 && ship.classId === "TRANSPORT"
+            ? null
+            : ship.embarkedArmyId,
           revision: ship.revision + 1
         };
         const battle = state.scene.activeNavalBattle;
