@@ -146,6 +146,7 @@ describe("naval hospital support command", () => {
     expect(result.status).toBe("ACCEPTED");
     if (result.status !== "ACCEPTED") return;
     expect(result.state.scene.ships?.target).toMatchObject({ hp: 15, temporaryHp: 7 });
+    expect(result.state.scene.ships?.hospital?.logisticsActionUsedOnTurn).toBe(4);
     expect(result.state.scene.activeNavalBattle?.completedShipIdsThisRound).toContain("hospital");
     expect(result.state.scene.activeNavalBattle?.currentShipId).toBe("target");
   });
