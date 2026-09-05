@@ -191,7 +191,9 @@ describe("NAVAL_BROADSIDE_ATTACK command", () => {
 
   it("rejects a target that is not a participant in the active naval battle", () => {
     const commandState = state();
-    commandState.scene.activeNavalBattle!.participantShipIds = ["attacker", "next"];
+    const battle = commandState.scene.activeNavalBattle;
+    if (!battle) throw new Error("Expected active naval battle fixture");
+    battle.participantShipIds = ["attacker", "next"];
     expect(processor().execute(context(commandState), command())).toEqual({
       status: "REJECTED",
       reason: "TARGET_NOT_IN_NAVAL_BATTLE"
