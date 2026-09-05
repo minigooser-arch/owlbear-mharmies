@@ -28,6 +28,7 @@ import type {
   StateEntity,
   TerrainRegistryState,
   TerrainType,
+  TransportEmbarkRequest,
   TurnPhase,
   TurnState,
   ValidationResult,
@@ -446,6 +447,13 @@ function normalizeNavalBattleRequest(value: unknown): NavalBattleRequest | undef
   return request;
 }
 
+function normalizeTransportEmbarkRequest(value: unknown): TransportEmbarkRequest | undefined {
+  if (!isRecord(value) || !nonEmptyString(value.id) || !nonEmptyString(value.shipId) || !nonEmptyString(value.armyId)) {
+    return undefined;
+  }
+  return { id: value.id, shipId: value.shipId, armyId: value.armyId };
+}
+
 function normalizeNavalBattleSnapshot(value: unknown): NavalBattleShipSnapshot | undefined {
   if (!isRecord(value) || !nonEmptyString(value.shipId)) return undefined;
   const strategicCell = normalizeGridCell(value.strategicCell);
@@ -567,6 +575,11 @@ export function normalizeSceneState(raw: unknown): ValidationResult<SceneState> 
         .map(normalizeNavalBattleRequest)
         .filter((request): request is NavalBattleRequest => request !== undefined)
     : [];
+  const transportEmbarkRequests = Array.isArray(raw.transportEmbarkRequests)
+    ? raw.transportEmbarkRequests
+        .map(normalizeTransportEmbarkRequest)
+        .filter((request): request is TransportEmbarkRequest => request !== undefined)
+    : [];
   const activeNavalBattle = raw.activeNavalBattle === null ? null : normalizeNavalBattle(raw.activeNavalBattle) ?? null;
   const navalBattleHistory = Array.isArray(raw.navalBattleHistory)
     ? raw.navalBattleHistory
@@ -587,6 +600,7 @@ export function normalizeSceneState(raw: unknown): ValidationResult<SceneState> 
     turn: normalizeTurn(raw.turn),
     ships: normalizeShips(raw.ships),
     navalBattleRequests,
+    transportEmbarkRequests,
     activeNavalBattle,
     navalBattleHistory,
     navalRevealUntilTurn: normalizeNavalRevealMap(raw.navalRevealUntilTurn)

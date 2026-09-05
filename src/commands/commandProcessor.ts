@@ -1,4 +1,4 @@
-import { releaseBattleGroup } from "../battles/battleGroupService";
+import { joinReinforcements, releaseBattleGroup } from "../battles/battleGroupService";
 import { destroyArmy } from "../armies/armyLifecycle";
 import { healArmy } from "../health/armyHealth";
 import { requestArmyDisband } from "../disband/disbandService";
@@ -29,7 +29,7 @@ import { setActiveNavalShipOverride } from "../naval/battle/navalTurnOverride";
 import { confirmNavalShipExit } from "../naval/battle/navalExit";
 import { completeNavalBattle, startNavalBattle } from "../naval/battle/navalBattleLifecycle";
 import { createNavalBattleRequest } from "../naval/battle/navalBattleRequest";
-import { embarkArmy, disembarkArmy } from "../naval/transport/transportRules";
+import { embarkArmy, disembarkArmy, validateTransportInteraction } from "../naval/transport/transportRules";
 
 export interface CommandState {
   scene: SceneState;
@@ -69,6 +69,19 @@ function updateArmy(
 
 function bumpArmy(army: ArmyState, patch: Partial<ArmyState>): ArmyState {
   return { ...army, ...patch, revision: army.revision + 1 };
+}
+
+function commandPosition(state: CommandState, id: string): Vector2 | undefined {
+  return state.positions?.[id] ?? state.items[id]?.position;
+}
+
+function sameCell(left: GridCellCoord, right: GridCellCoord): boolean {
+  return left.x === right.x && left.y === right.y;
+}
+
+function relationForSides(scene: SceneState, leftSideId: string, rightSideId: string): "ALLY" | "NEUTRAL" | "ENEMY" {
+  if (leftSideId === rightSideId) return "ALLY";
+  return scene.relations[leftSideId]?.[rightSideId] ?? scene.relations[rightSideId]?.[leftSideId] ?? "NEUTRAL";
 }
 
 function emptyPlannedRoute(startCell: GridCellCoord = { x: 0, y: 0 }): ArmyState["plannedRoute"] {
@@ -256,14 +269,28 @@ export class CommandProcessor {
       case "SET_SHIP_ROUTE":
         return applyShipStrategicRouteCommand(state, command, this.cellForPosition);
       case "EMBARK_ARMY": {
-        if (state.scene.turn.phase !== "MOVEMENT") return "NOT_MOVEMENT_PHASE";
         const ship = state.scene.ships?.[command.shipId];
         if (!ship) return "SHIP_NOT_FOUND";
         const army = state.armies[command.armyId];
         if (!army) return "ARMY_NOT_FOUND";
-        if (ship.classId !== "TRANSPORT") return "SHIP_NOT_TRANSPORT";
-        if (ship.embarkedArmyId !== null) return "TRANSPORT_OCCUPIED";
-        if (army.embarkedOnShipId != null) return "ARMY_ALREADY_EMBARKED";
+        if (!this.cellForPosition) return "TRANSPORT_POSITION_UNAVAILABLE";
+        const shipPosition = commandPosition(state, command.shipId);
+        const armyPosition = commandPosition(state, command.armyId);
+        if (!shipPosition || !armyPosition) return "TRANSPORT_POSITION_UNAVAILABLE";
+        const shipCell = this.cellForPosition(shipPosition);
+        const armyCell = this.cellForPosition(armyPosition);
+        const geometry = validateTransportInteraction({
+          action: "EMBARK",
+          phase: state.scene.turn.phase,
+          ship,
+          army,
+          shipCell,
+          interactionCell: armyCell,
+          sameCellSupportsLandAndSea: sameCell(shipCell, armyCell) &&
+            cellSupportsDomain(state.scene, shipCell, "LAND") &&
+            cellSupportsDomain(state.scene, shipCell, "SEA")
+        });
+        if (!geometry.ok) return geometry.reason;
         if (ship.sideId !== army.sideId) {
           state.scene.transportEmbarkRequests ??= [];
           state.scene.transportEmbarkRequests = state.scene.transportEmbarkRequests
@@ -282,7 +309,6 @@ export class CommandProcessor {
         return undefined;
       }
       case "ACCEPT_EMBARK_ARMY": {
-        if (state.scene.turn.phase !== "MOVEMENT") return "NOT_MOVEMENT_PHASE";
         const request = state.scene.transportEmbarkRequests?.find((candidate) =>
           candidate.id === command.embarkRequestId &&
           candidate.shipId === command.shipId &&
@@ -293,9 +319,24 @@ export class CommandProcessor {
         if (!ship) return "SHIP_NOT_FOUND";
         const army = state.armies[command.armyId];
         if (!army) return "ARMY_NOT_FOUND";
-        if (ship.classId !== "TRANSPORT") return "SHIP_NOT_TRANSPORT";
-        if (ship.embarkedArmyId !== null) return "TRANSPORT_OCCUPIED";
-        if (army.embarkedOnShipId != null) return "ARMY_ALREADY_EMBARKED";
+        if (!this.cellForPosition) return "TRANSPORT_POSITION_UNAVAILABLE";
+        const shipPosition = commandPosition(state, command.shipId);
+        const armyPosition = commandPosition(state, command.armyId);
+        if (!shipPosition || !armyPosition) return "TRANSPORT_POSITION_UNAVAILABLE";
+        const shipCell = this.cellForPosition(shipPosition);
+        const armyCell = this.cellForPosition(armyPosition);
+        const geometry = validateTransportInteraction({
+          action: "EMBARK",
+          phase: state.scene.turn.phase,
+          ship,
+          army,
+          shipCell,
+          interactionCell: armyCell,
+          sameCellSupportsLandAndSea: sameCell(shipCell, armyCell) &&
+            cellSupportsDomain(state.scene, shipCell, "LAND") &&
+            cellSupportsDomain(state.scene, shipCell, "SEA")
+        });
+        if (!geometry.ok) return geometry.reason;
         const embarked = embarkArmy(command.shipId, ship, command.armyId, army);
         state.scene.ships ??= {};
         state.scene.ships[command.shipId] = embarked.ship;
@@ -305,17 +346,67 @@ export class CommandProcessor {
         return undefined;
       }
       case "DISEMBARK_ARMY": {
-        if (state.scene.turn.phase !== "MOVEMENT") return "NOT_MOVEMENT_PHASE";
         const ship = state.scene.ships?.[command.shipId];
         if (!ship) return "SHIP_NOT_FOUND";
         const army = state.armies[command.armyId];
         if (!army) return "ARMY_NOT_FOUND";
-        if (ship.classId !== "TRANSPORT") return "SHIP_NOT_TRANSPORT";
+        if (!this.cellForPosition || !this.positionForCell) return "TRANSPORT_POSITION_UNAVAILABLE";
+        const shipPosition = commandPosition(state, command.shipId);
+        if (!shipPosition) return "TRANSPORT_POSITION_UNAVAILABLE";
+        if (!cellSupportsDomain(state.scene, command.targetCell, "LAND")) return "LANDING_REQUIRES_LAND";
+        const shipCell = this.cellForPosition(shipPosition);
+        const geometry = validateTransportInteraction({
+          action: "DISEMBARK",
+          phase: state.scene.turn.phase,
+          ship,
+          army,
+          shipCell,
+          interactionCell: command.targetCell,
+          sameCellSupportsLandAndSea: sameCell(shipCell, command.targetCell) &&
+            cellSupportsDomain(state.scene, shipCell, "LAND") &&
+            cellSupportsDomain(state.scene, shipCell, "SEA")
+        });
+        if (!geometry.ok) return geometry.reason;
         const disembarked = disembarkArmy(command.shipId, ship, command.armyId, army);
         if (!disembarked.ok) return disembarked.reason;
+        const occupantIds = Object.entries(state.armies)
+          .filter(([armyId, candidate]) => armyId !== command.armyId && candidate.health.hp > 0 && candidate.embarkedOnShipId == null)
+          .filter(([armyId]) => {
+            const position = commandPosition(state, armyId);
+            return position ? sameCell(this.cellForPosition?.(position) ?? { x: NaN, y: NaN }, command.targetCell) : false;
+          })
+          .map(([armyId]) => armyId);
+        const nonEnemyOccupant = occupantIds.find((armyId) => {
+          const occupant = state.armies[armyId];
+          return occupant ? relationForSides(state.scene, army.sideId, occupant.sideId) !== "ENEMY" : false;
+        });
+        if (nonEnemyOccupant) return "LANDING_CELL_OCCUPIED";
         state.scene.ships ??= {};
         state.scene.ships[command.shipId] = disembarked.ship;
         state.armies[command.armyId] = disembarked.army;
+        state.positions ??= {};
+        state.positions[command.armyId] = this.positionForCell(command.targetCell);
+        const enemyOccupants = occupantIds.filter((armyId) => {
+          const occupant = state.armies[armyId];
+          return occupant ? relationForSides(state.scene, army.sideId, occupant.sideId) === "ENEMY" : false;
+        });
+        if (enemyOccupants.length > 0) {
+          const contacts = enemyOccupants.map((armyId) => [command.armyId, armyId] as const);
+          state.scene.battleGroups = joinReinforcements(state.scene.battleGroups, contacts, () => command.requestId);
+          const group = state.scene.battleGroups.find((candidate) => candidate.participantIds.includes(command.armyId));
+          if (group) {
+            for (const participantId of group.participantIds) {
+              const participant = state.armies[participantId];
+              if (!participant) continue;
+              state.armies[participantId] = bumpArmy(participant, {
+                status: "IN_BATTLE",
+                stopReason: "BATTLE",
+                movement: { ...participant.movement, remainingUnits: 0 },
+                battleGroupId: group.battleId
+              });
+            }
+          }
+        }
         return undefined;
       }
       case "REQUEST_NAVAL_BATTLE": {

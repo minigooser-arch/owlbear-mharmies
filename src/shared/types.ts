@@ -361,7 +361,7 @@ export type ArmyCommandPayload =
     | { type: "CONFIRM_NAVAL_SHIP_EXIT"; shipId: string }
     | { type: "EMBARK_ARMY"; shipId: string; armyId: string }
     | { type: "ACCEPT_EMBARK_ARMY"; embarkRequestId: string; shipId: string; armyId: string }
-    | { type: "DISEMBARK_ARMY"; shipId: string; armyId: string }
+    | { type: "DISEMBARK_ARMY"; shipId: string; armyId: string; targetCell: GridCellCoord }
     | { type: "REQUEST_NAVAL_BATTLE"; initiatingShipId: string; targetShipId: string }
     | {
         type: "START_NAVAL_BATTLE";

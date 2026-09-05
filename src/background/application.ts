@@ -745,7 +745,16 @@ export class ProductionEngine {
     };
     let commandCellForPosition: ((position: Vector2) => import("../shared/types").GridCellCoord) | undefined;
     let commandPositionForCell: ((cell: import("../shared/types").GridCellCoord) => Vector2) | undefined;
-    if (command.type === "COMPLETE_TURN_NOW" || command.type === "REGISTER_SHIP" || command.type === "SET_SHIP_ROUTE" || command.type === "NAVAL_MOVE_FORWARD" || command.type === "START_NAVAL_BATTLE") {
+    if (
+      command.type === "COMPLETE_TURN_NOW" ||
+      command.type === "REGISTER_SHIP" ||
+      command.type === "SET_SHIP_ROUTE" ||
+      command.type === "NAVAL_MOVE_FORWARD" ||
+      command.type === "START_NAVAL_BATTLE" ||
+      command.type === "EMBARK_ARMY" ||
+      command.type === "ACCEPT_EMBARK_ARMY" ||
+      command.type === "DISEMBARK_ARMY"
+    ) {
       try {
         const grid = new StrategicGridAdapter({ dpi: await this.grid.getDpi(), offset: { x: 0, y: 0 } });
         commandCellForPosition = (position) => grid.sceneToCell(position);

@@ -84,7 +84,11 @@ function state(armySide = "red"): CommandState {
     scene: scene(),
     armies: { army: army(armySide) },
     barriers: {},
-    items: {}
+    items: {},
+    positions: {
+      transport: { x: 50, y: 50 },
+      army: { x: 150, y: 50 }
+    }
   };
 }
 
@@ -114,7 +118,11 @@ function context(playerId: string, commandState: CommandState): CommandContext {
 }
 
 function execute(playerId: string, payload: Record<string, unknown>, commandState = state()) {
-  return new CommandProcessor().execute(
+  return new CommandProcessor(
+    () => new Date("2026-09-05T08:00:00Z"),
+    (position) => ({ x: Math.floor(position.x / 100), y: Math.floor(position.y / 100) }),
+    (cell) => ({ x: cell.x * 100 + 50, y: cell.y * 100 + 50 })
+  ).execute(
     context(playerId, commandState),
     raw(playerId, payload) as unknown as ArmyCommand
   );
@@ -152,8 +160,12 @@ describe("transport command validation", () => {
     expect(validateArmyCommand(raw("red-leader", {
       type: "DISEMBARK_ARMY",
       shipId: "transport",
-      armyId: "army"
-    }))).toMatchObject({ ok: true, command: { type: "DISEMBARK_ARMY", shipId: "transport", armyId: "army" } });
+      armyId: "army",
+      targetCell: { x: 1, y: 0 }
+    }))).toMatchObject({
+      ok: true,
+      command: { type: "DISEMBARK_ARMY", shipId: "transport", armyId: "army", targetCell: { x: 1, y: 0 } }
+    });
   });
 
   it("rejects empty ids", () => {
@@ -261,7 +273,8 @@ describe("transport command authorization and consent", () => {
     const result = execute("red-leader", {
       type: "DISEMBARK_ARMY",
       shipId: "transport",
-      armyId: "army"
+      armyId: "army",
+      targetCell: { x: 1, y: 0 }
     }, embarked.state);
 
     expect(result.status).toBe("ACCEPTED");

@@ -345,10 +345,12 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
           armyId: value.armyId
         }
       : undefined,
-  DISEMBARK_ARMY: (value) =>
-    boundedString(value.shipId) && boundedString(value.armyId)
-      ? { type: "DISEMBARK_ARMY", shipId: value.shipId, armyId: value.armyId }
-      : undefined,
+  DISEMBARK_ARMY: (value) => {
+    const targetCell = parseGridCell(value.targetCell);
+    return boundedString(value.shipId) && boundedString(value.armyId) && targetCell
+      ? { type: "DISEMBARK_ARMY", shipId: value.shipId, armyId: value.armyId, targetCell }
+      : undefined;
+  },
   REQUEST_NAVAL_BATTLE: (value) =>
     boundedString(value.initiatingShipId) && boundedString(value.targetShipId)
       ? {
