@@ -583,6 +583,11 @@ export class CommandProcessor {
         });
         if (!result.ok) return result.reason;
         state.scene.ships ??= {};
+        state.scene.ships[command.shipId] = {
+          ...hospital,
+          logisticsActionUsedOnTurn: state.scene.turn.turnNumber,
+          revision: hospital.revision + 1
+        };
         state.scene.ships[command.targetShipId] = result.target;
         state.scene.activeNavalBattle = result.battle;
         return undefined;
