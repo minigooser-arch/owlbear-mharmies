@@ -15,7 +15,8 @@ function fixture(): CommandState {
   const redShip = {
     ...createRegisteredShip("red", "CRUISER", "NORTH"),
     status: "IN_NAVAL_BATTLE" as const,
-    battleId: "naval-1"
+    battleId: "naval-1",
+    temporaryHp: 6
   };
   const blueShip = {
     ...createRegisteredShip("blue", "BATTLESHIP", "SOUTH"),
@@ -125,14 +126,18 @@ describe("CONFIRM_NAVAL_SHIP_EXIT", () => {
     }, command("leader"))).toEqual({ allowed: false, reason: "GM_ONLY" });
   });
 
-  it("marks the active ship exited and advances initiative without mutating ship lifecycle state", () => {
+  it("marks the active ship exited, clears temporary hp, and advances initiative without releasing ship lifecycle state", () => {
     const result = new CommandProcessor().execute(context("GM", "gm"), command());
     expect(result.status).toBe("ACCEPTED");
     if (result.status !== "ACCEPTED") return;
     expect(result.state.scene.activeNavalBattle?.exitedShipIds).toEqual(["redShip"]);
     expect(result.state.scene.activeNavalBattle?.completedShipIdsThisRound).toContain("redShip");
     expect(result.state.scene.activeNavalBattle?.currentShipId).toBe("blueShip");
-    expect(result.state.scene.ships?.redShip).toMatchObject({ status: "IN_NAVAL_BATTLE", battleId: "naval-1" });
+    expect(result.state.scene.ships?.redShip).toMatchObject({
+      status: "IN_NAVAL_BATTLE",
+      battleId: "naval-1",
+      temporaryHp: 0
+    });
   });
 
   it("rejects confirming a destroyed ship", () => {
