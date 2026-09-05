@@ -116,7 +116,7 @@ describe("hospital temporary hp", () => {
   });
 
   it("caps hp + temporaryHp at the target class maximum", () => {
-    const target = { ...ship("CRUISER"), hp: 19, temporaryHp: 0 };
+    const target = { ...ship("CRUISER"), hp: 24, temporaryHp: 0 };
     const result = commitHospitalSupport({
       ...input({ target }),
       ships: { hospital: ship("HOSPITAL"), target, other: ship("BATTLESHIP", "blue") },
@@ -127,7 +127,7 @@ describe("hospital temporary hp", () => {
     if (!result.ok) return;
     expect(result.rolledTemporaryHp).toBe(12);
     expect(result.grantedTemporaryHp).toBe(1);
-    expect(result.target.hp + result.target.temporaryHp).toBe(20);
+    expect(result.target.hp + result.target.temporaryHp).toBe(25);
   });
 
   it("allows stacking temporary HP only up to the remaining class cap", () => {
