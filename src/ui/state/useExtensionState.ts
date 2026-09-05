@@ -38,6 +38,7 @@ export interface ArmyView {
   supplied: boolean;
   supplyCheckedOnTurn: number;
   disbandPending: boolean;
+  embarkedOnShipId: string | null;
 }
 
 export interface ShipView {
@@ -74,6 +75,23 @@ export interface NavalRequestTargetView {
   name: string;
   sideId: string;
   sideName: string;
+}
+
+export interface TransportEmbarkTargetView {
+  id: string;
+  name: string;
+  sideId: string;
+  sideName: string;
+}
+
+export interface TransportEmbarkRequestView {
+  id: string;
+  shipId: string;
+  shipName: string;
+  shipSideId: string;
+  shipSideName: string;
+  armyId: string;
+  armyName: string;
 }
 
 export interface NavalBattleRequestView {
@@ -120,6 +138,8 @@ export interface RawExtensionSnapshot {
   ships?: readonly ShipView[];
   navalRequestTargets?: readonly NavalRequestTargetView[];
   pendingNavalBattleRequests?: readonly NavalBattleRequestView[];
+  transportEmbarkTargets?: readonly TransportEmbarkTargetView[];
+  pendingTransportEmbarkRequests?: readonly TransportEmbarkRequestView[];
   navalBattleAreaDraft?: NavalBattleAreaDraftView;
   activeNavalBattle?: NavalBattleView;
   sides: readonly Side[];
@@ -172,6 +192,8 @@ export interface ExtensionViewModel extends RawExtensionSnapshot {
   ships: ShipView[];
   navalRequestTargets: NavalRequestTargetView[];
   pendingNavalBattleRequests: NavalBattleRequestView[];
+  transportEmbarkTargets: TransportEmbarkTargetView[];
+  pendingTransportEmbarkRequests: TransportEmbarkRequestView[];
   counters: { total: number; moving: number; inBattle: number };
   send(command: UiCommand): Promise<unknown>;
   runDiagnostic(testId: DiagnosticTestId): Promise<unknown>;
@@ -192,6 +214,8 @@ export function useExtensionState(services: ExtensionServices): ExtensionViewMod
       ships,
       navalRequestTargets: [...(snapshot.navalRequestTargets ?? [])],
       pendingNavalBattleRequests: [...(snapshot.pendingNavalBattleRequests ?? [])],
+      transportEmbarkTargets: [...(snapshot.transportEmbarkTargets ?? [])],
+      pendingTransportEmbarkRequests: [...(snapshot.pendingTransportEmbarkRequests ?? [])],
       counters: {
         total: armies.length,
         moving: armies.filter((army) => army.status === "MOVING").length,

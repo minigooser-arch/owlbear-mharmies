@@ -301,7 +301,13 @@ export class ProductionEngine {
       this.port.getSceneItems()
     ]);
     const sceneItemById = new Map(sceneItems.map((item) => [item.id, item]));
-    const armyDetectionUnits = armies.map(({ item, state }) => ({
+    const reciprocallyEmbarkedArmyIds = new Set(armies.flatMap(({ item, state }) => {
+      if (state.embarkedOnShipId == null) return [];
+      const ship = scene.ships?.[state.embarkedOnShipId];
+      return ship?.embarkedArmyId === item.id ? [item.id] : [];
+    }));
+    const activeLandArmies = armies.filter(({ item }) => !reciprocallyEmbarkedArmyIds.has(item.id));
+    const armyDetectionUnits = activeLandArmies.map(({ item, state }) => ({
       id: item.id,
       sideId: state.sideId,
       position: item.position,
@@ -335,7 +341,7 @@ export class ProductionEngine {
     const visible = visibleArmyIdsForPlayer({
       isGM: role === "GM",
       playerSideIds: memberSideIds,
-      armies: armies.map(({ item, state }) => ({ id: item.id, sideId: state.sideId })),
+      armies: activeLandArmies.map(({ item, state }) => ({ id: item.id, sideId: state.sideId })),
       detectionGraph: graph,
       battleGroups: scene.battleGroups
     });
@@ -355,7 +361,7 @@ export class ProductionEngine {
     );
     await this.reconcileOverlays(
       scene,
-      armies,
+      activeLandArmies,
       barriers,
       role,
       memberSideIds,

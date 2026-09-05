@@ -53,6 +53,8 @@ import type {
   PartyPlayerView,
   RawExtensionSnapshot,
   ShipView,
+  TransportEmbarkRequestView,
+  TransportEmbarkTargetView,
   UiCommand
 } from "../ui/state/useExtensionState";
 import { DiagnosticsService, type DiagnosticsPort } from "./diagnostics";
@@ -125,6 +127,39 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
         ...(request.createdOnTurn !== undefined ? { createdOnTurn: request.createdOnTurn } : {})
       }))
     : [];
+  const transportEmbarkTargets: TransportEmbarkTargetView[] = input.role === "PLAYER" && leaderSideIds.size > 0
+    ? input.armies
+        .filter(({ item, state }) =>
+          state.health.hp > 0 &&
+          state.embarkedOnShipId == null &&
+          !memberSideIds.has(state.sideId) &&
+          mapVisibleSourceIds.has(item.id)
+        )
+        .map(({ item, state }) => ({
+          id: item.id,
+          name: item.name ?? "Безымянная армия",
+          sideId: state.sideId,
+          sideName: sideNames.get(state.sideId) ?? "Неизвестная сторона"
+        }))
+    : [];
+  const armyRecordById = new Map(input.armies.map((record) => [record.item.id, record]));
+  const shipRecordById = new Map(shipRecords.map((record) => [record.item.id, record]));
+  const pendingTransportEmbarkRequests: TransportEmbarkRequestView[] = (input.scene.transportEmbarkRequests ?? [])
+    .flatMap((request) => {
+      const armyRecord = armyRecordById.get(request.armyId);
+      const shipRecord = shipRecordById.get(request.shipId);
+      if (!armyRecord || !shipRecord) return [];
+      if (input.role !== "GM" && !leaderSideIds.has(armyRecord.state.sideId)) return [];
+      return [{
+        id: request.id,
+        shipId: request.shipId,
+        shipName: shipRecord.item.name ?? "Безымянный транспорт",
+        shipSideId: shipRecord.state.sideId,
+        shipSideName: sideNames.get(shipRecord.state.sideId) ?? "Неизвестная сторона",
+        armyId: request.armyId,
+        armyName: armyRecord.item.name ?? "Безымянная армия"
+      }];
+    });
   const armies: ArmyView[] = authorizedRecords.map(({ item, state }) => {
     const routeVisible = input.role === "GM" || (
       state.status === "READY"
@@ -149,7 +184,8 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
       healthMaxHp: state.health.maxHp,
       supplied: state.supply.supplied,
       supplyCheckedOnTurn: state.supply.checkedOnTurn,
-      disbandPending: state.disband.pending
+      disbandPending: state.disband.pending,
+      embarkedOnShipId: state.embarkedOnShipId ?? null
     };
   });
   const ships: ShipView[] = authorizedShipRecords.map(({ item, state }) => {
@@ -220,6 +256,8 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
     ships,
     navalRequestTargets,
     pendingNavalBattleRequests,
+    transportEmbarkTargets,
+    pendingTransportEmbarkRequests,
     ...(activeNavalBattle ? { activeNavalBattle } : {}),
     sides: input.scene.sides,
     states: input.scene.states,
@@ -250,6 +288,8 @@ const LOADING_SNAPSHOT: RawExtensionSnapshot = {
   ships: [],
   navalRequestTargets: [],
   pendingNavalBattleRequests: [],
+  transportEmbarkTargets: [],
+  pendingTransportEmbarkRequests: [],
   sides: [],
   states: [],
   relations: {},
