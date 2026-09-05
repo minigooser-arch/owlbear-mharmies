@@ -172,7 +172,8 @@ export class CommandProcessor {
     private readonly visibleArmyTargetsForSide: (sideId: string) => ReadonlySet<string> = () => new Set(),
     private readonly shoreBombardmentSectorResolver: ShoreBombardmentSectorResolver = () => false,
     private readonly shoreBombardmentDistanceCells: (from: GridCellCoord, to: GridCellCoord) => number = () => Number.POSITIVE_INFINITY,
-    private readonly shoreBombardmentHasLineOfSight: (from: GridCellCoord, to: GridCellCoord) => boolean = () => false
+    private readonly shoreBombardmentHasLineOfSight: (from: GridCellCoord, to: GridCellCoord) => boolean = () => false,
+    private readonly shoreBombardmentWindowOpen: () => boolean = () => false
   ) {}
 
   execute(context: CommandContext, command: ArmyCommand): CommandExecutionResult {
@@ -509,6 +510,9 @@ export class CommandProcessor {
         const activeBattle = state.scene.activeNavalBattle?.status === "ACTIVE"
           ? state.scene.activeNavalBattle
           : undefined;
+        if (!activeBattle && !this.shoreBombardmentWindowOpen()) {
+          return "SHORE_BOMBARDMENT_WINDOW_CLOSED";
+        }
         const result = commitShoreBombardment({
           attackerId: command.shipId,
           attacker: ship,
