@@ -358,6 +358,7 @@ export type ArmyCommandPayload =
     | { type: "NAVAL_TURN_SHIP"; shipId: string; direction: "LEFT" | "RIGHT" }
     | { type: "END_NAVAL_SHIP_TURN"; shipId: string }
     | { type: "NAVAL_HOSPITAL_SUPPORT"; shipId: string; targetShipId: string }
+    | { type: "NAVAL_SHORE_BOMBARDMENT"; shipId: string; armyId: string }
     | { type: "SET_ACTIVE_NAVAL_SHIP"; shipId: string }
     | { type: "CONFIRM_NAVAL_SHIP_EXIT"; shipId: string }
     | { type: "EMBARK_ARMY"; shipId: string; armyId: string }

@@ -330,6 +330,10 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
     boundedString(value.shipId) && boundedString(value.targetShipId)
       ? { type: "NAVAL_HOSPITAL_SUPPORT", shipId: value.shipId, targetShipId: value.targetShipId }
       : undefined,
+  NAVAL_SHORE_BOMBARDMENT: (value) =>
+    boundedString(value.shipId) && boundedString(value.armyId)
+      ? { type: "NAVAL_SHORE_BOMBARDMENT", shipId: value.shipId, armyId: value.armyId }
+      : undefined,
   SET_ACTIVE_NAVAL_SHIP: (value) => boundedString(value.shipId)
     ? { type: "SET_ACTIVE_NAVAL_SHIP", shipId: value.shipId }
     : undefined,

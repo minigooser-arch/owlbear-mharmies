@@ -26,6 +26,8 @@ import { SHIP_CLASSES } from "../naval/ships/shipClasses";
 import { rotationForFacing } from "../naval/ships/shipRotation";
 import { visibleShipIdsForPlayer } from "../naval/detection/navalVisibility";
 import { validateNavalBattleRequest } from "../naval/battle/navalBattleRequest";
+import { hasNavalBattleLineOfSight } from "../naval/battle/navalBattleLineOfSight";
+import { hasNavalLineOfSight } from "../naval/detection/navalLineOfSight";
 import { getDueTurnBoundary } from "../turns/turnSchedule";
 import { completeTurn } from "../turns/turnService";
 import { getDestinationMovementCostUnits } from "../terrain/terrainRegistry";
@@ -767,6 +769,7 @@ export class ProductionEngine {
       command.type === "SET_SHIP_ROUTE" ||
       command.type === "NAVAL_MOVE_FORWARD" ||
       command.type === "START_NAVAL_BATTLE" ||
+      command.type === "NAVAL_SHORE_BOMBARDMENT" ||
       command.type === "EMBARK_ARMY" ||
       command.type === "ACCEPT_EMBARK_ARMY" ||
       command.type === "DISEMBARK_ARMY"
@@ -780,8 +783,10 @@ export class ProductionEngine {
       }
     }
     let detectedNavalTargetsForSide: (sideId: string) => ReadonlySet<string> = () => new Set<string>();
+    let visibleArmyTargetsForSide: (sideId: string) => ReadonlySet<string> = () => new Set<string>();
     if (
       command.type === "REQUEST_NAVAL_BATTLE" ||
+      command.type === "NAVAL_SHORE_BOMBARDMENT" ||
       (command.type === "START_NAVAL_BATTLE" && command.navalRequestId !== null)
     ) {
       try {
@@ -794,6 +799,11 @@ export class ProductionEngine {
         });
         detectedNavalTargetsForSide = (sideId) =>
           detectedShipIdsForSide(detectionGraph, scene.ships ?? {}, sideId);
+        const armyIds = new Set(armyRecords.map((record) => record.item.id));
+        visibleArmyTargetsForSide = (sideId) => new Set(
+          [...(detectionGraph.visibleTargetsBySide.get(sideId) ?? [])]
+            .filter((unitId) => armyIds.has(unitId))
+        );
       } catch {
         // Detection-dependent commands fail closed while authoritative geometry is unavailable.
       }
@@ -844,11 +854,43 @@ export class ProductionEngine {
         return;
       }
     }
+    let shoreBombardmentDistanceCells: (from: import("../shared/types").GridCellCoord, to: import("../shared/types").GridCellCoord) => number = () => Number.POSITIVE_INFINITY;
+    let shoreBombardmentHasLineOfSight: (from: import("../shared/types").GridCellCoord, to: import("../shared/types").GridCellCoord) => boolean = () => false;
+    if (command.type === "NAVAL_SHORE_BOMBARDMENT" && commandCellForPosition && commandPositionForCell) {
+      const attackerPosition = commandState.positions?.[command.shipId];
+      const targetPosition = commandState.positions?.[command.armyId];
+      if (attackerPosition && targetPosition) {
+        try {
+          const attackerCell = commandCellForPosition(attackerPosition);
+          const targetCell = commandCellForPosition(targetPosition);
+          const distance = await this.grid.distance(
+            commandPositionForCell(attackerCell),
+            commandPositionForCell(targetCell)
+          );
+          shoreBombardmentDistanceCells = () => distance;
+          const occupiedShipCells = Object.keys(scene.ships ?? {}).flatMap((shipId) => {
+            const position = commandState.positions?.[shipId];
+            return position ? [commandCellForPosition(position)] : [];
+          });
+          shoreBombardmentHasLineOfSight = (from, to) =>
+            scene.activeNavalBattle?.status === "ACTIVE"
+              ? hasNavalBattleLineOfSight({ scene, from, to, occupiedShipCells })
+              : hasNavalLineOfSight(scene, from, to);
+        } catch {
+          // Range and LOS remain fail-closed when authoritative grid geometry is unavailable.
+        }
+      }
+    }
     const result = new CommandProcessor(
       () => this.wallClock(),
       commandCellForPosition,
       commandPositionForCell,
-      detectedNavalTargetsForSide
+      detectedNavalTargetsForSide,
+      undefined,
+      visibleArmyTargetsForSide,
+      () => false,
+      shoreBombardmentDistanceCells,
+      shoreBombardmentHasLineOfSight
     ).execute(
       {
         role: sender.role,

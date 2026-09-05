@@ -32,6 +32,7 @@ import { completeNavalBattle, startNavalBattle } from "../naval/battle/navalBatt
 import { createNavalBattleRequest } from "../naval/battle/navalBattleRequest";
 import { embarkArmy, disembarkArmy, validateTransportInteraction } from "../naval/transport/transportRules";
 import { commitHospitalSupport } from "../naval/hospital/hospitalSupport";
+import { commitShoreBombardment, type ShoreBombardmentSectorResolver } from "../naval/shore/shoreBombardment";
 
 export interface CommandState {
   scene: SceneState;
@@ -166,7 +167,11 @@ export class CommandProcessor {
     private readonly cellForPosition?: (position: Vector2) => GridCellCoord,
     private readonly positionForCell?: (cell: GridCellCoord) => Vector2,
     private readonly detectedNavalTargetsForSide: (sideId: string) => ReadonlySet<string> = () => new Set(),
-    private readonly rollD6: () => number = () => Math.floor(Math.random() * 6) + 1
+    private readonly rollD6: () => number = () => Math.floor(Math.random() * 6) + 1,
+    private readonly visibleArmyTargetsForSide: (sideId: string) => ReadonlySet<string> = () => new Set(),
+    private readonly shoreBombardmentSectorResolver: ShoreBombardmentSectorResolver = () => false,
+    private readonly shoreBombardmentDistanceCells: (from: GridCellCoord, to: GridCellCoord) => number = () => Number.POSITIVE_INFINITY,
+    private readonly shoreBombardmentHasLineOfSight: (from: GridCellCoord, to: GridCellCoord) => boolean = () => false
   ) {}
 
   execute(context: CommandContext, command: ArmyCommand): CommandExecutionResult {
@@ -488,6 +493,50 @@ export class CommandProcessor {
         } catch (error) {
           return this.navalTacticalFailure(error);
         }
+      }
+      case "NAVAL_SHORE_BOMBARDMENT": {
+        const ship = state.scene.ships?.[command.shipId];
+        if (!ship) return "SHIP_NOT_FOUND";
+        const target = state.armies[command.armyId];
+        if (!target) return "ARMY_NOT_FOUND";
+        if (!this.cellForPosition) return "NAVAL_POSITION_UNAVAILABLE";
+        const shipPosition = commandPosition(state, command.shipId);
+        const targetPosition = commandPosition(state, command.armyId);
+        if (!shipPosition || !targetPosition) return "NAVAL_POSITION_UNAVAILABLE";
+        const shipCell = this.cellForPosition(shipPosition);
+        const targetCell = this.cellForPosition(targetPosition);
+        const activeBattle = state.scene.activeNavalBattle?.status === "ACTIVE"
+          ? state.scene.activeNavalBattle
+          : undefined;
+        const result = commitShoreBombardment({
+          attackerId: command.shipId,
+          attacker: ship,
+          targetId: command.armyId,
+          target,
+          attackerCell: shipCell,
+          targetCell,
+          currentTurn: state.scene.turn.turnNumber,
+          targetVisible: this.visibleArmyTargetsForSide(ship.sideId).has(command.armyId),
+          targetCellSupportsLand:
+            target.embarkedOnShipId == null && cellSupportsDomain(state.scene, targetCell, "LAND"),
+          sectorResolver: this.shoreBombardmentSectorResolver,
+          distanceCells: this.shoreBombardmentDistanceCells,
+          hasLineOfSight: this.shoreBombardmentHasLineOfSight,
+          ...(activeBattle ? { battle: activeBattle, battleShips: state.scene.ships ?? {} } : {}),
+          rollD6: this.rollD6
+        });
+        if (!result.ok) return result.reason;
+        state.scene.ships ??= {};
+        state.scene.ships[command.shipId] = result.attacker;
+        if (result.target.health.hp <= 0) {
+          const destroyed = destroyArmy(state.armies, state.scene.battleGroups, command.armyId);
+          state.armies = destroyed.armies;
+          state.scene.battleGroups = destroyed.battleGroups;
+        } else {
+          state.armies[command.armyId] = result.target;
+        }
+        if (result.battle) state.scene.activeNavalBattle = result.battle;
+        return undefined;
       }
       case "NAVAL_HOSPITAL_SUPPORT": {
         const battle = state.scene.activeNavalBattle;
