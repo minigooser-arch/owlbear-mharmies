@@ -1,0 +1,32 @@
+name: Stage2 Global Phase Commands Patch
+
+on:
+  push:
+    branches: [feature/naval-stage2-runtime]
+    paths:
+      - scripts/stage2-global-phase-commands.mjs
+      - .github/workflows/stage2-global-phase-commands.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feature/naval-stage2-runtime
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - run: node scripts/stage2-global-phase-commands.mjs
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/shared/types.ts src/commands/commandValidation.ts src/commands/commandProcessor.ts
+          git diff --cached --quiet && exit 1
+          git commit -m "feat: add post-movement phase controls"
+          git push origin HEAD:feature/naval-stage2-runtime
