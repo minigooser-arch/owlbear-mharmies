@@ -1,0 +1,33 @@
+name: Apply shore snapshot runtime patch
+
+on:
+  push:
+    branches:
+      - feature/naval-stage2-runtime
+    paths:
+      - scripts/apply-shore-snapshot-runtime.py
+      - .github/workflows/apply-shore-snapshot-runtime.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feature/naval-stage2-runtime
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Apply deterministic patch
+        run: python scripts/apply-shore-snapshot-runtime.py
+      - name: Commit runtime wiring
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/owlbear/extensionServices.ts
+          git diff --cached --quiet && exit 0
+          git commit -m "feat: expose role-safe shore bombardment targets"
+          git push origin HEAD:feature/naval-stage2-runtime
