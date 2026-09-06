@@ -183,6 +183,16 @@ it("migrates v4 scene through state territory and naval schemas", () => {
       version: 6,
       states: [],
       sides: [{ id: "red", stateId: null }],
+      terrain: {
+        types: {
+          sea: {
+            id: "sea",
+            name: "Море",
+            movementDomains: ["SEA"],
+            blocksNavalLos: false
+          }
+        }
+      },
       gridMap: {
         cells: {
           "1,2": {
