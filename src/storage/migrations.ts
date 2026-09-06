@@ -41,6 +41,26 @@ function migrateLegacyTerrainToNavalSafe(value: unknown): unknown {
   return { ...value, types };
 }
 
+function ensureBuiltInSeaTerrain(value: unknown): unknown {
+  if (!isRecord(value) || !isRecord(value.types)) return structuredClone(DEFAULT_TERRAIN);
+  const defaultSea = DEFAULT_TERRAIN.types.sea;
+  if (!defaultSea) return value;
+  const existingSea = value.types.sea;
+  return {
+    ...value,
+    types: {
+      ...value.types,
+      sea: {
+        ...structuredClone(defaultSea),
+        ...(isRecord(existingSea) ? existingSea : {}),
+        id: "sea",
+        movementDomains: ["SEA"],
+        blocksNavalLos: false
+      }
+    }
+  };
+}
+
 export function migrateSceneState(raw: unknown): ValidationResult<SceneState> {
   if (isRecord(raw) && Object.hasOwn(raw, "version") && typeof raw.version !== "number") {
     return { ok: false, issue: { code: "INVALID_VALUE", path: "version" } };
@@ -115,6 +135,12 @@ export function migrateSceneState(raw: unknown): ValidationResult<SceneState> {
       activeNavalBattle: null,
       navalBattleHistory: [],
       navalRevealUntilTurn: {}
+    };
+  }
+  if (migrated.version === 6) {
+    migrated = {
+      ...migrated,
+      terrain: ensureBuiltInSeaTerrain(migrated.terrain)
     };
   }
   return normalizeSceneState(migrated);
