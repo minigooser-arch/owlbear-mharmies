@@ -22,6 +22,15 @@ it("offers the three strategic brush sizes and an explicit eraser target", () =>
   expect(screen.getByRole("button", { name: "Начать рисовать" })).toBeInTheDocument();
 });
 
+it("offers a built-in sea terrain that can be painted before ship registration", () => {
+  render(<MapEditorPage terrain={DEFAULT_TERRAIN} sides={sides} states={states} onAction={vi.fn()} />);
+  expect(screen.getByRole("option", { name: "Море · 1 ОП" })).toBeInTheDocument();
+  expect(DEFAULT_TERRAIN.types.sea).toMatchObject({
+    id: "sea",
+    movementDomains: ["SEA"],
+    blocksNavalLos: false
+  });
+});
 
 it("offers recognized and de-facto state map layers", () => {
   render(<MapEditorPage terrain={DEFAULT_TERRAIN} sides={sides} states={states} onAction={vi.fn()} />);
