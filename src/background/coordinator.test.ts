@@ -106,6 +106,24 @@ describe("GM coordinator", () => {
     expect(transition).not.toHaveBeenCalledWith(true, "a");
   });
 
+  it("reports scheduled heartbeat failures instead of swallowing them", async () => {
+    const failure = new Error("heartbeat read failed");
+    const onError = vi.fn();
+    const lease = new CoordinatorLease({
+      currentConnectionId: async () => "a",
+      now: () => 10_000,
+      participants: async () => [{ connectionId: "a", role: "GM" }],
+      readHeartbeat: async () => { throw failure; },
+      writeHeartbeat: async () => undefined,
+      onError
+    });
+
+    lease.start();
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledWith(failure, "coordinator-heartbeat"));
+    expect(lease.isCoordinator()).toBe(false);
+    await lease.stop();
+  });
+
   it("never overlaps coordinator ticks and coalesces one pending tick", async () => {
     let release: (() => void) | undefined;
     let call = 0;
