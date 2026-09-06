@@ -16,6 +16,7 @@ import type {
   NavalBattleShipSnapshot,
   NavalBattleState,
   NavalInitiativeEntry,
+  NavalInterceptionState,
   PlannedRoute,
   SceneSettings,
   SceneState,
@@ -498,6 +499,24 @@ function normalizeBooleanMap(value: unknown): Record<string, boolean> {
   return result;
 }
 
+function normalizeNavalInterceptions(value: unknown): Record<string, NavalInterceptionState> {
+  if (!isRecord(value)) return {};
+  const result: Record<string, NavalInterceptionState> = {};
+  for (const [shipId, rawInterception] of Object.entries(value)) {
+    if (
+      !nonEmptyString(shipId) ||
+      !isRecord(rawInterception) ||
+      !nonEmptyString(rawInterception.cruiserShipId) ||
+      !nonNegativeInteger(rawInterception.activatedRoundNumber)
+    ) continue;
+    result[shipId] = {
+      cruiserShipId: rawInterception.cruiserShipId,
+      activatedRoundNumber: rawInterception.activatedRoundNumber
+    };
+  }
+  return result;
+}
+
 function normalizeNavalBattle(value: unknown): NavalBattleState | undefined {
   if (!isRecord(value) || value.version !== 1 || !nonEmptyString(value.id) || !nonEmptyString(value.initiatorSideId)) {
     return undefined;
@@ -527,6 +546,7 @@ function normalizeNavalBattle(value: unknown): NavalBattleState | undefined {
     completedShipIdsThisRound: uniqueStrings(value.completedShipIdsThisRound),
     movementRemainingByShip: normalizeNumberMap(value.movementRemainingByShip),
     actionUsedByShip: normalizeBooleanMap(value.actionUsedByShip),
+    interceptions: normalizeNavalInterceptions(value.interceptions),
     exitedShipIds: uniqueStrings(value.exitedShipIds),
     status,
     events: Array.isArray(value.events) ? structuredClone(value.events) : [],
