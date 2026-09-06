@@ -119,8 +119,9 @@ export function removeCruiserInterceptionAfterDamage(
 ): NavalBattleState {
   if (actualHpLost <= 0 || !battle.interceptions?.[cruiserId]) return battle;
   const next = structuredClone(battle);
-  const interceptions: Record<string, NavalInterceptionState> = { ...(next.interceptions ?? {}) };
-  delete interceptions[cruiserId];
+  const interceptions: Record<string, NavalInterceptionState> = Object.fromEntries(
+    Object.entries(next.interceptions ?? {}).filter(([shipId]) => shipId !== cruiserId)
+  );
   next.interceptions = interceptions;
   next.revision += 1;
   return next;
