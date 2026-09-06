@@ -24,7 +24,7 @@ function army(sideId = "blue", hp = 20): ArmyState {
     overrides: {},
     route: [],
     plannedRoute: {
-      startCell: { x: 0, y: 0 }, executeOnTurn: 1, cells: [], totalCostUnits: 0,
+      startCell: { x: 3, y: 2 }, executeOnTurn: 1, cells: [], totalCostUnits: 0,
       validatedRevision: 1, requiresReplan: false
     },
     movement: { maxUnits: 10, remainingUnits: 10, enteredRouteCellCount: 0 },
@@ -64,7 +64,8 @@ function scene(): SceneState {
       cells: {
         "1,1": { terrainId: "sea", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null },
         "2,1": { terrainId: "sea", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null },
-        "3,1": { terrainId: "plain", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null },
+        "2,2": { terrainId: "sea", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null },
+        "3,2": { terrainId: "plain", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null },
         "4,1": { terrainId: "plain", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null }
       }
     },
@@ -91,12 +92,12 @@ function state(targetHp = 20): CommandState {
     barriers: {},
     items: {
       attacker: { id: "attacker", type: "IMAGE", position: centerForCell({ x: 1, y: 1 }), metadata: {} },
-      army: { id: "army", type: "IMAGE", position: centerForCell({ x: 3, y: 1 }), metadata: {} },
+      army: { id: "army", type: "IMAGE", position: centerForCell({ x: 3, y: 2 }), metadata: {} },
       "second-army": { id: "second-army", type: "IMAGE", position: centerForCell({ x: 4, y: 1 }), metadata: {} }
     },
     positions: {
       attacker: centerForCell({ x: 1, y: 1 }),
-      army: centerForCell({ x: 3, y: 1 }),
+      army: centerForCell({ x: 3, y: 2 }),
       "second-army": centerForCell({ x: 4, y: 1 })
     }
   };
