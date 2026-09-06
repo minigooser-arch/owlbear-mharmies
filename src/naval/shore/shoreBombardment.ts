@@ -1,10 +1,8 @@
 import type {
   ArmyState,
   GridCellCoord,
-  NavalBattleState,
   ShipState
 } from "../../shared/types";
-import { useNavalAction } from "../battle/navalRoundFlow";
 import { isInNormalBroadsideMask } from "../battle/broadsideMask";
 import { SHIP_CLASSES } from "../ships/shipClasses";
 
@@ -19,9 +17,7 @@ export type ShoreBombardmentSectorResolver = (
 ) => boolean;
 
 export type ShoreBombardmentFailure =
-  | "SHIP_NOT_ACTIVE"
   | "SHIP_DESTROYED"
-  | "ACTION_ALREADY_USED"
   | "SHIP_CANNOT_BOMBARD"
   | "TARGET_NOT_VISIBLE"
   | "TARGET_NOT_ON_LAND"
@@ -44,7 +40,6 @@ export interface ValidateShoreBombardmentTargetInput {
   sectorResolver?: ShoreBombardmentSectorResolver;
   distanceCells(from: GridCellCoord, to: GridCellCoord): number;
   hasLineOfSight(from: GridCellCoord, to: GridCellCoord): boolean;
-  battle?: NavalBattleState;
 }
 
 export type ShoreBombardmentValidation =
@@ -60,14 +55,6 @@ function bombardmentDice(ship: ShipState): 2 | 3 | null {
 export function validateShoreBombardmentTarget(
   input: ValidateShoreBombardmentTargetInput
 ): ShoreBombardmentValidation {
-  if (input.battle) {
-    if (input.battle.currentShipId !== input.attackerId) {
-      return { ok: false, reason: "SHIP_NOT_ACTIVE" };
-    }
-    if (input.battle.actionUsedByShip[input.attackerId]) {
-      return { ok: false, reason: "ACTION_ALREADY_USED" };
-    }
-  }
   if (input.attacker.hp <= 0) {
     return { ok: false, reason: "SHIP_DESTROYED" };
   }
@@ -118,7 +105,6 @@ export function validateShoreBombardmentTarget(
 
 export interface CommitShoreBombardmentInput extends ValidateShoreBombardmentTargetInput {
   rollD6(): number;
-  battleShips?: Readonly<Record<string, ShipState>>;
 }
 
 export type CommitShoreBombardmentResult =
@@ -128,7 +114,6 @@ export type CommitShoreBombardmentResult =
       range: number;
       attacker: ShipState;
       target: ArmyState;
-      battle?: NavalBattleState;
     }
   | { ok: false; reason: ShoreBombardmentFailure; range?: number };
 
@@ -157,26 +142,11 @@ export function commitShoreBombardment(
     revision: input.target.revision + 1
   };
 
-  if (!input.battle) {
-    return {
-      ok: true,
-      damage,
-      range: validation.range,
-      attacker,
-      target
-    };
-  }
-
-  const ships = {
-    ...(input.battleShips ?? {}),
-    [input.attackerId]: attacker
-  };
   return {
     ok: true,
     damage,
     range: validation.range,
     attacker,
-    target,
-    battle: useNavalAction(input.battle, ships, input.attackerId)
+    target
   };
 }
