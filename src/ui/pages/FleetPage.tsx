@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { SHIP_CLASSES } from "../../naval/ships/shipClasses";
-import type { ShipClassId, ShipFacing, Side } from "../../shared/types";
+import type { ShipClassId, ShipFacing, Side, SideRelation } from "../../shared/types";
 import { ShipCard } from "../components/ShipCard";
 import type { ArmyView, NavalRequestTargetView, ShipView, TransportEmbarkTargetView, UiCommand } from "../state/useExtensionState";
 
@@ -18,6 +18,7 @@ export function FleetPage({
   sides,
   role,
   leaderSideIds,
+  relations = {},
   navalRequestTargets = [],
   transportEmbarkTargets = [],
   onAction
@@ -27,6 +28,7 @@ export function FleetPage({
   sides: readonly Side[];
   role: "GM" | "PLAYER";
   leaderSideIds: ReadonlySet<string>;
+  relations?: Readonly<Record<string, Readonly<Record<string, SideRelation>>>>;
   navalRequestTargets?: readonly NavalRequestTargetView[];
   transportEmbarkTargets?: readonly TransportEmbarkTargetView[];
   onAction(command: UiCommand): void;
@@ -290,6 +292,7 @@ export function FleetPage({
               sideColor={sideColor}
               isGM={role === "GM"}
               canPlanRoute={canPlanRoute}
+              relations={relations}
               {...(embarkedArmyName !== undefined ? { embarkedArmyName } : {})}
               onAction={onAction}
             />
