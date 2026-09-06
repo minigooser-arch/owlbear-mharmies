@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ArmyState, GridCellCoord, NavalBattleState, ShipState } from "../../shared/types";
+import type { ArmyState, GridCellCoord, ShipState } from "../../shared/types";
 import { createRegisteredShip } from "../ships/shipLifecycle";
 import {
   commitShoreBombardment,
@@ -34,33 +34,6 @@ function army(sideId = "blue", hp = 20): ArmyState {
 
 function ship(classId: ShipState["classId"], sideId = "red"): ShipState {
   return createRegisteredShip(sideId, classId, "NORTH");
-}
-
-function battle(): NavalBattleState {
-  return {
-    version: 1,
-    id: "battle",
-    requestId: null,
-    initiatorSideId: "red",
-    areaCells: [],
-    participantShipIds: ["attacker", "other"],
-    snapshots: {},
-    initiative: [
-      { shipId: "attacker", initialRoll: 20, bonus: 2, total: 22, tieBreakRolls: [] },
-      { shipId: "other", initialRoll: 10, bonus: 0, total: 10, tieBreakRolls: [] }
-    ],
-    roundNumber: 1,
-    currentShipId: "attacker",
-    completedShipIdsThisRound: [],
-    movementRemainingByShip: { attacker: 2, other: 2 },
-    actionUsedByShip: { attacker: false, other: false },
-    exitedShipIds: [],
-    status: "ACTIVE",
-    events: [],
-    startedOnTurn: 7,
-    startedAt: 1,
-    revision: 1
-  };
 }
 
 const attackerCell = { x: 5, y: 5 };
@@ -98,7 +71,7 @@ describe("shore bombardment target validation", () => {
     expect(validateShoreBombardmentTarget(baseInput("TRANSPORT"))).toEqual({ ok: false, reason: "SHIP_CANNOT_BOMBARD" });
   });
 
-  it("rejects destroyed/friendly/invisible/non-land targets before geometry", () => {
+  it("rejects destroyed/invisible/non-land targets before geometry while leaving diplomacy to the command layer", () => {
     const sectorResolver = vi.fn(() => true);
     const distanceCells = vi.fn(() => 2);
     const hasLineOfSight = vi.fn(() => true);
@@ -106,7 +79,7 @@ describe("shore bombardment target validation", () => {
     expect(validateShoreBombardmentTarget({ ...baseInput(), attacker: { ...ship("BATTLESHIP"), hp: 0 }, sectorResolver, distanceCells, hasLineOfSight }))
       .toEqual({ ok: false, reason: "SHIP_DESTROYED" });
     expect(validateShoreBombardmentTarget({ ...baseInput(), target: army("red") }))
-      .toEqual({ ok: false, reason: "FRIENDLY_TARGET" });
+      .toEqual({ ok: true, range: 2, dice: 3 });
     expect(validateShoreBombardmentTarget({ ...baseInput(), targetVisible: false }))
       .toEqual({ ok: false, reason: "TARGET_NOT_VISIBLE" });
     expect(validateShoreBombardmentTarget({ ...baseInput(), targetCellSupportsLand: false }))
@@ -154,21 +127,5 @@ describe("shore bombardment commit", () => {
     if (!result.ok) return;
     expect(result.damage).toBe(18);
     expect(result.target.health.hp).toBe(0);
-  });
-
-  it("inside an active naval battle consumes the ship action and advances activation", () => {
-    const ships = { attacker: ship("BATTLESHIP"), other: ship("CRUISER", "blue") };
-    const result = commitShoreBombardment({
-      ...baseInput(),
-      attacker: ships.attacker,
-      battle: battle(),
-      battleShips: ships,
-      rollD6: () => 1
-    });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.battle?.actionUsedByShip.attacker).toBe(true);
-    expect(result.battle?.completedShipIdsThisRound).toEqual(["attacker"]);
-    expect(result.battle?.currentShipId).toBe("other");
   });
 });
