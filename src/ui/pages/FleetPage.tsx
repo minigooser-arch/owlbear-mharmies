@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { SHIP_CLASSES } from "../../naval/ships/shipClasses";
 import type { ShipClassId, ShipFacing, Side, SideRelation, TurnState } from "../../shared/types";
 import { ShipCard } from "../components/ShipCard";
-import type { ArmyView, NavalRequestTargetView, ShipTargetView, ShipView, TransportEmbarkTargetView, UiCommand } from "../state/useExtensionState";
+import type { ArmyView, NavalRequestTargetView, ShipView, TransportEmbarkTargetView, UiCommand } from "../state/useExtensionState";
 
 const CLASS_IDS = Object.keys(SHIP_CLASSES) as ShipClassId[];
 const FACING_OPTIONS: Array<{ value: ShipFacing; label: string }> = [
@@ -58,22 +58,6 @@ export function FleetPage({
     (classFilter === "ALL" || ship.classId === classFilter) &&
     ship.name.toLocaleLowerCase("ru").includes(query.toLocaleLowerCase("ru"))
   ), [classFilter, filterSideId, query, ships]);
-  const broadsideTargetCandidates = useMemo(() => {
-    const targets = new Map<string, ShipTargetView>();
-    for (const candidate of ships) {
-      if (candidate.hp <= 0 || candidate.status !== "IN_NAVAL_BATTLE" || candidate.navalExited === true) continue;
-      targets.set(candidate.id, {
-        id: candidate.id,
-        name: candidate.name,
-        sideId: candidate.sideId,
-        sideName: candidate.sideName
-      });
-    }
-    for (const candidate of navalRequestTargets) {
-      if (!targets.has(candidate.id)) targets.set(candidate.id, { ...candidate });
-    }
-    return [...targets.values()];
-  }, [navalRequestTargets, ships]);
   const armyNames = new Map(armies.map((army) => [army.id, army.name]));
   const requestInitiators = ships.filter((ship) =>
     leaderSideIds.has(ship.sideId) && ship.status === "READY" && ship.hp > 0
@@ -314,13 +298,10 @@ export function FleetPage({
           const sideColor = sides.find((side) => side.id === ship.sideId)?.color ?? "#687F91";
           const embarkedArmyName = ship.embarkedArmyId ? armyNames.get(ship.embarkedArmyId) : undefined;
           const canPlanRoute = role === "GM" || leaderSideIds.has(ship.sideId);
-          const broadsideTargets = ship.status === "IN_NAVAL_BATTLE" && ship.isCurrentNavalTurn === true
-            ? broadsideTargetCandidates.filter((target) => target.id !== ship.id)
-            : [];
           return (
             <ShipCard
               key={ship.id}
-              ship={{ ...ship, broadsideTargets }}
+              ship={ship}
               sideColor={sideColor}
               isGM={role === "GM"}
               canPlanRoute={canPlanRoute}
