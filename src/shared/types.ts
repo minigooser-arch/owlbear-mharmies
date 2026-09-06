@@ -166,6 +166,11 @@ export interface NavalInitiativeEntry {
   tieBreakRolls: number[];
 }
 
+export interface NavalInterceptionState {
+  cruiserShipId: string;
+  activatedRoundNumber: number;
+}
+
 export interface NavalBattleState {
   version: 1;
   id: string;
@@ -180,6 +185,7 @@ export interface NavalBattleState {
   completedShipIdsThisRound: string[];
   movementRemainingByShip: Record<string, number>;
   actionUsedByShip: Record<string, boolean>;
+  interceptions?: Record<string, NavalInterceptionState>;
   exitedShipIds: string[];
   status: "ACTIVE" | "COMPLETED";
   events: unknown[];
