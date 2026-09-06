@@ -118,6 +118,21 @@ describe("BackgroundRuntime", () => {
     await runtime.stop();
   });
 
+  it("reports scene lifecycle failures without breaking the ready listener", async () => {
+    const port = new RuntimePort();
+    const failure = new Error("preview cleanup failed");
+    const report = vi.fn();
+    port.openFailure = failure;
+    const runtime = new BackgroundRuntime(port, undefined, report);
+
+    runtime.start();
+    await runtime.whenIdle();
+
+    expect(report).toHaveBeenCalledWith(failure, "lifecycle");
+    expect(port.broadcast).toBeTypeOf("function");
+    await runtime.stop();
+  });
+
   it("does not open the next scene until old scene work is drained", async () => {
     const port = new RuntimePort();
     let releaseClose: (() => void) | undefined;
@@ -146,6 +161,27 @@ describe("BackgroundRuntime", () => {
     port.coordinator?.(false);
     await runtime.whenIdle();
     expect(port.paused).toBe(1);
+    await runtime.stop();
+  });
+
+  it("reports rejected movement, visibility, and turn scheduler work", async () => {
+    const port = new RuntimePort();
+    const report = vi.fn();
+    const runtime = new BackgroundRuntime(port, undefined, report);
+    runtime.start();
+    await runtime.whenIdle();
+    port.movement.mockRejectedValueOnce(new Error("movement failed"));
+    port.visibility.mockRejectedValueOnce(new Error("visibility failed"));
+    port.turns.mockRejectedValueOnce(new Error("turn failed"));
+
+    runtime.requestMovementTick();
+    runtime.requestVisibilityTick();
+    runtime.requestTurnTick();
+    await runtime.whenIdle();
+
+    expect(report).toHaveBeenCalledWith(expect.any(Error), "movement-tick");
+    expect(report).toHaveBeenCalledWith(expect.any(Error), "visibility-tick");
+    expect(report).toHaveBeenCalledWith(expect.any(Error), "turn-tick");
     await runtime.stop();
   });
 
