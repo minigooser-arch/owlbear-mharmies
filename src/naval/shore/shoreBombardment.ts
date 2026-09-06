@@ -23,7 +23,6 @@ export type ShoreBombardmentFailure =
   | "SHIP_DESTROYED"
   | "ACTION_ALREADY_USED"
   | "SHIP_CANNOT_BOMBARD"
-  | "FRIENDLY_TARGET"
   | "TARGET_NOT_VISIBLE"
   | "TARGET_NOT_ON_LAND"
   | "TARGET_DESTROYED"
@@ -79,9 +78,6 @@ export function validateShoreBombardmentTarget(
   }
   if (input.target.health.hp <= 0) {
     return { ok: false, reason: "TARGET_DESTROYED" };
-  }
-  if (input.attacker.sideId === input.target.sideId) {
-    return { ok: false, reason: "FRIENDLY_TARGET" };
   }
   if (!input.targetVisible) {
     return { ok: false, reason: "TARGET_NOT_VISIBLE" };

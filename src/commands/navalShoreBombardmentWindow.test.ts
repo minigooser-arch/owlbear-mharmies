@@ -129,7 +129,8 @@ function command(): ArmyCommand {
     expectedRevision: 1,
     type: "NAVAL_SHORE_BOMBARDMENT",
     shipId: "attacker",
-    armyId: "army"
+    armyId: "army",
+    friendlyFireConfirmed: false
   };
 }
 

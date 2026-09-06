@@ -140,7 +140,8 @@ describe("naval shore bombardment command", () => {
     expect(validateArmyCommand(envelope("leader", {
       type: "NAVAL_SHORE_BOMBARDMENT",
       shipId: "attacker",
-      armyId: "army"
+      armyId: "army",
+      friendlyFireConfirmed: false
     }))).toMatchObject({
       ok: true,
       command: { type: "NAVAL_SHORE_BOMBARDMENT", shipId: "attacker", armyId: "army" }
@@ -151,7 +152,8 @@ describe("naval shore bombardment command", () => {
     const result = processor().execute(context("leader"), envelope("leader", {
       type: "NAVAL_SHORE_BOMBARDMENT",
       shipId: "attacker",
-      armyId: "army"
+      armyId: "army",
+      friendlyFireConfirmed: false
     }));
 
     expect(result.status).toBe("ACCEPTED");
@@ -166,7 +168,8 @@ describe("naval shore bombardment command", () => {
     const result = processor([6, 6, 6]).execute(context("leader", state(5)), envelope("leader", {
       type: "NAVAL_SHORE_BOMBARDMENT",
       shipId: "attacker",
-      armyId: "army"
+      armyId: "army",
+      friendlyFireConfirmed: false
     }));
 
     expect(result.status).toBe("ACCEPTED");
@@ -186,7 +189,8 @@ describe("naval shore bombardment command", () => {
     ).execute(context("leader"), envelope("leader", {
       type: "NAVAL_SHORE_BOMBARDMENT",
       shipId: "attacker",
-      armyId: "army"
+      armyId: "army",
+      friendlyFireConfirmed: false
     }));
 
     expect(result.status).toBe("ACCEPTED");
@@ -198,7 +202,8 @@ describe("naval shore bombardment command", () => {
     expect(processor().execute(context("member"), envelope("member", {
       type: "NAVAL_SHORE_BOMBARDMENT",
       shipId: "attacker",
-      armyId: "army"
+      armyId: "army",
+      friendlyFireConfirmed: false
     }))).toEqual({ status: "REJECTED", reason: "NOT_SIDE_LEADER" });
   });
 });

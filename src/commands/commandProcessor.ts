@@ -589,6 +589,10 @@ export class CommandProcessor {
         if (!ship) return "SHIP_NOT_FOUND";
         const target = state.armies[command.armyId];
         if (!target) return "ARMY_NOT_FOUND";
+        const relation = relationForSides(state.scene, ship.sideId, target.sideId);
+        if ((ship.sideId === target.sideId || relation === "ALLY") && !command.friendlyFireConfirmed) {
+          return "FRIENDLY_FIRE_CONFIRMATION_REQUIRED";
+        }
         if (!this.cellForPosition) return "NAVAL_POSITION_UNAVAILABLE";
         const shipPosition = commandPosition(state, command.shipId);
         const targetPosition = commandPosition(state, command.armyId);
