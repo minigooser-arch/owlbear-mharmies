@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { Side } from "../../shared/types";
+import type { Side, SideRelation } from "../../shared/types";
 import type { ArmyView, NavalRequestTargetView, ShipView, TransportEmbarkRequestView, TransportEmbarkTargetView, UiCommand } from "../state/useExtensionState";
 import { ArmiesPage } from "./ArmiesPage";
 import { FleetPage } from "./FleetPage";
@@ -14,6 +14,7 @@ export function ForcesPage({
   playerId,
   leaderSideIds,
   memberSideIds,
+  relations = {},
   navalRequestTargets = [],
   transportEmbarkTargets = [],
   pendingTransportEmbarkRequests = [],
@@ -26,6 +27,7 @@ export function ForcesPage({
   playerId: string;
   leaderSideIds: ReadonlySet<string>;
   memberSideIds: ReadonlySet<string>;
+  relations?: Readonly<Record<string, Readonly<Record<string, SideRelation>>>>;
   navalRequestTargets?: readonly NavalRequestTargetView[];
   transportEmbarkTargets?: readonly TransportEmbarkTargetView[];
   pendingTransportEmbarkRequests?: readonly TransportEmbarkRequestView[];
@@ -61,6 +63,7 @@ export function ForcesPage({
           sides={sides}
           role={role}
           leaderSideIds={leaderSideIds}
+          relations={relations}
           navalRequestTargets={navalRequestTargets}
           transportEmbarkTargets={transportEmbarkTargets}
           onAction={onAction}
