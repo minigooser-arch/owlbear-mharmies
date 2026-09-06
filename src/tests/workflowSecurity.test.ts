@@ -35,3 +35,9 @@ it("keeps the high-severity dependency audit ahead of the full check in CI and P
     expect(checkIndex, `${name} must run the full project check`).toBeGreaterThan(auditIndex);
   }
 });
+
+it("prevents a manually dispatched Pages workflow from deploying a non-main ref", () => {
+  const content = workflow("deploy-pages.yml");
+
+  expect(content).toContain("if: github.ref == 'refs/heads/main'");
+});
