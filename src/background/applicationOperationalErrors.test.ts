@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
 import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE, METADATA_KEYS } from "../shared/constants";
-import type { ArmyState, SceneItemRecord, SceneState } from "../shared/types";
+import type { ArmyState, SceneItemRecord, SceneState, Vector2 } from "../shared/types";
 import type { OwlbearPort } from "../owlbear/sdkAdapter";
 import { ProductionEngine, SceneWorkTracker } from "./application";
 
@@ -63,7 +63,7 @@ function failingGridPort(items: SceneItemRecord[] = []): OwlbearPort {
     on: () => () => undefined,
     getGridDistance: async () => 0,
     getGridDpi: async () => { throw new Error("grid unavailable"); },
-    snapGridCenter: async (position) => ({ ...position }),
+    snapGridCenter: async (position: Vector2) => ({ ...position }),
     onGridChange: () => () => undefined,
     show: async () => undefined,
     getRole: async () => "GM" as const,
