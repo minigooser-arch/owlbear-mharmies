@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { ShipFacing } from "../../shared/types";
+import type { ShipFacing, SideRelation } from "../../shared/types";
 import type { ShipView, UiCommand } from "../state/useExtensionState";
 
 const FACING_LABELS: Record<ShipFacing, string> = {
@@ -132,6 +132,7 @@ export function ShipCard({
   isGM,
   canPlanRoute,
   embarkedArmyName,
+  relations = {},
   onAction
 }: {
   ship: ShipView;
@@ -139,6 +140,7 @@ export function ShipCard({
   isGM: boolean;
   canPlanRoute: boolean;
   embarkedArmyName?: string;
+  relations?: Readonly<Record<string, Readonly<Record<string, SideRelation>>>>;
   onAction(command: UiCommand): void;
 }) {
   const destroyed = ship.hp <= 0;
@@ -163,6 +165,27 @@ export function ShipCard({
     ship.classId === "HOSPITAL" &&
     ship.navalActionUsed !== true &&
     selectedHospitalTargetId !== "";
+  const shoreBombardmentTargets = ship.shoreBombardmentTargets ?? [];
+  const [shoreBombardmentTargetId, setShoreBombardmentTargetId] = useState("");
+  const selectedShoreBombardmentTargetId = shoreBombardmentTargets.some(
+    (target) => target.id === shoreBombardmentTargetId
+  )
+    ? shoreBombardmentTargetId
+    : (shoreBombardmentTargets[0]?.id ?? "");
+  const selectedShoreBombardmentTarget = shoreBombardmentTargets.find(
+    (target) => target.id === selectedShoreBombardmentTargetId
+  );
+  const shoreBombardmentDice = ship.classId === "BATTLESHIP"
+    ? 3
+    : ship.classId === "CRUISER"
+      ? 2
+      : 0;
+  const canUseShoreBombardment =
+    canPlanRoute &&
+    !destroyed &&
+    !inBattle &&
+    shoreBombardmentDice > 0 &&
+    selectedShoreBombardmentTarget !== undefined;
   const tacticalMovementDisabled =
     (ship.navalMovementRemaining ?? 0) <= 0 || ship.navalActionUsed === true;
   const statusClass = destroyed
@@ -293,6 +316,45 @@ export function ShipCard({
             onClick={() => onAction({ type: "CONFIRM_NAVAL_SHIP_EXIT", shipId: ship.id })}
           >
             Подтвердить выход из боя
+          </button>
+        </div>
+      )}
+
+      {canPlanRoute && shoreBombardmentTargets.length > 0 && shoreBombardmentDice > 0 && (
+        <div className="ship-hospital-support ship-shore-bombardment" aria-label={`Береговой обстрел ${ship.name}`}>
+          <select
+            aria-label={`Цель берегового обстрела ${ship.name}`}
+            value={selectedShoreBombardmentTargetId}
+            onChange={(event) => setShoreBombardmentTargetId(event.target.value)}
+          >
+            {shoreBombardmentTargets.map((target) => (
+              <option key={target.id} value={target.id}>{target.name} — {target.sideName}</option>
+            ))}
+          </select>
+          <button
+            className="button primary wide"
+            type="button"
+            disabled={!canUseShoreBombardment}
+            onClick={() => {
+              if (!canUseShoreBombardment || !selectedShoreBombardmentTarget) return;
+              const relation = relations[ship.sideId]?.[selectedShoreBombardmentTarget.sideId];
+              const friendlyFireConfirmed =
+                ship.sideId === selectedShoreBombardmentTarget.sideId || relation === "ALLY";
+              if (
+                friendlyFireConfirmed &&
+                !window.confirm(
+                  `Цель «${selectedShoreBombardmentTarget.name}» относится к своей или союзной стороне. Подтвердить береговой обстрел?`
+                )
+              ) return;
+              onAction({
+                type: "NAVAL_SHORE_BOMBARDMENT",
+                shipId: ship.id,
+                armyId: selectedShoreBombardmentTarget.id,
+                friendlyFireConfirmed
+              });
+            }}
+          >
+            Береговой обстрел ({shoreBombardmentDice}d6)
           </button>
         </div>
       )}
