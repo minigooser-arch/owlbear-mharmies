@@ -33,6 +33,7 @@ import { createNavalBattleRequest } from "../naval/battle/navalBattleRequest";
 import { commitBroadsideAttack } from "../naval/battle/navalBroadside";
 import {
   activateCruiserInterception,
+  removeCruiserInterceptionAfterDamage,
   resolveCruiserInterceptionsForStep
 } from "../naval/interception/cruiserInterception";
 import { hasNavalBattleLineOfSight } from "../naval/battle/navalBattleLineOfSight";
@@ -623,21 +624,41 @@ export class CommandProcessor {
         if (!result.ok) return result.reason;
         state.scene.ships ??= {};
         state.scene.ships[command.targetShipId] = result.target;
-        result.battle.events = [
-          ...result.battle.events,
-          {
-            type: "BROADSIDE_ATTACK",
-            sequence: result.battle.events.length + 1,
-            roundNumber: battle.roundNumber,
-            attackerShipId: command.shipId,
-            targetShipId: command.targetShipId,
-            rolledDamage: result.rolledDamage,
-            armor: result.armor,
-            damage: result.damage,
-            special: result.special
-          }
+
+        const actualHpLoss = Math.max(
+          0,
+          target.hp + target.temporaryHp - result.target.hp - result.target.temporaryHp
+        );
+        const hadActiveInterception = battle.interceptions?.[command.targetShipId] !== undefined;
+        const battleAfterDamage = hadActiveInterception && actualHpLoss > 0
+          ? removeCruiserInterceptionAfterDamage(result.battle, command.targetShipId, actualHpLoss)
+          : result.battle;
+        const broadsideEvent = {
+          type: "BROADSIDE_ATTACK",
+          sequence: battleAfterDamage.events.length + 1,
+          roundNumber: battle.roundNumber,
+          attackerShipId: command.shipId,
+          targetShipId: command.targetShipId,
+          rolledDamage: result.rolledDamage,
+          armor: result.armor,
+          damage: result.damage,
+          special: result.special
+        };
+        const interceptionRemovalEvent = hadActiveInterception && actualHpLoss > 0
+          ? {
+              type: "INTERCEPTION_REMOVED_BY_DAMAGE",
+              sequence: broadsideEvent.sequence + 1,
+              roundNumber: battle.roundNumber,
+              cruiserShipId: command.targetShipId,
+              actualHpLoss
+            }
+          : null;
+        battleAfterDamage.events = [
+          ...battleAfterDamage.events,
+          broadsideEvent,
+          ...(interceptionRemovalEvent ? [interceptionRemovalEvent] : [])
         ];
-        state.scene.activeNavalBattle = result.battle;
+        state.scene.activeNavalBattle = battleAfterDamage;
         if (result.target.hp <= 0) {
           destroyReciprocalTransportCargo(state, command.targetShipId, result.target);
           const sceneRevision = state.scene.revision;
