@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { SHIP_CLASSES } from "../../naval/ships/shipClasses";
-import type { ShipClassId, ShipFacing, Side, SideRelation } from "../../shared/types";
+import type { ShipClassId, ShipFacing, Side, SideRelation, TurnState } from "../../shared/types";
 import { ShipCard } from "../components/ShipCard";
 import type { ArmyView, NavalRequestTargetView, ShipView, TransportEmbarkTargetView, UiCommand } from "../state/useExtensionState";
 
@@ -21,6 +21,7 @@ export function FleetPage({
   relations = {},
   navalRequestTargets = [],
   transportEmbarkTargets = [],
+  turnPhase,
   onAction
 }: {
   ships: readonly ShipView[];
@@ -31,6 +32,7 @@ export function FleetPage({
   relations?: Readonly<Record<string, Readonly<Record<string, SideRelation>>>>;
   navalRequestTargets?: readonly NavalRequestTargetView[];
   transportEmbarkTargets?: readonly TransportEmbarkTargetView[];
+  turnPhase?: TurnState["phase"];
   onAction(command: UiCommand): void;
 }) {
   const [query, setQuery] = useState("");
@@ -44,6 +46,10 @@ export function FleetPage({
   const [embarkShipId, setEmbarkShipId] = useState("");
   const [embarkArmyId, setEmbarkArmyId] = useState("");
 
+  // Undefined is kept as a backwards-compatible direct-component-test mode.
+  // The real application always supplies the authoritative global phase.
+  const movementPhase = turnPhase === undefined || turnPhase === "MOVEMENT";
+  const postMovementPhase = turnPhase === undefined || turnPhase === "POST_MOVEMENT";
   const selectedRegistrationSideId = sides.some((side) => side.id === registrationSideId)
     ? registrationSideId
     : (sides[0]?.id ?? "");
@@ -62,15 +68,17 @@ export function FleetPage({
   const selectedRequestTargetShipId = navalRequestTargets.some((target) => target.id === requestTargetShipId)
     ? requestTargetShipId
     : (navalRequestTargets[0]?.id ?? "");
-  const canRequestNavalBattle = selectedRequestInitiatingShipId !== "" && selectedRequestTargetShipId !== "";
-  const embarkTransports = ships.filter((ship) =>
-    ship.classId === "TRANSPORT" &&
-    ship.status === "READY" &&
-    ship.hp > 0 &&
-    ship.embarkedArmyId === null &&
-    ship.movementRemaining > 0 &&
-    (role === "GM" || leaderSideIds.has(ship.sideId))
-  );
+  const canRequestNavalBattle = postMovementPhase && selectedRequestInitiatingShipId !== "" && selectedRequestTargetShipId !== "";
+  const embarkTransports = movementPhase
+    ? ships.filter((ship) =>
+        ship.classId === "TRANSPORT" &&
+        ship.status === "READY" &&
+        ship.hp > 0 &&
+        ship.embarkedArmyId === null &&
+        ship.movementRemaining > 0 &&
+        (role === "GM" || leaderSideIds.has(ship.sideId))
+      )
+    : [];
   const ownEmbarkTargets = armies
     .filter((army) =>
       army.healthHp > 0 &&
@@ -90,14 +98,16 @@ export function FleetPage({
     ? embarkArmyId
     : (embarkTargets[0]?.id ?? "");
   const canEmbark = selectedEmbarkShipId !== "" && selectedEmbarkArmyId !== "";
-  const disembarkTransports = ships.filter((ship) =>
-    ship.classId === "TRANSPORT" &&
-    ship.status === "READY" &&
-    ship.hp > 0 &&
-    ship.embarkedArmyId !== null &&
-    ship.movementRemaining > 0 &&
-    (role === "GM" || leaderSideIds.has(ship.sideId))
-  );
+  const disembarkTransports = movementPhase
+    ? ships.filter((ship) =>
+        ship.classId === "TRANSPORT" &&
+        ship.status === "READY" &&
+        ship.hp > 0 &&
+        ship.embarkedArmyId !== null &&
+        ship.movementRemaining > 0 &&
+        (role === "GM" || leaderSideIds.has(ship.sideId))
+      )
+    : [];
 
   return (
     <section aria-labelledby="fleet-title" className="wiki-page fleet-page">
@@ -130,12 +140,15 @@ export function FleetPage({
             <span className="registration-kicker">Флот</span>
             <h3 id="naval-request-title">Запрос морского боя</h3>
             <small>Выберите свой готовый корабль и обнаруженную вражескую цель. Начало боя подтверждает ведущий.</small>
+            {turnPhase === "MOVEMENT" && (
+              <small>Заявка на морской бой доступна после завершения фазы перемещения.</small>
+            )}
           </div>
           <div className="registration-actions fleet-registration-actions">
             <select
               aria-label="Корабль-инициатор"
               value={selectedRequestInitiatingShipId}
-              disabled={requestInitiators.length === 0}
+              disabled={!postMovementPhase || requestInitiators.length === 0}
               onChange={(event) => setRequestInitiatingShipId(event.target.value)}
             >
               {requestInitiators.length === 0 && <option value="">Нет готовых кораблей</option>}
@@ -144,7 +157,7 @@ export function FleetPage({
             <select
               aria-label="Цель морского боя"
               value={selectedRequestTargetShipId}
-              disabled={navalRequestTargets.length === 0}
+              disabled={!postMovementPhase || navalRequestTargets.length === 0}
               onChange={(event) => setRequestTargetShipId(event.target.value)}
             >
               {navalRequestTargets.length === 0 && <option value="">Обнаруженных целей нет</option>}
