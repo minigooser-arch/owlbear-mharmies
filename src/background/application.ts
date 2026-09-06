@@ -171,13 +171,29 @@ export async function dispatchBackgroundCommand(
   });
 }
 
+export type BackgroundOperationalErrorReporter = (
+  error: unknown,
+  context: string
+) => void;
+
+function defaultBackgroundOperationalErrorReporter(
+  error: unknown,
+  context: string
+): void {
+  console.error(`Letopis Armies background operation failed: ${context}`, error);
+}
+
 export class SceneWorkTracker {
   private readonly pending = new Set<Promise<void>>();
+
+  constructor(
+    private readonly reportError: BackgroundOperationalErrorReporter = defaultBackgroundOperationalErrorReporter
+  ) {}
 
   track(work: Promise<unknown>): void {
     const tracked = work.then(() => undefined).finally(() => this.pending.delete(tracked));
     this.pending.add(tracked);
-    void tracked.catch(() => undefined);
+    void tracked.catch((error: unknown) => this.reportError(error, "scene-work"));
   }
 
   async drain(): Promise<void> {
@@ -273,7 +289,8 @@ export class ProductionEngine {
 
   constructor(
     private readonly port: OwlbearPort,
-    private readonly wallClock: () => Date = () => new Date()
+    private readonly wallClock: () => Date = () => new Date(),
+    private readonly reportOperationalError: BackgroundOperationalErrorReporter = defaultBackgroundOperationalErrorReporter
   ) {
     this.repository = new MetadataRepository(port);
     this.grid = new GridDistanceService(port);
@@ -411,7 +428,8 @@ export class ProductionEngine {
         dpi: await this.grid.getDpi(),
         offset: { x: 0, y: 0 }
       });
-    } catch {
+    } catch (error) {
+      this.reportOperationalError(error, "turn-grid-unavailable");
       return;
     }
     const armyCells = Object.fromEntries(armyRecords.map((record) => [
@@ -468,7 +486,8 @@ export class ProductionEngine {
         dpi: await this.grid.getDpi(),
         offset: { x: 0, y: 0 }
       });
-    } catch {
+    } catch (error) {
+      this.reportOperationalError(error, "movement-grid-unavailable");
       return;
     }
     const frames: Array<{
