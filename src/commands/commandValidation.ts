@@ -332,6 +332,9 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
           friendlyFireConfirmed: value.friendlyFireConfirmed
         }
       : undefined,
+  NAVAL_ACTIVATE_INTERCEPTION: (value) => boundedString(value.shipId)
+    ? { type: "NAVAL_ACTIVATE_INTERCEPTION", shipId: value.shipId }
+    : undefined,
   END_NAVAL_SHIP_TURN: (value) => boundedString(value.shipId)
     ? { type: "END_NAVAL_SHIP_TURN", shipId: value.shipId }
     : undefined,

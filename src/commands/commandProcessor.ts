@@ -31,6 +31,7 @@ import { confirmNavalShipExit } from "../naval/battle/navalExit";
 import { completeNavalBattle, startNavalBattle } from "../naval/battle/navalBattleLifecycle";
 import { createNavalBattleRequest } from "../naval/battle/navalBattleRequest";
 import { commitBroadsideAttack } from "../naval/battle/navalBroadside";
+import { activateCruiserInterception } from "../naval/interception/cruiserInterception";
 import { hasNavalBattleLineOfSight } from "../naval/battle/navalBattleLineOfSight";
 import { embarkArmy, disembarkArmy, validateTransportInteraction } from "../naval/transport/transportRules";
 import { commitHospitalSupport } from "../naval/hospital/hospitalSupport";
@@ -580,6 +581,35 @@ export class CommandProcessor {
           state.scene = destroyed.scene;
           state.scene.revision = sceneRevision;
         }
+        return undefined;
+      }
+      case "NAVAL_ACTIVATE_INTERCEPTION": {
+        const battle = state.scene.activeNavalBattle;
+        if (!battle || battle.status !== "ACTIVE") return "NO_ACTIVE_NAVAL_BATTLE";
+        const cruiser = state.scene.ships?.[command.shipId];
+        if (!cruiser) return "SHIP_NOT_FOUND";
+        if (
+          cruiser.status !== "IN_NAVAL_BATTLE" ||
+          cruiser.battleId !== battle.id ||
+          !battle.participantShipIds.includes(command.shipId)
+        ) return "SHIP_NOT_IN_NAVAL_BATTLE";
+        const result = activateCruiserInterception({
+          battle,
+          cruiserId: command.shipId,
+          cruiser,
+          ships: state.scene.ships ?? {}
+        });
+        if (!result.ok) return result.reason;
+        result.battle.events = [
+          ...result.battle.events,
+          {
+            type: "INTERCEPTION_ACTIVATED",
+            sequence: result.battle.events.length + 1,
+            roundNumber: battle.roundNumber,
+            cruiserShipId: command.shipId
+          }
+        ];
+        state.scene.activeNavalBattle = result.battle;
         return undefined;
       }
       case "NAVAL_SHORE_BOMBARDMENT": {
