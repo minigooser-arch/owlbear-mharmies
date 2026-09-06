@@ -119,20 +119,29 @@ export class CoordinatorLease {
       this.options.readHeartbeat()
     ]);
     if (!this.generationIsCurrent(generation)) return;
-    const elected = resolveCoordinatorConnectionId(
-      participants,
-      persistedLease,
-      this.options.now()
-    );
-    const isCoordinator = elected === connectionId;
-    this.setCoordinator(isCoordinator, isCoordinator ? connectionId : undefined);
-    if (!isCoordinator) return;
-    this.epoch = Math.max(this.epoch, persistedLease?.epoch ?? 0) + 1;
+
+    const now = this.options.now();
+    const elected = resolveCoordinatorConnectionId(participants, persistedLease, now);
+    const isElected = elected === connectionId;
+    if (!isElected) {
+      this.setCoordinator(false);
+      return;
+    }
+
+    const hasValidPersistedClaim =
+      persistedLease?.connectionId === connectionId && persistedLease.expiresAt > now;
+    if (!hasValidPersistedClaim) this.setCoordinator(false);
+
+    const nextEpoch = Math.max(this.epoch, persistedLease?.epoch ?? 0) + 1;
     await this.options.writeHeartbeat({
       connectionId,
-      epoch: this.epoch,
+      epoch: nextEpoch,
       expiresAt: this.options.now() + 3_000
     });
+    if (!this.generationIsCurrent(generation)) return;
+
+    this.epoch = nextEpoch;
+    this.setCoordinator(true, connectionId);
   }
 
   private generationIsCurrent(generation: number | undefined): boolean {
