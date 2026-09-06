@@ -41,3 +41,27 @@ it("prevents a manually dispatched Pages workflow from deploying a non-main ref"
 
   expect(content).toContain("if: github.ref == 'refs/heads/main'");
 });
+
+it("does not execute project dependencies with Pages write or OIDC permissions", () => {
+  const content = workflow("deploy-pages.yml");
+  const buildStart = content.indexOf("  build:\n");
+  const deployStart = content.indexOf("  deploy:\n");
+
+  expect(buildStart, "Pages workflow must have an unprivileged build job").toBeGreaterThanOrEqual(0);
+  expect(deployStart, "Pages workflow must have a separate deploy job").toBeGreaterThan(buildStart);
+
+  const buildBlock = content.slice(buildStart, deployStart);
+  const deployBlock = content.slice(deployStart);
+
+  expect(buildBlock).toContain("npm ci");
+  expect(buildBlock).toContain("npm audit --audit-level=high");
+  expect(buildBlock).toContain("npm run check");
+  expect(buildBlock).not.toContain("pages: write");
+  expect(buildBlock).not.toContain("id-token: write");
+
+  expect(deployBlock).toContain("needs: build");
+  expect(deployBlock).toContain("pages: write");
+  expect(deployBlock).toContain("id-token: write");
+  expect(deployBlock).not.toContain("npm ci");
+  expect(deployBlock).not.toContain("npm run check");
+});
