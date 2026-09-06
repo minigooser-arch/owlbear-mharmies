@@ -16,6 +16,18 @@ export class SubscriptionManager {
   clear(): void {
     const subscriptions = [...this.subscriptions];
     this.subscriptions.clear();
-    for (const unsubscribe of subscriptions) unsubscribe();
+    let hasFailure = false;
+    let firstFailure: unknown;
+    for (const unsubscribe of subscriptions) {
+      try {
+        unsubscribe();
+      } catch (error) {
+        if (!hasFailure) {
+          hasFailure = true;
+          firstFailure = error;
+        }
+      }
+    }
+    if (hasFailure) throw firstFailure;
   }
 }
