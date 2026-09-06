@@ -58,6 +58,7 @@ export const METADATA_KEYS = {
   mapOverlay: `${EXTENSION_ID}/map-overlay`,
   healthOverlay: `${EXTENSION_ID}/health-overlay`,
   navalShipOverlay: `${EXTENSION_ID}/naval-ship-overlay`,
+  interceptionOverlay: `${EXTENSION_ID}/interception-overlay`,
   mapBrushPreview: `${EXTENSION_ID}/map-brush-preview`,
   navalBattleAreaPreview: `${EXTENSION_ID}/naval-battle-area-preview`
 } as const;
