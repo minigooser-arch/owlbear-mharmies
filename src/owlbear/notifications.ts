@@ -45,6 +45,7 @@ export type NotificationCode =
   | "SHIP_NOT_IN_NAVAL_BATTLE"
   | "SHIP_NOT_ACTIVE"
   | "SHIP_POSITION_UNAVAILABLE"
+  | "SHIP_REQUIRES_SEA"
   | "SHIP_DESTROYED"
   | "OUTSIDE_NAVAL_BATTLE_AREA"
   | "INSUFFICIENT_NAVAL_MOVEMENT"
@@ -100,6 +101,7 @@ const RUSSIAN_MESSAGES: Readonly<Record<NotificationCode, string>> = {
   SHIP_NOT_IN_NAVAL_BATTLE: "Этот корабль не участвует в текущем морском бою.",
   SHIP_NOT_ACTIVE: "Сейчас ход другого корабля.",
   SHIP_POSITION_UNAVAILABLE: "Не удалось определить клетку корабля на поле боя.",
+  SHIP_REQUIRES_SEA: "Корабль можно зарегистрировать только на морской клетке. В «Разметке карты» назначьте этой клетке местность «Море».",
   SHIP_DESTROYED: "Уничтоженный корабль не может выполнять это действие.",
   OUTSIDE_NAVAL_BATTLE_AREA: "Корабль не может выйти за границы поля морского боя.",
   INSUFFICIENT_NAVAL_MOVEMENT: "У корабля не хватает очков перемещения для этого манёвра.",
