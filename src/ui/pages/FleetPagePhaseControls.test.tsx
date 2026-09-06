@@ -2,13 +2,14 @@
 
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
+import type { Side } from "../../shared/types";
 import type { ArmyView, ShipView } from "../state/useExtensionState";
 import { FleetPage } from "./FleetPage";
 
-const sides = [
+const sides: Side[] = [
   { id: "red", name: "Красные", color: "#f00", playerIds: ["leader"], leaderPlayerIds: ["leader"], stateId: null },
   { id: "blue", name: "Синие", color: "#00f", playerIds: ["blue"], leaderPlayerIds: ["blue"], stateId: null }
-] as const;
+];
 
 const cruiser: ShipView = {
   id: "cruiser", name: "Аврора", sideId: "red", sideName: "Красные",
@@ -37,7 +38,7 @@ it("in MOVEMENT keeps transport interaction available but prevents premature nav
     <FleetPage
       ships={[cruiser, transport]}
       armies={[army]}
-      sides={[...sides]}
+      sides={sides}
       role="PLAYER"
       leaderSideIds={new Set(["red"])}
       navalRequestTargets={[{ id: "enemy", name: "Враг", sideId: "blue", sideName: "Синие" }]}
@@ -56,7 +57,7 @@ it("in POST_MOVEMENT enables naval battle requests and removes impossible transp
     <FleetPage
       ships={[cruiser, transport]}
       armies={[army]}
-      sides={[...sides]}
+      sides={sides}
       role="PLAYER"
       leaderSideIds={new Set(["red"])}
       navalRequestTargets={[{ id: "enemy", name: "Враг", sideId: "blue", sideName: "Синие" }]}
