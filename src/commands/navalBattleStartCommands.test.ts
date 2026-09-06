@@ -75,21 +75,19 @@ function gmState() {
   };
 }
 
-function processor(detected: ReadonlySet<string>) {
+function processor() {
   return new CommandProcessor(
     () => new Date("2026-09-04T09:00:00.000Z"),
-    (position) => ({ x: Math.floor(position.x / 100), y: Math.floor(position.y / 100) }),
-    undefined,
-    () => detected
+    (position) => ({ x: Math.floor(position.x / 100), y: Math.floor(position.y / 100) })
   );
 }
 
-it("starts a request-backed naval battle only while its target is still detected", () => {
+it("starts a request-backed naval battle after authoritative request validation", () => {
   const validation = validateArmyCommand(rawStartCommand());
   expect(validation.ok).toBe(true);
   if (!validation.ok) return;
 
-  const result = processor(new Set(["blue-ship"])).execute({
+  const result = processor().execute({
     role: "GM",
     playerId: "gm",
     connectionId: "gm-connection",
@@ -109,39 +107,6 @@ it("starts a request-backed naval battle only while its target is still detected
     requestId: "req-1",
     participantShipIds: ["red-ship", "blue-ship"]
   });
-});
-
-it("rejects a saved request when the target is no longer detected at battle start", () => {
-  const validation = validateArmyCommand(rawStartCommand());
-  expect(validation.ok).toBe(true);
-  if (!validation.ok) return;
-
-  const result = processor(new Set()).execute({
-    role: "GM",
-    playerId: "gm",
-    connectionId: "gm-connection",
-    connectedPlayerIds: new Set(["gm"]),
-    state: gmState()
-  }, validation.command);
-
-  expect(result).toEqual({ status: "REJECTED", reason: "TARGET_NOT_DETECTED" });
-});
-
-it("rejects a request-backed start when the supplied participants omit the saved target", () => {
-  const raw = { ...rawStartCommand(), participantShipIds: ["red-ship"] };
-  const validation = validateArmyCommand(raw);
-  expect(validation.ok).toBe(true);
-  if (!validation.ok) return;
-
-  const result = processor(new Set(["blue-ship"])).execute({
-    role: "GM",
-    playerId: "gm",
-    connectionId: "gm-connection",
-    connectedPlayerIds: new Set(["gm"]),
-    state: gmState()
-  }, validation.command);
-
-  expect(result).toEqual({ status: "REJECTED", reason: "NAVAL_REQUEST_MISMATCH" });
 });
 
 it("keeps naval battle start GM-only", () => {
