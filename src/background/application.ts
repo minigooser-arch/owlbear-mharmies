@@ -56,6 +56,7 @@ import { ShipRouteToolService } from "./shipRouteToolService";
 import { TransportLandingToolService } from "./transportLandingToolService";
 import { MapBrushToolService } from "./mapBrushToolService";
 import { NavalBattleAreaToolService } from "./navalBattleAreaToolService";
+import { NavalInterceptionContextMenuService } from "./navalInterceptionContextMenuService";
 import { registerMapBrushTool, type MapBrushToolRegistration } from "../owlbear/mapBrushTool";
 import { registerNavalBattleAreaTool, type NavalBattleAreaToolRegistration } from "../owlbear/navalBattleAreaTool";
 import { METADATA_KEYS } from "../shared/constants";
@@ -1372,6 +1373,7 @@ export class ProductionEngine {
 }
 
 export interface BackgroundApplication {
+  activateInterception(shipId: string): Promise<void>;
   stop(): Promise<void>;
 }
 
@@ -1414,9 +1416,11 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
       ]);
       return { id, role, connectionId: currentConnectionId };
     },
+    getSceneRevision: async () => (await new MetadataRepository(port).readScene()).revision,
     createId: () => crypto.randomUUID(),
     activateTool: (toolId: string) => OBR.tool.activateTool(toolId)
   });
+  const interceptionContextMenuService = new NavalInterceptionContextMenuService(toolPort, routeGateway);
   const routeService = new RouteToolService(toolPort, routeGateway);
   let removeRouteTool: RouteToolRegistration;
   try {
@@ -1585,6 +1589,7 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
   }, 1_000);
   let stopWork: Promise<void> | undefined;
   return {
+    activateInterception: (shipId) => interceptionContextMenuService.activateInterception(shipId),
     stop: () => {
       stopWork ??= (async () => {
         clearInterval(counter);
