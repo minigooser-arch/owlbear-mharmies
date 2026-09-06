@@ -173,9 +173,17 @@ export class BackgroundRuntime {
   private async closeScene(): Promise<void> {
     if (!this.sceneOpen) return;
     this.stopSceneWork();
-    await this.port.onSceneClose();
+    try {
+      await this.port.onSceneClose();
+    } catch (error) {
+      this.reportError(error, "scene-close");
+    }
     await Promise.all([this.movementWork, this.visibilityWork, this.turnWork]);
-    await this.port.deleteLocalOverlays();
+    try {
+      await this.port.deleteLocalOverlays();
+    } catch (error) {
+      this.reportError(error, "overlay-cleanup");
+    }
   }
 
   private stopSceneWork(): void {
