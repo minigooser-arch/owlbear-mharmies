@@ -25,6 +25,12 @@ export interface RuntimeRates {
   visibilityHz: number;
 }
 
+export type RuntimeErrorReporter = (error: unknown, context: string) => void;
+
+function defaultRuntimeErrorReporter(error: unknown, context: string): void {
+  console.error(`Letopis Armies background runtime failed: ${context}`, error);
+}
+
 export class BackgroundRuntime {
   private readonly readySubscriptions = new SubscriptionManager();
   private readonly sceneSubscriptions = new SubscriptionManager();
@@ -48,7 +54,8 @@ export class BackgroundRuntime {
 
   constructor(
     private readonly port: BackgroundRuntimePort,
-    private readonly rates: RuntimeRates = { movementHz: 5, visibilityHz: 4 }
+    private readonly rates: RuntimeRates = { movementHz: 5, visibilityHz: 4 },
+    private readonly reportError: RuntimeErrorReporter = defaultRuntimeErrorReporter
   ) {}
 
   start(): void {
@@ -91,7 +98,9 @@ export class BackgroundRuntime {
       return;
     }
     this.movementRunning = true;
-    this.movementWork = this.runMovementQueue().catch(() => undefined);
+    this.movementWork = this.runMovementQueue().catch((error: unknown) => {
+      this.reportError(error, "movement-tick");
+    });
   }
 
   requestVisibilityTick(): void {
@@ -101,7 +110,9 @@ export class BackgroundRuntime {
       return;
     }
     this.visibilityRunning = true;
-    this.visibilityWork = this.runVisibilityQueue().catch(() => undefined);
+    this.visibilityWork = this.runVisibilityQueue().catch((error: unknown) => {
+      this.reportError(error, "visibility-tick");
+    });
   }
 
   requestTurnTick(): void {
@@ -111,7 +122,9 @@ export class BackgroundRuntime {
       return;
     }
     this.turnRunning = true;
-    this.turnWork = this.runTurnQueue().catch(() => undefined);
+    this.turnWork = this.runTurnQueue().catch((error: unknown) => {
+      this.reportError(error, "turn-tick");
+    });
   }
 
   async whenIdle(): Promise<void> {
@@ -215,6 +228,8 @@ export class BackgroundRuntime {
 
   private trackLifecycle(work: () => Promise<void>): void {
     const queued = this.lifecycleWork.then(work, work);
-    this.lifecycleWork = queued.catch(() => undefined);
+    this.lifecycleWork = queued.catch((error: unknown) => {
+      this.reportError(error, "lifecycle");
+    });
   }
 }
