@@ -251,6 +251,26 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
               sideName: sideNames.get(targetState.sideId) ?? "Неизвестная сторона"
             }))
         : [];
+    const shoreBombardmentTargets =
+      input.scene.turn.phase === "POST_MOVEMENT" &&
+      input.scene.activeNavalBattle?.status !== "ACTIVE" &&
+      (state.classId === "BATTLESHIP" || state.classId === "CRUISER") &&
+      state.hp > 0 &&
+      state.shoreBombardmentUsedOnTurn !== input.scene.turn.turnNumber &&
+      (input.role === "GM" || leaderSideIds.has(state.sideId))
+        ? input.armies
+            .filter(({ item: targetItem, state: targetState }) =>
+              targetState.health.hp > 0 &&
+              targetState.embarkedOnShipId == null &&
+              mapVisibleSourceIds.has(targetItem.id)
+            )
+            .map(({ item: targetItem, state: targetState }) => ({
+              id: targetItem.id,
+              name: targetItem.name ?? "Безымянная армия",
+              sideId: targetState.sideId,
+              sideName: sideNames.get(targetState.sideId) ?? "Неизвестная сторона"
+            }))
+        : [];
     return {
       id: item.id,
       name: item.name ?? "Безымянный корабль",
@@ -274,6 +294,7 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
       detectionOverride: state.detectionOverride,
       effectiveDetectionRange: state.detectionOverride ?? input.scene.settings.defaultDetectionRangeCells,
       hospitalSupportTargets,
+      shoreBombardmentTargets,
       ...tactical
     };
   });
