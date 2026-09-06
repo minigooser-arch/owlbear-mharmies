@@ -24,7 +24,7 @@ function targetArmy(): ArmyState {
     overrides: {},
     route: [],
     plannedRoute: {
-      startCell: { x: 2, y: 0 }, executeOnTurn: 7, cells: [], totalCostUnits: 0,
+      startCell: { x: 2, y: 1 }, executeOnTurn: 7, cells: [], totalCostUnits: 0,
       validatedRevision: 1, requiresReplan: false
     },
     movement: { maxUnits: 10, remainingUnits: 10, enteredRouteCellCount: 0 },
@@ -89,7 +89,8 @@ function scene(phase: "MOVEMENT" | "POST_MOVEMENT", activeNavalBattle: NavalBatt
       cells: {
         "0,0": { terrainId: "sea", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null },
         "1,0": { terrainId: "sea", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null },
-        "2,0": { terrainId: "plain", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null }
+        "1,1": { terrainId: "sea", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null },
+        "2,1": { terrainId: "plain", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null }
       }
     },
     wars: [],
@@ -110,11 +111,11 @@ function state(phase: "MOVEMENT" | "POST_MOVEMENT", activeNavalBattle: NavalBatt
     barriers: {},
     items: {
       attacker: { id: "attacker", type: "IMAGE", position: positionForCell({ x: 0, y: 0 }), metadata: {} },
-      army: { id: "army", type: "IMAGE", position: positionForCell({ x: 2, y: 0 }), metadata: {} }
+      army: { id: "army", type: "IMAGE", position: positionForCell({ x: 2, y: 1 }), metadata: {} }
     },
     positions: {
       attacker: positionForCell({ x: 0, y: 0 }),
-      army: positionForCell({ x: 2, y: 0 })
+      army: positionForCell({ x: 2, y: 1 })
     }
   };
 }
