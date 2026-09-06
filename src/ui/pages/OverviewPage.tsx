@@ -20,7 +20,7 @@ export function OverviewPage({ armies, wars, turn, onAction }: {
 
   return (
     <section aria-labelledby="overview-title">
-      <div className="section-heading"><div><p className="eyebrow">Оперативная сводка</p><h2 id="overview-title">Обзор</h2></div></div>
+      <div className="section-heading wiki-page-heading"><div><p className="eyebrow">Оперативная сводка</p><h2 id="overview-title">Обзор</h2><p className="page-description">Текущий ход, состояние войск, проблемные маршруты и активные войны в одном месте.</p></div></div>
       <TurnStatusCard turn={turn} role="GM" onAction={onAction} />
       <div className="overview-metrics" aria-label="Состояние армий">
         <div><strong>{armies.length}</strong><span>армий</span></div>

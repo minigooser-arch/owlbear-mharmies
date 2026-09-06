@@ -5,6 +5,8 @@ import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE } from "../shared
 import { createOwlbearExtensionServices } from "../owlbear/extensionServices";
 import { App } from "./App";
 import "./app.css";
+import "./wiki-light.css";
+import "./fleet.css";
 import type { ExtensionServices, RawExtensionSnapshot } from "./state/useExtensionState";
 
 const container = document.getElementById("root");
@@ -20,6 +22,7 @@ const initialSnapshot: RawExtensionSnapshot = {
   leaderSideIds: new Set(),
   mapVisibleSourceIds: new Set(),
   armies: [],
+  ships: [],
   sides: [],
   states: [],
   relations: {},

@@ -20,6 +20,15 @@ import { applyCellPatchBatch, readCell, type CellPatchOperation } from "../terra
 import { annexingStateForEntry } from "../annexation/annexationRules";
 import { MapOverlayService } from "../terrain/mapOverlayService";
 import { HealthOverlayService } from "../health/healthOverlayService";
+import { NavalShipOverlayService } from "../naval/ships/navalShipOverlayService";
+import { InterceptionOverlayService } from "../naval/interception/interceptionOverlayService";
+import { ShipRouteOverlayService } from "../naval/ships/shipRouteOverlayService";
+import { SHIP_CLASSES } from "../naval/ships/shipClasses";
+import { rotationForFacing } from "../naval/ships/shipRotation";
+import { visibleShipIdsForPlayer } from "../naval/detection/navalVisibility";
+import { validateNavalBattleRequest } from "../naval/battle/navalBattleRequest";
+import { hasNavalBattleLineOfSight } from "../naval/battle/navalBattleLineOfSight";
+import { hasNavalLineOfSight } from "../naval/detection/navalLineOfSight";
 import { getDueTurnBoundary } from "../turns/turnSchedule";
 import { completeTurn } from "../turns/turnService";
 import { getDestinationMovementCostUnits } from "../terrain/terrainRegistry";
@@ -32,11 +41,24 @@ import {
   type RouteToolRegistration
 } from "../owlbear/routeToolIntegration";
 import {
+  registerShipRouteTool,
+  type ShipRouteToolRegistration
+} from "../owlbear/shipRouteToolIntegration";
+import {
+  registerTransportLandingTool,
+  type TransportLandingToolRegistration
+} from "../owlbear/transportLandingTool";
+import {
   RouteToolService,
   snapRouteToGrid
 } from "./routeToolService";
+import { ShipRouteToolService } from "./shipRouteToolService";
+import { TransportLandingToolService } from "./transportLandingToolService";
 import { MapBrushToolService } from "./mapBrushToolService";
+import { NavalBattleAreaToolService } from "./navalBattleAreaToolService";
+import { NavalInterceptionContextMenuService } from "./navalInterceptionContextMenuService";
 import { registerMapBrushTool, type MapBrushToolRegistration } from "../owlbear/mapBrushTool";
+import { registerNavalBattleAreaTool, type NavalBattleAreaToolRegistration } from "../owlbear/navalBattleAreaTool";
 import { METADATA_KEYS } from "../shared/constants";
 import {
   COMMAND_PROTOCOL_VERSION,
@@ -49,6 +71,7 @@ import {
 } from "../shared/types";
 import { MetadataRepository, type ArmyRecord, type BarrierRecord } from "../storage/metadataRepository";
 import { buildDetectionGraph } from "../visibility/detectionGraph";
+import { buildSceneDetectionGraph, detectedShipIdsForSide } from "../visibility/sceneDetectionGraph";
 import { LocalCloneReconciler, UpdateOriginGuard } from "../visibility/localCloneReconciler";
 import { visibleArmyIdsForPlayer } from "../visibility/visibilityEngine";
 import type { OwlbearPort } from "../owlbear/sdkAdapter";
@@ -190,10 +213,15 @@ export function localOverlayIds(items: readonly SceneItemRecord[]): string[] {
     METADATA_KEYS.localClone,
     METADATA_KEYS.routeOverlay,
     METADATA_KEYS.routePreview,
+    METADATA_KEYS.shipRouteOverlay,
+    METADATA_KEYS.shipRoutePreview,
     METADATA_KEYS.barrierOverlay,
     METADATA_KEYS.mapOverlay,
     METADATA_KEYS.healthOverlay,
-    METADATA_KEYS.mapBrushPreview
+    METADATA_KEYS.navalShipOverlay,
+    METADATA_KEYS.interceptionOverlay,
+    METADATA_KEYS.mapBrushPreview,
+    METADATA_KEYS.navalBattleAreaPreview
   ];
   return items
     .filter((item) => keys.some((key) => item.metadata[key] !== undefined))
@@ -276,21 +304,41 @@ export class ProductionEngine {
   }
 
   async visibilityTick(role: "GM" | "PLAYER", playerId: string): Promise<void> {
-    const [scene, armies, barriers] = await Promise.all([
+    const [scene, armies, barriers, sceneItems] = await Promise.all([
       this.repository.readScene(),
       this.repository.readArmies(),
-      this.repository.readBarriers()
+      this.repository.readBarriers(),
+      this.port.getSceneItems()
     ]);
-    const graph = await buildDetectionGraph({
-      mode: scene.settings.detectionMode,
-      armies: armies.map(({ item, state }) => ({
-        id: item.id,
+    const sceneItemById = new Map(sceneItems.map((item) => [item.id, item]));
+    const reciprocallyEmbarkedArmyIds = new Set(armies.flatMap(({ item, state }) => {
+      if (state.embarkedOnShipId == null) return [];
+      const ship = scene.ships?.[state.embarkedOnShipId];
+      return ship?.embarkedArmyId === item.id ? [item.id] : [];
+    }));
+    const activeLandArmies = armies.filter(({ item }) => !reciprocallyEmbarkedArmyIds.has(item.id));
+    const armyDetectionUnits = activeLandArmies.map(({ item, state }) => ({
+      id: item.id,
+      sideId: state.sideId,
+      position: item.position,
+      detectionRangeCells:
+        state.overrides.detectionRangeCells ?? scene.settings.defaultDetectionRangeCells,
+      ignoresVisionBarriers: state.ignoresVisionBarriers
+    }));
+    const shipDetectionUnits = Object.entries(scene.ships ?? {}).flatMap(([shipId, state]) => {
+      const item = sceneItemById.get(shipId);
+      if (!item) return [];
+      return [{
+        id: shipId,
         sideId: state.sideId,
         position: item.position,
-        detectionRangeCells:
-          state.overrides.detectionRangeCells ?? scene.settings.defaultDetectionRangeCells,
-        ignoresVisionBarriers: state.ignoresVisionBarriers
-      })),
+        detectionRangeCells: state.detectionOverride ?? scene.settings.defaultDetectionRangeCells,
+        ignoresVisionBarriers: false
+      }];
+    });
+    const graph = await buildDetectionGraph({
+      mode: scene.settings.detectionMode,
+      units: [...armyDetectionUnits, ...shipDetectionUnits],
       distancePort: this.grid,
       visionBarriers: extractBarrierSegments(barriers, "vision")
     });
@@ -303,12 +351,35 @@ export class ProductionEngine {
     const visible = visibleArmyIdsForPlayer({
       isGM: role === "GM",
       playerSideIds: memberSideIds,
-      armies: armies.map(({ item, state }) => ({ id: item.id, sideId: state.sideId })),
+      armies: activeLandArmies.map(({ item, state }) => ({ id: item.id, sideId: state.sideId })),
       detectionGraph: graph,
       battleGroups: scene.battleGroups
     });
-    await this.cloneReconciler.reconcile(visible, armies.map((record) => record.item));
-    await this.reconcileOverlays(scene, armies, barriers, role, memberSideIds, leaderSideIds, visible);
+    const visibleShips = visibleShipIdsForPlayer({
+      isGM: role === "GM",
+      playerSideIds: memberSideIds,
+      ships: scene.ships ?? {},
+      detectionGraph: graph,
+      revealUntilTurn: scene.navalRevealUntilTurn ?? {},
+      currentTurn: scene.turn.turnNumber
+    });
+    const shipSources = sceneItems.filter((item) => (scene.ships ?? {})[item.id] !== undefined);
+    const visibleSourceIds = new Set([...visible, ...visibleShips]);
+    await this.cloneReconciler.reconcile(
+      visibleSourceIds,
+      [...armies.map((record) => record.item), ...shipSources]
+    );
+    await this.reconcileOverlays(
+      scene,
+      activeLandArmies,
+      barriers,
+      role,
+      memberSideIds,
+      leaderSideIds,
+      visible,
+      sceneItems,
+      visibleShips
+    );
   }
 
   movementTick(): Promise<void> {
@@ -383,7 +454,12 @@ export class ProductionEngine {
       this.repository.readArmies(),
       this.repository.readBarriers()
     ]);
-    const moving = armies.filter((record) => record.state.status === "MOVING");
+    const moving = armies.filter((record) => {
+      if (record.state.status !== "MOVING") return false;
+      const shipId = record.state.embarkedOnShipId;
+      if (shipId == null) return true;
+      return scene.ships?.[shipId]?.embarkedArmyId !== record.item.id;
+    });
     if (moving.length === 0) return;
     const movementBarriers = extractBarrierSegments(barriers, "movement");
     let strategicGrid: StrategicGridAdapter;
@@ -689,15 +765,136 @@ export class ProductionEngine {
       positions: Object.fromEntries(sceneItems.map((item) => [item.id, item.position]))
     };
     let commandCellForPosition: ((position: Vector2) => import("../shared/types").GridCellCoord) | undefined;
-    if (command.type === "COMPLETE_TURN_NOW") {
+    let commandPositionForCell: ((cell: import("../shared/types").GridCellCoord) => Vector2) | undefined;
+    if (
+      command.type === "COMPLETE_TURN_NOW" ||
+      command.type === "REGISTER_SHIP" ||
+      command.type === "SET_SHIP_ROUTE" ||
+      command.type === "NAVAL_MOVE_FORWARD" ||
+      command.type === "START_NAVAL_BATTLE" ||
+      command.type === "NAVAL_SHORE_BOMBARDMENT" ||
+      command.type === "EMBARK_ARMY" ||
+      command.type === "ACCEPT_EMBARK_ARMY" ||
+      command.type === "DISEMBARK_ARMY"
+    ) {
       try {
         const grid = new StrategicGridAdapter({ dpi: await this.grid.getDpi(), offset: { x: 0, y: 0 } });
         commandCellForPosition = (position) => grid.sceneToCell(position);
+        commandPositionForCell = (cell) => grid.cellToSceneCenter(cell);
       } catch {
-        // CommandProcessor will reject state-bound turn completion when positions cannot be resolved.
+        // CommandProcessor rejects commands that require strategic cells when positions cannot be resolved.
       }
     }
-    const result = new CommandProcessor(() => this.wallClock(), commandCellForPosition).execute(
+    let detectedNavalTargetsForSide: (sideId: string) => ReadonlySet<string> = () => new Set<string>();
+    let visibleArmyTargetsForSide: (sideId: string) => ReadonlySet<string> = () => new Set<string>();
+    if (
+      command.type === "REQUEST_NAVAL_BATTLE" ||
+      command.type === "NAVAL_SHORE_BOMBARDMENT" ||
+      (command.type === "START_NAVAL_BATTLE" && command.navalRequestId !== null)
+    ) {
+      try {
+        const detectionGraph = await buildSceneDetectionGraph({
+          scene,
+          armies: armyRecords,
+          sceneItems,
+          distancePort: this.grid,
+          visionBarriers: extractBarrierSegments(barrierRecords, "vision")
+        });
+        detectedNavalTargetsForSide = (sideId) =>
+          detectedShipIdsForSide(detectionGraph, scene.ships ?? {}, sideId);
+        const armyIds = new Set(armyRecords.map((record) => record.item.id));
+        visibleArmyTargetsForSide = (sideId) => new Set(
+          [...(detectionGraph.visibleTargetsBySide.get(sideId) ?? [])]
+            .filter((unitId) => armyIds.has(unitId))
+        );
+      } catch {
+        // Detection-dependent commands fail closed while authoritative geometry is unavailable.
+      }
+    }
+    if (command.type === "START_NAVAL_BATTLE" && command.navalRequestId !== null) {
+      const navalRequest = scene.navalBattleRequests?.find(
+        (candidate) => candidate.id === command.navalRequestId
+      );
+      if (!navalRequest) {
+        await sendCommandAck(this.port, {
+          requestId: command.requestId,
+          status: "REJECTED",
+          reason: "NAVAL_BATTLE_REQUEST_NOT_FOUND",
+          coordinatorConnectionId: await this.currentConnectionId(),
+          recipientConnectionId: sender.connectionId
+        });
+        return;
+      }
+      if (
+        navalRequest.initiatingShipId !== command.initiatingShipId ||
+        !command.participantShipIds.includes(navalRequest.targetShipId)
+      ) {
+        await sendCommandAck(this.port, {
+          requestId: command.requestId,
+          status: "REJECTED",
+          reason: "INVALID_NAVAL_BATTLE_REQUEST",
+          coordinatorConnectionId: await this.currentConnectionId(),
+          recipientConnectionId: sender.connectionId
+        });
+        return;
+      }
+      const initiatingShip = scene.ships?.[navalRequest.initiatingShipId];
+      const requestValidation = validateNavalBattleRequest({
+        scene: scene as import("../shared/types").NavalSceneState,
+        request: navalRequest,
+        detectedTargetShipIds: initiatingShip
+          ? detectedNavalTargetsForSide(initiatingShip.sideId)
+          : new Set<string>()
+      });
+      if (!requestValidation.ok) {
+        await sendCommandAck(this.port, {
+          requestId: command.requestId,
+          status: "REJECTED",
+          reason: requestValidation.reason,
+          coordinatorConnectionId: await this.currentConnectionId(),
+          recipientConnectionId: sender.connectionId
+        });
+        return;
+      }
+    }
+    let shoreBombardmentDistanceCells: (from: import("../shared/types").GridCellCoord, to: import("../shared/types").GridCellCoord) => number = () => Number.POSITIVE_INFINITY;
+    let shoreBombardmentHasLineOfSight: (from: import("../shared/types").GridCellCoord, to: import("../shared/types").GridCellCoord) => boolean = () => false;
+    if (command.type === "NAVAL_SHORE_BOMBARDMENT" && commandCellForPosition && commandPositionForCell) {
+      const attackerPosition = commandState.positions?.[command.shipId];
+      const targetPosition = commandState.positions?.[command.armyId];
+      if (attackerPosition && targetPosition) {
+        try {
+          const attackerCell = commandCellForPosition(attackerPosition);
+          const targetCell = commandCellForPosition(targetPosition);
+          const distance = await this.grid.distance(
+            commandPositionForCell(attackerCell),
+            commandPositionForCell(targetCell)
+          );
+          shoreBombardmentDistanceCells = () => distance;
+          const occupiedShipCells = Object.keys(scene.ships ?? {}).flatMap((shipId) => {
+            const position = commandState.positions?.[shipId];
+            return position ? [commandCellForPosition(position)] : [];
+          });
+          shoreBombardmentHasLineOfSight = (from, to) =>
+            scene.activeNavalBattle?.status === "ACTIVE"
+              ? hasNavalBattleLineOfSight({ scene, from, to, occupiedShipCells })
+              : hasNavalLineOfSight(scene, from, to);
+        } catch {
+          // Range and LOS remain fail-closed when authoritative grid geometry is unavailable.
+        }
+      }
+    }
+    const result = new CommandProcessor(
+      () => this.wallClock(),
+      commandCellForPosition,
+      commandPositionForCell,
+      detectedNavalTargetsForSide,
+      undefined,
+      visibleArmyTargetsForSide,
+      () => false,
+      shoreBombardmentDistanceCells,
+      shoreBombardmentHasLineOfSight
+    ).execute(
       {
         role: sender.role,
         playerId: sender.playerId,
@@ -884,6 +1081,44 @@ export class ProductionEngine {
           expectedRevision: state?.revision ?? null
         });
       }
+      const previousShips = previous.scene.ships ?? {};
+      const nextShips = next.scene.ships ?? {};
+      const shipIds = new Set([...Object.keys(previousShips), ...Object.keys(nextShips)]);
+      for (const shipId of shipIds) {
+        const previousState = previousShips[shipId];
+        const state = nextShips[shipId];
+        const previousPosition = previous.positions?.[shipId];
+        const nextPosition = next.positions?.[shipId];
+        if (
+          JSON.stringify(previousState) === JSON.stringify(state) &&
+          JSON.stringify(previousPosition) === JSON.stringify(nextPosition)
+        ) continue;
+        const item = itemById.get(shipId);
+        if (!item) continue;
+        if (!canCommit()) throw new Error("Coordinator stopped during persistence");
+        await this.port.patchSceneItemMetadata(
+          shipId,
+          METADATA_KEYS.ship,
+          state,
+          {
+            visible: state === undefined,
+            ...(nextPosition ? { position: nextPosition } : {}),
+            ...(state ? { rotation: rotationForFacing(state.facing) } : {})
+          },
+          previousState?.revision ?? null
+        );
+        applied.push({
+          itemId: shipId,
+          key: METADATA_KEYS.ship,
+          previousValue: previousState,
+          rollbackUpdate: {
+            visible: item.visible ?? true,
+            ...(previousPosition ? { position: previousPosition } : {}),
+            ...(item.rotation !== undefined ? { rotation: item.rotation } : {})
+          },
+          expectedRevision: state?.revision ?? null
+        });
+      }
       const barrierIds = new Set([
         ...Object.keys(previous.barriers),
         ...Object.keys(next.barriers)
@@ -993,7 +1228,9 @@ export class ProductionEngine {
     role: "GM" | "PLAYER",
     memberSideIds: readonly string[],
     leaderSideIds: readonly string[],
-    visibleArmyIds: ReadonlySet<string>
+    visibleArmyIds: ReadonlySet<string>,
+    sceneItems: readonly SceneItemRecord[],
+    visibleShipIds: ReadonlySet<string>
   ): Promise<void> {
     const overlayPort = {
       getLocalItems: () => this.port.getLocalItems(),
@@ -1016,6 +1253,33 @@ export class ProductionEngine {
         })),
       { isGM: role === "GM", memberSideIds, leaderSideIds }
     );
+    const plannedShips = Object.entries(scene.ships ?? {}).filter(([, state]) => state.plannedRoute.length > 0);
+    const shipRouteViewer = { isGM: role === "GM", leaderSideIds };
+    if (plannedShips.length === 0) {
+      await new ShipRouteOverlayService(overlayPort).reconcile([], shipRouteViewer);
+    } else {
+      try {
+        const routeGrid = new StrategicGridAdapter({ dpi: await this.grid.getDpi(), offset: { x: 0, y: 0 } });
+        const routeItemById = new Map(sceneItems.map((item) => [item.id, item]));
+        await new ShipRouteOverlayService(overlayPort).reconcile(
+          plannedShips.flatMap(([shipId, state]) => {
+            const item = routeItemById.get(shipId);
+            if (!item) return [];
+            return [{
+              shipId,
+              sideId: state.sideId,
+              color: sideColors.get(state.sideId) ?? "#607d8b",
+              start: item.position,
+              waypoints: state.plannedRoute.map((cell) => routeGrid.cellToSceneCenter(cell))
+            }];
+          }),
+          shipRouteViewer
+        );
+      } catch {
+        // Preserve the last valid route overlay while Owlbear grid geometry is unavailable.
+      }
+    }
+
     await new BarrierOverlayService(overlayPort).reconcile(
       barriers.map((record) => ({
         id: record.item.id,
@@ -1037,6 +1301,58 @@ export class ProductionEngine {
       visibleArmyIds
     );
 
+    const sceneItemById = new Map(sceneItems.map((item) => [item.id, item]));
+    await new NavalShipOverlayService(overlayPort).reconcile(
+      Object.entries(scene.ships ?? {}).flatMap(([shipId, state]) => {
+        const item = sceneItemById.get(shipId);
+        if (!item) return [];
+        const definition = SHIP_CLASSES[state.classId];
+        return [{
+          shipId,
+          name: item.name?.trim() || definition.name,
+          position: item.position,
+          hp: state.hp,
+          maxHp: definition.maxHp,
+          color: sideColors.get(state.sideId) ?? "#ffffff"
+        }];
+      }),
+      visibleShipIds
+    );
+
+    const interceptionViewer = { isGM: role === "GM", leaderSideIds };
+    const activeInterceptions = Object.values(scene.activeNavalBattle?.interceptions ?? {});
+    const canViewActiveInterception = role === "GM" || activeInterceptions.some((interception) => {
+      const cruiser = (scene.ships ?? {})[interception.cruiserShipId];
+      return cruiser !== undefined && leaderSideIds.includes(cruiser.sideId);
+    });
+    const interceptionOverlayService = new InterceptionOverlayService(overlayPort);
+    if (
+      scene.activeNavalBattle?.status !== "ACTIVE" ||
+      activeInterceptions.length === 0 ||
+      !canViewActiveInterception
+    ) {
+      await interceptionOverlayService.reconcile(undefined, interceptionViewer);
+    } else {
+      try {
+        const shipPositions = Object.fromEntries(
+          Object.keys(scene.ships ?? {}).flatMap((shipId) => {
+            const item = sceneItemById.get(shipId);
+            return item ? [[shipId, item.position] as const] : [];
+          })
+        );
+        await interceptionOverlayService.reconcile(
+          {
+            dpi: await this.grid.getDpi(),
+            scene: scene as import("../shared/types").NavalSceneState,
+            shipPositions
+          },
+          interceptionViewer
+        );
+      } catch {
+        // Preserve the last valid authorized interception overlay while grid geometry is unavailable.
+      }
+    }
+
     const mapOverlayService = new MapOverlayService(overlayPort);
     if (role !== "GM") {
       await mapOverlayService.reconcile(undefined);
@@ -1057,6 +1373,7 @@ export class ProductionEngine {
 }
 
 export interface BackgroundApplication {
+  activateInterception(shipId: string): Promise<void>;
   stop(): Promise<void>;
 }
 
@@ -1099,9 +1416,11 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
       ]);
       return { id, role, connectionId: currentConnectionId };
     },
+    getSceneRevision: async () => (await new MetadataRepository(port).readScene()).revision,
     createId: () => crypto.randomUUID(),
     activateTool: (toolId: string) => OBR.tool.activateTool(toolId)
   });
+  const interceptionContextMenuService = new NavalInterceptionContextMenuService(toolPort, routeGateway);
   const routeService = new RouteToolService(toolPort, routeGateway);
   let removeRouteTool: RouteToolRegistration;
   try {
@@ -1118,6 +1437,34 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
     routeGateway.stop();
     throw error;
   }
+  const shipRouteService = new ShipRouteToolService(toolPort, routeGateway);
+  let removeShipRouteTool: ShipRouteToolRegistration;
+  try {
+    removeShipRouteTool = await registerShipRouteTool(
+      OBR.tool,
+      shipRouteService,
+      { snapGridCenter: (position) => port.snapGridCenter(position) },
+      `${import.meta.env.BASE_URL}icon-1.2.png`
+    );
+  } catch (error) {
+    await removeRouteTool();
+    routeGateway.stop();
+    throw error;
+  }
+  const transportLandingService = new TransportLandingToolService(toolPort, routeGateway);
+  let removeTransportLandingTool: TransportLandingToolRegistration;
+  try {
+    removeTransportLandingTool = await registerTransportLandingTool(
+      OBR.tool,
+      transportLandingService,
+      `${import.meta.env.BASE_URL}icon-1.2.png`
+    );
+  } catch (error) {
+    await removeShipRouteTool();
+    await removeRouteTool();
+    routeGateway.stop();
+    throw error;
+  }
   let removeMapBrushTool: MapBrushToolRegistration;
   try {
     removeMapBrushTool = await registerMapBrushTool(
@@ -1126,6 +1473,23 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
       `${import.meta.env.BASE_URL}icon-1.2.png`
     );
   } catch (error) {
+    await removeTransportLandingTool();
+    await removeShipRouteTool();
+    await removeRouteTool();
+    routeGateway.stop();
+    throw error;
+  }
+  let removeNavalBattleAreaTool: NavalBattleAreaToolRegistration;
+  try {
+    removeNavalBattleAreaTool = await registerNavalBattleAreaTool(
+      OBR.tool,
+      new NavalBattleAreaToolService(toolPort),
+      `${import.meta.env.BASE_URL}icon-1.2.png`
+    );
+  } catch (error) {
+    await removeMapBrushTool();
+    await removeTransportLandingTool();
+    await removeShipRouteTool();
     await removeRouteTool();
     routeGateway.stop();
     throw error;
@@ -1151,7 +1515,12 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
     onSceneOpen: async () => {
       lease.start();
       try {
-        await removeRouteTool.cancelSession();
+        await Promise.all([
+          removeRouteTool.cancelSession(),
+          removeShipRouteTool.cancelSession(),
+          removeTransportLandingTool.cancelSession(),
+          removeTransportLandingTool.cancelSession()
+        ]);
       } catch {
         // A stale preview must not disable command delivery or coordinator heartbeats.
       }
@@ -1163,7 +1532,10 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
       await sceneWork.drain();
       await engine.whenIdle();
       try {
-        await removeRouteTool.cancelSession();
+        await Promise.all([
+          removeRouteTool.cancelSession(),
+          removeShipRouteTool.cancelSession()
+        ]);
       } catch {
         // Scene teardown continues so subscriptions and overlays can still be cleaned up.
       }
@@ -1217,13 +1589,17 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
   }, 1_000);
   let stopWork: Promise<void> | undefined;
   return {
+    activateInterception: (shipId) => interceptionContextMenuService.activateInterception(shipId),
     stop: () => {
       stopWork ??= (async () => {
         clearInterval(counter);
         await runtime.stop();
         await lease.stop();
         try {
+          await removeNavalBattleAreaTool();
           await removeMapBrushTool();
+          await removeTransportLandingTool();
+          await removeShipRouteTool();
           await removeRouteTool();
         } finally {
           routeGateway.stop();

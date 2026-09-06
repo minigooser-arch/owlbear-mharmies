@@ -1,6 +1,7 @@
 import { destroyArmy } from "../armies/armyLifecycle";
 import { applyEncirclementDamage } from "../health/armyHealth";
 import { validatePlannedRoute } from "../movement/movementRules";
+import { SHIP_CLASSES } from "../naval/ships/shipClasses";
 import { stateForFaction } from "../states/stateRules";
 import { hasSupplyRoute } from "../supply/supplyRules";
 import { readCell } from "../terrain/gridMap";
@@ -35,13 +36,18 @@ function prepareArmyForNewTurn(
   nextTurn: number
 ): ArmyState {
   const factionState = stateForFaction(scene, army.sideId);
-  const supplied = factionState && armyCell
-    ? hasSupplyRoute({
-        start: armyCell,
-        stateId: factionState.id,
-        readCell: (cell) => readCell(scene.gridMap, cell)
-      })
-    : true;
+  const embarkedShipId = army.embarkedOnShipId ?? null;
+  const genuinelyEmbarked = embarkedShipId !== null &&
+    scene.ships?.[embarkedShipId]?.embarkedArmyId === armyId;
+  const supplied = genuinelyEmbarked
+    ? true
+    : factionState && armyCell
+      ? hasSupplyRoute({
+          start: armyCell,
+          stateId: factionState.id,
+          readCell: (cell) => readCell(scene.gridMap, cell)
+        })
+      : true;
 
   let next: ArmyState = {
     ...army,
@@ -125,6 +131,7 @@ export function completeTurn(
   let nextArmies = structuredClone(armies) as Record<string, ArmyState>;
   let nextBattleGroups = structuredClone(scene.battleGroups);
   const nextTurn = scene.turn.turnNumber + 1;
+  if (nextScene.navalBattleRequests) nextScene.navalBattleRequests = [];
 
   // Disband happens before supply and any other new-turn processing.
   for (const [armyId, army] of Object.entries(nextArmies)) {
@@ -145,6 +152,18 @@ export function completeTurn(
       continue;
     }
     nextArmies[armyId] = prepared;
+  }
+
+  // Restore each ship's class strategic movement budget without changing its order or combat state.
+  if (nextScene.ships) {
+    for (const [shipId, ship] of Object.entries(nextScene.ships)) {
+      nextScene.ships[shipId] = {
+        ...ship,
+        globalMovementRemaining: SHIP_CLASSES[ship.classId].movement,
+        movementSpentThisTurn: false,
+        revision: ship.revision + 1
+      };
+    }
   }
 
   const completedAtIso = input.completedAt.toISOString();

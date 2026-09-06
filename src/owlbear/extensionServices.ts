@@ -4,6 +4,8 @@ import {
   CommandTimeoutError,
   NoCoordinatorError
 } from "../commands/commandGateway";
+import { SHIP_CLASSES } from "../naval/ships/shipClasses";
+import { buildRequestBackedNavalBattleStart, parseNavalBattleAreaDraft } from "./navalBattleAreaBridge";
 import {
   DEFAULT_SETTINGS,
   DEFAULT_TERRAIN,
@@ -19,31 +21,55 @@ import {
   MAP_BRUSH_TERRAIN_ID_KEY,
   MAP_BRUSH_TOOL_ID,
   MAP_BRUSH_TOOL_MODE_ID,
+  NAVAL_BATTLE_AREA_DRAFT_CHANNEL,
+  NAVAL_BATTLE_AREA_REQUEST_ID_KEY,
+  NAVAL_BATTLE_AREA_SESSION_ID_KEY,
+  NAVAL_BATTLE_AREA_TOOL_ID,
+  NAVAL_BATTLE_AREA_TOOL_MODE_ID,
   ROUTE_ARMY_ID_KEY,
   ROUTE_RETURN_TOOL_KEY,
   ROUTE_TOOL_ID,
-  ROUTE_TOOL_MODE_ID
+  ROUTE_TOOL_MODE_ID,
+  SHIP_ROUTE_RETURN_TOOL_KEY,
+  SHIP_ROUTE_SHIP_ID_KEY,
+  SHIP_ROUTE_TOOL_ID,
+  SHIP_ROUTE_TOOL_MODE_ID,
+  TRANSPORT_LANDING_ARMY_ID_KEY,
+  TRANSPORT_LANDING_RETURN_TOOL_KEY,
+  TRANSPORT_LANDING_SHIP_ID_KEY,
+  TRANSPORT_LANDING_TOOL_ID,
+  TRANSPORT_LANDING_TOOL_MODE_ID
 } from "../shared/constants";
 import {
   COMMAND_PROTOCOL_VERSION,
   type ArmyCommand,
+  type ArmyCommandPayload,
   type SceneItemRecord,
   type SceneState
 } from "../shared/types";
 import { migrateSceneState } from "../storage/migrations";
 import { isFactionAtWar } from "../wars/warRules";
-import { MetadataRepository, type ArmyRecord } from "../storage/metadataRepository";
+import { MetadataRepository, type ArmyRecord, type ShipRecord } from "../storage/metadataRepository";
 import type {
   ArmyView,
   ExtensionServices,
+  NavalBattleRequestView,
+  NavalRequestTargetView,
   PartyPlayerView,
   RawExtensionSnapshot,
+  ShipView,
+  TransportEmbarkRequestView,
+  TransportEmbarkTargetView,
   UiCommand
 } from "../ui/state/useExtensionState";
 import { DiagnosticsService, type DiagnosticsPort } from "./diagnostics";
 import { notifyRussian } from "./notifications";
 import { createRefreshCoordinator } from "./refreshCoordinator";
-import { RegistrationError, resolveRegistrationSelection } from "./registration";
+import {
+  buildSelectedShipRegistrationPayload,
+  RegistrationError,
+  resolveRegistrationSelection
+} from "./registration";
 import { semanticSnapshotEqual, semanticValueEqual } from "./snapshotEquality";
 
 export interface SnapshotInput {
@@ -52,6 +78,7 @@ export interface SnapshotInput {
   scene: SceneState;
   players: readonly PartyPlayerView[];
   armies: readonly ArmyRecord[];
+  ships?: readonly ShipRecord[];
   mapVisibleSourceIds: ReadonlySet<string>;
 }
 
@@ -67,13 +94,91 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
   const authorizedRecords = input.role === "GM"
     ? input.armies
     : input.armies.filter(({ state }) => memberSideIds.has(state.sideId));
-  const mapVisibleSourceIds = new Set(input.mapVisibleSourceIds);
+  const shipRecords = input.ships ?? [];
+  const authorizedShipRecords = input.role === "GM"
+    ? shipRecords
+    : shipRecords.filter(({ state }) => memberSideIds.has(state.sideId));
+  const shipById = new Map(shipRecords.map((record) => [record.item.id, record.state]));
+  const reciprocallyEmbarkedArmyIds = new Set(
+    input.armies
+      .filter(({ item, state }) =>
+        state.embarkedOnShipId != null &&
+        shipById.get(state.embarkedOnShipId)?.embarkedArmyId === item.id
+      )
+      .map(({ item }) => item.id)
+  );
+  const mapVisibleSourceIds = new Set(
+    [...input.mapVisibleSourceIds].filter((id) => !reciprocallyEmbarkedArmyIds.has(id))
+  );
   for (const army of input.armies) {
-    if (input.role === "GM" || memberSideIds.has(army.state.sideId)) {
+    if (
+      !reciprocallyEmbarkedArmyIds.has(army.item.id) &&
+      (input.role === "GM" || memberSideIds.has(army.state.sideId))
+    ) {
       mapVisibleSourceIds.add(army.item.id);
     }
   }
+  for (const ship of shipRecords) {
+    if (input.role === "GM" || memberSideIds.has(ship.state.sideId)) {
+      mapVisibleSourceIds.add(ship.item.id);
+    }
+  }
   const sideNames = new Map(input.scene.sides.map((side) => [side.id, side.name]));
+  const navalRequestTargets: NavalRequestTargetView[] = input.role === "PLAYER" && leaderSideIds.size > 0
+    ? shipRecords
+        .filter(({ item, state }) =>
+          state.hp > 0 &&
+          !memberSideIds.has(state.sideId) &&
+          mapVisibleSourceIds.has(item.id)
+        )
+        .map(({ item, state }) => ({
+          id: item.id,
+          name: item.name ?? "Безымянный корабль",
+          sideId: state.sideId,
+          sideName: sideNames.get(state.sideId) ?? "Неизвестная сторона"
+        }))
+    : [];
+  const pendingNavalBattleRequests: NavalBattleRequestView[] = input.role === "GM"
+    ? (input.scene.navalBattleRequests ?? []).map((request) => ({
+        id: request.id,
+        initiatingShipId: request.initiatingShipId,
+        targetShipId: request.targetShipId,
+        ...(request.createdOnTurn !== undefined ? { createdOnTurn: request.createdOnTurn } : {})
+      }))
+    : [];
+  const transportEmbarkTargets: TransportEmbarkTargetView[] = input.role === "PLAYER" && leaderSideIds.size > 0
+    ? input.armies
+        .filter(({ item, state }) =>
+          state.health.hp > 0 &&
+          state.embarkedOnShipId == null &&
+          !memberSideIds.has(state.sideId) &&
+          mapVisibleSourceIds.has(item.id)
+        )
+        .map(({ item, state }) => ({
+          id: item.id,
+          name: item.name ?? "Безымянная армия",
+          sideId: state.sideId,
+          sideName: sideNames.get(state.sideId) ?? "Неизвестная сторона"
+        }))
+    : [];
+  const armyRecordById = new Map(input.armies.map((record) => [record.item.id, record]));
+  const shipRecordById = new Map(shipRecords.map((record) => [record.item.id, record]));
+  const pendingTransportEmbarkRequests: TransportEmbarkRequestView[] = (input.scene.transportEmbarkRequests ?? [])
+    .flatMap((request) => {
+      const armyRecord = armyRecordById.get(request.armyId);
+      const shipRecord = shipRecordById.get(request.shipId);
+      if (!armyRecord || !shipRecord) return [];
+      if (input.role !== "GM" && !leaderSideIds.has(armyRecord.state.sideId)) return [];
+      return [{
+        id: request.id,
+        shipId: request.shipId,
+        shipName: shipRecord.item.name ?? "Безымянный транспорт",
+        shipSideId: shipRecord.state.sideId,
+        shipSideName: sideNames.get(shipRecord.state.sideId) ?? "Неизвестная сторона",
+        armyId: request.armyId,
+        armyName: armyRecord.item.name ?? "Безымянная армия"
+      }];
+    });
   const armies: ArmyView[] = authorizedRecords.map(({ item, state }) => {
     const routeVisible = input.role === "GM" || (
       state.status === "READY"
@@ -98,9 +203,112 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
       healthMaxHp: state.health.maxHp,
       supplied: state.supply.supplied,
       supplyCheckedOnTurn: state.supply.checkedOnTurn,
-      disbandPending: state.disband.pending
+      disbandPending: state.disband.pending,
+      embarkedOnShipId: state.embarkedOnShipId ?? null
     };
   });
+  const ships: ShipView[] = authorizedShipRecords.map(({ item, state }) => {
+    const definition = SHIP_CLASSES[state.classId];
+    const battle = input.scene.activeNavalBattle;
+    const tactical = battle?.status === "ACTIVE" &&
+      state.status === "IN_NAVAL_BATTLE" &&
+      state.battleId === battle.id &&
+      battle.participantShipIds.includes(item.id)
+      ? (() => {
+          const navalExited = battle.exitedShipIds.includes(item.id);
+          return {
+            navalRoundNumber: battle.roundNumber,
+            isCurrentNavalTurn: !navalExited && battle.currentShipId === item.id,
+            navalMovementRemaining: battle.movementRemainingByShip[item.id] ?? 0,
+            navalActionUsed: battle.actionUsedByShip[item.id] ?? false,
+            navalExited
+          };
+        })()
+      : {};
+    const hospitalSupportTargets =
+      battle?.status === "ACTIVE" &&
+      state.classId === "HOSPITAL" &&
+      state.hp > 0 &&
+      state.status === "IN_NAVAL_BATTLE" &&
+      state.battleId === battle.id &&
+      battle.currentShipId === item.id &&
+      !battle.actionUsedByShip[item.id] &&
+      (input.role === "GM" || leaderSideIds.has(state.sideId))
+        ? shipRecords
+            .filter(({ item: targetItem, state: targetState }) =>
+              targetItem.id !== item.id &&
+              battle.participantShipIds.includes(targetItem.id) &&
+              targetState.status === "IN_NAVAL_BATTLE" &&
+              targetState.battleId === battle.id &&
+              targetState.hp > 0 &&
+              !battle.exitedShipIds.includes(targetItem.id) &&
+              (input.role === "GM" || memberSideIds.has(targetState.sideId) || mapVisibleSourceIds.has(targetItem.id))
+            )
+            .map(({ item: targetItem, state: targetState }) => ({
+              id: targetItem.id,
+              name: targetItem.name ?? "Безымянный корабль",
+              sideId: targetState.sideId,
+              sideName: sideNames.get(targetState.sideId) ?? "Неизвестная сторона"
+            }))
+        : [];
+    const shoreBombardmentTargets =
+      input.scene.turn.phase === "POST_MOVEMENT" &&
+      input.scene.activeNavalBattle?.status !== "ACTIVE" &&
+      (state.classId === "BATTLESHIP" || state.classId === "CRUISER") &&
+      state.hp > 0 &&
+      state.shoreBombardmentUsedOnTurn !== input.scene.turn.turnNumber &&
+      (input.role === "GM" || leaderSideIds.has(state.sideId))
+        ? input.armies
+            .filter(({ item: targetItem, state: targetState }) =>
+              targetState.health.hp > 0 &&
+              targetState.embarkedOnShipId == null &&
+              mapVisibleSourceIds.has(targetItem.id)
+            )
+            .map(({ item: targetItem, state: targetState }) => ({
+              id: targetItem.id,
+              name: targetItem.name ?? "Безымянная армия",
+              sideId: targetState.sideId,
+              sideName: sideNames.get(targetState.sideId) ?? "Неизвестная сторона"
+            }))
+        : [];
+    return {
+      id: item.id,
+      name: item.name ?? "Безымянный корабль",
+      sideId: state.sideId,
+      sideName: sideNames.get(state.sideId) ?? "Неизвестная сторона",
+      classId: state.classId,
+      className: definition.name,
+      status: state.status,
+      hp: state.hp,
+      maxHp: definition.maxHp,
+      temporaryHp: state.temporaryHp,
+      armor: definition.armor,
+      movementMax: definition.movement,
+      movementRemaining: state.globalMovementRemaining,
+      plannedRouteCellCount: state.plannedRoute.length,
+      facing: state.facing,
+      normalDice: definition.normalDice,
+      normalRangeMin: definition.normalRangeMin,
+      normalRangeMax: definition.normalRangeMax,
+      embarkedArmyId: state.embarkedArmyId,
+      detectionOverride: state.detectionOverride,
+      effectiveDetectionRange: state.detectionOverride ?? input.scene.settings.defaultDetectionRangeCells,
+      hospitalSupportTargets,
+      shoreBombardmentTargets,
+      ...tactical
+    };
+  });
+  const activeNavalBattle = input.role === "GM" && input.scene.activeNavalBattle?.status === "ACTIVE"
+    ? {
+        id: input.scene.activeNavalBattle.id,
+        roundNumber: input.scene.activeNavalBattle.roundNumber,
+        participantCount: input.scene.activeNavalBattle.participantShipIds.length,
+        currentShipId: input.scene.activeNavalBattle.currentShipId,
+        initiative: input.scene.activeNavalBattle.initiative.map(({ shipId, total }) => ({ shipId, total })),
+        completedShipIdsThisRound: [...input.scene.activeNavalBattle.completedShipIdsThisRound],
+        exitedShipIds: [...input.scene.activeNavalBattle.exitedShipIds]
+      }
+    : undefined;
   return {
     ready: true,
     sceneReady: true,
@@ -112,6 +320,12 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
     leaderSideIds,
     mapVisibleSourceIds,
     armies,
+    ships,
+    navalRequestTargets,
+    pendingNavalBattleRequests,
+    transportEmbarkTargets,
+    pendingTransportEmbarkRequests,
+    ...(activeNavalBattle ? { activeNavalBattle } : {}),
     sides: input.scene.sides,
     states: input.scene.states,
     relations: input.scene.relations,
@@ -138,6 +352,11 @@ const LOADING_SNAPSHOT: RawExtensionSnapshot = {
   leaderSideIds: new Set(),
   mapVisibleSourceIds: new Set(),
   armies: [],
+  ships: [],
+  navalRequestTargets: [],
+  pendingNavalBattleRequests: [],
+  transportEmbarkTargets: [],
+  pendingTransportEmbarkRequests: [],
   sides: [],
   states: [],
   relations: {},
@@ -259,19 +478,33 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
         players
       };
     }
-    const [armies, localItems] = await Promise.all([
+    const [armies, ships, localItems] = await Promise.all([
       repository.readArmies(),
+      repository.readShips(),
       adapter.getLocalItems()
     ]);
     observedLocalCloneSourceIds = localCloneSourceIds(localItems);
-    return buildRoleSafeSnapshot({
+    const nextSnapshot = buildRoleSafeSnapshot({
       role,
       playerId,
       scene: migrated.value,
       players,
       armies,
+      ships,
       mapVisibleSourceIds: observedLocalCloneSourceIds
     });
+    const currentDraft = snapshot.navalBattleAreaDraft;
+    const keepDraft = role === "GM" && currentDraft !== undefined &&
+      nextSnapshot.pendingNavalBattleRequests?.some((request) => request.id === currentDraft.requestId) === true;
+    return keepDraft
+      ? {
+          ...nextSnapshot,
+          navalBattleAreaDraft: {
+            requestId: currentDraft.requestId,
+            cells: currentDraft.cells.map((cell) => ({ ...cell }))
+          }
+        }
+      : nextSnapshot;
   };
   const refreshCoordinator = createRefreshCoordinator(
     loadSnapshot,
@@ -292,13 +525,38 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
     OBR.scene.local.onChange(triggerLocalRefresh),
     OBR.scene.onMetadataChange(triggerRefresh),
     OBR.player.onChange(triggerRefresh),
-    OBR.party.onChange(triggerRefresh)
+    OBR.party.onChange(triggerRefresh),
+    adapter.on(NAVAL_BATTLE_AREA_DRAFT_CHANNEL, (event) => {
+      if (snapshot.role !== "GM") return;
+      const draft = parseNavalBattleAreaDraft(event.data, snapshot.playerId);
+      if (!draft) return;
+      if (!snapshot.pendingNavalBattleRequests?.some((request) => request.id === draft.requestId)) return;
+      publish({ ...snapshot, navalBattleAreaDraft: draft });
+    })
   );
   refreshCoordinator.request();
   await refreshCoordinator.whenIdle();
+  let navalBattleAreaReturnToolId: string | undefined;
 
   const send = async (command: UiCommand): Promise<unknown> => {
     try {
+      if (command.type === "OPEN_NAVAL_BATTLE_AREA") {
+        if (snapshot.role !== "GM") {
+          await notifyRussian(adapter, "GM_ONLY");
+          return undefined;
+        }
+        const returnToolId = await OBR.tool.getActiveTool();
+        navalBattleAreaReturnToolId = returnToolId === NAVAL_BATTLE_AREA_TOOL_ID
+          ? navalBattleAreaReturnToolId
+          : returnToolId;
+        await OBR.tool.setMetadata(NAVAL_BATTLE_AREA_TOOL_ID, {
+          [NAVAL_BATTLE_AREA_REQUEST_ID_KEY]: command.requestId,
+          [NAVAL_BATTLE_AREA_SESSION_ID_KEY]: crypto.randomUUID()
+        });
+        await OBR.tool.activateTool(NAVAL_BATTLE_AREA_TOOL_ID);
+        await OBR.tool.activateMode(NAVAL_BATTLE_AREA_TOOL_ID, NAVAL_BATTLE_AREA_TOOL_MODE_ID);
+        return undefined;
+      }
       if (command.type === "OPEN_MAP_BRUSH") {
         if (snapshot.role !== "GM") {
           await notifyRussian(adapter, "GM_ONLY");
@@ -341,16 +599,82 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
         }
         return undefined;
       }
-      const payload = command.type === "REGISTER_SELECTED_ARMY"
-        ? {
-            type: "REGISTER_ARMY" as const,
-            itemId: resolveRegistrationSelection({
-              selection: (await OBR.player.getSelection()) ?? [],
-              items: await adapter.getSceneItems()
-            }).id,
-            sideId: command.sideId
+      if (command.type === "EDIT_SHIP_ROUTE") {
+        const returnToolId = await OBR.tool.getActiveTool();
+        try {
+          await OBR.tool.setMetadata(SHIP_ROUTE_TOOL_ID, {
+            [SHIP_ROUTE_SHIP_ID_KEY]: command.shipId,
+            [SHIP_ROUTE_RETURN_TOOL_KEY]: returnToolId
+          });
+          await OBR.tool.activateTool(SHIP_ROUTE_TOOL_ID);
+          await OBR.tool.activateMode(SHIP_ROUTE_TOOL_ID, SHIP_ROUTE_TOOL_MODE_ID);
+        } catch (error) {
+          try {
+            await OBR.tool.setMetadata(SHIP_ROUTE_TOOL_ID, {
+              [SHIP_ROUTE_SHIP_ID_KEY]: null,
+              [SHIP_ROUTE_RETURN_TOOL_KEY]: null
+            });
+          } catch {
+            // The original activation failure is more useful to the caller.
           }
-        : command;
+          throw error;
+        }
+        return undefined;
+      }
+      if (command.type === "OPEN_TRANSPORT_LANDING") {
+        const returnToolId = await OBR.tool.getActiveTool();
+        try {
+          await OBR.tool.setMetadata(TRANSPORT_LANDING_TOOL_ID, {
+            [TRANSPORT_LANDING_SHIP_ID_KEY]: command.shipId,
+            [TRANSPORT_LANDING_ARMY_ID_KEY]: command.armyId,
+            [TRANSPORT_LANDING_RETURN_TOOL_KEY]: returnToolId
+          });
+          await OBR.tool.activateTool(TRANSPORT_LANDING_TOOL_ID);
+          await OBR.tool.activateMode(TRANSPORT_LANDING_TOOL_ID, TRANSPORT_LANDING_TOOL_MODE_ID);
+        } catch (error) {
+          try {
+            await OBR.tool.setMetadata(TRANSPORT_LANDING_TOOL_ID, {
+              [TRANSPORT_LANDING_SHIP_ID_KEY]: null,
+              [TRANSPORT_LANDING_ARMY_ID_KEY]: null,
+              [TRANSPORT_LANDING_RETURN_TOOL_KEY]: null
+            });
+          } catch {
+            // The original activation failure is more useful to the caller.
+          }
+          throw error;
+        }
+        return undefined;
+      }
+      let payload: ArmyCommandPayload;
+      if (command.type === "START_NAVAL_BATTLE_FROM_REQUEST") {
+        payload = buildRequestBackedNavalBattleStart({
+          battleId: crypto.randomUUID(),
+          requestId: command.requestId,
+          initiatingShipId: command.initiatingShipId,
+          targetShipId: command.targetShipId,
+          participantShipIds: command.participantShipIds,
+          areaCells: command.areaCells
+        });
+      } else if (command.type === "REGISTER_SELECTED_ARMY") {
+        payload = {
+          type: "REGISTER_ARMY",
+          itemId: resolveRegistrationSelection({
+            selection: (await OBR.player.getSelection()) ?? [],
+            items: await adapter.getSceneItems()
+          }).id,
+          sideId: command.sideId
+        };
+      } else if (command.type === "REGISTER_SELECTED_SHIP") {
+        payload = buildSelectedShipRegistrationPayload({
+          selection: (await OBR.player.getSelection()) ?? [],
+          items: await adapter.getSceneItems(),
+          sideId: command.sideId,
+          classId: command.classId,
+          facing: command.facing
+        });
+      } else {
+        payload = command;
+      }
       const commandScene = snapshot.futureSchema ? undefined : await repository.readScene();
       commandSceneForCoordinator = commandScene;
       const envelope = {
@@ -366,6 +690,10 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
       } else if (acknowledgement.status === "CONFLICT") {
         await notifyRussian(adapter, "REVISION_CONFLICT");
       } else {
+        if (command.type === "START_NAVAL_BATTLE_FROM_REQUEST" && navalBattleAreaReturnToolId) {
+          await OBR.tool.activateTool(navalBattleAreaReturnToolId);
+          navalBattleAreaReturnToolId = undefined;
+        }
         refreshCoordinator.request();
         await refreshCoordinator.whenIdle();
       }

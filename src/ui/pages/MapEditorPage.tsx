@@ -87,7 +87,7 @@ export function MapEditorPage({ terrain, sides, states, onAction }: MapEditorPag
   const applyBrush = () => canApply && onAction({ type: "OPEN_MAP_BRUSH", settings: { mode, size, terrainId, ...(sideId ? { sideId } : {}), ...(stateId ? { stateId } : {}), factionOperation, impassable, eraserTarget } });
 
   return <section aria-labelledby="map-editor-title">
-    <div className="section-heading"><div><p className="eyebrow">Ведущий</p><h2 id="map-editor-title">Разметка карты</h2></div></div>
+    <div className="section-heading wiki-page-heading"><div><p className="eyebrow">Ведущий</p><h2 id="map-editor-title">Разметка карты</h2><p className="page-description">Редактируйте стратегические клетки, территории, государственный контроль и справочники карты.</p></div></div>
     <div className="settings-card map-editor-card">
       <div className="form-grid">
         <label>Режим кисти<select aria-label="Режим кисти" value={mode} onChange={(event) => setMode(event.target.value as MapBrushUiSettings["mode"])}>

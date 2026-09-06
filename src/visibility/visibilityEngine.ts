@@ -18,12 +18,13 @@ export function visibleArmyIdsForPlayer(input: PlayerVisibilityInput): Set<strin
   if (input.isGM) return new Set(input.armies.map((army) => army.id));
 
   const sideIds = new Set(input.playerSideIds);
+  const armyIds = new Set(input.armies.map((army) => army.id));
   const visible = new Set(
     input.armies.filter((army) => sideIds.has(army.sideId)).map((army) => army.id)
   );
   for (const sideId of sideIds) {
     for (const targetId of input.detectionGraph.visibleTargetsBySide.get(sideId) ?? []) {
-      visible.add(targetId);
+      if (armyIds.has(targetId)) visible.add(targetId);
     }
   }
 

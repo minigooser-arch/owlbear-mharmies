@@ -78,12 +78,18 @@ it("includes route, map brush, and health overlays in local overlay cleanup", ()
       metadata: { [METADATA_KEYS.healthOverlay]: { armyId: "army" } }
     },
     {
+      id: "naval-area-preview",
+      type: "CURVE",
+      position: { x: 0, y: 0 },
+      metadata: { [METADATA_KEYS.navalBattleAreaPreview]: { cellKey: "1,1" } }
+    },
+    {
       id: "keep",
       type: "LABEL",
       position: { x: 0, y: 0 },
       metadata: { other: true }
     }
-  ])).toEqual(["route-preview", "map-brush-preview", "health"]);
+  ])).toEqual(["route-preview", "map-brush-preview", "health", "naval-area-preview"]);
 });
 
 describe("background command readiness", () => {

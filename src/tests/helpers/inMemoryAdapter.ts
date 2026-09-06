@@ -102,7 +102,7 @@ export class FourClientRoom {
   async visibleTo(sideId: string): Promise<Set<string>> {
     const graph = await buildDetectionGraph({
       mode: this.detectionMode,
-      armies: [...this.armies.values()].map((army) => ({
+      units: [...this.armies.values()].map((army) => ({
         id: army.id,
         sideId: army.sideId,
         position: army.position,

@@ -13,6 +13,11 @@ export type DetectionMode = "INDEPENDENT" | "MUTUAL";
 export type VisibilityRecalculationMode = "ON_DROP" | "REALTIME";
 export type SideRelation = "ALLY" | "NEUTRAL" | "ENEMY";
 export type BarrierVisibility = "GM_ONLY" | "EVERYONE";
+export type MovementDomain = "LAND" | "SEA";
+export type TurnPhase = "MOVEMENT" | "POST_MOVEMENT";
+export type ShipClassId = "BATTLESHIP" | "CRUISER" | "IRONCLAD" | "HOSPITAL" | "TRANSPORT";
+export type ShipFacing = "NORTH" | "EAST" | "SOUTH" | "WEST";
+export type ShipStatus = "READY" | "IN_NAVAL_BATTLE";
 
 export interface SceneSettings {
   defaultDetectionRangeCells: number;
@@ -64,6 +69,10 @@ export interface TerrainType {
   name: string;
   movementCostUnits: number;
   enabled: boolean;
+  /** Missing on legacy v5 inputs; interpreted as LAND until migration. */
+  movementDomains?: MovementDomain[];
+  /** Missing on legacy v5 inputs; interpreted as true until migration. */
+  blocksNavalLos?: boolean;
   color?: string;
 }
 
@@ -100,6 +109,8 @@ export interface WarState {
 
 export interface TurnState {
   turnNumber: number;
+  /** Missing on legacy v5 inputs; migration supplies MOVEMENT. */
+  phase?: TurnPhase;
   autoTurnsPaused: boolean;
   deferredUntil: string | null;
   lastCompletedAt: string | null;
@@ -107,8 +118,88 @@ export interface TurnState {
   lastProcessedBoundaryId: string | null;
 }
 
+export interface ShipState {
+  version: 1;
+  registered: true;
+  sideId: string;
+  classId: ShipClassId;
+  status: ShipStatus;
+  hp: number;
+  temporaryHp: number;
+  facing: ShipFacing;
+  plannedRoute: GridCellCoord[];
+  globalMovementRemaining: number;
+  movementSpentThisTurn: boolean;
+  battleId: string | null;
+  detectionOverride: number | null;
+  embarkedArmyId: string | null;
+  shoreBombardmentUsedOnTurn: number | null;
+  logisticsActionUsedOnTurn: number | null;
+  revision: number;
+}
+
+export interface NavalBattleRequest {
+  id: string;
+  initiatingShipId: string;
+  targetShipId: string;
+  createdOnTurn?: number;
+}
+
+export interface TransportEmbarkRequest {
+  id: string;
+  shipId: string;
+  armyId: string;
+}
+
+export interface NavalBattleShipSnapshot {
+  shipId: string;
+  strategicCell: GridCellCoord;
+  strategicPosition: Vector2;
+  strategicFacing: ShipFacing;
+}
+
+export interface NavalInitiativeEntry {
+  shipId: string;
+  initialRoll: number;
+  bonus: number;
+  total: number;
+  tieBreakRolls: number[];
+}
+
+export interface NavalInterceptionState {
+  cruiserShipId: string;
+  activatedRoundNumber: number;
+}
+
+export interface NavalBattleState {
+  version: 1;
+  id: string;
+  requestId: string | null;
+  initiatorSideId: string;
+  areaCells: GridCellCoord[];
+  participantShipIds: string[];
+  snapshots: Record<string, NavalBattleShipSnapshot>;
+  initiative: NavalInitiativeEntry[];
+  roundNumber: number;
+  currentShipId: string | null;
+  completedShipIdsThisRound: string[];
+  movementRemainingByShip: Record<string, number>;
+  actionUsedByShip: Record<string, boolean>;
+  interceptions?: Record<string, NavalInterceptionState>;
+  exitedShipIds: string[];
+  status: "ACTIVE" | "COMPLETED";
+  events: unknown[];
+  startedOnTurn: number;
+  startedAt: number;
+  revision: number;
+}
+
+/**
+ * Boundary-compatible scene shape. Legacy v5 data is accepted here so old callers and
+ * migration fixtures remain representable; normalizeSceneState always returns NavalSceneState.
+ */
 export interface SceneState {
-  version: 5;
+  version: 5 | 6;
   revision: number;
   settings: SceneSettings;
   sides: Side[];
@@ -119,7 +210,23 @@ export interface SceneState {
   gridMap: GridMapState;
   wars: WarState[];
   turn: TurnState;
+  ships?: Record<string, ShipState>;
+  navalBattleRequests?: NavalBattleRequest[];
+  transportEmbarkRequests?: TransportEmbarkRequest[];
+  activeNavalBattle?: NavalBattleState | null;
+  navalBattleHistory?: NavalBattleState[];
+  navalRevealUntilTurn?: Record<string, Record<string, number>>;
   coordinatorLease?: CoordinatorLease;
+}
+
+export interface NavalSceneState extends SceneState {
+  version: 6;
+  ships: Record<string, ShipState>;
+  navalBattleRequests: NavalBattleRequest[];
+  activeNavalBattle: NavalBattleState | null;
+  navalBattleHistory: NavalBattleState[];
+  navalRevealUntilTurn: Record<string, Record<string, number>>;
+  turn: TurnState & { phase: TurnPhase };
 }
 
 export interface ArmyOverrides {
@@ -174,8 +281,9 @@ export interface ArmyDisbandState {
   requestedByPlayerId: string | null;
 }
 
+/** Boundary-compatible army shape; normalization always upgrades to version 4. */
 export interface ArmyState {
-  version: 3;
+  version: 3 | 4;
   registered: true;
   sideId: string;
   status: ArmyStatus;
@@ -188,6 +296,7 @@ export interface ArmyState {
   health: ArmyHealthState;
   supply: ArmySupplyState;
   disband: ArmyDisbandState;
+  embarkedOnShipId?: string | null;
   currentWaypointIndex: number;
   segmentProgressCells: number;
   ignoresMovementBarriers: boolean;
@@ -246,6 +355,35 @@ export type ArmyCommandPayload =
   (
     | { type: "REGISTER_ARMY"; itemId: string; sideId: string }
     | { type: "UNREGISTER_ARMY"; armyId: string }
+    | { type: "REGISTER_SHIP"; itemId: string; sideId: string; classId: ShipClassId; facing: ShipFacing }
+    | { type: "UNREGISTER_SHIP"; shipId: string }
+    | { type: "SET_SHIP_ROUTE"; shipId: string; startCell: GridCellCoord; cells: GridCellCoord[] }
+    | { type: "SET_SHIP_HP"; shipId: string; hp: number }
+    | { type: "SET_SHIP_DETECTION_OVERRIDE"; shipId: string; detectionOverride: number | null }
+    | { type: "NAVAL_MOVE_FORWARD"; shipId: string }
+    | { type: "NAVAL_TURN_SHIP"; shipId: string; direction: "LEFT" | "RIGHT" }
+    | { type: "NAVAL_BROADSIDE_ATTACK"; shipId: string; targetShipId: string; friendlyFireConfirmed: boolean }
+    | { type: "NAVAL_ACTIVATE_INTERCEPTION"; shipId: string }
+    | { type: "END_NAVAL_SHIP_TURN"; shipId: string }
+    | { type: "NAVAL_HOSPITAL_SUPPORT"; shipId: string; targetShipId: string }
+    | { type: "NAVAL_SHORE_BOMBARDMENT"; shipId: string; armyId: string; friendlyFireConfirmed: boolean }
+    | { type: "SET_ACTIVE_NAVAL_SHIP"; shipId: string }
+    | { type: "CONFIRM_NAVAL_SHIP_EXIT"; shipId: string }
+    | { type: "EMBARK_ARMY"; shipId: string; armyId: string }
+    | { type: "ACCEPT_EMBARK_ARMY"; embarkRequestId: string; shipId: string; armyId: string }
+    | { type: "DISEMBARK_ARMY"; shipId: string; armyId: string; targetCell: GridCellCoord }
+    | { type: "REQUEST_NAVAL_BATTLE"; initiatingShipId: string; targetShipId: string }
+    | {
+        type: "START_NAVAL_BATTLE";
+        battleId: string;
+        navalRequestId: string | null;
+        initiatingShipId: string;
+        participantShipIds: string[];
+        areaCells: GridCellCoord[];
+      }
+    | { type: "COMPLETE_NAVAL_BATTLE" }
+    | { type: "COMPLETE_MOVEMENT_PHASE" }
+    | { type: "REOPEN_MOVEMENT_PHASE" }
     | { type: "CREATE_SIDE"; side: Side }
     | { type: "RENAME_SIDE"; sideId: string; name: string }
     | {
@@ -301,7 +439,6 @@ export type ArmyCommandPayload =
     | { type: "CREATE_TERRAIN_TYPE"; terrain: TerrainType }
     | { type: "UPDATE_TERRAIN_TYPE"; terrainId: string; patch: Partial<Omit<TerrainType, "id">> }
     | { type: "DELETE_TERRAIN_TYPE"; terrainId: string; replacementTerrainId?: string }
-
     | { type: "CREATE_STATE"; state: StateEntity }
     | { type: "UPDATE_STATE"; stateId: string; patch: Partial<Omit<StateEntity, "id">> }
     | { type: "DELETE_STATE"; stateId: string }

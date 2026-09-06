@@ -11,6 +11,7 @@ const STATUS: Record<ArmyView["status"], string> = {
 
 interface ArmyCardProps {
   army: ArmyView;
+  sideColor?: string;
   isGM: boolean;
   canEditRoute: boolean;
   canRequestDisband: boolean;
@@ -50,13 +51,14 @@ function ArmyHealthEditor({ army, onAction }: { army: ArmyView; onAction(command
   );
 }
 
-export function ArmyCard({ army, isGM, canEditRoute, canRequestDisband, onAction }: ArmyCardProps) {
+export function ArmyCard({ army, sideColor = "#687F91", isGM, canEditRoute, canRequestDisband, onAction }: ArmyCardProps) {
   const canChangeRoute = canEditRoute && army.status === "READY";
   const invalidMessage = movementDenialMessage(army.routeInvalidReason);
   const encirclementDamage = Math.ceil(army.healthMaxHp * 0.1);
   const hasRoute = army.routeCellCount > 0;
   return (
-    <article className={`army-card${!army.supplied ? " army-card-warning" : ""}`}>
+    <article className={`army-card wiki-card${!army.supplied ? " army-card-warning" : ""}`}>
+      <span className="army-side-mark" style={{ backgroundColor: sideColor }} aria-hidden="true" />
       <div className="army-card-heading">
         <div className="army-identity">
           <h3>{army.name}</h3>
@@ -86,19 +88,18 @@ export function ArmyCard({ army, isGM, canEditRoute, canRequestDisband, onAction
       {canChangeRoute && (
         <div className="card-actions primary-card-action" aria-label="Маршрут армии">
           <button className="button primary wide" type="button" onClick={() => onAction({ type: "EDIT_ROUTE", armyId: army.id })}>{hasRoute ? "Изменить маршрут" : "Проложить маршрут"}</button>
-          {army.route.length > 0 && <button type="button" onClick={() => onAction({ type: "CLEAR_ROUTE", armyId: army.id })}>Очистить</button>}
+          {army.route.length > 0 && <button className="button ghost" type="button" onClick={() => onAction({ type: "CLEAR_ROUTE", armyId: army.id })}>Очистить</button>}
         </div>
       )}
 
-      {isGM && <ArmyHealthEditor army={army} onAction={onAction} />}
-
       {(isGM || canRequestDisband) && (
         <details className="army-more">
-          <summary>Дополнительные действия</summary>
+          <summary>Управление</summary>
           <div className="army-control-groups">
+            {isGM && <ArmyHealthEditor army={army} onAction={onAction} />}
             {isGM && (army.status === "MOVING" || army.status === "PAUSED") && <div className="card-actions" aria-label="Движение армии">{army.status === "MOVING" && <button type="button" onClick={() => onAction({ type: "PAUSE_ARMY", armyId: army.id })}>Пауза</button>}<button type="button" onClick={() => onAction({ type: "STOP_ARMY", armyId: army.id })}>Стоп</button></div>}
             {canRequestDisband && !army.disbandPending && <div className="card-actions"><button className="button danger subtle" type="button" onClick={() => onAction({ type: "REQUEST_ARMY_DISBAND", armyId: army.id })}>Распустить армию</button></div>}
-            {isGM && <div className="card-actions"><button type="button" onClick={() => onAction({ type: "UNREGISTER_ARMY", armyId: army.id })}>Снять регистрацию</button></div>}
+            {isGM && <div className="card-actions"><button className="button ghost" type="button" onClick={() => onAction({ type: "UNREGISTER_ARMY", armyId: army.id })}>Снять регистрацию</button></div>}
           </div>
         </details>
       )}

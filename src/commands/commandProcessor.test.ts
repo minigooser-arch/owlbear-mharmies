@@ -476,6 +476,7 @@ describe("CommandProcessor", () => {
     expect(paused.state.scene.turn.autoTurnsPaused).toBe(true);
     expect(paused.state.scene.turn.deferredUntil).toBeNull();
 
+    commandState.scene.turn.phase = "POST_MOVEMENT";
     const completed = processor.execute(
       context("GM", "gm", commandState),
       command({ type: "COMPLETE_TURN_NOW" })

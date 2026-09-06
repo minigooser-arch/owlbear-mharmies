@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import type { Side } from "../../shared/types";
 import { ArmyCard } from "../components/ArmyCard";
-import type { ArmyView, UiCommand } from "../state/useExtensionState";
+import type { ArmyView, TransportEmbarkRequestView, UiCommand } from "../state/useExtensionState";
 
 interface ArmiesPageProps {
   armies: readonly ArmyView[];
@@ -10,6 +10,7 @@ interface ArmiesPageProps {
   playerId: string;
   leaderSideIds: ReadonlySet<string>;
   memberSideIds: ReadonlySet<string>;
+  pendingTransportEmbarkRequests?: readonly TransportEmbarkRequestView[];
   onAction(command: UiCommand): void;
 }
 
@@ -19,6 +20,7 @@ export function ArmiesPage({
   role,
   leaderSideIds,
   memberSideIds,
+  pendingTransportEmbarkRequests = [],
   onAction
 }: ArmiesPageProps) {
   const [query, setQuery] = useState("");
@@ -45,59 +47,111 @@ export function ArmiesPage({
     ),
     [armies, query, selectedFilterSideId, statusFilter]
   );
+
   return (
-    <section aria-labelledby="armies-title">
-      <div className="section-heading">
-        <div><p className="eyebrow">Сцена</p><h2 id="armies-title">Армии</h2></div>
+    <section aria-labelledby="armies-title" className="wiki-page armies-page">
+      <div className="section-heading wiki-page-heading">
+        <div>
+          <p className="eyebrow">Войска</p>
+          <h2 id="armies-title">Армии</h2>
+          <p className="page-description">Управление сухопутными соединениями, маршрутами и состоянием войск.</p>
+        </div>
         <span className="count-pill" data-testid="army-count">{armies.length}</span>
       </div>
-      <div className="filters">
-        <input aria-label="Поиск армий" placeholder="Найти армию" value={query} onChange={(event) => setQuery(event.target.value)} />
-        <select aria-label="Фильтр по стороне" value={selectedFilterSideId} onChange={(event) => setFilterSideId(event.target.value)}>
-          <option value="ALL">Все стороны</option>
-          {filterSides.map((side) => <option key={side.id} value={side.id}>{side.name}</option>)}
-        </select>
-      </div>
-      <div className="filter-chips" aria-label="Фильтр по статусу">
-        {([
-          ["ALL", "Все"], ["MOVING", "В движении"], ["IN_BATTLE", "В бою"], ["ENCIRCLED", "Окружены"]
-        ] as const).map(([value, label]) => <button type="button" key={value} className={statusFilter === value ? "active" : ""} onClick={() => setStatusFilter(value)}>{label}</button>)}
-      </div>
-      {role === "GM" && (
-        <div className="filters" aria-label="Регистрация армии">
-          <select
-            aria-label="Сторона новой армии"
-            value={selectedRegistrationSideId}
-            disabled={sides.length === 0}
-            onChange={(event) => setRegistrationSideId(event.target.value)}
-          >
-            {sides.map((side) => <option key={side.id} value={side.id}>{side.name}</option>)}
+
+      <div className="army-toolbar" role="search" aria-label="Поиск и фильтры армий">
+        <div className="filters">
+          <input aria-label="Поиск армий" placeholder="Найти армию" value={query} onChange={(event) => setQuery(event.target.value)} />
+          <select aria-label="Фильтр по стороне" value={selectedFilterSideId} onChange={(event) => setFilterSideId(event.target.value)}>
+            <option value="ALL">Все стороны</option>
+            {filterSides.map((side) => <option key={side.id} value={side.id}>{side.name}</option>)}
           </select>
-          <button
-            type="button"
-            disabled={sides.length === 0}
-            onClick={() => {
-              if (selectedRegistrationSideId) {
-                onAction({ type: "REGISTER_SELECTED_ARMY", sideId: selectedRegistrationSideId });
-              }
-            }}
-          >
-            Сделать армией
-          </button>
         </div>
+        <div className="filter-chips" aria-label="Фильтр по статусу">
+          {([
+            ["ALL", "Все"], ["MOVING", "В движении"], ["IN_BATTLE", "В бою"], ["ENCIRCLED", "Окружены"]
+          ] as const).map(([value, label]) => <button type="button" key={value} className={statusFilter === value ? "active" : ""} onClick={() => setStatusFilter(value)}>{label}</button>)}
+        </div>
+      </div>
+
+      {role === "GM" && (
+        <section className="registration-card" aria-label="Регистрация армии">
+          <div className="registration-copy">
+            <span className="registration-kicker">Новая армия</span>
+            <strong>Зарегистрировать выбранный токен</strong>
+            <small>Выберите фракцию и назначьте выделенный объект на карте армией.</small>
+          </div>
+          <div className="registration-actions">
+            <select
+              aria-label="Сторона новой армии"
+              value={selectedRegistrationSideId}
+              disabled={sides.length === 0}
+              onChange={(event) => setRegistrationSideId(event.target.value)}
+            >
+              {sides.map((side) => <option key={side.id} value={side.id}>{side.name}</option>)}
+            </select>
+            <button
+              className="button primary"
+              type="button"
+              disabled={sides.length === 0}
+              onClick={() => {
+                if (selectedRegistrationSideId) {
+                  onAction({ type: "REGISTER_SELECTED_ARMY", sideId: selectedRegistrationSideId });
+                }
+              }}
+            >
+              Сделать армией
+            </button>
+          </div>
+        </section>
       )}
-      <div className="card-list">
-        {filtered.map((army) => (
-          <ArmyCard
-            key={army.id}
-            army={army}
-            isGM={role === "GM"}
-            canEditRoute={role === "GM" || leaderSideIds.has(army.sideId)}
-            canRequestDisband={role === "GM" || memberSideIds.has(army.sideId)}
-            onAction={onAction}
-          />
-        ))}
-        {filtered.length === 0 && <p className="empty">Подходящих армий нет.</p>}
+
+      {pendingTransportEmbarkRequests.length > 0 && (
+        <section className="registration-card" aria-labelledby="transport-consent-title">
+          <div className="registration-copy">
+            <span className="registration-kicker">Перевозка войск</span>
+            <h3 id="transport-consent-title">Запросы на перевозку</h3>
+            <small>Иностранный транспорт ожидает согласия на погрузку вашей армии.</small>
+          </div>
+          <div className="registration-actions">
+            {pendingTransportEmbarkRequests.map((request) => (
+              <div key={request.id} className="transport-consent-request">
+                <span>{request.armyName} → {request.shipName} · {request.shipSideName}</span>
+                <button
+                  className="button primary"
+                  type="button"
+                  aria-label={`Разрешить погрузку ${request.armyName} на ${request.shipName}`}
+                  onClick={() => onAction({
+                    type: "ACCEPT_EMBARK_ARMY",
+                    embarkRequestId: request.id,
+                    shipId: request.shipId,
+                    armyId: request.armyId
+                  })}
+                >
+                  Разрешить погрузку
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <div className="card-list army-list">
+        {filtered.map((army) => {
+          const side = sides.find((candidate) => candidate.id === army.sideId);
+          return (
+            <ArmyCard
+              key={army.id}
+              army={army}
+              sideColor={side?.color ?? "#687F91"}
+              isGM={role === "GM"}
+              canEditRoute={role === "GM" || leaderSideIds.has(army.sideId)}
+              canRequestDisband={role === "GM" || memberSideIds.has(army.sideId)}
+              onAction={onAction}
+            />
+          );
+        })}
+        {filtered.length === 0 && <p className="empty empty-panel">Подходящих армий нет.</p>}
       </div>
     </section>
   );

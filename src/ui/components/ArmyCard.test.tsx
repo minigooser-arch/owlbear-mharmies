@@ -49,7 +49,7 @@ describe("ArmyCard capabilities", () => {
     render(<ArmyCard army={redArmy} isGM canEditRoute canRequestDisband onAction={vi.fn()} />);
     expect(screen.getByRole("button", { name: "Изменить маршрут" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Старт" })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByText("Дополнительные действия"));
+    fireEvent.click(screen.getByText("Управление"));
     expect(screen.getByRole("button", { name: "Распустить армию" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Снять регистрацию" })).toBeInTheDocument();
   });
@@ -72,7 +72,7 @@ describe("ArmyCard capabilities", () => {
     const onAction = vi.fn();
     render(<ArmyCard army={{ ...redArmy, status: "PAUSED" }} isGM canEditRoute canRequestDisband onAction={onAction} />);
 
-    fireEvent.click(screen.getByText("Дополнительные действия"));
+    fireEvent.click(screen.getByText("Управление"));
     expect(screen.queryByRole("button", { name: "Пауза" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Стоп" }));
     expect(onAction).toHaveBeenCalledWith({ type: "STOP_ARMY", armyId: "army-red" });
@@ -83,7 +83,7 @@ describe("ArmyCard capabilities", () => {
     render(<ArmyCard army={redArmy} isGM canEditRoute canRequestDisband onAction={onAction} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Изменить маршрут" }));
-    fireEvent.click(screen.getByText("Дополнительные действия"));
+    fireEvent.click(screen.getByText("Управление"));
     fireEvent.click(screen.getByRole("button", { name: "Распустить армию" }));
     fireEvent.click(screen.getByRole("button", { name: "Снять регистрацию" }));
 
@@ -91,9 +91,11 @@ describe("ArmyCard capabilities", () => {
     expect(onAction).toHaveBeenNthCalledWith(2, { type: "REQUEST_ARMY_DISBAND", armyId: "army-red" });
     expect(onAction).toHaveBeenNthCalledWith(3, { type: "UNREGISTER_ARMY", armyId: "army-red" });
   });
-  it("lets a GM set exact HP and use quick adjustments", () => {
+
+  it("lets a GM set exact HP and use quick adjustments from management", () => {
     const onAction = vi.fn();
     render(<ArmyCard army={redArmy} isGM canEditRoute canRequestDisband onAction={onAction} />);
+    fireEvent.click(screen.getByText("Управление"));
     const hpInput = screen.getByRole("spinbutton", { name: "Текущее HP Первая армия" });
     fireEvent.change(hpInput, { target: { value: "27" } });
     fireEvent.click(screen.getByRole("button", { name: "Установить HP" }));
@@ -101,9 +103,7 @@ describe("ArmyCard capabilities", () => {
     fireEvent.click(screen.getByRole("button", { name: "+5 HP" }));
     expect(onAction).toHaveBeenCalledWith({ type: "SET_ARMY_HP", armyId: "army-red", hp: 50 });
   });
-
 });
-
 
 it("shows irreversible disband state and disables a second request", () => {
   render(<ArmyCard army={{ ...redArmy, disbandPending: true }} isGM={false} canEditRoute canRequestDisband onAction={vi.fn()} />);

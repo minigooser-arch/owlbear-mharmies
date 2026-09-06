@@ -34,7 +34,7 @@ class MemoryPort implements MetadataPort {
 
 function army(revision: number): ArmyState {
   return {
-    version: 3,
+    version: 4,
     registered: true,
     sideId: "red",
     status: "READY",
@@ -52,6 +52,7 @@ function army(revision: number): ArmyState {
     health: { hp: 50, maxHp: 50 },
     supply: { supplied: true, checkedOnTurn: 1 },
     disband: { pending: false, requestedOnTurn: null, requestedByPlayerId: null },
+    embarkedOnShipId: null,
     currentWaypointIndex: 0,
     segmentProgressCells: 0,
     ignoresMovementBarriers: false,
@@ -62,7 +63,7 @@ function army(revision: number): ArmyState {
 
 function scene(revision: number): SceneState {
   return {
-    version: 5,
+    version: 6,
     revision,
     settings: { ...DEFAULT_SETTINGS },
     sides: [],
@@ -72,20 +73,31 @@ function scene(revision: number): SceneState {
     terrain: structuredClone(DEFAULT_TERRAIN),
     gridMap: { version: 1, revision: 0, cells: {} },
     wars: [],
-    turn: structuredClone(DEFAULT_TURN_STATE)
+    turn: structuredClone(DEFAULT_TURN_STATE),
+    ships: {},
+    navalBattleRequests: [],
+    activeNavalBattle: null,
+    navalBattleHistory: [],
+    navalRevealUntilTurn: {}
   };
 }
 
 describe("MetadataRepository", () => {
-  it("creates schema v5 defaults for a new scene", async () => {
+  it("creates schema v6 defaults for a new scene", async () => {
     const repository = new MetadataRepository(new MemoryPort());
 
     await expect(repository.readScene()).resolves.toMatchObject({
-      version: 5,
+      version: 6,
       sides: [],
       states: [],
       gridMap: { version: 1, revision: 0, cells: {} },
-      wars: []
+      wars: [],
+      turn: { phase: "MOVEMENT" },
+      ships: {},
+      navalBattleRequests: [],
+      activeNavalBattle: null,
+      navalBattleHistory: [],
+      navalRevealUntilTurn: {}
     });
   });
 

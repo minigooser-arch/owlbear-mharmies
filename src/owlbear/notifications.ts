@@ -10,6 +10,7 @@ export type NotificationCode =
   | "BACKGROUND_NOT_READY"
   | "PROTOCOL_MISMATCH"
   | "INVALID_COMMAND"
+  | "INVALID_HP"
   | "INVALID_BATTLE_NAME"
   | "BATTLE_NOT_FOUND"
   | "SELECTION_EMPTY"
@@ -39,7 +40,18 @@ export type NotificationCode =
   | "ROUTE_NOT_ACTIVE_TURN"
   | "ROUTE_REQUIRES_REPLAN"
   | "TURN_POSITION_UNAVAILABLE"
-  | "INVALID_METADATA";
+  | "INVALID_METADATA"
+  | "NO_ACTIVE_NAVAL_BATTLE"
+  | "SHIP_NOT_IN_NAVAL_BATTLE"
+  | "SHIP_NOT_ACTIVE"
+  | "SHIP_POSITION_UNAVAILABLE"
+  | "SHIP_DESTROYED"
+  | "OUTSIDE_NAVAL_BATTLE_AREA"
+  | "INSUFFICIENT_NAVAL_MOVEMENT"
+  | "NAVAL_ACTION_ALREADY_USED"
+  | "INVALID_NAVAL_TACTICAL_ACTION"
+  | "INVALID_NAVAL_BATTLE_AREA"
+  | "SHIP_ALREADY_EXITED";
 
 const RUSSIAN_MESSAGES: Readonly<Record<NotificationCode, string>> = {
   GM_ONLY: "Это действие доступно только ведущему.",
@@ -53,6 +65,7 @@ const RUSSIAN_MESSAGES: Readonly<Record<NotificationCode, string>> = {
   BACKGROUND_NOT_READY: "Фоновая часть расширения ещё загружается. Повторите попытку.",
   PROTOCOL_MISMATCH: "Версии интерфейса и фоновой части не совпадают. Перезапустите расширение.",
   INVALID_COMMAND: "Команда не распознана. Обновите расширение и повторите действие.",
+  INVALID_HP: "Укажите допустимое целое значение HP корабля.",
   INVALID_BATTLE_NAME: "Название боя должно содержать от 1 до 80 символов.",
   BATTLE_NOT_FOUND: "Указанный бой не найден.",
   SELECTION_EMPTY: "Выберите изображение армии на сцене.",
@@ -82,7 +95,18 @@ const RUSSIAN_MESSAGES: Readonly<Record<NotificationCode, string>> = {
   ROUTE_NOT_ACTIVE_TURN: "Этот маршрут назначен на другой глобальный ход.",
   ROUTE_REQUIRES_REPLAN: "Старый маршрут нужно спланировать заново.",
   TURN_POSITION_UNAVAILABLE: "Не удалось определить стратегическую клетку армии для смены хода.",
-  INVALID_METADATA: "Данные расширения повреждены или имеют неизвестную версию."
+  INVALID_METADATA: "Данные расширения повреждены или имеют неизвестную версию.",
+  NO_ACTIVE_NAVAL_BATTLE: "Сейчас нет активного морского боя.",
+  SHIP_NOT_IN_NAVAL_BATTLE: "Этот корабль не участвует в текущем морском бою.",
+  SHIP_NOT_ACTIVE: "Сейчас ход другого корабля.",
+  SHIP_POSITION_UNAVAILABLE: "Не удалось определить клетку корабля на поле боя.",
+  SHIP_DESTROYED: "Уничтоженный корабль не может выполнять это действие.",
+  OUTSIDE_NAVAL_BATTLE_AREA: "Корабль не может выйти за границы поля морского боя.",
+  INSUFFICIENT_NAVAL_MOVEMENT: "У корабля не хватает очков перемещения для этого манёвра.",
+  NAVAL_ACTION_ALREADY_USED: "После активного действия корабль больше не может двигаться в этот ход.",
+  INVALID_NAVAL_TACTICAL_ACTION: "Этот морской манёвр сейчас недоступен.",
+  INVALID_NAVAL_BATTLE_AREA: "Поле морского боя может состоять только из морских клеток.",
+  SHIP_ALREADY_EXITED: "Этот корабль уже вышел из морского боя."
 };
 
 const UNKNOWN_FAILURE_MESSAGE = "Не удалось выполнить действие.";

@@ -11,10 +11,17 @@ function shape(id: string): SceneItemRecord {
   return { id, type: "SHAPE", position: { x: 0, y: 0 }, metadata: {} };
 }
 
-function registeredImage(id: string): SceneItemRecord {
+function registeredArmy(id: string): SceneItemRecord {
   return {
     ...image(id),
     metadata: { [METADATA_KEYS.army]: { registered: true } }
+  };
+}
+
+function registeredShip(id: string): SceneItemRecord {
+  return {
+    ...image(id),
+    metadata: { [METADATA_KEYS.ship]: { registered: true } }
   };
 }
 
@@ -23,11 +30,12 @@ describe("registration selection", () => {
     [[], "SELECTION_EMPTY"],
     [["a", "b"], "SELECTION_MULTIPLE"],
     [["shape"], "IMAGE_REQUIRED"],
-    [["army"], "ALREADY_REGISTERED"]
+    [["army"], "ALREADY_REGISTERED"],
+    [["ship"], "ALREADY_REGISTERED"]
   ])("rejects invalid registration selection %j", (selection, code) => {
     expect(() => resolveRegistrationSelection({
       selection,
-      items: [image("a"), image("b"), shape("shape"), registeredImage("army")]
+      items: [image("a"), image("b"), shape("shape"), registeredArmy("army"), registeredShip("ship")]
     })).toThrowError(expect.objectContaining({ code }));
   });
 

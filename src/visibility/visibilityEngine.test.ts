@@ -34,6 +34,18 @@ describe("player visibility", () => {
     ).toEqual(new Set(["a", "b"]));
   });
 
+  it("ignores detected non-army ids from the shared detection graph", () => {
+    expect(
+      visibleArmyIdsForPlayer({
+        isGM: false,
+        playerSideIds: ["A"],
+        armies,
+        detectionGraph: graph({ A: ["b", "enemy-ship"] }),
+        battleGroups: []
+      })
+    ).toEqual(new Set(["a", "b"]));
+  });
+
   it("reveals all participants of a battle visible through one participant", () => {
     expect(
       visibleArmyIdsForPlayer({

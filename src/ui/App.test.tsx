@@ -50,7 +50,7 @@ it("does not render a hidden enemy in cards, filters, or counters", () => {
 
 it("uses the versioned sword icon in the popover header", () => {
   render(<App services={services()} />);
-  expect(screen.getByRole("img", { name: "Летопись: Армии" })).toHaveAttribute(
+  expect(screen.getByRole("img", { name: "Летопись: Военная панель" })).toHaveAttribute(
     "src",
     "/icon-1.2.png"
   );
@@ -58,7 +58,7 @@ it("uses the versioned sword icon in the popover header", () => {
 
 it("uses a focused player navigation", () => {
   render(<App services={services()} />);
-  expect(screen.getByRole("button", { name: "Армии" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Войска" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Ход" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Бои" })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Стороны" })).not.toBeInTheDocument();
@@ -68,7 +68,7 @@ it("uses a focused player navigation", () => {
 it("uses a separate GM operations navigation", () => {
   render(<App services={services({ role: "GM", mapVisibleSourceIds: new Set() })} />);
   expect(screen.getByRole("button", { name: "Обзор" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Армии" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Войска" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Карта" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Бои" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Управление" })).toBeInTheDocument();
@@ -87,11 +87,115 @@ it("shows turn administration on the turn page only to the GM", () => {
   expect(screen.getByRole("button", { name: "Завершить ход сейчас" })).toBeInTheDocument();
 });
 
-
-it("keeps leader faction management inside the armies screen", () => {
+it("keeps leader faction management inside the troops screen", () => {
   render(<App services={services({ playerId: "leader", leaderSideIds: new Set(["A"]), sides: [{ id: "A", name: "Красные", color: "#f00", playerIds: ["leader"], leaderPlayerIds: ["leader"], stateId: null }] })} />);
   expect(screen.queryByRole("button", { name: "Стороны" })).not.toBeInTheDocument();
   expect(screen.getByText("Управление фракцией")).toBeInTheDocument();
+});
+
+it("passes detected naval targets from the snapshot into leader fleet controls", () => {
+  render(<App services={services({
+    playerId: "leader",
+    memberSideIds: new Set(["A"]),
+    leaderSideIds: new Set(["A"]),
+    sides: [
+      { id: "A", name: "Красные", color: "#f00", playerIds: ["leader"], leaderPlayerIds: ["leader"], stateId: null },
+      { id: "B", name: "Синие", color: "#00f", playerIds: ["enemy"], leaderPlayerIds: ["enemy"], stateId: null }
+    ],
+    ships: [{
+      id: "own-ship",
+      name: "Аврора",
+      sideId: "A",
+      sideName: "Красные",
+      classId: "CRUISER",
+      className: "Крейсер",
+      status: "READY",
+      hp: 20,
+      maxHp: 20,
+      temporaryHp: 0,
+      armor: 1,
+      movementMax: 5,
+      movementRemaining: 5,
+      plannedRouteCellCount: 0,
+      facing: "EAST",
+      normalDice: 2,
+      normalRangeMin: 1,
+      normalRangeMax: 3,
+      embarkedArmyId: null,
+      detectionOverride: null,
+      effectiveDetectionRange: 6
+    }],
+    navalRequestTargets: [{ id: "enemy-visible", name: "Видимый линкор", sideId: "B", sideName: "Синие" }]
+  })} />);
+
+  fireEvent.click(screen.getByRole("button", { name: "Флот" }));
+  expect(screen.getByRole("option", { name: "Видимый линкор — Синие" })).toBeInTheDocument();
+});
+
+it("passes pending naval requests from the GM snapshot into the battles page", () => {
+  render(<App services={services({
+    role: "GM",
+    mapVisibleSourceIds: new Set(),
+    ships: [
+      {
+        id: "red-ship",
+        name: "Аврора",
+        sideId: "A",
+        sideName: "Красные",
+        classId: "CRUISER",
+        className: "Крейсер",
+        status: "READY",
+        hp: 20,
+        maxHp: 20,
+        temporaryHp: 0,
+        armor: 1,
+        movementMax: 5,
+        movementRemaining: 5,
+        plannedRouteCellCount: 0,
+        facing: "EAST",
+        normalDice: 2,
+        normalRangeMin: 1,
+        normalRangeMax: 3,
+        embarkedArmyId: null,
+        detectionOverride: null,
+        effectiveDetectionRange: 6
+      },
+      {
+        id: "blue-ship",
+        name: "Баян",
+        sideId: "B",
+        sideName: "Синие",
+        classId: "CRUISER",
+        className: "Крейсер",
+        status: "READY",
+        hp: 20,
+        maxHp: 20,
+        temporaryHp: 0,
+        armor: 1,
+        movementMax: 5,
+        movementRemaining: 5,
+        plannedRouteCellCount: 0,
+        facing: "WEST",
+        normalDice: 2,
+        normalRangeMin: 1,
+        normalRangeMax: 3,
+        embarkedArmyId: null,
+        detectionOverride: null,
+        effectiveDetectionRange: 6
+      }
+    ],
+    pendingNavalBattleRequests: [{
+      id: "request-1",
+      initiatingShipId: "red-ship",
+      targetShipId: "blue-ship",
+      createdOnTurn: 7
+    }]
+  })} />);
+
+  fireEvent.click(screen.getByRole("button", { name: "Бои" }));
+  expect(screen.getByRole("heading", { name: "Заявки на морской бой" })).toBeInTheDocument();
+  expect(screen.getByText("Аврора")).toBeInTheDocument();
+  expect(screen.getByText("Баян")).toBeInTheDocument();
 });
 
 it("renders loading, no-scene, and future-schema states", () => {

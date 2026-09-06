@@ -3,7 +3,7 @@ import { DEFAULT_SETTINGS } from "../shared/constants";
 import { migrateArmyState, migrateBarrierState, migrateSceneState } from "./migrations";
 
 describe("metadata migrations", () => {
-  it("migrates a v0 army and fills barrier exceptions", () => {
+  it("migrates a v0 army through the current v4 schema and fills barrier exceptions", () => {
     const result = migrateArmyState({
       version: 0,
       registered: true,
@@ -15,8 +15,9 @@ describe("metadata migrations", () => {
     expect(result).toMatchObject({
       ok: true,
       value: {
-        version: 3,
+        version: 4,
         status: "READY",
+        embarkedOnShipId: null,
         ignoresMovementBarriers: false,
         ignoresVisionBarriers: false
       }
@@ -42,7 +43,7 @@ describe("metadata migrations", () => {
     expect(result).toMatchObject({
       ok: true,
       value: {
-        version: 5,
+        version: 6,
         battleGroups: [
           { battleId: "a", name: "Бой 1" },
           { battleId: "z", name: "Бой 2" }
@@ -75,7 +76,7 @@ describe("metadata migrations", () => {
     });
   });
 
-  it("migrates v1 sides through the current v5 schema without losing memberships", () => {
+  it("migrates v1 sides through the current v6 schema without losing memberships", () => {
     const result = migrateSceneState({
       version: 1,
       revision: 7,
@@ -95,7 +96,7 @@ describe("metadata migrations", () => {
     expect(result).toMatchObject({
       ok: true,
       value: {
-        version: 5,
+        version: 6,
         revision: 7,
         sides: [
           {
@@ -105,12 +106,14 @@ describe("metadata migrations", () => {
             playerIds: ["player-1"],
             leaderPlayerIds: []
           }
-        ]
+        ],
+        ships: {},
+        activeNavalBattle: null
       }
     });
   });
 
-  it("migrates a v0 scene through the current v5 schema", () => {
+  it("migrates a v0 scene through the current v6 schema", () => {
     expect(migrateSceneState({
       version: 0,
       revision: 4,
@@ -118,9 +121,11 @@ describe("metadata migrations", () => {
     })).toMatchObject({
       ok: true,
       value: {
-        version: 5,
+        version: 6,
         revision: 4,
-        sides: [{ id: "red", playerIds: ["p1"], leaderPlayerIds: [] }]
+        sides: [{ id: "red", playerIds: ["p1"], leaderPlayerIds: [] }],
+        turn: { phase: "MOVEMENT" },
+        ships: {}
       }
     });
   });
@@ -144,7 +149,7 @@ describe("metadata migrations", () => {
   });
 });
 
-it("migrates v4 scene to v5 state territory model", () => {
+it("migrates v4 scene through state territory and naval schemas", () => {
   const result = migrateSceneState({
     version: 4,
     revision: 3,
@@ -175,7 +180,7 @@ it("migrates v4 scene to v5 state territory model", () => {
   expect(result).toMatchObject({
     ok: true,
     value: {
-      version: 5,
+      version: 6,
       states: [],
       sides: [{ id: "red", stateId: null }],
       gridMap: {
@@ -186,12 +191,14 @@ it("migrates v4 scene to v5 state territory model", () => {
           }
         }
       },
-      wars: [{ id: "war", participantStateIds: [] }]
+      wars: [{ id: "war", participantStateIds: [] }],
+      turn: { phase: "MOVEMENT" },
+      ships: {}
     }
   });
 });
 
-it("migrates v2 army to v3 with health supply disband and fixed five OP budget", () => {
+it("migrates v2 army through health supply disband and transport schema with fixed five OP budget", () => {
   const result = migrateArmyState({
     version: 2,
     registered: true,
@@ -217,10 +224,11 @@ it("migrates v2 army to v3 with health supply disband and fixed five OP budget",
   expect(result).toMatchObject({
     ok: true,
     value: {
-      version: 3,
+      version: 4,
       health: { hp: 50, maxHp: 50 },
       supply: { supplied: true, checkedOnTurn: 0 },
       disband: { pending: false, requestedOnTurn: null, requestedByPlayerId: null },
+      embarkedOnShipId: null,
       movement: { maxUnits: 10, remainingUnits: 10 },
       plannedRoute: { executeOnTurn: 0, requiresReplan: true }
     }
