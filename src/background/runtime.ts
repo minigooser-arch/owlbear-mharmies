@@ -86,7 +86,7 @@ export class BackgroundRuntime {
     }
     this.started = false;
     this.readyGeneration += 1;
-    this.readySubscriptions.clear();
+    this.clearSubscriptions(this.readySubscriptions, "ready-subscription-cleanup");
     this.trackLifecycle(() => this.closeScene());
     await this.whenIdle();
   }
@@ -184,13 +184,21 @@ export class BackgroundRuntime {
     this.movementPending = false;
     this.visibilityPending = false;
     this.turnPending = false;
-    this.sceneSubscriptions.clear();
+    this.clearSubscriptions(this.sceneSubscriptions, "scene-subscription-cleanup");
     if (this.movementTimer !== undefined) clearInterval(this.movementTimer);
     if (this.visibilityTimer !== undefined) clearInterval(this.visibilityTimer);
     if (this.turnTimer !== undefined) clearInterval(this.turnTimer);
     this.movementTimer = undefined;
     this.visibilityTimer = undefined;
     this.turnTimer = undefined;
+  }
+
+  private clearSubscriptions(manager: SubscriptionManager, context: string): void {
+    try {
+      manager.clear();
+    } catch (error) {
+      this.reportError(error, context);
+    }
   }
 
   private async runMovementQueue(): Promise<void> {
