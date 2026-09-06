@@ -61,6 +61,15 @@ export async function registerNavalInterceptionContextMenu(
           {
             key: ["metadata", METADATA_KEYS.ship, "classId"],
             value: "CRUISER"
+          },
+          {
+            key: ["metadata", METADATA_KEYS.ship, "status"],
+            value: "IN_NAVAL_BATTLE"
+          },
+          {
+            key: ["metadata", METADATA_KEYS.ship, "hp"],
+            operator: "!=",
+            value: 0
           }
         ]
       }
