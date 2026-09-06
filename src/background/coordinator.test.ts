@@ -63,6 +63,49 @@ describe("GM coordinator", () => {
     expect(write).toHaveBeenCalledWith({ connectionId: "a", epoch: 1, expiresAt: 13_000 });
   });
 
+  it("does not become coordinator until its heartbeat claim is persisted", async () => {
+    let releaseWrite: (() => void) | undefined;
+    const writeHeartbeat = vi.fn(() => new Promise<void>((resolve) => {
+      releaseWrite = resolve;
+    }));
+    const transition = vi.fn();
+    const lease = new CoordinatorLease({
+      currentConnectionId: async () => "a",
+      now: () => 10_000,
+      participants: async () => [{ connectionId: "a", role: "GM" }],
+      readHeartbeat: async () => undefined,
+      writeHeartbeat,
+      onTransition: transition
+    });
+
+    const tickWork = lease.tick();
+    await vi.waitFor(() => expect(writeHeartbeat).toHaveBeenCalledTimes(1));
+    expect(lease.isCoordinator()).toBe(false);
+    expect(transition).not.toHaveBeenCalledWith(true, "a");
+
+    releaseWrite?.();
+    await tickWork;
+    expect(lease.isCoordinator()).toBe(true);
+    expect(transition).toHaveBeenCalledWith(true, "a");
+  });
+
+  it("stays non-coordinator when persisting the heartbeat claim fails", async () => {
+    const failure = new Error("heartbeat write failed");
+    const transition = vi.fn();
+    const lease = new CoordinatorLease({
+      currentConnectionId: async () => "a",
+      now: () => 10_000,
+      participants: async () => [{ connectionId: "a", role: "GM" }],
+      readHeartbeat: async () => undefined,
+      writeHeartbeat: async () => { throw failure; },
+      onTransition: transition
+    });
+
+    await expect(lease.tick()).rejects.toBe(failure);
+    expect(lease.isCoordinator()).toBe(false);
+    expect(transition).not.toHaveBeenCalledWith(true, "a");
+  });
+
   it("never overlaps coordinator ticks and coalesces one pending tick", async () => {
     let release: (() => void) | undefined;
     let call = 0;
