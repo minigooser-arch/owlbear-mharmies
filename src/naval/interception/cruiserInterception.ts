@@ -5,7 +5,9 @@ import type {
   ShipState
 } from "../../shared/types";
 import { isInNormalBroadsideMask } from "../battle/broadsideMask";
-import { useNavalAction } from "../battle/navalRoundFlow";
+import { endNavalShipTurn, useNavalAction } from "../battle/navalRoundFlow";
+import { applyShipDamage } from "../ships/shipDamage";
+import { SHIP_CLASSES } from "../ships/shipClasses";
 
 export type CruiserInterceptionFailure =
   | "BATTLE_NOT_ACTIVE"
@@ -110,6 +112,102 @@ export function shouldTriggerCruiserInterception(
     candidateCell: input.destinationCell,
     hasLineOfSight: input.hasLineOfSight
   });
+}
+
+export interface CruiserInterceptionTriggerResult {
+  cruiserShipId: string;
+  rolledDamage: number;
+  armor: number;
+  damage: number;
+}
+
+export interface ResolveCruiserInterceptionsForStepInput {
+  battle: NavalBattleState;
+  ships: Readonly<Record<string, ShipState>>;
+  movingShipId: string;
+  sourceCell: GridCellCoord;
+  destinationCell: GridCellCoord;
+  shipCells: Readonly<Record<string, GridCellCoord>>;
+  hasLineOfSight(from: GridCellCoord, to: GridCellCoord): boolean;
+  rollD6(): number;
+}
+
+export interface ResolveCruiserInterceptionsForStepResult {
+  battle: NavalBattleState;
+  ships: Record<string, ShipState>;
+  triggered: CruiserInterceptionTriggerResult[];
+}
+
+export function resolveCruiserInterceptionsForStep(
+  input: ResolveCruiserInterceptionsForStepInput
+): ResolveCruiserInterceptionsForStepResult {
+  const movingShip = input.ships[input.movingShipId];
+  if (!movingShip || movingShip.hp <= 0) {
+    return {
+      battle: input.battle,
+      ships: { ...input.ships },
+      triggered: []
+    };
+  }
+
+  const activeCruiserIds = input.battle.initiative
+    .map((entry) => entry.shipId)
+    .filter((shipId) => input.battle.interceptions?.[shipId] !== undefined);
+  const matchingCruiserIds = activeCruiserIds.filter((cruiserId) => {
+    const cruiserCell = input.shipCells[cruiserId];
+    if (!cruiserCell) return false;
+    return shouldTriggerCruiserInterception({
+      battle: input.battle,
+      ships: input.ships,
+      cruiserId,
+      movingShipId: input.movingShipId,
+      cruiserCell,
+      sourceCell: input.sourceCell,
+      destinationCell: input.destinationCell,
+      hasLineOfSight: input.hasLineOfSight
+    });
+  });
+
+  if (matchingCruiserIds.length === 0) {
+    return {
+      battle: input.battle,
+      ships: { ...input.ships },
+      triggered: []
+    };
+  }
+
+  const ships: Record<string, ShipState> = { ...input.ships };
+  const triggered: CruiserInterceptionTriggerResult[] = [];
+
+  for (const cruiserId of matchingCruiserIds) {
+    const currentTarget = ships[input.movingShipId];
+    if (!currentTarget) continue;
+    const rolledDamage = input.rollD6() + input.rollD6();
+    const armor = SHIP_CLASSES[currentTarget.classId].armor;
+    const damage = Math.max(0, rolledDamage - armor);
+    ships[input.movingShipId] = applyShipDamage(currentTarget, damage);
+    triggered.push({
+      cruiserShipId: cruiserId,
+      rolledDamage,
+      armor,
+      damage
+    });
+  }
+
+  const prepared = structuredClone(input.battle);
+  const triggeredIds = new Set(matchingCruiserIds);
+  prepared.interceptions = Object.fromEntries(
+    Object.entries(prepared.interceptions ?? {})
+      .filter(([cruiserId]) => !triggeredIds.has(cruiserId))
+  );
+  prepared.movementRemainingByShip[input.movingShipId] = 0;
+  prepared.actionUsedByShip[input.movingShipId] = true;
+
+  return {
+    battle: endNavalShipTurn(prepared, ships, input.movingShipId),
+    ships,
+    triggered
+  };
 }
 
 export function removeCruiserInterceptionAfterDamage(
