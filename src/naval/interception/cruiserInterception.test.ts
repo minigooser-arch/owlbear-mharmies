@@ -44,6 +44,12 @@ function ships(): Record<string, ShipState> {
   };
 }
 
+function requiredShip(currentShips: Record<string, ShipState>, shipId: string): ShipState {
+  const ship = currentShips[shipId];
+  if (!ship) throw new Error(`Missing fixture ship ${shipId}`);
+  return ship;
+}
+
 const cruiserCell: GridCellCoord = { x: 5, y: 5 };
 
 function withActiveInterception(source = battle()): NavalBattleState {
@@ -52,16 +58,17 @@ function withActiveInterception(source = battle()): NavalBattleState {
     interceptions: {
       cruiser: { cruiserShipId: "cruiser", activatedRoundNumber: 3 }
     }
-  } as NavalBattleState;
+  };
 }
 
 describe("cruiser interception activation", () => {
   it("uses the cruiser action, ends remaining movement, advances the turn and stores one active zone", () => {
+    const currentShips = ships();
     const result = activateCruiserInterception({
       battle: battle(),
       cruiserId: "cruiser",
-      cruiser: ships().cruiser!,
-      ships: ships()
+      cruiser: requiredShip(currentShips, "cruiser"),
+      ships: currentShips
     });
 
     expect(result.ok).toBe(true);
@@ -85,18 +92,20 @@ describe("cruiser interception activation", () => {
 
     const inactive = battle();
     inactive.currentShipId = "enemy";
+    const currentShips = ships();
     expect(activateCruiserInterception({
       battle: inactive,
       cruiserId: "cruiser",
-      cruiser: ships().cruiser!,
-      ships: ships()
+      cruiser: requiredShip(currentShips, "cruiser"),
+      ships: currentShips
     })).toEqual({ ok: false, reason: "SHIP_NOT_ACTIVE" });
   });
 });
 
 describe("cruiser interception dynamic zone", () => {
   it("uses the current exact cruiser broadside plus current LOS", () => {
-    const cruiser = ships().cruiser!;
+    const currentShips = ships();
+    const cruiser = requiredShip(currentShips, "cruiser");
     expect(isCruiserInterceptionZoneCell({
       cruiser,
       cruiserCell,
