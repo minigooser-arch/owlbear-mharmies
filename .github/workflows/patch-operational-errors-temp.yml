@@ -1,0 +1,24 @@
+name: Temporary Operational Error Patch
+
+on:
+  push:
+    branches:
+      - fix/post-stage2-hardening
+    paths:
+      - .github/workflows/patch-operational-errors-temp.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: python scripts/patch-operational-errors-temp.py
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/background/application.ts
+          git commit -m "fix: report background operational failures"
+          git push
