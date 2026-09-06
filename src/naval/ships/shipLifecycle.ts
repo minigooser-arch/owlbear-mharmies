@@ -52,6 +52,7 @@ export function destroyShip(scene: NavalSceneState, shipId: string): DestroyShip
     Reflect.deleteProperty(battle.snapshots, shipId);
     Reflect.deleteProperty(battle.movementRemainingByShip, shipId);
     Reflect.deleteProperty(battle.actionUsedByShip, shipId);
+    if (battle.interceptions) Reflect.deleteProperty(battle.interceptions, shipId);
     if (battle.currentShipId === shipId) battle.currentShipId = null;
     if (!activeShipRemoved) battle.revision += 1;
   }
