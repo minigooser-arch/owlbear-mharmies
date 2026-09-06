@@ -41,6 +41,13 @@ export interface ArmyView {
   embarkedOnShipId?: string | null;
 }
 
+export interface ShoreBombardmentTargetView {
+  id: string;
+  name: string;
+  sideId: string;
+  sideName: string;
+}
+
 export interface ShipView {
   id: string;
   name: string;
@@ -74,6 +81,7 @@ export interface ShipView {
     sideId: string;
     sideName: string;
   }>;
+  shoreBombardmentTargets?: ShoreBombardmentTargetView[];
 }
 
 export interface NavalRequestTargetView {
