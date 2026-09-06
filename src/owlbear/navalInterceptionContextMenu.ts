@@ -11,7 +11,7 @@ export interface NavalInterceptionContextMenuContext {
 }
 
 export interface NavalInterceptionContextMenuFilterCondition {
-  key: string | readonly string[];
+  key: string | string[];
   value: unknown;
   operator?: "!=";
 }
