@@ -39,6 +39,12 @@ export function resolveCoordinatorConnectionId(
   return liveGms[0];
 }
 
+export type CoordinatorErrorReporter = (error: unknown, context: string) => void;
+
+function defaultCoordinatorErrorReporter(error: unknown, context: string): void {
+  console.error(`Letopis Armies coordinator failed: ${context}`, error);
+}
+
 export interface CoordinatorLeaseOptions {
   currentConnectionId(): Promise<string>;
   now(): number;
@@ -46,6 +52,7 @@ export interface CoordinatorLeaseOptions {
   readHeartbeat(): Promise<HeartbeatLease | undefined>;
   writeHeartbeat(lease: HeartbeatLease): Promise<void>;
   onTransition?(isCoordinator: boolean, connectionId?: string): void;
+  onError?: CoordinatorErrorReporter;
 }
 
 export class CoordinatorLease {
@@ -66,9 +73,13 @@ export class CoordinatorLease {
     if (this.intervalId !== undefined) return;
     this.active = true;
     const generation = ++this.generation;
-    void this.requestTick(generation).catch(() => undefined);
+    void this.requestTick(generation).catch((error: unknown) => {
+      this.reportError(error, "coordinator-heartbeat");
+    });
     this.intervalId = setInterval(
-      () => void this.requestTick(generation).catch(() => undefined),
+      () => void this.requestTick(generation).catch((error: unknown) => {
+        this.reportError(error, "coordinator-heartbeat");
+      }),
       1_000
     );
   }
@@ -146,6 +157,10 @@ export class CoordinatorLease {
 
   private generationIsCurrent(generation: number | undefined): boolean {
     return generation === undefined || (this.active && generation === this.generation);
+  }
+
+  private reportError(error: unknown, context: string): void {
+    (this.options.onError ?? defaultCoordinatorErrorReporter)(error, context);
   }
 
   private setCoordinator(value: boolean, connectionId?: string): void {
