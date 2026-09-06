@@ -69,12 +69,22 @@ it("registers interception right-click in the persistent background and disposes
   await vi.waitFor(() => expect(mocks.registerContextMenu).toHaveBeenCalledTimes(1));
   expect(mocks.registerContextMenu).toHaveBeenCalledWith(
     expect.objectContaining({
-      create: mocks.contextMenuCreate,
-      remove: mocks.contextMenuRemove
+      create: expect.any(Function),
+      remove: expect.any(Function)
     }),
     application,
-    expect.stringContaining("icon-1.2.png")
+    "/icon-1.2.png"
   );
+
+  const contextMenuPort = mocks.registerContextMenu.mock.calls[0]?.[0] as {
+    create(entry: unknown): unknown;
+    remove(id: string): unknown;
+  };
+  const sdkEntry = { id: "interception-test" };
+  contextMenuPort.create(sdkEntry);
+  contextMenuPort.remove("interception-test");
+  expect(mocks.contextMenuCreate).toHaveBeenCalledWith(sdkEntry);
+  expect(mocks.contextMenuRemove).toHaveBeenCalledWith("interception-test");
 
   mocks.unloadCallback()?.();
   await vi.waitFor(() => expect(removeContextMenu).toHaveBeenCalledTimes(1));
