@@ -21,6 +21,13 @@ function eligibleShipIds(
   return result;
 }
 
+function expireInterceptionForStartingShip(battle: NavalBattleState, shipId: string | null): void {
+  if (!shipId || !battle.interceptions?.[shipId]) return;
+  battle.interceptions = Object.fromEntries(
+    Object.entries(battle.interceptions).filter(([candidateId]) => candidateId !== shipId)
+  );
+}
+
 function resetPerRoundState(
   battle: NavalBattleState,
   ships: Readonly<Record<string, ShipState>>,
@@ -36,6 +43,7 @@ function resetPerRoundState(
   );
   battle.actionUsedByShip = Object.fromEntries(eligibleIds.map((shipId) => [shipId, false]));
   battle.currentShipId = eligibleIds[0] ?? null;
+  expireInterceptionForStartingShip(battle, battle.currentShipId);
 }
 
 function requireActiveShip(battle: NavalBattleState, shipId: string): void {
@@ -56,6 +64,7 @@ function finishTurnMutable(
   const nextShipId = eligibleIds.find((candidate) => !completed.has(candidate));
   if (nextShipId) {
     next.currentShipId = nextShipId;
+    expireInterceptionForStartingShip(next, nextShipId);
     return;
   }
 
