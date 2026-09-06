@@ -114,6 +114,18 @@ function viewer(kind: "GM" | "RED_LEADER" | "RED_MEMBER" | "BLUE_LEADER"): Inter
   };
 }
 
+function requiredCruiser(currentScene: NavalSceneState): ShipState {
+  const cruiser = currentScene.ships.cruiser;
+  if (!cruiser) throw new Error("Missing cruiser fixture");
+  return cruiser;
+}
+
+function requiredBattle(currentScene: NavalSceneState): NavalBattleState {
+  const activeBattle = currentScene.activeNavalBattle;
+  if (!activeBattle) throw new Error("Missing active naval battle fixture");
+  return activeBattle;
+}
+
 const basePositions: Record<string, Vector2> = {
   cruiser: { x: 550, y: 550 },
   blocker: { x: 1050, y: 1050 }
@@ -156,7 +168,7 @@ describe("cruiser interception private overlay", () => {
     await service.reconcile({ dpi: 100, scene: currentScene, shipPositions: basePositions }, viewer("GM"));
     expect(overlayCells(port)).toEqual(["6,5", "7,5"]);
 
-    currentScene.ships.cruiser!.facing = "EAST";
+    requiredCruiser(currentScene).facing = "EAST";
     await service.reconcile({ dpi: 100, scene: currentScene, shipPositions: basePositions }, viewer("GM"));
     expect(overlayCells(port)).toEqual(["5,3", "5,7"]);
   });
@@ -187,7 +199,7 @@ describe("cruiser interception private overlay", () => {
     await service.reconcile({ dpi: 100, scene: currentScene, shipPositions: basePositions }, viewer("GM"));
     expect(port.items.length).toBeGreaterThan(0);
 
-    currentScene.activeNavalBattle!.interceptions = {};
+    requiredBattle(currentScene).interceptions = {};
     await service.reconcile({ dpi: 100, scene: currentScene, shipPositions: basePositions }, viewer("GM"));
     expect(port.items).toEqual([]);
   });
