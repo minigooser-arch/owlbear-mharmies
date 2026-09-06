@@ -21,6 +21,7 @@ import { annexingStateForEntry } from "../annexation/annexationRules";
 import { MapOverlayService } from "../terrain/mapOverlayService";
 import { HealthOverlayService } from "../health/healthOverlayService";
 import { NavalShipOverlayService } from "../naval/ships/navalShipOverlayService";
+import { InterceptionOverlayService } from "../naval/interception/interceptionOverlayService";
 import { ShipRouteOverlayService } from "../naval/ships/shipRouteOverlayService";
 import { SHIP_CLASSES } from "../naval/ships/shipClasses";
 import { rotationForFacing } from "../naval/ships/shipRotation";
@@ -217,6 +218,7 @@ export function localOverlayIds(items: readonly SceneItemRecord[]): string[] {
     METADATA_KEYS.mapOverlay,
     METADATA_KEYS.healthOverlay,
     METADATA_KEYS.navalShipOverlay,
+    METADATA_KEYS.interceptionOverlay,
     METADATA_KEYS.mapBrushPreview,
     METADATA_KEYS.navalBattleAreaPreview
   ];
@@ -1315,6 +1317,40 @@ export class ProductionEngine {
       }),
       visibleShipIds
     );
+
+    const interceptionViewer = { isGM: role === "GM", leaderSideIds };
+    const activeInterceptions = Object.values(scene.activeNavalBattle?.interceptions ?? {});
+    const canViewActiveInterception = role === "GM" || activeInterceptions.some((interception) => {
+      const cruiser = (scene.ships ?? {})[interception.cruiserShipId];
+      return cruiser !== undefined && leaderSideIds.includes(cruiser.sideId);
+    });
+    const interceptionOverlayService = new InterceptionOverlayService(overlayPort);
+    if (
+      scene.activeNavalBattle?.status !== "ACTIVE" ||
+      activeInterceptions.length === 0 ||
+      !canViewActiveInterception
+    ) {
+      await interceptionOverlayService.reconcile(undefined, interceptionViewer);
+    } else {
+      try {
+        const shipPositions = Object.fromEntries(
+          Object.keys(scene.ships ?? {}).flatMap((shipId) => {
+            const item = sceneItemById.get(shipId);
+            return item ? [[shipId, item.position] as const] : [];
+          })
+        );
+        await interceptionOverlayService.reconcile(
+          {
+            dpi: await this.grid.getDpi(),
+            scene: scene as import("../shared/types").NavalSceneState,
+            shipPositions
+          },
+          interceptionViewer
+        );
+      } catch {
+        // Preserve the last valid authorized interception overlay while grid geometry is unavailable.
+      }
+    }
 
     const mapOverlayService = new MapOverlayService(overlayPort);
     if (role !== "GM") {
