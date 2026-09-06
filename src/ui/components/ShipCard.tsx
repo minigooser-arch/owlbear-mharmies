@@ -237,6 +237,16 @@ export function ShipCard({
               Повернуть вправо
             </button>
           </div>
+          {ship.classId === "CRUISER" && (
+            <button
+              className="button primary wide"
+              type="button"
+              disabled={ship.navalActionUsed === true}
+              onClick={() => onAction({ type: "NAVAL_ACTIVATE_INTERCEPTION", shipId: ship.id })}
+            >
+              Перехват
+            </button>
+          )}
           {ship.classId === "HOSPITAL" && hospitalSupportTargets.length > 0 && (
             <div className="ship-hospital-support" aria-label={`Поддержка госпитального судна ${ship.name}`}>
               <select
