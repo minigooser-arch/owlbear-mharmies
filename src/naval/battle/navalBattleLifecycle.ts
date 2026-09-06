@@ -121,6 +121,7 @@ export function completeNavalBattle(scene: NavalSceneState): NavalSceneState {
   const completedBattle = structuredClone(activeBattle);
   completedBattle.status = "COMPLETED";
   completedBattle.currentShipId = null;
+  completedBattle.interceptions = {};
   completedBattle.revision += 1;
 
   for (const shipId of activeBattle.participantShipIds) {
