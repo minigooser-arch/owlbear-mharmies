@@ -158,7 +158,7 @@ describe("cruiser interception private overlay", () => {
 
     currentScene.ships.cruiser!.facing = "EAST";
     await service.reconcile({ dpi: 100, scene: currentScene, shipPositions: basePositions }, viewer("GM"));
-    expect(overlayCells(port)).toEqual(["5,7"]);
+    expect(overlayCells(port)).toEqual(["5,3", "5,7"]);
   });
 
   it("recomputes LOS from current ship positions instead of caching zone cells", async () => {
