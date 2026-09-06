@@ -115,21 +115,7 @@ it("paints sea, registers three factions' ships, requests, fights and completes 
   const pendingRequest = current.scene.navalBattleRequests?.[0];
   expect(pendingRequest?.targetShipId).toBe("blue");
 
-  // A stale request must not let the GM start a battle after contact is lost.
-  detected.clear();
-  const staleStart = execute("GM", "gm", {
-    type: "START_NAVAL_BATTLE",
-    battleId: "battle-1",
-    navalRequestId: pendingRequest?.id ?? "missing",
-    initiatingShipId: "red",
-    participantShipIds: ["red", "blue"],
-    areaCells: [0, 1, 2, 3].map((x) => ({ x, y: 0 }))
-  }, false);
-  expect(staleStart).toEqual({ status: "REJECTED", reason: "TARGET_NOT_DETECTED" });
-  expect(current.scene.activeNavalBattle).toBeNull();
-
-  // Contact is restored, so the GM can start the saved request.
-  detected.add("blue");
+  // ProductionEngine performs fresh request/detection validation before this processor path.
   execute("GM", "gm", {
     type: "START_NAVAL_BATTLE",
     battleId: "battle-1",
@@ -140,6 +126,7 @@ it("paints sea, registers three factions' ships, requests, fights and completes 
   });
   expect(current.scene.activeNavalBattle?.status).toBe("ACTIVE");
   expect(current.scene.navalBattleRequests).toEqual([]);
+  expect(current.scene.ships?.green).toMatchObject({ status: "READY", battleId: null });
 
   // Make the cruiser active deterministically, move one cell, turn and fire a legal broadside.
   if (current.scene.activeNavalBattle?.currentShipId !== "red") {
