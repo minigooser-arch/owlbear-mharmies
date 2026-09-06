@@ -15,6 +15,11 @@ export function confirmNavalShipExit(
 
   const next = structuredClone(battle);
   next.exitedShipIds.push(shipId);
+  if (next.interceptions?.[shipId]) {
+    next.interceptions = Object.fromEntries(
+      Object.entries(next.interceptions).filter(([candidateId]) => candidateId !== shipId)
+    );
+  }
   next.revision += 1;
   return endNavalShipTurn(next, ships, shipId);
 }
