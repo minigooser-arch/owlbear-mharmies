@@ -30,8 +30,8 @@ function battle(): NavalBattleState {
     snapshots: {},
     initiative: [
       { shipId: "attacker", initialRoll: 20, bonus: 2, total: 22, tieBreakRolls: [] },
-      { shipId: "cruiser", initialRoll: 15, bonus: 2, total: 17, tieBreakRolls: [] },
-      { shipId: "next", initialRoll: 10, bonus: 0, total: 10, tieBreakRolls: [] }
+      { shipId: "next", initialRoll: 18, bonus: 0, total: 18, tieBreakRolls: [] },
+      { shipId: "cruiser", initialRoll: 15, bonus: 2, total: 17, tieBreakRolls: [] }
     ],
     roundNumber: 4,
     currentShipId: "attacker",
@@ -141,6 +141,7 @@ describe("interception removal after damage", () => {
 
     expect(result.state.scene.ships?.cruiser?.hp).toBe(20);
     const active = result.state.scene.activeNavalBattle;
+    expect(active?.currentShipId).toBe("next");
     expect(active?.interceptions?.cruiser).toBeUndefined();
     expect(active?.events).toContainEqual(expect.objectContaining({
       type: "INTERCEPTION_REMOVED_BY_DAMAGE",
