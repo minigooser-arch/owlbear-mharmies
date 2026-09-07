@@ -22,7 +22,7 @@ it("offers the three strategic brush sizes and an explicit eraser target", () =>
   expect(screen.getByRole("button", { name: "Начать рисовать" })).toBeInTheDocument();
 });
 
-it("updates the live brush immediately when its size changes", () => {
+it("updates brush size metadata without requesting tool activation again", () => {
   const onAction = vi.fn();
   render(<MapEditorPage terrain={DEFAULT_TERRAIN} sides={sides} states={states} onAction={onAction} />);
 
@@ -36,7 +36,7 @@ it("updates the live brush immediately when its size changes", () => {
 
   expect(screen.getByRole("button", { name: "3×3" })).toHaveClass("active");
   expect(onAction).toHaveBeenLastCalledWith(expect.objectContaining({
-    type: "OPEN_MAP_BRUSH",
+    type: "UPDATE_MAP_BRUSH_SETTINGS",
     settings: expect.objectContaining({ size: 3 })
   }));
   expect(onAction).toHaveBeenCalledTimes(2);
