@@ -59,7 +59,6 @@ export function MapEditorPage({ terrain, sides, states, onAction }: MapEditorPag
   const terrainTypes = useMemo(() => Object.values(terrain.types).sort((a, b) => a.name.localeCompare(b.name, "ru")), [terrain]);
   const [mode, setMode] = useState<MapBrushUiSettings["mode"]>("TERRAIN");
   const [size, setSize] = useState<MapBrushUiSettings["size"]>(1);
-  const [brushActive, setBrushActive] = useState(false);
   const [terrainId, setTerrainId] = useState(terrain.defaultTerrainId);
   const [sideId, setSideId] = useState(sides[0]?.id ?? "");
   const [stateId, setStateId] = useState(states[0]?.id ?? "");
@@ -98,15 +97,12 @@ export function MapEditorPage({ terrain, sides, states, onAction }: MapEditorPag
 
   const applyBrush = () => {
     if (!canApply) return;
-    setBrushActive(true);
     onAction({ type: "OPEN_MAP_BRUSH", settings: brushSettings() });
   };
 
   const selectBrushSize = (brushSize: MapBrushUiSettings["size"]) => {
     setSize(brushSize);
-    if (brushActive && canApply) {
-      onAction({ type: "OPEN_MAP_BRUSH", settings: brushSettings(brushSize) });
-    }
+    onAction({ type: "UPDATE_MAP_BRUSH_SETTINGS", settings: brushSettings(brushSize) });
   };
 
   return <section aria-labelledby="map-editor-title">

@@ -188,6 +188,7 @@ export type UiCommand =
   | { type: "EDIT_SHIP_ROUTE"; shipId: string }
   | { type: "OPEN_TRANSPORT_LANDING"; shipId: string; armyId: string }
   | { type: "OPEN_MAP_BRUSH"; settings: MapBrushUiSettings }
+  | { type: "UPDATE_MAP_BRUSH_SETTINGS"; settings: MapBrushUiSettings }
   | { type: "OPEN_NAVAL_BATTLE_AREA"; requestId: string }
   | {
       type: "START_NAVAL_BATTLE_FROM_REQUEST";
