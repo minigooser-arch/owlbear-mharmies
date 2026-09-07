@@ -101,3 +101,45 @@ it("retries the same deterministic stroke once with the coordinator actual revis
   });
   expect(sent[1]?.requestId).not.toBe(sent[0]?.requestId);
 });
+
+it("converges across repeated revision conflicts without changing the stroke", async () => {
+  const sent: ArmyCommand[] = [];
+  const current = scene();
+  const service = new MapBrushToolService(servicePort(current), {
+    send: async (command) => {
+      sent.push(command);
+      const nextRevision = [8, 9, 10][sent.length - 1];
+      if (nextRevision !== undefined) {
+        return {
+          protocolVersion: 4,
+          requestId: command.requestId,
+          status: "CONFLICT",
+          actualRevision: nextRevision,
+          coordinatorConnectionId: "coord",
+          recipientConnectionId: "c"
+        };
+      }
+      return {
+        protocolVersion: 4,
+        requestId: command.requestId,
+        status: "ACCEPTED",
+        coordinatorConnectionId: "coord",
+        recipientConnectionId: "c"
+      };
+    }
+  });
+
+  await service.commitStroke({
+    mode: "TERRAIN", size: 5, terrainId: "sea", factionOperation: "ADD", impassable: true, eraserTarget: "TERRAIN"
+  }, [{ x: 10, y: 12 }, { x: 11, y: 12 }]);
+
+  expect(sent.map((command) => command.expectedRevision)).toEqual([7, 8, 9, 10]);
+  expect(sent.map((command) => command.requestId).length).toBe(new Set(sent.map((command) => command.requestId)).size);
+  for (const command of sent) {
+    expect(command).toMatchObject({
+      type: "SET_TERRAIN_CELLS",
+      terrainId: "sea",
+      cells: [{ x: 10, y: 12 }, { x: 11, y: 12 }]
+    });
+  }
+});
