@@ -1,0 +1,77 @@
+name: Temporary map brush review fix
+
+on:
+  push:
+    branches:
+      - fix/map-brush-live-regression
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+      - name: Apply review fix
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace_one(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f"needle not found in {path}: {old[:80]!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          replace_one(
+              "src/ui/state/useExtensionState.ts",
+              '  | { type: "OPEN_MAP_BRUSH"; settings: MapBrushUiSettings }\n',
+              '  | { type: "OPEN_MAP_BRUSH"; settings: MapBrushUiSettings }\n  | { type: "UPDATE_MAP_BRUSH_SETTINGS"; settings: MapBrushUiSettings }\n'
+          )
+
+          replace_one(
+              "src/ui/pages/MapEditorPage.tsx",
+              '  const [brushActive, setBrushActive] = useState(false);\n',
+              ''
+          )
+          replace_one(
+              "src/ui/pages/MapEditorPage.tsx",
+              '''  const applyBrush = () => {\n    if (!canApply) return;\n    setBrushActive(true);\n    onAction({ type: "OPEN_MAP_BRUSH", settings: brushSettings() });\n  };\n\n  const selectBrushSize = (brushSize: MapBrushUiSettings["size"]) => {\n    setSize(brushSize);\n    if (brushActive && canApply) {\n      onAction({ type: "OPEN_MAP_BRUSH", settings: brushSettings(brushSize) });\n    }\n  };\n''',
+              '''  const applyBrush = () => {\n    if (!canApply) return;\n    onAction({ type: "OPEN_MAP_BRUSH", settings: brushSettings() });\n  };\n\n  const selectBrushSize = (brushSize: MapBrushUiSettings["size"]) => {\n    setSize(brushSize);\n    onAction({ type: "UPDATE_MAP_BRUSH_SETTINGS", settings: brushSettings(brushSize) });\n  };\n'''
+          )
+
+          replace_one(
+              "src/owlbear/extensionServices.ts",
+              '      if (command.type === "OPEN_MAP_BRUSH") {\n',
+              '      if (command.type === "OPEN_MAP_BRUSH" || command.type === "UPDATE_MAP_BRUSH_SETTINGS") {\n'
+          )
+          replace_one(
+              "src/owlbear/extensionServices.ts",
+              '''        await OBR.tool.activateTool(MAP_BRUSH_TOOL_ID);\n        await OBR.tool.activateMode(MAP_BRUSH_TOOL_ID, MAP_BRUSH_TOOL_MODE_ID);\n        return undefined;\n''',
+              '''        if (command.type === "OPEN_MAP_BRUSH") {\n          await OBR.tool.activateTool(MAP_BRUSH_TOOL_ID);\n          await OBR.tool.activateMode(MAP_BRUSH_TOOL_ID, MAP_BRUSH_TOOL_MODE_ID);\n        }\n        return undefined;\n'''
+          )
+
+          test = '''\n  it("updates map brush metadata without activating the tool", async () => {\n    const running = await startServices();\n    serviceHarness.sdk.tool.setMetadata.mockClear();\n    serviceHarness.sdk.tool.activateTool.mockClear();\n    serviceHarness.sdk.tool.activateMode.mockClear();\n\n    await running.send({\n      type: "UPDATE_MAP_BRUSH_SETTINGS",\n      settings: {\n        mode: "TERRAIN", size: 5, terrainId: "sea",\n        factionOperation: "ADD", impassable: true, eraserTarget: "TERRAIN"\n      }\n    });\n\n    expect(serviceHarness.sdk.tool.setMetadata).toHaveBeenCalledWith(MAP_BRUSH_TOOL_ID, expect.objectContaining({\n      [MAP_BRUSH_SIZE_KEY]: 5,\n      [MAP_BRUSH_TERRAIN_ID_KEY]: "sea"\n    }));\n    expect(serviceHarness.sdk.tool.activateTool).not.toHaveBeenCalled();\n    expect(serviceHarness.sdk.tool.activateMode).not.toHaveBeenCalled();\n    expect(serviceHarness.adapter.send).not.toHaveBeenCalled();\n  });\n\n'''
+          replace_one(
+              "src/owlbear/extensionServices.test.ts",
+              '  it("activates the route tool with the army and previous tool metadata", async () => {\n',
+              test + '  it("activates the route tool with the army and previous tool metadata", async () => {\n'
+          )
+          PY
+      - name: Commit fix
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/ui/state/useExtensionState.ts src/ui/pages/MapEditorPage.tsx src/owlbear/extensionServices.ts src/owlbear/extensionServices.test.ts
+          git commit -m "fix: update brush metadata without stealing tool focus"
+          git push
