@@ -11,11 +11,9 @@ function scene(): SceneState {
   };
 }
 
-it("sends one terrain batch command for one brush stroke", async () => {
-  const sent: ArmyCommand[] = [];
-  const current = scene();
-  const service = new MapBrushToolService({
-    getPlayerIdentity: async () => ({ id: "gm", role: "GM", connectionId: "c" }),
+function servicePort(current: SceneState) {
+  return {
+    getPlayerIdentity: async () => ({ id: "gm", role: "GM" as const, connectionId: "c" }),
     getGridDpi: async () => 100,
     show: async () => undefined,
     getSceneMetadata: async () => ({ [METADATA_KEYS.scene]: current }),
@@ -23,7 +21,13 @@ it("sends one terrain batch command for one brush stroke", async () => {
     getSceneItems: async () => [], updateSceneItem: async () => undefined,
     getLocalItems: async () => [], addLocalItems: async () => undefined, updateLocalItems: async () => undefined,
     deleteLocalItems: async () => undefined, createId: () => crypto.randomUUID()
-  }, {
+  };
+}
+
+it("sends one terrain batch command for one brush stroke", async () => {
+  const sent: ArmyCommand[] = [];
+  const current = scene();
+  const service = new MapBrushToolService(servicePort(current), {
     send: async (command) => {
       sent.push(command);
       return { protocolVersion: 4, requestId: command.requestId, status: "ACCEPTED", coordinatorConnectionId: "coord", recipientConnectionId: "c" };
@@ -40,23 +44,60 @@ it("sends one terrain batch command for one brush stroke", async () => {
   });
 });
 
-
 it("sends de-facto state painting as one batch command", async () => {
   const sent: ArmyCommand[] = [];
   const current = scene();
-  const service = new MapBrushToolService({
-    getPlayerIdentity: async () => ({ id: "gm", role: "GM", connectionId: "c" }),
-    getGridDpi: async () => 100, show: async () => undefined,
-    getSceneMetadata: async () => ({ [METADATA_KEYS.scene]: current }), patchSceneMetadata: async () => undefined,
-    getSceneItems: async () => [], updateSceneItem: async () => undefined,
-    getLocalItems: async () => [], addLocalItems: async () => undefined, updateLocalItems: async () => undefined,
-    deleteLocalItems: async () => undefined, createId: () => crypto.randomUUID()
-  }, {
-    send: async (command) => { sent.push(command); return { protocolVersion: 4, requestId: command.requestId, status: "ACCEPTED", coordinatorConnectionId: "coord", recipientConnectionId: "c" }; }
+  const service = new MapBrushToolService(servicePort(current), {
+    send: async (command) => {
+      sent.push(command);
+      return { protocolVersion: 4, requestId: command.requestId, status: "ACCEPTED", coordinatorConnectionId: "coord", recipientConnectionId: "c" };
+    }
   });
+
   await service.commitStroke({
     mode: "DEFACTO_STATE", size: 3, terrainId: "plain", stateId: "russia-state",
     factionOperation: "ADD", impassable: true, eraserTarget: "TERRAIN"
   }, [{ x: 4, y: 5 }]);
+
   expect(sent[0]).toMatchObject({ type: "SET_DEFACTO_STATE_CELLS", stateId: "russia-state", cells: [{ x: 4, y: 5 }] });
+});
+
+it("retries the same deterministic stroke once with the coordinator actual revision", async () => {
+  const sent: ArmyCommand[] = [];
+  const current = scene();
+  const service = new MapBrushToolService(servicePort(current), {
+    send: async (command) => {
+      sent.push(command);
+      if (sent.length === 1) {
+        return {
+          protocolVersion: 4,
+          requestId: command.requestId,
+          status: "CONFLICT",
+          actualRevision: 8,
+          coordinatorConnectionId: "coord",
+          recipientConnectionId: "c"
+        };
+      }
+      return {
+        protocolVersion: 4,
+        requestId: command.requestId,
+        status: "ACCEPTED",
+        coordinatorConnectionId: "coord",
+        recipientConnectionId: "c"
+      };
+    }
+  });
+
+  await service.commitStroke({
+    mode: "TERRAIN", size: 1, terrainId: "sea", factionOperation: "ADD", impassable: true, eraserTarget: "TERRAIN"
+  }, [{ x: 10, y: 12 }]);
+
+  expect(sent).toHaveLength(2);
+  expect(sent[0]).toMatchObject({
+    type: "SET_TERRAIN_CELLS", expectedRevision: 7, terrainId: "sea", cells: [{ x: 10, y: 12 }]
+  });
+  expect(sent[1]).toMatchObject({
+    type: "SET_TERRAIN_CELLS", expectedRevision: 8, terrainId: "sea", cells: [{ x: 10, y: 12 }]
+  });
+  expect(sent[1]?.requestId).not.toBe(sent[0]?.requestId);
 });

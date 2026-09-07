@@ -109,15 +109,19 @@ export class MapBrushToolService implements MapBrushToolPort {
     ]);
     if (identity.role !== "GM") throw new MapBrushAuthorizationError("GM_ONLY");
     const payload = commandPayload(settings, cells.map((cell) => ({ ...cell })));
-    const command = {
+    const buildCommand = (expectedRevision: number): ArmyCommand => ({
       protocolVersion: COMMAND_PROTOCOL_VERSION,
       requestId: crypto.randomUUID(),
       senderPlayerId: identity.id,
       senderConnectionId: identity.connectionId,
-      expectedRevision: scene.revision,
+      expectedRevision,
       ...payload
-    } as ArmyCommand;
-    const ack = await this.gateway.send(command);
+    } as ArmyCommand);
+
+    let ack = await this.gateway.send(buildCommand(scene.revision));
+    if (ack.status === "CONFLICT" && Number.isInteger(ack.actualRevision) && (ack.actualRevision ?? -1) >= 0) {
+      ack = await this.gateway.send(buildCommand(ack.actualRevision as number));
+    }
     if (ack.status === "REJECTED") throw new MapBrushAuthorizationError(ack.reason ?? "INVALID_COMMAND");
     if (ack.status === "CONFLICT") throw new MapBrushAuthorizationError("REVISION_CONFLICT");
   }
