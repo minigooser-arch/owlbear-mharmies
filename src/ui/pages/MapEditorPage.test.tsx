@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { DEFAULT_TERRAIN } from "../../shared/constants";
 import type { Side, StateEntity } from "../../shared/types";
@@ -20,6 +20,26 @@ it("offers the three strategic brush sizes and an explicit eraser target", () =>
   expect(screen.getByRole("button", { name: "5×5" })).toBeInTheDocument();
   expect(screen.getByLabelText("Режим кисти")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Начать рисовать" })).toBeInTheDocument();
+});
+
+it("updates the live brush immediately when its size changes", () => {
+  const onAction = vi.fn();
+  render(<MapEditorPage terrain={DEFAULT_TERRAIN} sides={sides} states={states} onAction={onAction} />);
+
+  fireEvent.click(screen.getByRole("button", { name: "Начать рисовать" }));
+  expect(onAction).toHaveBeenLastCalledWith(expect.objectContaining({
+    type: "OPEN_MAP_BRUSH",
+    settings: expect.objectContaining({ size: 1 })
+  }));
+
+  fireEvent.click(screen.getByRole("button", { name: "3×3" }));
+
+  expect(screen.getByRole("button", { name: "3×3" })).toHaveClass("active");
+  expect(onAction).toHaveBeenLastCalledWith(expect.objectContaining({
+    type: "OPEN_MAP_BRUSH",
+    settings: expect.objectContaining({ size: 3 })
+  }));
+  expect(onAction).toHaveBeenCalledTimes(2);
 });
 
 it("offers a built-in sea terrain that can be painted before ship registration", () => {
