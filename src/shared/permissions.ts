@@ -21,7 +21,8 @@ export type AuthorizationResult =
         | "SHIP_NOT_FOUND"
         | "SIDE_NOT_FOUND"
         | "NOT_FACTION_MEMBER"
-        | "SENDER_MISMATCH";
+        | "SENDER_MISMATCH"
+        | "BUILT_IN_TERRAIN_REQUIRED";
     };
 
 function ledBy(context: AuthorizationContext, sideId: string): AuthorizationResult {
@@ -40,6 +41,21 @@ export function authorizeArmyCommand(
   if (command.senderPlayerId !== context.playerId) {
     return { allowed: false, reason: "SENDER_MISMATCH" };
   }
+
+  if (
+    command.type === "DELETE_TERRAIN_TYPE" &&
+    command.terrainId === "sea"
+  ) {
+    return { allowed: false, reason: "BUILT_IN_TERRAIN_REQUIRED" };
+  }
+  if (
+    command.type === "UPDATE_TERRAIN_TYPE" &&
+    command.terrainId === "sea" &&
+    command.patch.enabled === false
+  ) {
+    return { allowed: false, reason: "BUILT_IN_TERRAIN_REQUIRED" };
+  }
+
   if (context.role === "GM") return { allowed: true };
 
   if (command.type === "ADD_SIDE_PLAYER" || command.type === "REMOVE_SIDE_PLAYER") {

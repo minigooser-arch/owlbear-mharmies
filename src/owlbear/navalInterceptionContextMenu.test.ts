@@ -22,7 +22,7 @@ function harness() {
 }
 
 describe("naval interception Owlbear context menu", () => {
-  it("registers a right-click action restricted to exactly one registered cruiser", async () => {
+  it("registers a right-click action restricted to a living cruiser in naval battle", async () => {
     const test = harness();
     const dispose = await registerNavalInterceptionContextMenu(
       test.port,
@@ -40,7 +40,9 @@ describe("naval interception Owlbear context menu", () => {
           max: 1,
           every: [
             { key: ["metadata", METADATA_KEYS.ship], operator: "!=", value: undefined },
-            { key: ["metadata", METADATA_KEYS.ship, "classId"], value: "CRUISER" }
+            { key: ["metadata", METADATA_KEYS.ship, "classId"], value: "CRUISER" },
+            { key: ["metadata", METADATA_KEYS.ship, "status"], value: "IN_NAVAL_BATTLE" },
+            { key: ["metadata", METADATA_KEYS.ship, "hp"], operator: "!=", value: 0 }
           ]
         }
       }]

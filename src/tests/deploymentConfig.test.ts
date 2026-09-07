@@ -1,9 +1,14 @@
+import { execFileSync } from "node:child_process";
 import {
   existsSync,
+  mkdtempSync,
   readFileSync,
   readdirSync,
+  rmSync,
+  writeFileSync,
   type Dirent
 } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { inflateSync } from "node:zlib";
@@ -13,6 +18,7 @@ import packageLock from "../../package-lock.json";
 import packageJson from "../../package.json";
 import manifest from "../../public/manifest.json";
 
+const rootDir = fileURLToPath(new URL("../../", import.meta.url));
 const iconPath = new URL("../../public/icon-1.2.png", import.meta.url);
 
 interface DecodedRgbaPng {
@@ -93,22 +99,49 @@ function sourceFiles(directory: string): string[] {
   });
 }
 
-it("publishes one cache-busted version 1.2 configuration", async () => {
+it("keeps the source manifest and package versions aligned without hard-coding a release number", async () => {
   const loadedConfig = await loadConfigFromFile({
     command: "build",
     mode: "production"
   });
 
   expect(loadedConfig?.config.base).toBe("/owlbear-mharmies/");
-  expect(manifest.version).toBe("1.2.0");
   expect(manifest.manifest_version).toBe(1);
   expect(manifest.version).toBe(packageJson.version);
-  expect(packageLock.version).toBe("1.2.0");
-  expect(packageLock.packages[""].version).toBe("1.2.0");
+  expect(packageLock.version).toBe(packageJson.version);
+  expect(packageLock.packages[""].version).toBe(packageJson.version);
   expect(manifest.icon).toMatch(/icon-1\.2\.png$/);
   expect(manifest.action.icon).toMatch(/icon-1\.2\.png$/);
-  expect(manifest.action.popover).toMatch(/index\.html\?v=1\.2\.0$/);
-  expect(manifest.background_url).toMatch(/background\.html\?v=1\.2\.0$/);
+  expect(new URL(manifest.action.popover).searchParams.get("v")).toBe(packageJson.version);
+  expect(new URL(manifest.background_url).searchParams.get("v")).toBe(packageJson.version);
+  expect(packageJson.scripts.build).toContain("stamp-manifest.mjs");
+});
+
+it("stamps built entrypoints with a deployment-specific GitHub SHA", () => {
+  const temporaryDirectory = mkdtempSync(join(tmpdir(), "letopis-manifest-"));
+  const manifestPath = join(temporaryDirectory, "manifest.json");
+  const deploymentSha = "0123456789abcdef0123456789abcdef01234567";
+  writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+
+  try {
+    execFileSync(
+      process.execPath,
+      [join(rootDir, "scripts", "stamp-manifest.mjs"), manifestPath],
+      {
+        cwd: rootDir,
+        env: { ...process.env, GITHUB_SHA: deploymentSha },
+        stdio: "pipe"
+      }
+    );
+    const stamped = JSON.parse(readFileSync(manifestPath, "utf8")) as typeof manifest;
+    const expectedToken = deploymentSha.slice(0, 12);
+
+    expect(stamped.version).toBe(manifest.version);
+    expect(new URL(stamped.action.popover).searchParams.get("v")).toBe(expectedToken);
+    expect(new URL(stamped.background_url).searchParams.get("v")).toBe(expectedToken);
+  } finally {
+    rmSync(temporaryDirectory, { recursive: true, force: true });
+  }
 });
 
 it("ships a square RGBA sword icon with transparent corners", () => {

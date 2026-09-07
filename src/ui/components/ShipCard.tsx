@@ -155,6 +155,17 @@ export function ShipCard({
   const routeUnavailable = destroyed || inBattle || ship.plannedRouteCellCount > 0 || ship.movementRemaining <= 0;
   const canControlTactical = canPlanRoute && !destroyed && !exited && inBattle && ship.isCurrentNavalTurn === true;
   const canConfirmExit = isGM && !destroyed && !exited && inBattle && ship.isCurrentNavalTurn === true;
+  const broadsideTargets = ship.broadsideTargets ?? [];
+  const [broadsideTargetId, setBroadsideTargetId] = useState("");
+  const selectedBroadsideTargetId = broadsideTargets.some((target) => target.id === broadsideTargetId)
+    ? broadsideTargetId
+    : (broadsideTargets[0]?.id ?? "");
+  const selectedBroadsideTarget = broadsideTargets.find((target) => target.id === selectedBroadsideTargetId);
+  const canUseBroadside =
+    canControlTactical &&
+    ship.normalDice > 0 &&
+    ship.navalActionUsed !== true &&
+    selectedBroadsideTarget !== undefined;
   const hospitalSupportTargets = ship.hospitalSupportTargets ?? [];
   const [hospitalTargetId, setHospitalTargetId] = useState("");
   const selectedHospitalTargetId = hospitalSupportTargets.some((target) => target.id === hospitalTargetId)
@@ -260,6 +271,43 @@ export function ShipCard({
               Повернуть вправо
             </button>
           </div>
+          {ship.normalDice > 0 && broadsideTargets.length > 0 && (
+            <div className="ship-hospital-support ship-broadside-control" aria-label={`Бортовой залп ${ship.name}`}>
+              <select
+                aria-label={`Цель бортового залпа ${ship.name}`}
+                value={selectedBroadsideTargetId}
+                onChange={(event) => setBroadsideTargetId(event.target.value)}
+              >
+                {broadsideTargets.map((target) => (
+                  <option key={target.id} value={target.id}>{target.name} — {target.sideName}</option>
+                ))}
+              </select>
+              <button
+                className="button primary wide"
+                type="button"
+                disabled={!canUseBroadside}
+                onClick={() => {
+                  if (!canUseBroadside || !selectedBroadsideTarget) return;
+                  const relation = relations[ship.sideId]?.[selectedBroadsideTarget.sideId];
+                  const friendlyFireConfirmed = ship.sideId === selectedBroadsideTarget.sideId || relation === "ALLY";
+                  if (
+                    friendlyFireConfirmed &&
+                    !window.confirm(
+                      `Цель «${selectedBroadsideTarget.name}» относится к своей или союзной стороне. Подтвердить бортовой залп?`
+                    )
+                  ) return;
+                  onAction({
+                    type: "NAVAL_BROADSIDE_ATTACK",
+                    shipId: ship.id,
+                    targetShipId: selectedBroadsideTarget.id,
+                    friendlyFireConfirmed
+                  });
+                }}
+              >
+                Бортовой залп ({ship.normalDice}d6)
+              </button>
+            </div>
+          )}
           {ship.classId === "CRUISER" && (
             <button
               className="button primary wide"

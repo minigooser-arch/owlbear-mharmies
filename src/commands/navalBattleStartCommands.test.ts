@@ -34,7 +34,7 @@ function sceneFixture(): NavalSceneState {
     },
     gridMap: { version: 1, revision: 0, cells: {} },
     wars: [],
-    turn: { ...structuredClone(DEFAULT_TURN_STATE), turnNumber: 3, phase: "MOVEMENT" },
+    turn: { ...structuredClone(DEFAULT_TURN_STATE), turnNumber: 3, phase: "POST_MOVEMENT" },
     ships: {
       "red-ship": { ...createRegisteredShip("red", "CRUISER", "EAST") },
       "blue-ship": { ...createRegisteredShip("blue", "BATTLESHIP", "WEST") }
@@ -62,30 +62,37 @@ function rawStartCommand(senderPlayerId = "gm", senderConnectionId = "gm-connect
   };
 }
 
-it("starts a precomputed naval battle from authoritative ship positions and consumes the request", () => {
+function gmState() {
+  return {
+    scene: sceneFixture(),
+    armies: {},
+    barriers: {},
+    items: {},
+    positions: {
+      "red-ship": { x: 50, y: 50 },
+      "blue-ship": { x: 150, y: 50 }
+    }
+  };
+}
+
+function processor() {
+  return new CommandProcessor(
+    () => new Date("2026-09-04T09:00:00.000Z"),
+    (position) => ({ x: Math.floor(position.x / 100), y: Math.floor(position.y / 100) })
+  );
+}
+
+it("starts a request-backed naval battle after authoritative request validation", () => {
   const validation = validateArmyCommand(rawStartCommand());
   expect(validation.ok).toBe(true);
   if (!validation.ok) return;
 
-  const processor = new CommandProcessor(
-    () => new Date("2026-09-04T09:00:00.000Z"),
-    (position) => ({ x: Math.floor(position.x / 100), y: Math.floor(position.y / 100) })
-  );
-  const result = processor.execute({
+  const result = processor().execute({
     role: "GM",
     playerId: "gm",
     connectionId: "gm-connection",
     connectedPlayerIds: new Set(["gm"]),
-    state: {
-      scene: sceneFixture(),
-      armies: {},
-      barriers: {},
-      items: {},
-      positions: {
-        "red-ship": { x: 50, y: 50 },
-        "blue-ship": { x: 150, y: 50 }
-      }
-    }
+    state: gmState()
   }, validation.command);
 
   expect(result.status).toBe("ACCEPTED");
@@ -98,23 +105,8 @@ it("starts a precomputed naval battle from authoritative ship positions and cons
   expect(result.state.scene.activeNavalBattle).toMatchObject({
     id: "naval-1",
     requestId: "req-1",
-    participantShipIds: ["red-ship", "blue-ship"],
-    snapshots: {
-      "red-ship": {
-        shipId: "red-ship",
-        strategicCell: { x: 0, y: 0 },
-        strategicPosition: { x: 50, y: 50 },
-        strategicFacing: "EAST"
-      },
-      "blue-ship": {
-        shipId: "blue-ship",
-        strategicCell: { x: 1, y: 0 },
-        strategicPosition: { x: 150, y: 50 },
-        strategicFacing: "WEST"
-      }
-    }
+    participantShipIds: ["red-ship", "blue-ship"]
   });
-  expect(result.state.scene.activeNavalBattle?.initiative).toHaveLength(2);
 });
 
 it("keeps naval battle start GM-only", () => {

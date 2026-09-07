@@ -14,3 +14,21 @@ it("unsubscribes every listener exactly once", () => {
   expect(second).toHaveBeenCalledTimes(1);
   expect(manager.size).toBe(0);
 });
+
+it("attempts every unsubscribe even when an earlier unsubscribe fails", () => {
+  const failure = new Error("unsubscribe failed");
+  const first = vi.fn(() => { throw failure; });
+  const second = vi.fn();
+  const third = vi.fn();
+  const manager = new SubscriptionManager();
+  manager.add(first);
+  manager.add(second);
+  manager.add(third);
+
+  expect(() => manager.clear()).toThrow(failure);
+
+  expect(first).toHaveBeenCalledTimes(1);
+  expect(second).toHaveBeenCalledTimes(1);
+  expect(third).toHaveBeenCalledTimes(1);
+  expect(manager.size).toBe(0);
+});

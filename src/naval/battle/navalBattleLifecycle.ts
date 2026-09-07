@@ -23,6 +23,10 @@ function cloneCell(cell: GridCellCoord): GridCellCoord {
   return { x: cell.x, y: cell.y };
 }
 
+function cellKey(cell: GridCellCoord): string {
+  return `${cell.x},${cell.y}`;
+}
+
 function cloneSnapshot(snapshot: NavalBattleShipSnapshot): NavalBattleShipSnapshot {
   return {
     shipId: snapshot.shipId,
@@ -42,6 +46,7 @@ export function startNavalBattle(
   if (!participantShipIds.includes(input.initiatingShipId)) {
     throw new Error("Initiating ship must participate");
   }
+  const areaCellKeys = new Set(input.areaCells.map(cellKey));
 
   const snapshots: Record<string, NavalBattleShipSnapshot> = {};
   for (const shipId of participantShipIds) {
@@ -52,6 +57,9 @@ export function startNavalBattle(
     const snapshot = input.snapshots[shipId];
     if (!snapshot) throw new Error(`Missing naval battle snapshot: ${shipId}`);
     if (snapshot.shipId !== shipId) throw new Error(`Invalid naval battle snapshot: ${shipId}`);
+    if (!areaCellKeys.has(cellKey(snapshot.strategicCell))) {
+      throw new Error(`Naval battle participant outside area: ${shipId}`);
+    }
     snapshots[shipId] = cloneSnapshot(snapshot);
   }
 

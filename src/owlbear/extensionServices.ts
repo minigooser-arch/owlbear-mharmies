@@ -225,6 +225,33 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
           };
         })()
       : {};
+    const broadsideTargets =
+      battle?.status === "ACTIVE" &&
+      definition.normalDice > 0 &&
+      state.hp > 0 &&
+      state.status === "IN_NAVAL_BATTLE" &&
+      state.battleId === battle.id &&
+      battle.currentShipId === item.id &&
+      !battle.actionUsedByShip[item.id] &&
+      !battle.exitedShipIds.includes(item.id) &&
+      (input.role === "GM" || leaderSideIds.has(state.sideId))
+        ? shipRecords
+            .filter(({ item: targetItem, state: targetState }) =>
+              targetItem.id !== item.id &&
+              battle.participantShipIds.includes(targetItem.id) &&
+              targetState.status === "IN_NAVAL_BATTLE" &&
+              targetState.battleId === battle.id &&
+              targetState.hp > 0 &&
+              !battle.exitedShipIds.includes(targetItem.id) &&
+              (input.role === "GM" || memberSideIds.has(targetState.sideId) || mapVisibleSourceIds.has(targetItem.id))
+            )
+            .map(({ item: targetItem, state: targetState }) => ({
+              id: targetItem.id,
+              name: targetItem.name ?? "Безымянный корабль",
+              sideId: targetState.sideId,
+              sideName: sideNames.get(targetState.sideId) ?? "Неизвестная сторона"
+            }))
+        : [];
     const hospitalSupportTargets =
       battle?.status === "ACTIVE" &&
       state.classId === "HOSPITAL" &&
@@ -293,6 +320,7 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
       embarkedArmyId: state.embarkedArmyId,
       detectionOverride: state.detectionOverride,
       effectiveDetectionRange: state.detectionOverride ?? input.scene.settings.defaultDetectionRangeCells,
+      broadsideTargets,
       hospitalSupportTargets,
       shoreBombardmentTargets,
       ...tactical

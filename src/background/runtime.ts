@@ -25,6 +25,12 @@ export interface RuntimeRates {
   visibilityHz: number;
 }
 
+export type RuntimeErrorReporter = (error: unknown, context: string) => void;
+
+function defaultRuntimeErrorReporter(error: unknown, context: string): void {
+  console.error(`Letopis Armies background runtime failed: ${context}`, error);
+}
+
 export class BackgroundRuntime {
   private readonly readySubscriptions = new SubscriptionManager();
   private readonly sceneSubscriptions = new SubscriptionManager();
@@ -48,7 +54,8 @@ export class BackgroundRuntime {
 
   constructor(
     private readonly port: BackgroundRuntimePort,
-    private readonly rates: RuntimeRates = { movementHz: 5, visibilityHz: 4 }
+    private readonly rates: RuntimeRates = { movementHz: 5, visibilityHz: 4 },
+    private readonly reportError: RuntimeErrorReporter = defaultRuntimeErrorReporter
   ) {}
 
   start(): void {
@@ -79,7 +86,7 @@ export class BackgroundRuntime {
     }
     this.started = false;
     this.readyGeneration += 1;
-    this.readySubscriptions.clear();
+    this.clearSubscriptions(this.readySubscriptions, "ready-subscription-cleanup");
     this.trackLifecycle(() => this.closeScene());
     await this.whenIdle();
   }
@@ -91,7 +98,9 @@ export class BackgroundRuntime {
       return;
     }
     this.movementRunning = true;
-    this.movementWork = this.runMovementQueue().catch(() => undefined);
+    this.movementWork = this.runMovementQueue().catch((error: unknown) => {
+      this.reportError(error, "movement-tick");
+    });
   }
 
   requestVisibilityTick(): void {
@@ -101,7 +110,9 @@ export class BackgroundRuntime {
       return;
     }
     this.visibilityRunning = true;
-    this.visibilityWork = this.runVisibilityQueue().catch(() => undefined);
+    this.visibilityWork = this.runVisibilityQueue().catch((error: unknown) => {
+      this.reportError(error, "visibility-tick");
+    });
   }
 
   requestTurnTick(): void {
@@ -111,7 +122,9 @@ export class BackgroundRuntime {
       return;
     }
     this.turnRunning = true;
-    this.turnWork = this.runTurnQueue().catch(() => undefined);
+    this.turnWork = this.runTurnQueue().catch((error: unknown) => {
+      this.reportError(error, "turn-tick");
+    });
   }
 
   async whenIdle(): Promise<void> {
@@ -160,9 +173,17 @@ export class BackgroundRuntime {
   private async closeScene(): Promise<void> {
     if (!this.sceneOpen) return;
     this.stopSceneWork();
-    await this.port.onSceneClose();
+    try {
+      await this.port.onSceneClose();
+    } catch (error) {
+      this.reportError(error, "scene-close");
+    }
     await Promise.all([this.movementWork, this.visibilityWork, this.turnWork]);
-    await this.port.deleteLocalOverlays();
+    try {
+      await this.port.deleteLocalOverlays();
+    } catch (error) {
+      this.reportError(error, "overlay-cleanup");
+    }
   }
 
   private stopSceneWork(): void {
@@ -171,13 +192,21 @@ export class BackgroundRuntime {
     this.movementPending = false;
     this.visibilityPending = false;
     this.turnPending = false;
-    this.sceneSubscriptions.clear();
+    this.clearSubscriptions(this.sceneSubscriptions, "scene-subscription-cleanup");
     if (this.movementTimer !== undefined) clearInterval(this.movementTimer);
     if (this.visibilityTimer !== undefined) clearInterval(this.visibilityTimer);
     if (this.turnTimer !== undefined) clearInterval(this.turnTimer);
     this.movementTimer = undefined;
     this.visibilityTimer = undefined;
     this.turnTimer = undefined;
+  }
+
+  private clearSubscriptions(manager: SubscriptionManager, context: string): void {
+    try {
+      manager.clear();
+    } catch (error) {
+      this.reportError(error, context);
+    }
   }
 
   private async runMovementQueue(): Promise<void> {
@@ -215,6 +244,8 @@ export class BackgroundRuntime {
 
   private trackLifecycle(work: () => Promise<void>): void {
     const queued = this.lifecycleWork.then(work, work);
-    this.lifecycleWork = queued.catch(() => undefined);
+    this.lifecycleWork = queued.catch((error: unknown) => {
+      this.reportError(error, "lifecycle");
+    });
   }
 }

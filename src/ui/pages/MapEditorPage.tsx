@@ -23,6 +23,7 @@ function TerrainEditor({ terrain, defaultTerrainId, onAction }: {
   const parsedCost = Number(cost.replace(",", "."));
   const movementCostUnits = Math.round(parsedCost * 2);
   const validCost = Number.isFinite(parsedCost) && parsedCost >= 0.5 && Number.isInteger(parsedCost * 2);
+  const structuralSea = terrain.id === "sea";
   return <article className="terrain-row">
     <div className="terrain-row-main">
       <input aria-label={`Название местности ${terrain.id}`} value={name} onChange={(event) => setName(event.target.value)} />
@@ -31,8 +32,8 @@ function TerrainEditor({ terrain, defaultTerrainId, onAction }: {
     </div>
     <div className="card-actions">
       <button type="button" disabled={!name.trim() || !validCost} onClick={() => onAction({ type: "UPDATE_TERRAIN_TYPE", terrainId: terrain.id, patch: { name: name.trim(), movementCostUnits, color } })}>Сохранить</button>
-      <button type="button" onClick={() => onAction({ type: "UPDATE_TERRAIN_TYPE", terrainId: terrain.id, patch: { enabled: !terrain.enabled } })}>{terrain.enabled ? "Отключить" : "Включить"}</button>
-      {terrain.id !== defaultTerrainId && <button className="button danger subtle" type="button" onClick={() => onAction({ type: "DELETE_TERRAIN_TYPE", terrainId: terrain.id, replacementTerrainId: defaultTerrainId })}>Удалить</button>}
+      {!structuralSea && <button type="button" onClick={() => onAction({ type: "UPDATE_TERRAIN_TYPE", terrainId: terrain.id, patch: { enabled: !terrain.enabled } })}>{terrain.enabled ? "Отключить" : "Включить"}</button>}
+      {!structuralSea && terrain.id !== defaultTerrainId && <button className="button danger subtle" type="button" onClick={() => onAction({ type: "DELETE_TERRAIN_TYPE", terrainId: terrain.id, replacementTerrainId: defaultTerrainId })}>Удалить</button>}
     </div>
   </article>;
 }

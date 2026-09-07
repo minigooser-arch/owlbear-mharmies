@@ -24,7 +24,7 @@ export interface ContextMenuAction {
 export interface ContextMenuPort {
   register(
     actions: readonly ContextMenuAction[],
-    callback: (itemId: string) => Promise<void>
+    callback: (itemId: string, actionType?: ArmyContextActionType) => Promise<void>
   ): () => void;
   resolveSourceItemId(itemId: string): Promise<string | undefined>;
   commandEnvelope(): CommandEnvelopeData;
@@ -50,10 +50,11 @@ export function setupContextMenu(
     title: TITLES[type],
     type
   }));
-  return port.register(actions, async (itemId) => {
+  return port.register(actions, async (itemId, clickedActionType) => {
     const sourceItemId = await port.resolveSourceItemId(itemId);
     if (!sourceItemId) return;
-    const type = actionType ?? "PAUSE_ARMY";
+    const type = actionType ?? clickedActionType;
+    if (!type) return;
     const command = {
       ...port.commandEnvelope(),
       type,

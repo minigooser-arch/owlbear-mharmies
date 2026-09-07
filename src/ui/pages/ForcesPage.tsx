@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { Side, SideRelation } from "../../shared/types";
+import type { Side, SideRelation, TurnState } from "../../shared/types";
 import type { ArmyView, NavalRequestTargetView, ShipView, TransportEmbarkRequestView, TransportEmbarkTargetView, UiCommand } from "../state/useExtensionState";
 import { ArmiesPage } from "./ArmiesPage";
 import { FleetPage } from "./FleetPage";
@@ -18,6 +18,7 @@ export function ForcesPage({
   navalRequestTargets = [],
   transportEmbarkTargets = [],
   pendingTransportEmbarkRequests = [],
+  turnPhase,
   onAction
 }: {
   armies: readonly ArmyView[];
@@ -31,6 +32,7 @@ export function ForcesPage({
   navalRequestTargets?: readonly NavalRequestTargetView[];
   transportEmbarkTargets?: readonly TransportEmbarkTargetView[];
   pendingTransportEmbarkRequests?: readonly TransportEmbarkRequestView[];
+  turnPhase?: TurnState["phase"];
   onAction(command: UiCommand): void;
 }) {
   const [section, setSection] = useState<ForcesSection>("ARMIES");
@@ -66,6 +68,7 @@ export function ForcesPage({
           relations={relations}
           navalRequestTargets={navalRequestTargets}
           transportEmbarkTargets={transportEmbarkTargets}
+          turnPhase={turnPhase}
           onAction={onAction}
         />
       )}

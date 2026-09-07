@@ -26,6 +26,7 @@ export type NotificationCode =
   | "IMPASSABLE"
   | "OUTSIDE_FACTION_TERRITORY"
   | "INVALID_TERRAIN"
+  | "BUILT_IN_TERRAIN_REQUIRED"
   | "INSUFFICIENT_MOVEMENT_POINTS"
   | "ARMY_STATE_BLOCKS_MOVEMENT"
   | "BARRIER"
@@ -45,12 +46,14 @@ export type NotificationCode =
   | "SHIP_NOT_IN_NAVAL_BATTLE"
   | "SHIP_NOT_ACTIVE"
   | "SHIP_POSITION_UNAVAILABLE"
+  | "SHIP_REQUIRES_SEA"
   | "SHIP_DESTROYED"
   | "OUTSIDE_NAVAL_BATTLE_AREA"
   | "INSUFFICIENT_NAVAL_MOVEMENT"
   | "NAVAL_ACTION_ALREADY_USED"
   | "INVALID_NAVAL_TACTICAL_ACTION"
   | "INVALID_NAVAL_BATTLE_AREA"
+  | "INVALID_NAVAL_BATTLE"
   | "SHIP_ALREADY_EXITED";
 
 const RUSSIAN_MESSAGES: Readonly<Record<NotificationCode, string>> = {
@@ -81,6 +84,7 @@ const RUSSIAN_MESSAGES: Readonly<Record<NotificationCode, string>> = {
   IMPASSABLE: "Эта клетка непроходима.",
   OUTSIDE_FACTION_TERRITORY: "В мирное время армия не может покидать территорию своей фракции.",
   INVALID_TERRAIN: "Для этой клетки задан недоступный тип местности.",
+  BUILT_IN_TERRAIN_REQUIRED: "Встроенную местность «Море» нельзя отключить или удалить: она необходима для морской механики.",
   INSUFFICIENT_MOVEMENT_POINTS: "Для этого маршрута не хватает очков перемещения.",
   ARMY_STATE_BLOCKS_MOVEMENT: "Текущее состояние армии не позволяет продолжить движение.",
   BARRIER: "Движение остановлено барьером.",
@@ -100,12 +104,14 @@ const RUSSIAN_MESSAGES: Readonly<Record<NotificationCode, string>> = {
   SHIP_NOT_IN_NAVAL_BATTLE: "Этот корабль не участвует в текущем морском бою.",
   SHIP_NOT_ACTIVE: "Сейчас ход другого корабля.",
   SHIP_POSITION_UNAVAILABLE: "Не удалось определить клетку корабля на поле боя.",
+  SHIP_REQUIRES_SEA: "Корабль можно зарегистрировать только на морской клетке. В «Разметке карты» назначьте этой клетке местность «Море».",
   SHIP_DESTROYED: "Уничтоженный корабль не может выполнять это действие.",
   OUTSIDE_NAVAL_BATTLE_AREA: "Корабль не может выйти за границы поля морского боя.",
   INSUFFICIENT_NAVAL_MOVEMENT: "У корабля не хватает очков перемещения для этого манёвра.",
   NAVAL_ACTION_ALREADY_USED: "После активного действия корабль больше не может двигаться в этот ход.",
   INVALID_NAVAL_TACTICAL_ACTION: "Этот морской манёвр сейчас недоступен.",
   INVALID_NAVAL_BATTLE_AREA: "Поле морского боя может состоять только из морских клеток.",
+  INVALID_NAVAL_BATTLE: "Не удалось начать морской бой. Проверьте, что все выбранные корабли находятся внутри выбранной области боя.",
   SHIP_ALREADY_EXITED: "Этот корабль уже вышел из морского боя."
 };
 
