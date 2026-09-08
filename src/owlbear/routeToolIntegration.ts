@@ -150,6 +150,31 @@ export async function registerRouteTool(
     if (failure) throw failure;
   };
 
+  const commitCurrentRoute = async (): Promise<boolean> => {
+    if (!active) return false;
+    const snapshot = controller.snapshot();
+    if (!snapshot) return false;
+    if (snapshot.cells.length === 0) {
+      await safeNotify("Добавьте хотя бы одну клетку маршрута", "WARNING");
+      return false;
+    }
+    try {
+      await port.commitRoute(snapshot.armyId, snapshot.points, snapshot.startCell, snapshot.cells);
+    } catch (error) {
+      await safeNotify(`Не удалось сохранить маршрут: ${messageFrom(error)}`, "ERROR");
+      return false;
+    }
+    await finishSession(true);
+    return true;
+  };
+
+  const isFinishButtonHit = (point: Vector2): boolean => {
+    const button = controller.snapshot()?.finishButton;
+    if (!button) return false;
+    return Math.abs(point.x - button.position.x) <= button.halfWidth
+      && Math.abs(point.y - button.position.y) <= button.halfHeight;
+  };
+
   const runPendingMove = (): Promise<void> => {
     if (moveTimer !== undefined) clearTimeout(moveTimer);
     moveTimer = undefined;
@@ -221,9 +246,13 @@ export async function registerRouteTool(
     await runPendingMove();
     await enqueue(async () => {
       if (!active) return;
+      if (isFinishButtonHit(event.pointerPosition)) {
+        await commitCurrentRoute();
+        return;
+      }
       const result = await controller.click(event.pointerPosition);
-      await renderSnapshot();
       if (!result.accepted) {
+        await renderSnapshot();
         const message = result.reason === "BARRIER"
           ? "Маршрут пересекает непроходимое препятствие"
           : result.reason === "NOT_ORTHOGONAL"
@@ -236,7 +265,14 @@ export async function registerRouteTool(
                   ? "Не хватает очков перемещения"
                   : "Эту клетку нельзя добавить в маршрут";
         await safeNotify(message, "WARNING");
+        return;
       }
+      const snapshot = controller.snapshot();
+      if (snapshot && snapshot.cells.length > 0 && snapshot.remainingUnits === 0) {
+        await commitCurrentRoute();
+        return;
+      }
+      await renderSnapshot();
     });
     return false;
   };
@@ -264,24 +300,7 @@ export async function registerRouteTool(
   const finishAction: ToolAction = {
     id: ROUTE_FINISH_ACTION_ID,
     icons: [{ icon: iconUrl, label: "Завершить маршрут", filter: actionFilter }],
-    onClick: () => {
-      void enqueue(async () => {
-        if (!active) return;
-        const result = controller.finish();
-        if (result.action === "INVALID") {
-          await safeNotify(result.reason === "EMPTY_ROUTE" ? "Добавьте хотя бы одну клетку маршрута" : "Маршрут сейчас недействителен", "WARNING");
-          return;
-        }
-        if (result.action !== "COMMIT") return;
-        try {
-          await port.commitRoute(result.armyId, result.route, result.startCell, result.cells);
-        } catch (error) {
-          await safeNotify(`Не удалось сохранить маршрут: ${messageFrom(error)}`, "ERROR");
-          return;
-        }
-        await finishSession(true);
-      });
-    }
+    onClick: () => { void enqueue(commitCurrentRoute); }
   };
   const undoAction: ToolAction = {
     id: ROUTE_UNDO_ACTION_ID,
