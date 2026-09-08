@@ -9,27 +9,13 @@ on:
   pull_request:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - name: Apply coordinator acquisition fix
-        if: github.event_name == 'push' && github.ref == 'refs/heads/fix/coordinator-lease-acquisition'
-        shell: bash
-        run: python3 -c "from pathlib import Path; import base64; p=Path('src/background/application.ts'); t=p.read_text(); old=base64.b64decode('ICB3cml0ZUNvb3JkaW5hdG9ySGVhcnRiZWF0KAogICAgaGVhcnRiZWF0OiBOb25OdWxsYWJsZTxTY2VuZVN0YXRlWyJjb29yZGluYXRvckxlYXNlIl0+CiAgKTogUHJvbWlzZTx2b2lkPiB7CiAgICByZXR1cm4gdGhpcy5lbnF1ZXVlTXV0YXRpb24oYXN5bmMgKCkgPT4gewogICAgICBjb25zdCBjYW5Db21taXQgPSB0aGlzLmNhcHR1cmVDb29yZGluYXRvckd1YXJkKGhlYXJ0YmVhdC5jb25uZWN0aW9uSWQpOwogICAgICBpZiAoIWNhbkNvbW1pdCgpKSByZXR1cm47CiAgICAgIGNvbnN0IHNjZW5lID0gYXdhaXQgdGhpcy5yZXBvc2l0b3J5LnJlYWRTY2VuZSgpOwogICAgICBpZiAoIWNhbkNvbW1pdCgpKSByZXR1cm47CiAgICAgIHRyeSB7CiAgICAgICAgYXdhaXQgdGhpcy5yZXBvc2l0b3J5LndyaXRlU2NlbmUoCiAgICAgICAgICB7IC4uLnNjZW5lLCBjb29yZGluYXRvckxlYXNlOiBoZWFydGJlYXQgfSwKICAgICAgICAgIHNjZW5lLnJldmlzaW9uLAogICAgICAgICAgKCkgPT4gY2FuQ29tbWl0KCkKICAgICAgICApOwogICAgICB9IGNhdGNoIChlcnJvcikgewogICAgICAgIGlmICghY2FuQ29tbWl0KCkpIHJldHVybjsKICAgICAgICB0aHJvdyBlcnJvcjsKICAgICAgfQogICAgfSk7CiAgfQo=').decode(); new=base64.b64decode('ICB3cml0ZUNvb3JkaW5hdG9ySGVhcnRiZWF0KAogICAgaGVhcnRiZWF0OiBOb25OdWxsYWJsZTxTY2VuZVN0YXRlWyJjb29yZGluYXRvckxlYXNlIl0+CiAgKTogUHJvbWlzZTx2b2lkPiB7CiAgICByZXR1cm4gdGhpcy5lbnF1ZXVlTXV0YXRpb24oYXN5bmMgKCkgPT4gewogICAgICAvLyBJbml0aWFsIGxlYXNlIGFjcXVpc2l0aW9uIGhhcHBlbnMgYmVmb3JlIHNldENvb3JkaW5hdG9yKHRydWUpLCBzbyB0aGUgbm9ybWFsCiAgICAgIC8vIGFjdGl2ZS1jb29yZGluYXRvciBndWFyZCBjYW5ub3QgYmUgdXNlZCBoZXJlLiBJbnN0ZWFkLCBwaW4gdGhpcyBjbGFpbSB0byB0aGUKICAgICAgLy8gY3VycmVudCBjb29yZGluYXRvciBnZW5lcmF0aW9uIGFuZCByZWZ1c2UgdG8gb3ZlcndyaXRlIGEgbGl2ZSBmb3JlaWduIGxlYXNlLgogICAgICBjb25zdCBnZW5lcmF0aW9uID0gdGhpcy5jb29yZGluYXRvckdlbmVyYXRpb247CiAgICAgIGNvbnN0IGNsYWltSXNDdXJyZW50ID0gKCkgPT4KICAgICAgICB0aGlzLmNvb3JkaW5hdG9yR2VuZXJhdGlvbiA9PT0gZ2VuZXJhdGlvbiAmJgogICAgICAgICghdGhpcy5jb29yZGluYXRvciB8fCB0aGlzLmFjdGl2ZUNvb3JkaW5hdG9yQ29ubmVjdGlvbklkID09PSBoZWFydGJlYXQuY29ubmVjdGlvbklkKTsKICAgICAgY29uc3QgbGVhc2VJc0NsYWltYWJsZSA9IChjdXJyZW50OiBTY2VuZVN0YXRlKSA9PiB7CiAgICAgICAgY29uc3QgbGVhc2UgPSBjdXJyZW50LmNvb3JkaW5hdG9yTGVhc2U7CiAgICAgICAgcmV0dXJuIGxlYXNlID09PSB1bmRlZmluZWQgfHwKICAgICAgICAgIGxlYXNlLmNvbm5lY3Rpb25JZCA9PT0gaGVhcnRiZWF0LmNvbm5lY3Rpb25JZCB8fAogICAgICAgICAgbGVhc2UuZXhwaXJlc0F0IDw9IHRoaXMud2FsbENsb2NrKCkuZ2V0VGltZSgpOwogICAgICB9OwoKICAgICAgaWYgKCFjbGFpbUlzQ3VycmVudCgpKSB0aHJvdyBuZXcgRXJyb3IoIkNvb3JkaW5hdG9yIGhlYXJ0YmVhdCBjbGFpbSBpcyBzdGFsZSIpOwogICAgICBjb25zdCBzY2VuZSA9IGF3YWl0IHRoaXMucmVwb3NpdG9yeS5yZWFkU2NlbmUoKTsKICAgICAgaWYgKCFjbGFpbUlzQ3VycmVudCgpKSB0aHJvdyBuZXcgRXJyb3IoIkNvb3JkaW5hdG9yIGhlYXJ0YmVhdCBjbGFpbSBpcyBzdGFsZSIpOwogICAgICBpZiAoIWxlYXNlSXNDbGFpbWFibGUoc2NlbmUpKSB7CiAgICAgICAgdGhyb3cgbmV3IEVycm9yKCJDb29yZGluYXRvciBsZWFzZSBpcyBoZWxkIGJ5IGFub3RoZXIgbGl2ZSBjb25uZWN0aW9uIik7CiAgICAgIH0KICAgICAgYXdhaXQgdGhpcy5yZXBvc2l0b3J5LndyaXRlU2NlbmUoCiAgICAgICAgeyAuLi5zY2VuZSwgY29vcmRpbmF0b3JMZWFzZTogaGVhcnRiZWF0IH0sCiAgICAgICAgc2NlbmUucmV2aXNpb24sCiAgICAgICAgKGN1cnJlbnQpID0+IGNsYWltSXNDdXJyZW50KCkgJiYgbGVhc2VJc0NsYWltYWJsZShjdXJyZW50KQogICAgICApOwogICAgfSk7CiAgfQo=').decode(); assert old in t or new in t; p.write_text(t.replace(old,new,1) if old in t else t)"
-      - name: Commit coordinator acquisition fix
-        if: github.event_name == 'push' && github.ref == 'refs/heads/fix/coordinator-lease-acquisition'
-        shell: bash
-        run: |
-          if git diff --quiet; then exit 0; fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/background/application.ts
-          git commit -m "fix: allow initial coordinator lease acquisition"
-          git push
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 24
