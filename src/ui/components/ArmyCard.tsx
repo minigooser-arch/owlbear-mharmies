@@ -18,35 +18,32 @@ interface ArmyCardProps {
   onAction(command: UiCommand): void;
 }
 
-function clampHp(value: number, maxHp: number): number {
-  return Math.max(0, Math.min(maxHp, Math.round(value)));
-}
-
 function ArmyHealthEditor({ army, onAction }: { army: ArmyView; onAction(command: UiCommand): void }) {
   const [draft, setDraft] = useState(String(army.healthHp));
   useEffect(() => setDraft(String(army.healthHp)), [army.healthHp]);
   const parsed = Number(draft);
-  const canSubmit = Number.isInteger(parsed) && parsed >= 0 && parsed <= army.healthMaxHp && parsed !== army.healthHp;
-  const setHp = (hp: number) => onAction({ type: "SET_ARMY_HP", armyId: army.id, hp: clampHp(hp, army.healthMaxHp) });
+  const canSubmit = draft.trim().length > 0
+    && Number.isInteger(parsed)
+    && parsed >= 0
+    && parsed <= army.healthMaxHp
+    && parsed !== army.healthHp;
+  const setHp = () => {
+    if (!canSubmit) return;
+    onAction({ type: "SET_ARMY_HP", armyId: army.id, hp: parsed });
+  };
   return (
     <div className="hp-editor" aria-label="Управление HP">
       <div className="hp-editor-heading"><strong>HP армии</strong><span>{army.healthHp} / {army.healthMaxHp}</span></div>
-      <div className="hp-quick-actions">
-        <button type="button" aria-label="-5 HP" onClick={() => setHp(army.healthHp - 5)}>−5</button>
-        <button type="button" aria-label="-1 HP" onClick={() => setHp(army.healthHp - 1)}>−1</button>
-        <input
-          aria-label={`Текущее HP ${army.name}`}
-          type="number"
-          min="0"
-          max={army.healthMaxHp}
-          step="1"
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-        />
-        <button type="button" aria-label="+1 HP" onClick={() => setHp(army.healthHp + 1)}>+1</button>
-        <button type="button" aria-label="+5 HP" onClick={() => setHp(army.healthHp + 5)}>+5</button>
-      </div>
-      <button className="button subtle wide" type="button" disabled={!canSubmit} onClick={() => setHp(parsed)}>Установить HP</button>
+      <input
+        aria-label={`Текущее HP ${army.name}`}
+        type="number"
+        min="0"
+        max={army.healthMaxHp}
+        step="1"
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+      />
+      <button className="button subtle wide" type="button" disabled={!canSubmit} onClick={setHp}>Зафиксировать</button>
     </div>
   );
 }
