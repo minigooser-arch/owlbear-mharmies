@@ -92,16 +92,16 @@ describe("ArmyCard capabilities", () => {
     expect(onAction).toHaveBeenNthCalledWith(3, { type: "UNREGISTER_ARMY", armyId: "army-red" });
   });
 
-  it("lets a GM set exact HP and use quick adjustments from management", () => {
+  it("lets a GM set exact HP from management without quick adjustments", () => {
     const onAction = vi.fn();
     render(<ArmyCard army={redArmy} isGM canEditRoute canRequestDisband onAction={onAction} />);
     fireEvent.click(screen.getByText("Управление"));
     const hpInput = screen.getByRole("spinbutton", { name: "Текущее HP Первая армия" });
     fireEvent.change(hpInput, { target: { value: "27" } });
-    fireEvent.click(screen.getByRole("button", { name: "Установить HP" }));
+    fireEvent.click(screen.getByRole("button", { name: "Зафиксировать" }));
     expect(onAction).toHaveBeenCalledWith({ type: "SET_ARMY_HP", armyId: "army-red", hp: 27 });
-    fireEvent.click(screen.getByRole("button", { name: "+5 HP" }));
-    expect(onAction).toHaveBeenCalledWith({ type: "SET_ARMY_HP", armyId: "army-red", hp: 50 });
+    expect(screen.queryByRole("button", { name: "+5 HP" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "-5 HP" })).not.toBeInTheDocument();
   });
 });
 
