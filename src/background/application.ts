@@ -1224,17 +1224,24 @@ export class ProductionEngine {
           lease.expiresAt <= this.wallClock().getTime();
       };
 
-      if (!claimIsCurrent()) throw new Error("Coordinator heartbeat claim is stale");
+      if (!claimIsCurrent()) return;
       const scene = await this.repository.readScene();
-      if (!claimIsCurrent()) throw new Error("Coordinator heartbeat claim is stale");
+      if (!claimIsCurrent()) return;
       if (!leaseIsClaimable(scene)) {
         throw new Error("Coordinator lease is held by another live connection");
       }
-      await this.repository.writeScene(
-        { ...scene, coordinatorLease: heartbeat },
-        scene.revision,
-        (current) => claimIsCurrent() && leaseIsClaimable(current)
-      );
+      try {
+        await this.repository.writeScene(
+          { ...scene, coordinatorLease: heartbeat },
+          scene.revision,
+          (current) => claimIsCurrent() && leaseIsClaimable(current)
+        );
+      } catch (error) {
+        // Coordinator shutdown invalidates an in-flight heartbeat. Treat that as
+        // cancellation, while preserving real persistence/lease-acquisition failures.
+        if (!claimIsCurrent()) return;
+        throw error;
+      }
     });
   }
 
