@@ -24,6 +24,13 @@ export interface RoutePreview {
   reason?: MovementDenialReason | "BARRIER" | "INACTIVE";
 }
 
+export interface RouteFinishButton {
+  position: Vector2;
+  label: "Завершить маршрут";
+  halfWidth: number;
+  halfHeight: number;
+}
+
 export interface RouteToolSnapshot {
   armyId: string;
   start: Vector2;
@@ -34,6 +41,7 @@ export interface RouteToolSnapshot {
   totalCostUnits: number;
   remainingUnits: number;
   maxUnits: number;
+  finishButton?: RouteFinishButton;
   preview?: RoutePreview;
 }
 
@@ -119,6 +127,16 @@ export class RouteToolController {
     const active = this.activation;
     if (!active) return undefined;
     const spent = this.costs.reduce((sum, value) => sum + value, 0);
+    const remaining = Math.max(0, active.movementUnits - spent);
+    const lastPoint = this.points.at(-1);
+    const finishButton = lastPoint && remaining > 0
+      ? {
+          position: { x: lastPoint.x, y: lastPoint.y - active.gridDpi * 0.35 },
+          label: "Завершить маршрут" as const,
+          halfWidth: active.gridDpi * 0.75,
+          halfHeight: active.gridDpi * 0.2
+        }
+      : undefined;
     return {
       armyId: active.armyId,
       start: { ...active.start },
@@ -127,8 +145,9 @@ export class RouteToolController {
       cells: this.cells.map((cell) => ({ ...cell })),
       stepCostUnits: [...this.costs],
       totalCostUnits: spent,
-      remainingUnits: Math.max(0, active.movementUnits - spent),
+      remainingUnits: remaining,
       maxUnits: active.maxUnits,
+      ...(finishButton ? { finishButton } : {}),
       ...(this.currentPreview ? { preview: structuredClone(this.currentPreview) } : {})
     };
   }
@@ -161,9 +180,6 @@ export class RouteToolController {
     const active = this.activation;
     if (!active) return { action: "IGNORED" };
     if (this.cells.length === 0) return { action: "INVALID", reason: "EMPTY_ROUTE" };
-    if (this.currentPreview && !this.currentPreview.valid && this.currentPreview.reason && this.currentPreview.reason !== "INACTIVE") {
-      return { action: "INVALID", reason: this.currentPreview.reason };
-    }
     const result: RouteFinishResult = {
       action: "COMMIT",
       armyId: active.armyId,
@@ -208,7 +224,7 @@ export class RouteToolController {
       this.deactivate();
       return { action: "CANCEL" };
     }
-    // Enter is intentionally ignored. Route completion is a visible ToolAction only.
+    // Enter is intentionally ignored. Route completion is a visible map affordance / ToolAction.
     return { action: "IGNORED" };
   }
 
