@@ -2,7 +2,6 @@ import type { KeyEvent, Metadata, Tool, ToolAction, ToolContext, ToolEvent, Tool
 import {
   SHIP_ROUTE_CANCEL_ACTION_ID,
   SHIP_ROUTE_CLEAR_ACTION_ID,
-  SHIP_ROUTE_FINISH_ACTION_ID,
   SHIP_ROUTE_RETURN_TOOL_KEY,
   SHIP_ROUTE_SHIP_ID_KEY,
   SHIP_ROUTE_TOOL_ID,
@@ -61,7 +60,7 @@ function clickFailureMessage(reason: string): string {
     case "NOT_ORTHOGONAL": return "Корабль может двигаться только по горизонтали или вертикали";
     case "IMPASSABLE": return "Эта клетка непроходима";
     case "NON_NAVAL_TERRAIN": return "Корабль может идти только по морю или каналу";
-    case "INSUFFICIENT_MOVEMENT_POINTS": return "Не хватает очков перемещения";
+    case "INSUFFICIENT_MOVEMENT_POINTS": return "Не хватает очков перемещения с учётом необходимого поворота";
     default: return "Эту клетку нельзя добавить в маршрут корабля";
   }
 }
@@ -143,6 +142,31 @@ export async function registerShipRouteTool(
     if (failure) throw failure;
   };
 
+  const commitCurrentRoute = async (): Promise<boolean> => {
+    if (!active) return false;
+    const snapshot = controller.snapshot();
+    if (!snapshot) return false;
+    if (snapshot.cells.length === 0) {
+      await safeNotify("Добавьте хотя бы одну клетку маршрута", "WARNING");
+      return false;
+    }
+    try {
+      await port.commitRoute(snapshot.shipId, snapshot.startCell, snapshot.cells);
+    } catch (error) {
+      await safeNotify(`Не удалось сохранить маршрут корабля: ${messageFrom(error)}`, "ERROR");
+      return false;
+    }
+    await finishSession(true);
+    return true;
+  };
+
+  const isFinishButtonHit = (point: Vector2): boolean => {
+    const button = controller.snapshot()?.finishButton;
+    if (!button) return false;
+    return Math.abs(point.x - button.position.x) <= button.halfWidth
+      && Math.abs(point.y - button.position.y) <= button.halfHeight;
+  };
+
   const activate = (context: ToolContext): void => {
     if (closed) return;
     const activation = ++generation;
@@ -188,9 +212,22 @@ export async function registerShipRouteTool(
     if (closed) return false;
     await enqueue(async () => {
       if (!active) return;
+      if (isFinishButtonHit(event.pointerPosition)) {
+        await commitCurrentRoute();
+        return;
+      }
       const result = await controller.click(event.pointerPosition);
+      if (!result.accepted) {
+        await renderSnapshot();
+        await safeNotify(clickFailureMessage(result.reason), "WARNING");
+        return;
+      }
+      const snapshot = controller.snapshot();
+      if (snapshot && snapshot.cells.length > 0 && snapshot.remainingMovementPoints === 0) {
+        await commitCurrentRoute();
+        return;
+      }
       await renderSnapshot();
-      if (!result.accepted) await safeNotify(clickFailureMessage(result.reason), "WARNING");
     });
     return false;
   };
@@ -212,34 +249,6 @@ export async function registerShipRouteTool(
   };
 
   const actionFilter = { activeTools: [SHIP_ROUTE_TOOL_ID] };
-  const finishAction: ToolAction = {
-    id: SHIP_ROUTE_FINISH_ACTION_ID,
-    icons: [{ icon: iconUrl, label: "Завершить маршрут", filter: actionFilter }],
-    onClick: () => {
-      void enqueue(async () => {
-        if (!active) return;
-        const result = controller.finish();
-        if (result.action === "INVALID") {
-          await safeNotify(
-            result.reason === "EMPTY_ROUTE"
-              ? "Добавьте хотя бы одну клетку маршрута"
-              : clickFailureMessage(result.reason),
-            "WARNING"
-          );
-          return;
-        }
-        if (result.action !== "COMMIT") return;
-        try {
-          await port.commitRoute(result.shipId, result.startCell, result.cells);
-        } catch (error) {
-          await safeNotify(`Не удалось сохранить маршрут корабля: ${messageFrom(error)}`, "ERROR");
-          return;
-        }
-        await finishSession(true);
-      });
-    }
-  };
-
   const undoAction: ToolAction = {
     id: SHIP_ROUTE_UNDO_ACTION_ID,
     icons: [{ icon: iconUrl, label: "Шаг назад", filter: actionFilter }],
@@ -301,7 +310,7 @@ export async function registerShipRouteTool(
   };
 
   await api.create(tool);
-  const actions = [finishAction, undoAction, clearAction, cancelAction];
+  const actions = [undoAction, clearAction, cancelAction];
   try {
     await api.createMode(mode);
     for (const action of actions) await api.createAction(action);
@@ -322,7 +331,6 @@ export async function registerShipRouteTool(
     let failure: unknown;
     try { await finishSession(false); } catch (error) { failure = error; }
     for (const actionId of [
-      SHIP_ROUTE_FINISH_ACTION_ID,
       SHIP_ROUTE_UNDO_ACTION_ID,
       SHIP_ROUTE_CLEAR_ACTION_ID,
       SHIP_ROUTE_CANCEL_ACTION_ID
