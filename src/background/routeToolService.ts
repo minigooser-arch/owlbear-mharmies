@@ -244,6 +244,22 @@ export class RouteToolService implements RouteToolIntegrationPort {
         }
       });
     }
+    if (snapshot.finishButton) {
+      overlays.push({
+        key: `${snapshot.armyId}/FINISH`,
+        item: {
+          type: "LABEL",
+          position: { ...snapshot.finishButton.position },
+          visible: true,
+          disableHit: true,
+          text: `✓ ${snapshot.finishButton.label}`,
+          color: "#1565c0",
+          metadata: {
+            [METADATA_KEYS.routePreview]: { armyId: snapshot.armyId, kind: "FINISH" }
+          }
+        }
+      });
+    }
     if (snapshot.preview) {
       overlays.push({
         key: `${snapshot.armyId}/DISTANCE`,
