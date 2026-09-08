@@ -87,6 +87,7 @@ export class ShipRouteToolService {
       gridDpi,
       movementPoints: authorized.ship.state.globalMovementRemaining,
       maxMovementPoints: SHIP_CLASSES[authorized.ship.state.classId].movement,
+      facing: authorized.ship.state.facing,
       terrain: structuredClone(authorized.scene.terrain),
       gridMap: structuredClone(authorized.scene.gridMap)
     };
@@ -142,7 +143,9 @@ export class ShipRouteToolService {
         }
       });
     }
+    let cumulativeCost = 0;
     snapshot.points.forEach((point, index) => {
+      cumulativeCost += snapshot.stepMovementCosts[index] ?? 0;
       overlays.push({
         key: `${snapshot.shipId}/WAYPOINT/${index}`,
         item: {
@@ -150,7 +153,7 @@ export class ShipRouteToolService {
           position: { ...point },
           visible: true,
           disableHit: true,
-          text: `${index + 1} ОП`,
+          text: `${cumulativeCost} ОП`,
           color: "#4f687a",
           metadata: {
             [METADATA_KEYS.shipRoutePreview]: {
@@ -162,6 +165,22 @@ export class ShipRouteToolService {
         }
       });
     });
+    if (snapshot.finishButton) {
+      overlays.push({
+        key: `${snapshot.shipId}/FINISH`,
+        item: {
+          type: "LABEL",
+          position: { ...snapshot.finishButton.position },
+          visible: true,
+          disableHit: true,
+          text: `✓ ${snapshot.finishButton.label}`,
+          color: "#1565c0",
+          metadata: {
+            [METADATA_KEYS.shipRoutePreview]: { shipId: snapshot.shipId, kind: "FINISH" }
+          }
+        }
+      });
+    }
     if (snapshot.preview) {
       overlays.push({
         key: `${snapshot.shipId}/DISTANCE`,
