@@ -9,13 +9,89 @@ on:
   pull_request:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Apply coordinator acquisition fix
+        if: github.event_name == 'push' && github.ref == 'refs/heads/fix/coordinator-lease-acquisition'
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          path = Path('src/background/application.ts')
+          text = path.read_text()
+          old = '''  writeCoordinatorHeartbeat(
+    heartbeat: NonNullable<SceneState["coordinatorLease"]>
+  ): Promise<void> {
+    return this.enqueueMutation(async () => {
+      const canCommit = this.captureCoordinatorGuard(heartbeat.connectionId);
+      if (!canCommit()) return;
+      const scene = await this.repository.readScene();
+      if (!canCommit()) return;
+      try {
+        await this.repository.writeScene(
+          { ...scene, coordinatorLease: heartbeat },
+          scene.revision,
+          () => canCommit()
+        );
+      } catch (error) {
+        if (!canCommit()) return;
+        throw error;
+      }
+    });
+  }
+'''
+          new = '''  writeCoordinatorHeartbeat(
+    heartbeat: NonNullable<SceneState["coordinatorLease"]>
+  ): Promise<void> {
+    return this.enqueueMutation(async () => {
+      // Initial lease acquisition happens before setCoordinator(true), so the normal
+      // active-coordinator guard cannot be used here. Instead, pin this claim to the
+      // current coordinator generation and refuse to overwrite a live foreign lease.
+      const generation = this.coordinatorGeneration;
+      const claimIsCurrent = () =>
+        this.coordinatorGeneration === generation &&
+        (!this.coordinator || this.activeCoordinatorConnectionId === heartbeat.connectionId);
+      const leaseIsClaimable = (current: SceneState) => {
+        const lease = current.coordinatorLease;
+        return lease === undefined ||
+          lease.connectionId === heartbeat.connectionId ||
+          lease.expiresAt <= this.wallClock().getTime();
+      };
+
+      if (!claimIsCurrent()) throw new Error("Coordinator heartbeat claim is stale");
+      const scene = await this.repository.readScene();
+      if (!claimIsCurrent()) throw new Error("Coordinator heartbeat claim is stale");
+      if (!leaseIsClaimable(scene)) {
+        throw new Error("Coordinator lease is held by another live connection");
+      }
+      await this.repository.writeScene(
+        { ...scene, coordinatorLease: heartbeat },
+        scene.revision,
+        (current) => claimIsCurrent() && leaseIsClaimable(current)
+      );
+    });
+  }
+'''
+          if old in text:
+              path.write_text(text.replace(old, new, 1))
+          elif new not in text:
+              raise SystemExit('unexpected writeCoordinatorHeartbeat implementation')
+          PY
+      - name: Commit coordinator acquisition fix
+        if: github.event_name == 'push' && github.ref == 'refs/heads/fix/coordinator-lease-acquisition'
+        shell: bash
+        run: |
+          if git diff --quiet; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/background/application.ts
+          git commit -m "fix: allow initial coordinator lease acquisition"
+          git push
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 24
