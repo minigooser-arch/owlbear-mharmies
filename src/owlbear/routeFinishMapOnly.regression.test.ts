@@ -1,4 +1,4 @@
-import type { Metadata, Tool, ToolAction, ToolMode } from "@owlbear-rodeo/sdk";
+import type { ToolAction } from "@owlbear-rodeo/sdk";
 import { describe, expect, it } from "vitest";
 import {
   ROUTE_CANCEL_ACTION_ID,
@@ -15,13 +15,13 @@ import { registerShipRouteTool, type ShipRouteToolApi, type ShipRouteToolIntegra
 
 class Api implements RouteToolApi, ShipRouteToolApi {
   actions: ToolAction[] = [];
-  async create(_tool: Tool) {}
-  async remove(_id: string) {}
-  async createMode(_mode: ToolMode) {}
-  async removeMode(_id: string) {}
+  async create() {}
+  async remove() {}
+  async createMode() {}
+  async removeMode() {}
   async createAction(action: ToolAction) { this.actions.push(action); }
-  async removeAction(_id: string) {}
-  async setMetadata(_toolId: string, _update: Partial<Metadata>) {}
+  async removeAction() {}
+  async setMetadata() {}
 }
 
 const routePort = {
