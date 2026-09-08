@@ -109,3 +109,26 @@ it("accepts a map brush terrain command immediately after initial coordinator ac
   expect(state.scene.gridMap.cells["4,7"]?.terrainId).toBe("sea");
   expect(state.scene.revision).toBe(3);
 });
+
+it("refuses to overwrite another live coordinator lease during initial acquisition", async () => {
+  const state = fixture();
+  state.scene.coordinatorLease = {
+    connectionId: "gm-b",
+    epoch: 4,
+    expiresAt: 15_000
+  };
+  const engine = new ProductionEngine(state.port, () => new Date(10_000));
+
+  await expect(engine.writeCoordinatorHeartbeat({
+    connectionId: "gm-a",
+    epoch: 5,
+    expiresAt: 13_000
+  })).rejects.toThrow("Coordinator lease is held by another live connection");
+
+  expect(state.scene.coordinatorLease).toEqual({
+    connectionId: "gm-b",
+    epoch: 4,
+    expiresAt: 15_000
+  });
+  expect(engine.isCoordinator()).toBe(false);
+});
