@@ -300,7 +300,7 @@ export async function registerRouteTool(
   const finishAction: ToolAction = {
     id: ROUTE_FINISH_ACTION_ID,
     icons: [{ icon: iconUrl, label: "Завершить маршрут", filter: actionFilter }],
-    onClick: () => { void enqueue(commitCurrentRoute); }
+    onClick: () => { void enqueue(async () => { await commitCurrentRoute(); }); }
   };
   const undoAction: ToolAction = {
     id: ROUTE_UNDO_ACTION_ID,
