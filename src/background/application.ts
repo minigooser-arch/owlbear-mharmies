@@ -1210,18 +1210,36 @@ export class ProductionEngine {
     heartbeat: NonNullable<SceneState["coordinatorLease"]>
   ): Promise<void> {
     return this.enqueueMutation(async () => {
-      const canCommit = this.captureCoordinatorGuard(heartbeat.connectionId);
-      if (!canCommit()) return;
+      // Initial lease acquisition happens before setCoordinator(true), so the normal
+      // active-coordinator guard cannot be used here. Instead, pin this claim to the
+      // current coordinator generation and refuse to overwrite a live foreign lease.
+      const generation = this.coordinatorGeneration;
+      const claimIsCurrent = () =>
+        this.coordinatorGeneration === generation &&
+        (!this.coordinator || this.activeCoordinatorConnectionId === heartbeat.connectionId);
+      const leaseIsClaimable = (current: SceneState) => {
+        const lease = current.coordinatorLease;
+        return lease === undefined ||
+          lease.connectionId === heartbeat.connectionId ||
+          lease.expiresAt <= this.wallClock().getTime();
+      };
+
+      if (!claimIsCurrent()) return;
       const scene = await this.repository.readScene();
-      if (!canCommit()) return;
+      if (!claimIsCurrent()) return;
+      if (!leaseIsClaimable(scene)) {
+        throw new Error("Coordinator lease is held by another live connection");
+      }
       try {
         await this.repository.writeScene(
           { ...scene, coordinatorLease: heartbeat },
           scene.revision,
-          () => canCommit()
+          (current) => claimIsCurrent() && leaseIsClaimable(current)
         );
       } catch (error) {
-        if (!canCommit()) return;
+        // Coordinator shutdown invalidates an in-flight heartbeat. Treat that as
+        // cancellation, while preserving real persistence/lease-acquisition failures.
+        if (!claimIsCurrent()) return;
         throw error;
       }
     });
