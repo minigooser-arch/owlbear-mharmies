@@ -9,27 +9,13 @@ on:
   pull_request:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - name: Apply heartbeat cancellation fix
-        if: github.event_name == 'push' && github.ref == 'refs/heads/fix/coordinator-lease-acquisition'
-        shell: bash
-        run: python3 -c "from pathlib import Path; import base64; p=Path('src/background/application.ts'); t=p.read_text(); old=base64.b64decode('ICAgICAgaWYgKCFjbGFpbUlzQ3VycmVudCgpKSB0aHJvdyBuZXcgRXJyb3IoIkNvb3JkaW5hdG9yIGhlYXJ0YmVhdCBjbGFpbSBpcyBzdGFsZSIpOwogICAgICBjb25zdCBzY2VuZSA9IGF3YWl0IHRoaXMucmVwb3NpdG9yeS5yZWFkU2NlbmUoKTsKICAgICAgaWYgKCFjbGFpbUlzQ3VycmVudCgpKSB0aHJvdyBuZXcgRXJyb3IoIkNvb3JkaW5hdG9yIGhlYXJ0YmVhdCBjbGFpbSBpcyBzdGFsZSIpOwogICAgICBpZiAoIWxlYXNlSXNDbGFpbWFibGUoc2NlbmUpKSB7CiAgICAgICAgdGhyb3cgbmV3IEVycm9yKCJDb29yZGluYXRvciBsZWFzZSBpcyBoZWxkIGJ5IGFub3RoZXIgbGl2ZSBjb25uZWN0aW9uIik7CiAgICAgIH0KICAgICAgYXdhaXQgdGhpcy5yZXBvc2l0b3J5LndyaXRlU2NlbmUoCiAgICAgICAgeyAuLi5zY2VuZSwgY29vcmRpbmF0b3JMZWFzZTogaGVhcnRiZWF0IH0sCiAgICAgICAgc2NlbmUucmV2aXNpb24sCiAgICAgICAgKGN1cnJlbnQpID0+IGNsYWltSXNDdXJyZW50KCkgJiYgbGVhc2VJc0NsYWltYWJsZShjdXJyZW50KQogICAgICApOwo=').decode(); new=base64.b64decode('ICAgICAgaWYgKCFjbGFpbUlzQ3VycmVudCgpKSByZXR1cm47CiAgICAgIGNvbnN0IHNjZW5lID0gYXdhaXQgdGhpcy5yZXBvc2l0b3J5LnJlYWRTY2VuZSgpOwogICAgICBpZiAoIWNsYWltSXNDdXJyZW50KCkpIHJldHVybjsKICAgICAgaWYgKCFsZWFzZUlzQ2xhaW1hYmxlKHNjZW5lKSkgewogICAgICAgIHRocm93IG5ldyBFcnJvcigiQ29vcmRpbmF0b3IgbGVhc2UgaXMgaGVsZCBieSBhbm90aGVyIGxpdmUgY29ubmVjdGlvbiIpOwogICAgICB9CiAgICAgIHRyeSB7CiAgICAgICAgYXdhaXQgdGhpcy5yZXBvc2l0b3J5LndyaXRlU2NlbmUoCiAgICAgICAgICB7IC4uLnNjZW5lLCBjb29yZGluYXRvckxlYXNlOiBoZWFydGJlYXQgfSwKICAgICAgICAgIHNjZW5lLnJldmlzaW9uLAogICAgICAgICAgKGN1cnJlbnQpID0+IGNsYWltSXNDdXJyZW50KCkgJiYgbGVhc2VJc0NsYWltYWJsZShjdXJyZW50KQogICAgICAgICk7CiAgICAgIH0gY2F0Y2ggKGVycm9yKSB7CiAgICAgICAgLy8gQ29vcmRpbmF0b3Igc2h1dGRvd24gaW52YWxpZGF0ZXMgYW4gaW4tZmxpZ2h0IGhlYXJ0YmVhdC4gVHJlYXQgdGhhdCBhcwogICAgICAgIC8vIGNhbmNlbGxhdGlvbiwgd2hpbGUgcHJlc2VydmluZyByZWFsIHBlcnNpc3RlbmNlL2xlYXNlLWFjcXVpc2l0aW9uIGZhaWx1cmVzLgogICAgICAgIGlmICghY2xhaW1Jc0N1cnJlbnQoKSkgcmV0dXJuOwogICAgICAgIHRocm93IGVycm9yOwogICAgICB9Cg==').decode(); assert old in t or new in t; p.write_text(t.replace(old,new,1) if old in t else t)"
-      - name: Commit heartbeat cancellation fix
-        if: github.event_name == 'push' && github.ref == 'refs/heads/fix/coordinator-lease-acquisition'
-        shell: bash
-        run: |
-          if git diff --quiet; then exit 0; fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/background/application.ts
-          git commit -m "fix: cancel stale coordinator heartbeats safely"
-          git push
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 24
