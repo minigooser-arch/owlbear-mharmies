@@ -48,7 +48,9 @@ describe("army route straight segment regression", () => {
   it("rejects the whole distant segment when an intermediate cell is impassable", async () => {
     const controller = new RouteToolController({ snapGridCenter: snap });
     const input = activation();
-    input.gridMap.cells["2,0"] = { ...input.gridMap.cells["2,0"]!, impassable: true };
+    const blocked = input.gridMap.cells["2,0"];
+    if (!blocked) throw new Error("Missing intermediate fixture cell");
+    input.gridMap.cells["2,0"] = { ...blocked, impassable: true };
     controller.activate(input);
 
     expect(await controller.click({ x: 350, y: 50 })).toEqual({ accepted: false, reason: "IMPASSABLE" });
