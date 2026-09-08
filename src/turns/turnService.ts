@@ -132,8 +132,8 @@ export function completeTurn(
   let nextBattleGroups = structuredClone(scene.battleGroups);
   const nextTurn = scene.turn.turnNumber + 1;
   if (nextScene.navalBattleRequests) nextScene.navalBattleRequests = [];
+  if (nextScene.transportEmbarkRequests) nextScene.transportEmbarkRequests = [];
 
-  // Disband happens before supply and any other new-turn processing.
   for (const [armyId, army] of Object.entries(nextArmies)) {
     if (!army.disband.pending) continue;
     const destroyed = destroyArmy(nextArmies, nextBattleGroups, armyId);
@@ -142,7 +142,6 @@ export function completeTurn(
   }
   nextScene.battleGroups = nextBattleGroups;
 
-  // Supply, encirclement damage, destruction, fixed 5 OP, and simultaneous route activation.
   for (const [armyId, army] of Object.entries(nextArmies)) {
     const prepared = prepareArmyForNewTurn(nextScene, armyId, army, input.armyCells[armyId], nextTurn);
     if (prepared.health.hp <= 0) {
@@ -154,7 +153,6 @@ export function completeTurn(
     nextArmies[armyId] = prepared;
   }
 
-  // Restore each ship's class strategic movement budget without changing its order or combat state.
   if (nextScene.ships) {
     for (const [shipId, ship] of Object.entries(nextScene.ships)) {
       nextScene.ships[shipId] = {
@@ -171,6 +169,7 @@ export function completeTurn(
   nextScene.turn = {
     ...nextScene.turn,
     turnNumber: nextTurn,
+    phase: "MOVEMENT",
     deferredUntil: null,
     lastCompletedAt: completedAtIso,
     lastCompletedBy: input.source,
