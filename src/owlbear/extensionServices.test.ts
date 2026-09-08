@@ -680,6 +680,30 @@ describe("extension command feedback", () => {
     expect(serviceHarness.adapter.send).not.toHaveBeenCalled();
   });
 
+
+  it("updates map brush metadata without activating the tool", async () => {
+    const running = await startServices();
+    serviceHarness.sdk.tool.setMetadata.mockClear();
+    serviceHarness.sdk.tool.activateTool.mockClear();
+    serviceHarness.sdk.tool.activateMode.mockClear();
+
+    await running.send({
+      type: "UPDATE_MAP_BRUSH_SETTINGS",
+      settings: {
+        mode: "TERRAIN", size: 5, terrainId: "sea",
+        factionOperation: "ADD", impassable: true, eraserTarget: "TERRAIN"
+      }
+    });
+
+    expect(serviceHarness.sdk.tool.setMetadata).toHaveBeenCalledWith(MAP_BRUSH_TOOL_ID, expect.objectContaining({
+      [MAP_BRUSH_SIZE_KEY]: 5,
+      [MAP_BRUSH_TERRAIN_ID_KEY]: "sea"
+    }));
+    expect(serviceHarness.sdk.tool.activateTool).not.toHaveBeenCalled();
+    expect(serviceHarness.sdk.tool.activateMode).not.toHaveBeenCalled();
+    expect(serviceHarness.adapter.send).not.toHaveBeenCalled();
+  });
+
   it("activates the route tool with the army and previous tool metadata", async () => {
     const running = await startServices();
 

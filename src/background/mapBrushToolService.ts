@@ -29,6 +29,8 @@ export class MapBrushAuthorizationError extends Error {
   }
 }
 
+const MAX_REVISION_CONFLICT_RETRIES = 5;
+
 function previewColor(settings: MapBrushSettings): string {
   if (settings.mode === "IMPASSABLE") return settings.impassable ? "#ef5350" : "#66bb6a";
   if (settings.mode === "FACTION_TERRITORY") return settings.factionOperation === "ADD" ? "#ab47bc" : "#78909c";
@@ -118,12 +120,22 @@ export class MapBrushToolService implements MapBrushToolPort {
       ...payload
     } as ArmyCommand);
 
-    let ack = await this.gateway.send(buildCommand(scene.revision));
-    if (ack.status === "CONFLICT" && Number.isInteger(ack.actualRevision) && (ack.actualRevision ?? -1) >= 0) {
-      ack = await this.gateway.send(buildCommand(ack.actualRevision as number));
+    let expectedRevision = scene.revision;
+    for (let retry = 0; retry <= MAX_REVISION_CONFLICT_RETRIES; retry += 1) {
+      const ack = await this.gateway.send(buildCommand(expectedRevision));
+      if (ack.status === "ACCEPTED") return;
+      if (ack.status === "REJECTED") {
+        throw new MapBrushAuthorizationError(ack.reason ?? "INVALID_COMMAND");
+      }
+      if (
+        !Number.isInteger(ack.actualRevision) ||
+        (ack.actualRevision ?? -1) < 0 ||
+        retry === MAX_REVISION_CONFLICT_RETRIES
+      ) {
+        throw new MapBrushAuthorizationError("REVISION_CONFLICT");
+      }
+      expectedRevision = ack.actualRevision as number;
     }
-    if (ack.status === "REJECTED") throw new MapBrushAuthorizationError(ack.reason ?? "INVALID_COMMAND");
-    if (ack.status === "CONFLICT") throw new MapBrushAuthorizationError("REVISION_CONFLICT");
   }
 
   async renderPreview(settings: MapBrushSettings, cells: readonly GridCellCoord[]): Promise<void> {

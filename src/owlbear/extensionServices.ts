@@ -585,7 +585,7 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
         await OBR.tool.activateMode(NAVAL_BATTLE_AREA_TOOL_ID, NAVAL_BATTLE_AREA_TOOL_MODE_ID);
         return undefined;
       }
-      if (command.type === "OPEN_MAP_BRUSH") {
+      if (command.type === "OPEN_MAP_BRUSH" || command.type === "UPDATE_MAP_BRUSH_SETTINGS") {
         if (snapshot.role !== "GM") {
           await notifyRussian(adapter, "GM_ONLY");
           return undefined;
@@ -601,8 +601,10 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
           [MAP_BRUSH_IMPASSABLE_VALUE_KEY]: settings.impassable,
           [MAP_BRUSH_ERASER_TARGET_KEY]: settings.eraserTarget
         });
-        await OBR.tool.activateTool(MAP_BRUSH_TOOL_ID);
-        await OBR.tool.activateMode(MAP_BRUSH_TOOL_ID, MAP_BRUSH_TOOL_MODE_ID);
+        if (command.type === "OPEN_MAP_BRUSH") {
+          await OBR.tool.activateTool(MAP_BRUSH_TOOL_ID);
+          await OBR.tool.activateMode(MAP_BRUSH_TOOL_ID, MAP_BRUSH_TOOL_MODE_ID);
+        }
         return undefined;
       }
       if (command.type === "EDIT_ROUTE") {

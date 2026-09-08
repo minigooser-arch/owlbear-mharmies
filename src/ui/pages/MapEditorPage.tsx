@@ -45,8 +45,7 @@ function StateEditor({ state, sides, onAction }: { state: StateEntity; sides: re
     <div className="terrain-row-main">
       <input aria-label={`Название государства ${state.id}`} value={name} onChange={(event) => setName(event.target.value)} />
       <label>Правящая фракция<select value={rulingFactionId} onChange={(event) => setRulingFactionId(event.target.value)}>
-        <option value="">Не назначена</option>{sides.map((side) => <option key={side.id} value={side.id}>{side.name}</option>)}
-      </select></label>
+        <option value="">Не назначена</option>{sides.map((side) => <option key={side.id} value={side.id}>{side.name}</option>)}</select></label>
     </div>
     <div className="card-actions">
       <button type="button" disabled={!name.trim()} onClick={() => onAction({ type: "UPDATE_STATE", stateId: state.id, patch: { name: name.trim(), rulingFactionId: rulingFactionId || null } })}>Сохранить</button>
@@ -85,7 +84,26 @@ export function MapEditorPage({ terrain, sides, states, onAction }: MapEditorPag
     : mode === "DEFACTO_STATE" ? "Следующий мазок назначит фактический контроль государства."
     : "Ластик изменит только выбранный слой клетки.";
 
-  const applyBrush = () => canApply && onAction({ type: "OPEN_MAP_BRUSH", settings: { mode, size, terrainId, ...(sideId ? { sideId } : {}), ...(stateId ? { stateId } : {}), factionOperation, impassable, eraserTarget } });
+  const brushSettings = (nextSize: MapBrushUiSettings["size"] = size): MapBrushUiSettings => ({
+    mode,
+    size: nextSize,
+    terrainId,
+    ...(sideId ? { sideId } : {}),
+    ...(stateId ? { stateId } : {}),
+    factionOperation,
+    impassable,
+    eraserTarget
+  });
+
+  const applyBrush = () => {
+    if (!canApply) return;
+    onAction({ type: "OPEN_MAP_BRUSH", settings: brushSettings() });
+  };
+
+  const selectBrushSize = (brushSize: MapBrushUiSettings["size"]) => {
+    setSize(brushSize);
+    onAction({ type: "UPDATE_MAP_BRUSH_SETTINGS", settings: brushSettings(brushSize) });
+  };
 
   return <section aria-labelledby="map-editor-title">
     <div className="section-heading wiki-page-heading"><div><p className="eyebrow">Ведущий</p><h2 id="map-editor-title">Разметка карты</h2><p className="page-description">Редактируйте стратегические клетки, территории, государственный контроль и справочники карты.</p></div></div>
@@ -101,7 +119,7 @@ export function MapEditorPage({ terrain, sides, states, onAction }: MapEditorPag
         {(mode === "RECOGNIZED_STATE" || mode === "DEFACTO_STATE") && <label>Государство<select value={stateId} onChange={(event) => setStateId(event.target.value)}>{states.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
         {mode === "ERASER" && <><label>Что стирать<select value={eraserTarget} onChange={(event) => setEraserTarget(event.target.value as MapBrushUiSettings["eraserTarget"])}><option value="TERRAIN">Только местность</option><option value="IMPASSABLE">Только непроходимость</option><option value="SELECTED_FACTION">Только территорию выбранной фракции</option><option value="RECOGNIZED_STATE">Признанную государственную принадлежность</option><option value="DEFACTO_STATE">Де-факто контроль</option><option value="ALL">Все свойства клетки</option></select></label>{eraserTarget === "SELECTED_FACTION" && <label>Фракция<select value={sideId} onChange={(event) => setSideId(event.target.value)}>{sides.map((side) => <option key={side.id} value={side.id}>{side.name}</option>)}</select></label>}</>}
       </div>
-      <div className="brush-size" aria-label="Размер кисти"><span>Размер</span>{BRUSH_SIZES.map((brushSize) => <button key={brushSize} type="button" className={size === brushSize ? "active" : ""} onClick={() => setSize(brushSize)}>{brushSize}×{brushSize}</button>)}</div>
+      <div className="brush-size" aria-label="Размер кисти"><span>Размер</span>{BRUSH_SIZES.map((brushSize) => <button key={brushSize} type="button" className={size === brushSize ? "active" : ""} onClick={() => selectBrushSize(brushSize)}>{brushSize}×{brushSize}</button>)}</div>
       <p className="helper-text">{description}</p><button className="button primary wide" type="button" disabled={!canApply} onClick={applyBrush}>Начать рисовать</button>
     </div>
 
