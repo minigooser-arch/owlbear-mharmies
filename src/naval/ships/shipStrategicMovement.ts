@@ -1,4 +1,4 @@
-import type { GridCellCoord, SceneState, ShipState } from "../../shared/types";
+import type { GridCellCoord, SceneState, ShipFacing, ShipState } from "../../shared/types";
 import { readCell } from "../../terrain/gridMap";
 import { cellSupportsDomain } from "../../terrain/movementDomains";
 
@@ -14,6 +14,7 @@ export type ShipStrategicRoutePlan =
       cells: GridCellCoord[];
       cost: number;
       remainingMovement: number;
+      finalFacing: ShipFacing;
     }
   | {
       ok: false;
@@ -23,8 +24,29 @@ export type ShipStrategicRoutePlan =
 
 type StrategicMovementScene = Pick<SceneState, "terrain" | "gridMap">;
 
-function orthogonallyAdjacent(left: GridCellCoord, right: GridCellCoord): boolean {
-  return Math.abs(left.x - right.x) + Math.abs(left.y - right.y) === 1;
+const FACING_INDEX: Readonly<Record<ShipFacing, number>> = {
+  NORTH: 0,
+  EAST: 1,
+  SOUTH: 2,
+  WEST: 3
+};
+
+export function facingForStrategicStep(
+  from: GridCellCoord,
+  to: GridCellCoord
+): ShipFacing | undefined {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  if (dx === 1 && dy === 0) return "EAST";
+  if (dx === -1 && dy === 0) return "WEST";
+  if (dx === 0 && dy === 1) return "SOUTH";
+  if (dx === 0 && dy === -1) return "NORTH";
+  return undefined;
+}
+
+export function strategicTurnCost(from: ShipFacing, to: ShipFacing): number {
+  const difference = Math.abs(FACING_INDEX[from] - FACING_INDEX[to]);
+  return Math.min(difference, 4 - difference);
 }
 
 export function planShipStrategicRoute(
@@ -34,8 +56,12 @@ export function planShipStrategicRoute(
   cells: readonly GridCellCoord[]
 ): ShipStrategicRoutePlan {
   let previous = startCell;
+  let facing = ship.facing;
+  let cost = 0;
+
   for (const cell of cells) {
-    if (!orthogonallyAdjacent(previous, cell)) {
+    const requiredFacing = facingForStrategicStep(previous, cell);
+    if (!requiredFacing) {
       return { ok: false, reason: "NOT_ORTHOGONAL", cell: { ...cell } };
     }
     const state = readCell(scene.gridMap, cell);
@@ -45,30 +71,35 @@ export function planShipStrategicRoute(
     if (!cellSupportsDomain(scene, cell, "SEA")) {
       return { ok: false, reason: "NON_NAVAL_TERRAIN", cell: { ...cell } };
     }
+
+    const stepCost = strategicTurnCost(facing, requiredFacing) + 1;
+    if (cost + stepCost > ship.globalMovementRemaining) {
+      return { ok: false, reason: "INSUFFICIENT_MOVEMENT_POINTS", cell: { ...cell } };
+    }
+    cost += stepCost;
+    facing = requiredFacing;
     previous = cell;
   }
 
-  const cost = cells.length;
-  if (cost > ship.globalMovementRemaining) {
-    return { ok: false, reason: "INSUFFICIENT_MOVEMENT_POINTS" };
-  }
   return {
     ok: true,
     cells: cells.map((cell) => ({ ...cell })),
     cost,
-    remainingMovement: ship.globalMovementRemaining - cost
+    remainingMovement: ship.globalMovementRemaining - cost,
+    finalFacing: facing
   };
 }
 
 export function commitShipStrategicRoute(
   ship: ShipState,
-  cells: readonly GridCellCoord[]
+  cells: readonly GridCellCoord[],
+  cost: number
 ): ShipState {
   return {
     ...ship,
     plannedRoute: cells.map((cell) => ({ ...cell })),
-    globalMovementRemaining: ship.globalMovementRemaining - cells.length,
-    movementSpentThisTurn: cells.length > 0 || ship.movementSpentThisTurn,
+    globalMovementRemaining: ship.globalMovementRemaining - cost,
+    movementSpentThisTurn: cost > 0 || ship.movementSpentThisTurn,
     revision: ship.revision + 1
   };
 }
