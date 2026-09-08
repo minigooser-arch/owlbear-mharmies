@@ -1,0 +1,88 @@
+name: Temporary coordinator lease patch
+
+on:
+  push:
+    branches:
+      - fix/coordinator-lease-acquisition
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - name: Apply coordinator acquisition fix
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          path = Path('src/background/application.ts')
+          text = path.read_text()
+          old = '''  writeCoordinatorHeartbeat(
+    heartbeat: NonNullable<SceneState["coordinatorLease"]>
+  ): Promise<void> {
+    return this.enqueueMutation(async () => {
+      const canCommit = this.captureCoordinatorGuard(heartbeat.connectionId);
+      if (!canCommit()) return;
+      const scene = await this.repository.readScene();
+      if (!canCommit()) return;
+      try {
+        await this.repository.writeScene(
+          { ...scene, coordinatorLease: heartbeat },
+          scene.revision,
+          () => canCommit()
+        );
+      } catch (error) {
+        if (!canCommit()) return;
+        throw error;
+      }
+    });
+  }
+'''
+          new = '''  writeCoordinatorHeartbeat(
+    heartbeat: NonNullable<SceneState["coordinatorLease"]>
+  ): Promise<void> {
+    return this.enqueueMutation(async () => {
+      // A freshly elected coordinator must persist its lease before setCoordinator(true).
+      // Do not use captureCoordinatorGuard here: that guard intentionally requires an
+      // already-active coordinator and would make initial lease acquisition impossible.
+      const generation = this.coordinatorGeneration;
+      const claimIsCurrent = () =>
+        this.coordinatorGeneration === generation &&
+        (!this.coordinator || this.activeCoordinatorConnectionId === heartbeat.connectionId);
+      const leaseIsClaimable = (current: SceneState) => {
+        const lease = current.coordinatorLease;
+        return lease === undefined ||
+          lease.connectionId === heartbeat.connectionId ||
+          lease.expiresAt <= this.wallClock().getTime();
+      };
+
+      if (!claimIsCurrent()) throw new Error("Coordinator heartbeat claim is stale");
+      const scene = await this.repository.readScene();
+      if (!claimIsCurrent()) throw new Error("Coordinator heartbeat claim is stale");
+      if (!leaseIsClaimable(scene)) {
+        throw new Error("Coordinator lease is held by another live connection");
+      }
+      await this.repository.writeScene(
+        { ...scene, coordinatorLease: heartbeat },
+        scene.revision,
+        (current) => claimIsCurrent() && leaseIsClaimable(current)
+      );
+    });
+  }
+'''
+          if old not in text:
+              raise SystemExit('target heartbeat implementation not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
+      - name: Commit production fix
+        shell: bash
+        run: |
+          if git diff --quiet; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/background/application.ts
+          git commit -m "fix: allow initial coordinator lease acquisition"
+          git push
