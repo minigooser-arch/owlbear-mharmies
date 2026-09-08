@@ -1,5 +1,5 @@
 import { firstBarrierIntersection, type BarrierSegment } from "../barriers/barrierGeometry";
-import { StrategicGridAdapter, isOrthogonalNeighbor } from "../grid/strategicGrid";
+import { StrategicGridAdapter } from "../grid/strategicGrid";
 import { validateMovementStep } from "../movement/movementRules";
 import type { GridRoutePort } from "../routes/routeMath";
 import { readCell } from "../terrain/gridMap";
@@ -80,6 +80,17 @@ export type RouteFinishResult =
   | { action: "INVALID"; reason: MovementDenialReason | "EMPTY_ROUTE" }
   | { action: "IGNORED" };
 
+interface RouteAddition {
+  point: Vector2;
+  cell: GridCellCoord;
+  cost: number;
+}
+
+interface RouteAnalysis {
+  preview: RoutePreview;
+  additions: RouteAddition[];
+}
+
 export function formatMovementUnits(units: number): string {
   const value = units / 2;
   return Number.isInteger(value) ? String(value) : value.toFixed(1).replace(".", ",");
@@ -98,6 +109,19 @@ function messageForPreview(reason: RoutePreview["reason"], missingUnits?: number
     case "INACTIVE": return "Инструмент маршрута не активен";
     default: return "";
   }
+}
+
+function straightCells(from: GridCellCoord, to: GridCellCoord): GridCellCoord[] | undefined {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  if (dx !== 0 && dy !== 0) return undefined;
+  const count = Math.abs(dx) + Math.abs(dy);
+  const stepX = Math.sign(dx);
+  const stepY = Math.sign(dy);
+  return Array.from({ length: count }, (_unused, index) => ({
+    x: from.x + stepX * (index + 1),
+    y: from.y + stepY * (index + 1)
+  }));
 }
 
 export class RouteToolController {
@@ -194,25 +218,27 @@ export class RouteToolController {
 
   async move(point: Vector2): Promise<void> {
     const sequence = ++this.sequence;
-    const preview = await this.analyze(point);
-    if (sequence === this.sequence) this.currentPreview = preview;
+    const analysis = await this.analyze(point);
+    if (sequence === this.sequence) this.currentPreview = analysis.preview;
   }
 
   async click(point: Vector2): Promise<RouteClickResult> {
     const active = this.activation;
     if (!active) return { accepted: false, reason: "INACTIVE" };
     const sequence = ++this.sequence;
-    const preview = await this.analyze(point);
+    const analysis = await this.analyze(point);
     if (sequence !== this.sequence || this.activation?.armyId !== active.armyId) {
       return { accepted: false, reason: "INACTIVE" };
     }
-    this.currentPreview = preview;
-    if (!preview.valid) return { accepted: false, reason: preview.reason ?? "INACTIVE" };
-    const anchor = this.cells.at(-1) ?? active.startCell;
-    if (preview.cell.x === anchor.x && preview.cell.y === anchor.y) return { accepted: true };
-    this.cells.push({ ...preview.cell });
-    this.points.push({ ...preview.point });
-    this.costs.push(preview.stepCostUnits ?? 0);
+    this.currentPreview = analysis.preview;
+    if (!analysis.preview.valid) {
+      return { accepted: false, reason: analysis.preview.reason ?? "INACTIVE" };
+    }
+    for (const addition of analysis.additions) {
+      this.cells.push({ ...addition.cell });
+      this.points.push({ ...addition.point });
+      this.costs.push(addition.cost);
+    }
     this.currentPreview = undefined;
     return { accepted: true };
   }
@@ -224,7 +250,6 @@ export class RouteToolController {
       this.deactivate();
       return { action: "CANCEL" };
     }
-    // Enter is intentionally ignored. Route completion is a visible map affordance / ToolAction.
     return { action: "IGNORED" };
   }
 
@@ -237,71 +262,107 @@ export class RouteToolController {
     this.sequence += 1;
   }
 
-  private async analyze(pointer: Vector2): Promise<RoutePreview> {
+  private async analyze(pointer: Vector2): Promise<RouteAnalysis> {
     const active = this.activation;
     if (!active) {
       return {
-        point: { ...pointer }, cell: { x: 0, y: 0 }, valid: false, color: "#d32f2f",
-        label: messageForPreview("INACTIVE"), totalCostUnits: 0, remainingUnits: 0, reason: "INACTIVE"
+        additions: [],
+        preview: {
+          point: { ...pointer }, cell: { x: 0, y: 0 }, valid: false, color: "#d32f2f",
+          label: messageForPreview("INACTIVE"), totalCostUnits: 0, remainingUnits: 0, reason: "INACTIVE"
+        }
       };
     }
     const snapped = await this.gridPort.snapGridCenter(pointer);
     const adapter = new StrategicGridAdapter({ dpi: active.gridDpi, offset: { x: 0, y: 0 } });
-    const cell = adapter.sceneToCell(snapped);
-    const point = adapter.cellToSceneCenter(cell);
+    const targetCell = adapter.sceneToCell(snapped);
+    const targetPoint = adapter.cellToSceneCenter(targetCell);
     const anchorCell = this.cells.at(-1) ?? active.startCell;
     const anchorPoint = this.points.at(-1) ?? active.start;
     const spent = this.costs.reduce((sum, value) => sum + value, 0);
     const remaining = Math.max(0, active.movementUnits - spent);
 
-    if (cell.x === anchorCell.x && cell.y === anchorCell.y) {
+    if (targetCell.x === anchorCell.x && targetCell.y === anchorCell.y) {
       return {
-        point, cell, valid: true, color: "#2e7d32",
-        label: `Маршрут: ${formatMovementUnits(spent)} ОП · останется ${formatMovementUnits(remaining)} ОП`,
-        totalCostUnits: spent, remainingUnits: remaining, stepCostUnits: 0
+        additions: [],
+        preview: {
+          point: targetPoint, cell: targetCell, valid: true, color: "#2e7d32",
+          label: `Маршрут: ${formatMovementUnits(spent)} ОП · останется ${formatMovementUnits(remaining)} ОП`,
+          totalCostUnits: spent, remainingUnits: remaining, stepCostUnits: 0
+        }
       };
     }
-    if (!isOrthogonalNeighbor(anchorCell, cell)) {
+
+    const segment = straightCells(anchorCell, targetCell);
+    if (!segment) {
       return {
-        point, cell, valid: false, color: "#d32f2f",
-        label: messageForPreview("NOT_ORTHOGONAL"), totalCostUnits: spent,
-        remainingUnits: remaining, reason: "NOT_ORTHOGONAL"
+        additions: [],
+        preview: {
+          point: targetPoint, cell: targetCell, valid: false, color: "#d32f2f",
+          label: messageForPreview("NOT_ORTHOGONAL"), totalCostUnits: spent,
+          remainingUnits: remaining, reason: "NOT_ORTHOGONAL"
+        }
       };
     }
-    const step = validateMovementStep({
-      from: anchorCell,
-      to: cell,
-      sideId: active.sideId,
-      cell: readCell(active.gridMap, cell),
-      terrain: active.terrain,
-      wars: active.wars,
-      remainingUnits: remaining,
-      withinBounds: true,
-      armyStateAllowsMovement: true
-    });
-    if (!step.allowed) {
-      return {
-        point, cell, valid: false, color: "#d32f2f",
-        label: messageForPreview(step.reason, step.missingUnits), totalCostUnits: spent,
-        remainingUnits: remaining, reason: step.reason,
-        ...(step.stepCostUnits !== undefined ? { stepCostUnits: step.stepCostUnits } : {})
-      };
+
+    const additions: RouteAddition[] = [];
+    let runningSpent = spent;
+    let runningRemaining = remaining;
+    let fromPoint = anchorPoint;
+    for (const cell of segment) {
+      const point = adapter.cellToSceneCenter(cell);
+      const step = validateMovementStep({
+        from: additions.at(-1)?.cell ?? anchorCell,
+        to: cell,
+        sideId: active.sideId,
+        cell: readCell(active.gridMap, cell),
+        terrain: active.terrain,
+        wars: active.wars,
+        remainingUnits: runningRemaining,
+        withinBounds: true,
+        armyStateAllowsMovement: true
+      });
+      if (!step.allowed) {
+        return {
+          additions: [],
+          preview: {
+            point, cell, valid: false, color: "#d32f2f",
+            label: messageForPreview(step.reason, step.missingUnits), totalCostUnits: runningSpent,
+            remainingUnits: runningRemaining, reason: step.reason,
+            ...(step.stepCostUnits !== undefined ? { stepCostUnits: step.stepCostUnits } : {})
+          }
+        };
+      }
+      if (firstBarrierIntersection({ from: fromPoint, to: point }, active.barriers)) {
+        return {
+          additions: [],
+          preview: {
+            point, cell, valid: false, color: "#d32f2f", label: messageForPreview("BARRIER"),
+            totalCostUnits: runningSpent, remainingUnits: runningRemaining,
+            stepCostUnits: step.stepCostUnits, reason: "BARRIER"
+          }
+        };
+      }
+      additions.push({ point, cell: { ...cell }, cost: step.stepCostUnits });
+      runningSpent += step.stepCostUnits;
+      runningRemaining = step.remainingAfterUnits;
+      fromPoint = point;
     }
-    if (firstBarrierIntersection({ from: anchorPoint, to: point }, active.barriers)) {
-      return {
-        point, cell, valid: false, color: "#d32f2f", label: messageForPreview("BARRIER"),
-        totalCostUnits: spent, remainingUnits: remaining, stepCostUnits: step.stepCostUnits,
-        reason: "BARRIER"
-      };
-    }
-    const total = spent + step.stepCostUnits;
+
+    const segmentCost = runningSpent - spent;
+    const lastCost = additions.at(-1)?.cost ?? 0;
     return {
-      point, cell, valid: true,
-      color: step.stepCostUnits <= 1 ? "#29b6f6" : step.stepCostUnits >= 4 ? "#f9a825" : "#2e7d32",
-      label: `Шаг: ${formatMovementUnits(step.stepCostUnits)} ОП · маршрут: ${formatMovementUnits(total)} ОП · останется ${formatMovementUnits(step.remainingAfterUnits)} ОП`,
-      totalCostUnits: total,
-      remainingUnits: step.remainingAfterUnits,
-      stepCostUnits: step.stepCostUnits
+      additions,
+      preview: {
+        point: targetPoint,
+        cell: targetCell,
+        valid: true,
+        color: lastCost <= 1 ? "#29b6f6" : lastCost >= 4 ? "#f9a825" : "#2e7d32",
+        label: `Отрезок: ${formatMovementUnits(segmentCost)} ОП · маршрут: ${formatMovementUnits(runningSpent)} ОП · останется ${formatMovementUnits(runningRemaining)} ОП`,
+        totalCostUnits: runningSpent,
+        remainingUnits: runningRemaining,
+        stepCostUnits: segmentCost
+      }
     };
   }
 }
