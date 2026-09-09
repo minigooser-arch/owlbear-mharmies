@@ -40,3 +40,28 @@ it("converts a GM deferral input from Moscow local time", () => {
   fireEvent.click(screen.getByRole("button", { name: "Отложить ход" }));
   expect(action).toHaveBeenCalledWith({ type: "DEFER_TURN", until: "2026-09-03T15:00:00.000Z" });
 });
+
+it("finishes movement phase before offering global turn completion", () => {
+  const action = vi.fn();
+  render(<TurnStatusCard
+    turn={{ ...DEFAULT_TURN_STATE, phase: "MOVEMENT" }}
+    role="GM"
+    onAction={action}
+  />);
+  expect(screen.queryByRole("button", { name: "Завершить ход сейчас" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Завершить фазу перемещения" }));
+  expect(action).toHaveBeenCalledWith({ type: "COMPLETE_MOVEMENT_PHASE" });
+});
+
+it("offers global turn completion and movement reopening in post-movement", () => {
+  const action = vi.fn();
+  render(<TurnStatusCard
+    turn={{ ...DEFAULT_TURN_STATE, phase: "POST_MOVEMENT" }}
+    role="GM"
+    onAction={action}
+  />);
+  fireEvent.click(screen.getByRole("button", { name: "Завершить ход сейчас" }));
+  fireEvent.click(screen.getByRole("button", { name: "Вернуться к перемещению" }));
+  expect(action).toHaveBeenCalledWith({ type: "COMPLETE_TURN_NOW" });
+  expect(action).toHaveBeenCalledWith({ type: "REOPEN_MOVEMENT_PHASE" });
+});
