@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { METADATA_KEYS } from "../shared/constants";
 import {
   ROUTE_EDIT_CONTEXT_MENU_ID,
