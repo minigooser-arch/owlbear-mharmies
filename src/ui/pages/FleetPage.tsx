@@ -120,6 +120,10 @@ export function FleetPage({
         <span className="count-pill">{ships.length}</span>
       </div>
 
+      {!movementPhase && (role === "GM" || leaderSideIds.size > 0) && (
+        <p className="page-description">Маршрут корабля задаётся только в фазе перемещения.</p>
+      )}
+
       <div className="army-toolbar fleet-toolbar" role="search" aria-label="Поиск и фильтры флота">
         <div className="filters fleet-filters">
           <input aria-label="Поиск кораблей" placeholder="Найти корабль" value={query} onChange={(event) => setQuery(event.target.value)} />
@@ -305,6 +309,7 @@ export function FleetPage({
               sideColor={sideColor}
               isGM={role === "GM"}
               canPlanRoute={canPlanRoute}
+              routePlanningEnabled={movementPhase}
               relations={relations}
               {...(embarkedArmyName !== undefined ? { embarkedArmyName } : {})}
               onAction={onAction}
