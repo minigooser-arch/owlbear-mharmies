@@ -92,7 +92,27 @@ describe("ShipRouteToolService", () => {
       gridDpi: 100,
       movementPoints: 4,
       maxMovementPoints: 4,
-      facing: "EAST"
+      facing: "EAST",
+      initialCells: []
+    });
+  });
+
+  it("loads an already planned route for editing and restores its reserved OP to the editor budget", async () => {
+    const planned = {
+      ...shipState,
+      plannedRoute: [{ x: 1, y: 0 }],
+      globalMovementRemaining: 3,
+      movementSpentThisTurn: true
+    };
+    const port = new MemoryPort();
+    port.items = [shipItem(planned)];
+    port.scene.ships = { ship: planned };
+    const service = new ShipRouteToolService(port, { send: vi.fn() });
+
+    await expect(service.loadSession("ship")).resolves.toMatchObject({
+      shipId: "ship",
+      movementPoints: 4,
+      initialCells: [{ x: 1, y: 0 }]
     });
   });
 
@@ -104,7 +124,7 @@ describe("ShipRouteToolService", () => {
       .rejects.toEqual(expect.objectContaining({ code: "NOT_SIDE_LEADER" }));
   });
 
-  it("rejects battle ships, destroyed ships, and ships with an already committed route", async () => {
+  it("rejects battle ships and destroyed ships", async () => {
     const battlePort = new MemoryPort();
     battlePort.items = [shipItem({ ...shipState, status: "IN_NAVAL_BATTLE", battleId: "battle" })];
     battlePort.scene.ships = { ship: { ...shipState, status: "IN_NAVAL_BATTLE", battleId: "battle" } };
@@ -116,12 +136,6 @@ describe("ShipRouteToolService", () => {
     destroyedPort.scene.ships = { ship: { ...shipState, hp: 0 } };
     await expect(new ShipRouteToolService(destroyedPort, { send: vi.fn() }).loadSession("ship"))
       .rejects.toEqual(expect.objectContaining({ code: "SHIP_DESTROYED" }));
-
-    const plannedPort = new MemoryPort();
-    plannedPort.items = [shipItem({ ...shipState, plannedRoute: [{ x: 1, y: 0 }] })];
-    plannedPort.scene.ships = { ship: { ...shipState, plannedRoute: [{ x: 1, y: 0 }] } };
-    await expect(new ShipRouteToolService(plannedPort, { send: vi.fn() }).loadSession("ship"))
-      .rejects.toEqual(expect.objectContaining({ code: "SHIP_ROUTE_ALREADY_PLANNED" }));
   });
 
   it("sends SET_SHIP_ROUTE with current scene revision", async () => {
