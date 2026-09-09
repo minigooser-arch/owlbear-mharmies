@@ -46,7 +46,7 @@ export function App({ services }: { services: ExtensionServices }) {
     <main className="app-shell" data-theme="letopis-wiki-light">
       <header className="topbar wiki-topbar">
         <div className="brand-cluster">
-          <img className="brand-mark" src={`${import.meta.env.BASE_URL}icon-1.2.png`} alt="Летопись: Военная панель" />
+          <img className="brand-mark" src={`${import.meta.env.BASE_URL}cover.png`} alt="Летопись: Военная панель" />
           <div className="brand-copy">
             <p className="brand-kicker">Летопись</p>
             <h1>Военная панель</h1>
