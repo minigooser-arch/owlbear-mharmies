@@ -103,7 +103,7 @@ describe("authoritative broadside damage", () => {
     expect(result.target.hp).toBe(15);
   });
 
-  it("uses the ironclad normal 2d6 attack outside the adjacent special cells", () => {
+  it("rejects the former ironclad two-cell normal attack", () => {
     const ships = {
       attacker: ship("red", "IRONCLAD"),
       target: ship("blue", "BATTLESHIP", 30),
@@ -122,13 +122,7 @@ describe("authoritative broadside damage", () => {
       rollD6: roller([6, 5, 4])
     });
 
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.rolledDamage).toBe(11);
-    expect(result.armor).toBe(3);
-    expect(result.damage).toBe(8);
-    expect(result.special).toBe(false);
-    expect(result.target.hp).toBe(22);
+    expect(result).toEqual({ ok: false, reason: "OUTSIDE_BROADSIDE_SECTOR" });
   });
 
   it("uses the canonical mask when no test sector resolver is supplied", () => {
