@@ -112,8 +112,8 @@ it("keeps the source manifest and package versions aligned without hard-coding a
   expect(manifest.version).toBe(packageJson.version);
   expect(packageLock.version).toBe(packageJson.version);
   expect(packageLock.packages[""].version).toBe(packageJson.version);
-  expect(manifest.icon).toMatch(/icon-1\.2\.png$/);
-  expect(manifest.action.icon).toMatch(/icon-1\.2\.png$/);
+  expect(manifest.icon).toMatch(/cover\.png$/);
+  expect(manifest.action.icon).toMatch(/cover\.png$/);
   expect(new URL(manifest.action.popover).searchParams.get("v")).toBe(packageJson.version);
   expect(new URL(manifest.background_url).searchParams.get("v")).toBe(packageJson.version);
   expect(packageJson.scripts.build).toContain("stamp-manifest.mjs");
