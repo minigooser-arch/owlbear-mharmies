@@ -162,6 +162,41 @@ describe("NAVAL_BROADSIDE_ATTACK command", () => {
     }));
   });
 
+  it("enforces the ironclad adjacent-only port/starboard arc in the authoritative command", () => {
+    const adjacent = state();
+    adjacent.scene.ships!.attacker = navalShip("red", "IRONCLAD", "NORTH");
+    adjacent.positions!.target = { x: 650, y: 550 };
+
+    const closeResult = processor([6, 5, 4]).execute(context(adjacent), command());
+    expect(closeResult.status).toBe("ACCEPTED");
+    if (closeResult.status !== "ACCEPTED") return;
+    expect(closeResult.state.scene.ships?.target?.hp).toBe(15);
+    expect(closeResult.state.scene.activeNavalBattle?.events).toContainEqual(expect.objectContaining({
+      type: "BROADSIDE_ATTACK",
+      attackerShipId: "attacker",
+      targetShipId: "target",
+      rolledDamage: 15,
+      armor: 0,
+      damage: 15,
+      special: true
+    }));
+
+    const distant = state();
+    distant.scene.ships!.attacker = navalShip("red", "IRONCLAD", "NORTH");
+    expect(processor([6, 5, 4]).execute(context(distant), command())).toEqual({
+      status: "REJECTED",
+      reason: "OUTSIDE_BROADSIDE_SECTOR"
+    });
+
+    const bow = state();
+    bow.scene.ships!.attacker = navalShip("red", "IRONCLAD", "NORTH");
+    bow.positions!.target = { x: 550, y: 450 };
+    expect(processor([6, 5, 4]).execute(context(bow), command())).toEqual({
+      status: "REJECTED",
+      reason: "OUTSIDE_BROADSIDE_SECTOR"
+    });
+  });
+
   it("requires confirmation for same-side or allied participants but not enemy targets", () => {
     expect(processor().execute(context(state("ally")), command())).toEqual({
       status: "REJECTED",
