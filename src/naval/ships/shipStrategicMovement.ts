@@ -73,12 +73,10 @@ export function planShipStrategicRoute(
 export function commitShipStrategicRoute(
   ship: ShipState,
   cells: readonly GridCellCoord[],
-  cost: number,
-  finalFacing: ShipFacing
+  cost: number
 ): ShipState {
   return {
     ...ship,
-    facing: finalFacing,
     plannedRoute: cells.map((cell) => ({ ...cell })),
     globalMovementRemaining: ship.globalMovementRemaining - cost,
     movementSpentThisTurn: cells.length > 0 || ship.movementSpentThisTurn,
