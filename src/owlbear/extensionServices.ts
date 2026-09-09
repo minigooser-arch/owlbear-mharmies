@@ -138,14 +138,18 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
           sideName: sideNames.get(state.sideId) ?? "Неизвестная сторона"
         }))
     : [];
-  const pendingNavalBattleRequests: NavalBattleRequestView[] = input.role === "GM"
-    ? (input.scene.navalBattleRequests ?? []).map((request) => ({
-        id: request.id,
-        initiatingShipId: request.initiatingShipId,
-        targetShipId: request.targetShipId,
-        ...(request.createdOnTurn !== undefined ? { createdOnTurn: request.createdOnTurn } : {})
-      }))
-    : [];
+  const pendingNavalBattleRequests: NavalBattleRequestView[] = (input.scene.navalBattleRequests ?? [])
+    .filter((request) => {
+      if (input.role === "GM") return true;
+      const initiatingShip = shipById.get(request.initiatingShipId);
+      return initiatingShip !== undefined && leaderSideIds.has(initiatingShip.sideId);
+    })
+    .map((request) => ({
+      id: request.id,
+      initiatingShipId: request.initiatingShipId,
+      targetShipId: request.targetShipId,
+      ...(request.createdOnTurn !== undefined ? { createdOnTurn: request.createdOnTurn } : {})
+    }));
   const transportEmbarkTargets: TransportEmbarkTargetView[] = input.role === "PLAYER" && leaderSideIds.size > 0
     ? input.armies
         .filter(({ item, state }) =>
