@@ -6,7 +6,6 @@ import {
   ROUTE_ARMY_ID_KEY,
   ROUTE_CANCEL_ACTION_ID,
   ROUTE_CLEAR_ACTION_ID,
-  ROUTE_FINISH_ACTION_ID,
   ROUTE_RETURN_TOOL_KEY,
   ROUTE_TOOL_ID,
   ROUTE_TOOL_MODE_ID,
@@ -81,24 +80,24 @@ function action(api: FakeToolApi, id: string): ToolAction {
 }
 
 describe("route tool SDK integration", () => {
-  it("registers the tool, mode, and four visible actions", async () => {
+  it("registers the tool, mode, and only edit/cancel actions", async () => {
     const f = fixture();
     const cleanup = await registerRouteTool(f.api, f.port, f.distancePort, "/icon.svg");
 
     expect(f.api.tools[0]?.id).toBe(ROUTE_TOOL_ID);
     expect(f.api.modes[0]?.id).toBe(ROUTE_TOOL_MODE_ID);
     expect(f.api.actions.map((candidate) => candidate.id)).toEqual([
-      ROUTE_FINISH_ACTION_ID, ROUTE_UNDO_ACTION_ID, ROUTE_CLEAR_ACTION_ID, ROUTE_CANCEL_ACTION_ID
+      ROUTE_UNDO_ACTION_ID, ROUTE_CLEAR_ACTION_ID, ROUTE_CANCEL_ACTION_ID
     ]);
 
     await cleanup();
     expect(f.api.removed).toEqual([
-      ROUTE_FINISH_ACTION_ID, ROUTE_UNDO_ACTION_ID, ROUTE_CLEAR_ACTION_ID, ROUTE_CANCEL_ACTION_ID,
+      ROUTE_UNDO_ACTION_ID, ROUTE_CLEAR_ACTION_ID, ROUTE_CANCEL_ACTION_ID,
       ROUTE_TOOL_MODE_ID, ROUTE_TOOL_ID
     ]);
   });
 
-  it("does not commit on Enter and commits exactly once from the finish action", async () => {
+  it("does not commit on Enter and commits exactly once from the map finish affordance", async () => {
     const f = fixture();
     await registerRouteTool(f.api, f.port, f.distancePort, "/icon.svg");
 
@@ -113,7 +112,7 @@ describe("route tool SDK integration", () => {
     await Promise.resolve();
     expect(f.commits).toEqual([]);
 
-    action(f.api, ROUTE_FINISH_ACTION_ID).onClick?.(ctx, ROUTE_FINISH_ACTION_ID);
+    await mode.onToolClick?.(ctx, toolEvent(150, 15));
     await vi.waitFor(() => expect(f.commits).toEqual([{ armyId: "army-a", cells: [{ x: 1, y: 0 }] }]));
     expect(f.restored).toEqual(["select-tool"]);
   });
