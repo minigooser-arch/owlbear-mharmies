@@ -51,6 +51,13 @@ function sourceHasRoute(source: SceneItemRecord): boolean {
   return Array.isArray(plannedRoute?.cells) && plannedRoute.cells.length > 0;
 }
 
+export function localCloneMetadataForSource(source: SceneItemRecord): Record<string, unknown> {
+  return {
+    sourceItemId: source.id,
+    hasRoute: sourceHasRoute(source)
+  };
+}
+
 const RENDER_FIELDS = [
   "name",
   "description",
@@ -76,10 +83,7 @@ function changedRenderFields(source: SceneItemRecord, clone: SceneItemRecord): I
   if (clone.visible !== true) update.visible = true;
   if (clone.locked !== true) update.locked = true;
   if (clone.disableHit !== false) update.disableHit = false;
-  const desiredCloneMetadata = {
-    sourceItemId: source.id,
-    hasRoute: sourceHasRoute(source)
-  };
+  const desiredCloneMetadata = localCloneMetadataForSource(source);
   if (JSON.stringify(clone.metadata[METADATA_KEYS.localClone]) !== JSON.stringify(desiredCloneMetadata)) {
     update.metadata = {
       ...clone.metadata,
