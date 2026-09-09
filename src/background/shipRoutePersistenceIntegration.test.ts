@@ -6,7 +6,7 @@ import { COMMAND_PROTOCOL_VERSION, type NavalSceneState, type SceneItemRecord } 
 import type { OwlbearPort } from "../owlbear/sdkAdapter";
 import { ProductionEngine } from "./application";
 
-it("accepts and persists a valid SET_SHIP_ROUTE through ProductionEngine", async () => {
+it("accepts and persists a valid SET_SHIP_ROUTE through ProductionEngine with required turn cost", async () => {
   const terrain = structuredClone(DEFAULT_TERRAIN);
   terrain.types.sea = {
     id: "sea",
@@ -129,13 +129,13 @@ it("accepts and persists a valid SET_SHIP_ROUTE through ProductionEngine", async
   expect(scene.ships.ship).toMatchObject({
     facing: "SOUTH",
     plannedRoute: [{ x: 1, y: 0 }, { x: 2, y: 0 }],
-    globalMovementRemaining: 2,
+    globalMovementRemaining: 1,
     movementSpentThisTurn: true,
     revision: 2
   });
   expect(items[0]?.metadata[METADATA_KEYS.ship]).toMatchObject({
     plannedRoute: [{ x: 1, y: 0 }, { x: 2, y: 0 }],
-    globalMovementRemaining: 2,
+    globalMovementRemaining: 1,
     revision: 2
   });
 });
