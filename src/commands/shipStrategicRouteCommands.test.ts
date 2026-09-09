@@ -168,6 +168,32 @@ describe("SET_SHIP_ROUTE processing", () => {
     });
   });
 
+  it("replaces an already planned route and refunds its reserved OP before charging the replacement", () => {
+    const plannedState = commandState();
+    plannedState.scene.ships = {
+      ...plannedState.scene.ships,
+      redShip: {
+        ...requireShip(plannedState, "redShip"),
+        plannedRoute: [{ x: 1, y: 0 }],
+        globalMovementRemaining: 2,
+        movementSpentThisTurn: true
+      }
+    };
+
+    const result = processor.execute(
+      processorContext("leader", "PLAYER", plannedState),
+      shipRouteCommand("redShip", [{ x: 1, y: 0 }, { x: 2, y: 0 }])
+    );
+
+    expect(result.status).toBe("ACCEPTED");
+    if (result.status !== "ACCEPTED") return;
+    expect(result.state.scene.ships?.redShip).toMatchObject({
+      plannedRoute: [{ x: 1, y: 0 }, { x: 2, y: 0 }],
+      globalMovementRemaining: 1,
+      movementSpentThisTurn: true
+    });
+  });
+
   it("rejects a route when the authoritative token cell disagrees with startCell", () => {
     const mismatching = new CommandProcessor(() => new Date(), () => ({ x: 9, y: 9 }));
     expect(mismatching.execute(processorContext(), shipRouteCommand())).toEqual({
@@ -176,7 +202,7 @@ describe("SET_SHIP_ROUTE processing", () => {
     });
   });
 
-  it("rejects LAND cells, ships in battle, destroyed ships, and replacing an already committed route", () => {
+  it("rejects LAND cells, ships in battle, and destroyed ships", () => {
     expect(processor.execute(processorContext(), shipRouteCommand("redShip", [{ x: 0, y: 1 }]))).toEqual({
       status: "REJECTED",
       reason: "NON_NAVAL_TERRAIN"
@@ -200,16 +226,6 @@ describe("SET_SHIP_ROUTE processing", () => {
     expect(processor.execute(processorContext("leader", "PLAYER", destroyedState), shipRouteCommand())).toEqual({
       status: "REJECTED",
       reason: "SHIP_DESTROYED"
-    });
-
-    const plannedState = commandState();
-    plannedState.scene.ships = {
-      ...plannedState.scene.ships,
-      redShip: { ...requireShip(plannedState, "redShip"), plannedRoute: [{ x: 1, y: 0 }] }
-    };
-    expect(processor.execute(processorContext("leader", "PLAYER", plannedState), shipRouteCommand("redShip", [{ x: 1, y: 0 }]))).toEqual({
-      status: "REJECTED",
-      reason: "SHIP_ROUTE_ALREADY_PLANNED"
     });
   });
 });
