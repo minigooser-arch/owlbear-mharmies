@@ -1,22 +1,31 @@
 import OBR from "@owlbear-rodeo/sdk";
 import { registerNavalInterceptionContextMenu } from "../owlbear/navalInterceptionContextMenu";
+import { registerRouteContextMenu } from "../owlbear/routeContextMenu";
 import { startBackgroundApplication } from "./application";
 
 OBR.onReady(() => {
   void startBackgroundApplication().then(async (application) => {
     try {
+      const contextMenuPort = {
+        create: (entry: Parameters<typeof OBR.contextMenu.create>[0]) => OBR.contextMenu.create(entry),
+        remove: (id: string) => OBR.contextMenu.remove(id)
+      };
+      const iconUrl = `${import.meta.env.BASE_URL}icon-1.2.png`;
       const removeInterceptionContextMenu = await registerNavalInterceptionContextMenu(
-        {
-          create: (entry) => OBR.contextMenu.create(entry),
-          remove: (id) => OBR.contextMenu.remove(id)
-        },
+        contextMenuPort,
         application,
-        `${import.meta.env.BASE_URL}icon-1.2.png`
+        iconUrl
+      );
+      const removeRouteContextMenu = await registerRouteContextMenu(
+        contextMenuPort,
+        application,
+        iconUrl
       );
       window.addEventListener("beforeunload", () => {
-        void removeInterceptionContextMenu()
-          .catch(() => undefined)
-          .finally(() => application.stop());
+        void Promise.allSettled([
+          removeInterceptionContextMenu(),
+          removeRouteContextMenu()
+        ]).finally(() => application.stop());
       }, { once: true });
     } catch (error) {
       await application.stop().catch(() => undefined);
