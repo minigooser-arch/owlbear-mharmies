@@ -6,7 +6,9 @@ import {
   type ArmyCommand,
   type ArmyState,
   type GridCellCoord,
+  type SceneItemRecord,
   type SceneState,
+  type ShipState,
   type Vector2
 } from "../shared/types";
 import { CommandProcessor, type CommandContext, type CommandState } from "./commandProcessor";
@@ -103,6 +105,24 @@ function state(targetHp = 20): CommandState {
   };
 }
 
+function shipTable(commandState: CommandState): Record<string, ShipState> {
+  const ships = commandState.scene.ships;
+  if (!ships) throw new Error("Expected ship table in shore bombardment fixture");
+  return ships;
+}
+
+function positionTable(commandState: CommandState): Record<string, Vector2> {
+  const positions = commandState.positions;
+  if (!positions) throw new Error("Expected positions in shore bombardment fixture");
+  return positions;
+}
+
+function item(commandState: CommandState, id: string): SceneItemRecord {
+  const value = commandState.items[id];
+  if (!value) throw new Error(`Missing item fixture: ${id}`);
+  return value;
+}
+
 function envelope(playerId: string, payload: Record<string, unknown>): ArmyCommand {
   return {
     protocolVersion: COMMAND_PROTOCOL_VERSION,
@@ -189,16 +209,16 @@ describe("naval shore bombardment command", () => {
 
   it("uses the cruiser firing arc for shore bombardment and rejects bow/stern targets", () => {
     const sideTarget = state();
-    sideTarget.scene.ships!.attacker = createRegisteredShip("red", "CRUISER", "NORTH");
+    shipTable(sideTarget).attacker = createRegisteredShip("red", "CRUISER", "NORTH");
     const accepted = processor([3, 4]).execute(context("leader", sideTarget), bombardmentCommand());
     expect(accepted.status).toBe("ACCEPTED");
     if (accepted.status !== "ACCEPTED") return;
     expect(accepted.state.armies.army?.health.hp).toBe(13);
 
     const bowTarget = state();
-    bowTarget.scene.ships!.attacker = createRegisteredShip("red", "CRUISER", "NORTH");
-    bowTarget.positions!.army = centerForCell({ x: 1, y: 0 });
-    bowTarget.items.army!.position = centerForCell({ x: 1, y: 0 });
+    shipTable(bowTarget).attacker = createRegisteredShip("red", "CRUISER", "NORTH");
+    positionTable(bowTarget).army = centerForCell({ x: 1, y: 0 });
+    item(bowTarget, "army").position = centerForCell({ x: 1, y: 0 });
     expect(processor([3, 4]).execute(context("leader", bowTarget), bombardmentCommand())).toEqual({
       status: "REJECTED",
       reason: "OUTSIDE_BROADSIDE_SECTOR"
@@ -207,7 +227,7 @@ describe("naval shore bombardment command", () => {
 
   it("does not let an ironclad bombard armies even from its adjacent broadside cell", () => {
     const commandState = state();
-    commandState.scene.ships!.attacker = createRegisteredShip("red", "IRONCLAD", "NORTH");
+    shipTable(commandState).attacker = createRegisteredShip("red", "IRONCLAD", "NORTH");
     commandState.scene.gridMap.cells["2,1"] = {
       terrainId: "plain",
       impassable: false,
@@ -215,8 +235,8 @@ describe("naval shore bombardment command", () => {
       recognizedStateId: null,
       deFactoStateId: null
     };
-    commandState.positions!.army = centerForCell({ x: 2, y: 1 });
-    commandState.items.army!.position = centerForCell({ x: 2, y: 1 });
+    positionTable(commandState).army = centerForCell({ x: 2, y: 1 });
+    item(commandState, "army").position = centerForCell({ x: 2, y: 1 });
 
     expect(processor([6, 6, 6]).execute(context("leader", commandState), bombardmentCommand())).toEqual({
       status: "REJECTED",
