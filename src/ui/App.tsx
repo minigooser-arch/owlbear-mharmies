@@ -31,6 +31,7 @@ export function App({ services }: { services: ExtensionServices }) {
   if (state.futureSchema) return <main className="state-screen warning">Данные созданы более новой версией расширения. Доступен только просмотр.</main>;
 
   const isGM = state.role === "GM";
+  const navalRequestCount = isGM ? (state.pendingNavalBattleRequests?.length ?? 0) : 0;
   const tabs: readonly Tab[] = isGM
     ? ["OVERVIEW", "ARMIES", "MAP", "BATTLES", "MANAGEMENT"]
     : ["ARMIES", "TURN", "BATTLES"];
@@ -56,11 +57,31 @@ export function App({ services }: { services: ExtensionServices }) {
       </header>
       <nav className="tabs tabs-primary wiki-nav" aria-label="Разделы Летописи">
         {tabs.map((item) => (
-          <button type="button" key={item} className={tab === item ? "active" : ""} onClick={() => selectTab(item)}>
+          <button
+            type="button"
+            key={item}
+            aria-label={LABELS[item]}
+            className={tab === item ? "active" : ""}
+            onClick={() => selectTab(item)}
+          >
             {LABELS[item]}
+            {isGM && item === "BATTLES" && navalRequestCount > 0 && (
+              <span className="count-pill" aria-hidden="true">{navalRequestCount}</span>
+            )}
           </button>
         ))}
       </nav>
+      {isGM && navalRequestCount > 0 && tab !== "BATTLES" && (
+        <aside className="registration-card naval-request-notice" role="status" aria-label="Заявки на морской бой">
+          <div className="registration-copy">
+            <strong>Заявки на морской бой: {navalRequestCount}</strong>
+            <small>Есть ожидающие решения ведущего заявки. Все они собраны в одном списке.</small>
+          </div>
+          <button className="button primary" type="button" onClick={() => setGmTab("BATTLES")}>
+            Открыть заявки
+          </button>
+        </aside>
+      )}
       <div className="content wiki-content">
         {tab === "OVERVIEW" && isGM && <OverviewPage armies={state.armies} wars={state.wars} turn={state.turn} onAction={send} />}
         {tab === "ARMIES" && <>
