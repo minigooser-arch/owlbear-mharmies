@@ -18,7 +18,7 @@ export interface RouteContextMenuServicePort {
   getActiveTool(): Promise<string>;
   setToolMetadata(toolId: string, metadata: Record<string, unknown>): Promise<void>;
   activateTool(toolId: string): Promise<void>;
-  activateMode(modeId: string): Promise<void>;
+  activateMode(toolId: string, modeId: string): Promise<void>;
   show(message: string, variant: "WARNING"): Promise<void>;
 }
 
@@ -55,7 +55,7 @@ export class RouteContextMenuService implements RouteContextMenuActionService {
         [ROUTE_RETURN_TOOL_KEY]: returnToolId
       });
       await this.port.activateTool(ROUTE_TOOL_ID);
-      await this.port.activateMode(ROUTE_TOOL_MODE_ID);
+      await this.port.activateMode(ROUTE_TOOL_ID, ROUTE_TOOL_MODE_ID);
       return;
     }
     if (source.metadata[METADATA_KEYS.ship] !== undefined) {
@@ -64,7 +64,7 @@ export class RouteContextMenuService implements RouteContextMenuActionService {
         [SHIP_ROUTE_RETURN_TOOL_KEY]: returnToolId
       });
       await this.port.activateTool(SHIP_ROUTE_TOOL_ID);
-      await this.port.activateMode(SHIP_ROUTE_TOOL_MODE_ID);
+      await this.port.activateMode(SHIP_ROUTE_TOOL_ID, SHIP_ROUTE_TOOL_MODE_ID);
       return;
     }
 
