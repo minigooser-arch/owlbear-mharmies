@@ -18,7 +18,7 @@ OBR.onReady(() => {
         getActiveTool: () => OBR.tool.getActiveTool(),
         setToolMetadata: (toolId, metadata) => OBR.tool.setMetadata(toolId, metadata),
         activateTool: (toolId) => OBR.tool.activateTool(toolId),
-        activateMode: (modeId) => OBR.tool.activateMode(modeId),
+        activateMode: (toolId, modeId) => OBR.tool.activateMode(toolId, modeId),
         show: async (message, variant) => { await OBR.notification.show(message, variant); }
       });
       const iconUrl = `${import.meta.env.BASE_URL}icon-1.2.png`;
