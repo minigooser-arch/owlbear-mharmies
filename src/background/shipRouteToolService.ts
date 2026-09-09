@@ -1,6 +1,7 @@
 import type { CommandAck } from "../commands/commandGateway";
 import { StrategicGridAdapter } from "../grid/strategicGrid";
 import { SHIP_CLASSES } from "../naval/ships/shipClasses";
+import { shipStrategicRouteCost } from "../naval/ships/shipStrategicMovement";
 import type { ShipRouteToolSnapshot, ShipRouteToolActivation } from "../owlbear/shipRouteTool";
 import {
   reconcileLocalOverlays,
@@ -80,14 +81,26 @@ export class ShipRouteToolService {
       this.port.getGridDpi()
     ]);
     const grid = new StrategicGridAdapter({ dpi: gridDpi, offset: { x: 0, y: 0 } });
+    const startCell = grid.sceneToCell(start);
+    const reservedCost = shipStrategicRouteCost(
+      startCell,
+      authorized.ship.state.facing,
+      authorized.ship.state.plannedRoute
+    );
+    if (reservedCost === undefined) throw new ShipRouteToolAuthorizationError("INVALID_COMMAND");
+    const editableMovementPoints = authorized.ship.state.globalMovementRemaining + reservedCost;
+    if (editableMovementPoints <= 0) {
+      throw new ShipRouteToolAuthorizationError("INSUFFICIENT_MOVEMENT_POINTS");
+    }
     return {
       shipId,
       start: { ...start },
-      startCell: grid.sceneToCell(start),
+      startCell,
       gridDpi,
-      movementPoints: authorized.ship.state.globalMovementRemaining,
+      movementPoints: editableMovementPoints,
       maxMovementPoints: SHIP_CLASSES[authorized.ship.state.classId].movement,
       facing: authorized.ship.state.facing,
+      initialCells: authorized.ship.state.plannedRoute.map((cell) => ({ ...cell })),
       terrain: structuredClone(authorized.scene.terrain),
       gridMap: structuredClone(authorized.scene.gridMap)
     };
@@ -201,8 +214,6 @@ export class ShipRouteToolService {
     if (scene.turn.phase !== "MOVEMENT") throw new ShipRouteToolAuthorizationError("NOT_MOVEMENT_PHASE");
     if (ship.state.hp <= 0) throw new ShipRouteToolAuthorizationError("SHIP_DESTROYED");
     if (ship.state.status !== "READY") throw new ShipRouteToolAuthorizationError("SHIP_NOT_READY");
-    if (ship.state.plannedRoute.length > 0) throw new ShipRouteToolAuthorizationError("SHIP_ROUTE_ALREADY_PLANNED");
-    if (ship.state.globalMovementRemaining <= 0) throw new ShipRouteToolAuthorizationError("INSUFFICIENT_MOVEMENT_POINTS");
     return { identity, scene, ship };
   }
 }
