@@ -1,7 +1,7 @@
 import { expect, it, vi } from "vitest";
 import { createRegisteredShip } from "../naval/ships/shipLifecycle";
 import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE, METADATA_KEYS } from "../shared/constants";
-import type { ItemUpdate, SceneItemRecord, SceneState, TerrainType } from "../shared/types";
+import type { SceneItemRecord, SceneState, TerrainType } from "../shared/types";
 import { ShipRouteToolService, type ShipRouteToolServicePort } from "./shipRouteToolService";
 
 function seaTerrain(): TerrainType {
@@ -58,12 +58,12 @@ class PostMovementPort implements ShipRouteToolServicePort {
       metadata: { [METADATA_KEYS.ship]: structuredClone(this.ship) }
     }];
   }
-  async updateSceneItem(_id: string, _update: ItemUpdate) { return; }
+  async updateSceneItem() { return; }
   async getLocalItems(): Promise<SceneItemRecord[]> { return []; }
-  async addLocalItem(_item: SceneItemRecord) { return; }
-  async addLocalItems(_items: readonly SceneItemRecord[]) { return; }
-  async updateLocalItems(_items: readonly SceneItemRecord[]) { return; }
-  async deleteLocalItems(_ids: readonly string[]) { return; }
+  async addLocalItem() { return; }
+  async addLocalItems() { return; }
+  async updateLocalItems() { return; }
+  async deleteLocalItems() { return; }
   createId() { return "preview"; }
   async show() { return; }
   async activateTool() { return; }
