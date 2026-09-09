@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { Side } from "../../shared/types";
 import type { ArmyView, ShipView } from "../state/useExtensionState";
@@ -70,8 +70,7 @@ it("in POST_MOVEMENT enables naval battle requests and removes impossible transp
   expect(screen.queryByRole("button", { name: "Погрузить армию" })).toBeNull();
 });
 
-it("keeps the ship route action visible but disabled after MOVEMENT", () => {
-  const onAction = vi.fn();
+it("hides ship route actions after MOVEMENT and explains why", () => {
   render(
     <FleetPage
       ships={[cruiser]}
@@ -80,13 +79,10 @@ it("keeps the ship route action visible but disabled after MOVEMENT", () => {
       role="PLAYER"
       leaderSideIds={new Set(["red"])}
       turnPhase="POST_MOVEMENT"
-      onAction={onAction}
+      onAction={vi.fn()}
     />
   );
 
-  const routeButton = screen.getByRole("button", { name: "Проложить переход" });
-  expect(routeButton).toBeDisabled();
+  expect(screen.queryByRole("button", { name: "Проложить переход" })).toBeNull();
   expect(screen.getByText("Маршрут корабля задаётся только в фазе перемещения.")).toBeInTheDocument();
-  fireEvent.click(routeButton);
-  expect(onAction).not.toHaveBeenCalledWith({ type: "EDIT_SHIP_ROUTE", shipId: "cruiser" });
 });
