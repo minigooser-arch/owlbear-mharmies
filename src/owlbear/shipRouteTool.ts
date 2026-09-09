@@ -1,4 +1,4 @@
-import { StrategicGridAdapter, isOrthogonalNeighbor } from "../grid/strategicGrid";
+import { isOrthogonalNeighbor } from "../grid/strategicGrid";
 import { readCell } from "../terrain/gridMap";
 import { cellSupportsDomain } from "../terrain/movementDomains";
 import type { GridCellCoord, GridMapState, ShipFacing, TerrainRegistryState, Vector2 } from "../shared/types";
@@ -72,6 +72,20 @@ function messageFor(reason: ShipRouteFailure): string {
   }
 }
 
+function cellForSnappedPoint(active: ShipRouteToolActivation, point: Vector2): GridCellCoord {
+  return {
+    x: active.startCell.x + Math.round((point.x - active.start.x) / active.gridDpi),
+    y: active.startCell.y + Math.round((point.y - active.start.y) / active.gridDpi)
+  };
+}
+
+function pointForCell(active: ShipRouteToolActivation, cell: GridCellCoord): Vector2 {
+  return {
+    x: active.start.x + (cell.x - active.startCell.x) * active.gridDpi,
+    y: active.start.y + (cell.y - active.startCell.y) * active.gridDpi
+  };
+}
+
 export class ShipRouteToolController {
   private activation: ShipRouteToolActivation | undefined;
   private points: Vector2[] = [];
@@ -89,14 +103,13 @@ export class ShipRouteToolController {
     this.cells = [];
     this.stepCosts = [];
     this.facings = [];
-    const grid = new StrategicGridAdapter({ dpi: input.gridDpi, offset: { x: 0, y: 0 } });
     let previous = input.startCell;
     let facing = input.facing;
     for (const cell of input.initialCells ?? []) {
       const requiredFacing = facingForStep(previous, cell);
       if (!requiredFacing) break;
       this.cells.push({ ...cell });
-      this.points.push(grid.cellToSceneCenter(cell));
+      this.points.push(pointForCell(input, cell));
       this.stepCosts.push(quarterTurnCost(facing, requiredFacing) + 1);
       this.facings.push(requiredFacing);
       facing = requiredFacing;
@@ -194,13 +207,13 @@ export class ShipRouteToolController {
   private async analyze(pointer: Vector2): Promise<ShipRoutePreview> {
     const active = this.activation;
     if (!active) return { point: { ...pointer }, cell: { x: 0, y: 0 }, valid: false, color: "#d32f2f", label: messageFor("INACTIVE"), spentMovementPoints: 0, remainingMovementPoints: 0, reason: "INACTIVE" };
-    const point = await this.gridPort.snapGridCenter(pointer);
-    const grid = new StrategicGridAdapter({ dpi: active.gridDpi, offset: { x: 0, y: 0 } });
-    const cell = grid.sceneToCell(point);
+    const snapped = await this.gridPort.snapGridCenter(pointer);
+    const cell = cellForSnappedPoint(active, snapped);
+    const point = pointForCell(active, cell);
     const anchor = this.cells.at(-1) ?? active.startCell;
     const spent = this.stepCosts.reduce((sum, cost) => sum + cost, 0);
     const remaining = Math.max(0, active.movementPoints - spent);
-    if (cell.x === anchor.x && cell.y === anchor.y) return { point: { ...point }, cell, valid: true, color: "#4f687a", label: `Маршрут: ${spent} ОП · останется ${remaining} ОП`, spentMovementPoints: spent, remainingMovementPoints: remaining };
+    if (cell.x === anchor.x && cell.y === anchor.y) return { point, cell, valid: true, color: "#4f687a", label: `Маршрут: ${spent} ОП · останется ${remaining} ОП`, spentMovementPoints: spent, remainingMovementPoints: remaining };
     if (!isOrthogonalNeighbor(anchor, cell)) return this.invalid(point, cell, "NOT_ORTHOGONAL", spent, remaining);
     const scene = { terrain: active.terrain, gridMap: active.gridMap };
     if (readCell(active.gridMap, cell).impassable) return this.invalid(point, cell, "IMPASSABLE", spent, remaining);
@@ -213,7 +226,7 @@ export class ShipRouteToolController {
     if (remaining < stepCost) return this.invalid(point, cell, "INSUFFICIENT_MOVEMENT_POINTS", spent, remaining);
     const total = spent + stepCost;
     return {
-      point: { ...point }, cell, valid: true, color: "#4f687a",
+      point, cell, valid: true, color: "#4f687a",
       label: turnCost > 0
         ? `Поворот: ${turnCost} ОП · ход: 1 ОП · маршрут: ${total} ОП · останется ${remaining - stepCost} ОП`
         : `Ход: 1 ОП · маршрут: ${total} ОП · останется ${remaining - 1} ОП`,
