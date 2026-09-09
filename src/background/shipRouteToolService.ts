@@ -198,6 +198,7 @@ export class ShipRouteToolService {
       }
     );
     if (!authorization.allowed) throw new ShipRouteToolAuthorizationError(authorization.reason);
+    if (scene.turn.phase !== "MOVEMENT") throw new ShipRouteToolAuthorizationError("NOT_MOVEMENT_PHASE");
     if (ship.state.hp <= 0) throw new ShipRouteToolAuthorizationError("SHIP_DESTROYED");
     if (ship.state.status !== "READY") throw new ShipRouteToolAuthorizationError("SHIP_NOT_READY");
     if (ship.state.plannedRoute.length > 0) throw new ShipRouteToolAuthorizationError("SHIP_ROUTE_ALREADY_PLANNED");
