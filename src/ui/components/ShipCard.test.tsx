@@ -147,6 +147,24 @@ describe("ShipCard strategic route controls", () => {
     expect(screen.getByRole("button", { name: "Проложить переход" })).toBeDisabled();
   });
 
+  it("allows an existing ship route to be reopened and edited even when all free OP are reserved", () => {
+    const onAction = vi.fn();
+    render(
+      <ShipCard
+        ship={{ ...battleship, plannedRouteCellCount: 2, movementRemaining: 0 }}
+        sideColor="#f00"
+        isGM={false}
+        canPlanRoute
+        onAction={onAction}
+      />
+    );
+
+    const button = screen.getByRole("button", { name: "Изменить переход" });
+    expect(button).toBeEnabled();
+    fireEvent.click(button);
+    expect(onAction).toHaveBeenCalledWith({ type: "EDIT_SHIP_ROUTE", shipId: "ship" });
+  });
+
   it("marks a destroyed ship explicitly and hides stale tactical controls", () => {
     render(
       <ShipCard
