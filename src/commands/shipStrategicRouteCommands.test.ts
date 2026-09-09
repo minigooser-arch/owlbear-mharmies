@@ -155,14 +155,14 @@ describe("SET_SHIP_ROUTE permissions", () => {
 describe("SET_SHIP_ROUTE processing", () => {
   const processor = new CommandProcessor(() => new Date(), () => ({ x: 0, y: 0 }));
 
-  it("commits a valid route, spends one OP per cell, and preserves facing", () => {
+  it("commits a valid route, spends turn plus movement OP, and preserves facing until resolution", () => {
     const result = processor.execute(processorContext(), shipRouteCommand());
     expect(result.status).toBe("ACCEPTED");
     if (result.status !== "ACCEPTED") return;
     expect(result.state.scene.ships?.redShip).toMatchObject({
       facing: "SOUTH",
       plannedRoute: [{ x: 1, y: 0 }, { x: 2, y: 0 }],
-      globalMovementRemaining: 2,
+      globalMovementRemaining: 1,
       movementSpentThisTurn: true,
       revision: 2
     });
