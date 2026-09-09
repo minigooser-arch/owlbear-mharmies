@@ -71,18 +71,18 @@ export function App({ services }: { services: ExtensionServices }) {
           </button>
         ))}
       </nav>
-      {isGM && navalRequestCount > 0 && tab !== "BATTLES" && (
-        <aside className="registration-card naval-request-notice" role="status" aria-label="Заявки на морской бой">
-          <div className="registration-copy">
-            <strong>Заявки на морской бой: {navalRequestCount}</strong>
-            <small>Есть ожидающие решения ведущего заявки. Все они собраны в одном списке.</small>
-          </div>
-          <button className="button primary" type="button" onClick={() => setGmTab("BATTLES")}>
-            Открыть заявки
-          </button>
-        </aside>
-      )}
       <div className="content wiki-content">
+        {isGM && navalRequestCount > 0 && tab !== "BATTLES" && (
+          <aside className="registration-card naval-request-notice" role="status" aria-label="Заявки на морской бой">
+            <div className="registration-copy">
+              <strong>Заявки на морской бой: {navalRequestCount}</strong>
+              <small>Есть ожидающие решения ведущего заявки. Все они собраны в одном списке.</small>
+            </div>
+            <button className="button primary" type="button" onClick={() => setGmTab("BATTLES")}>
+              Открыть заявки
+            </button>
+          </aside>
+        )}
         {tab === "OVERVIEW" && isGM && <OverviewPage armies={state.armies} wars={state.wars} turn={state.turn} onAction={send} />}
         {tab === "ARMIES" && <>
           <ForcesPage armies={state.armies} ships={state.ships} sides={state.sides} role={state.role} playerId={state.playerId} leaderSideIds={state.leaderSideIds} memberSideIds={state.memberSideIds} relations={state.relations} navalRequestTargets={state.navalRequestTargets} pendingNavalBattleRequests={state.pendingNavalBattleRequests} transportEmbarkTargets={state.transportEmbarkTargets} pendingTransportEmbarkRequests={state.pendingTransportEmbarkRequests} turnPhase={state.turn.phase} onAction={send} />
