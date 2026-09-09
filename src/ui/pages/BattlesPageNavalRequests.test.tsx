@@ -67,7 +67,7 @@ describe("GM naval battle request queue", () => {
     expect(screen.queryByText("Активных боёв нет.")).not.toBeInTheDocument();
   });
 
-  it("lets the GM select a tactical area, add participants, and launch the request", () => {
+  it("lets the GM follow an explicit three-step flow and launch the request", () => {
     const onAction = vi.fn();
     const { rerender } = render(
       <BattlesPage
@@ -78,6 +78,10 @@ describe("GM naval battle request queue", () => {
         onAction={onAction}
       />
     );
+
+    expect(screen.getByText("1. Выберите область боя")).toBeInTheDocument();
+    expect(screen.getByText("2. Выберите дополнительные корабли")).toBeInTheDocument();
+    expect(screen.getByText("3. Начните морской бой")).toBeInTheDocument();
 
     const startButton = screen.getByRole("button", { name: "Начать морской бой" });
     expect(startButton).toBeDisabled();

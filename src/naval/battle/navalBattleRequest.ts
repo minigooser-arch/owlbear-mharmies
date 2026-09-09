@@ -5,7 +5,8 @@ export type NavalBattleRequestFailure =
   | "TARGET_SHIP_NOT_FOUND"
   | "INITIATING_SHIP_DESTROYED"
   | "TARGET_SHIP_DESTROYED"
-  | "TARGET_NOT_DETECTED";
+  | "TARGET_NOT_DETECTED"
+  | "NAVAL_BATTLE_REQUEST_ALREADY_PENDING";
 
 export interface NavalBattleRequestValidationInput {
   scene: Pick<NavalSceneState, "ships" | "turn">;
@@ -39,13 +40,33 @@ export type CreateNavalBattleRequestResult =
   | { ok: true; request: NavalBattleRequest }
   | { ok: false; reason: NavalBattleRequestFailure };
 
+function isSameShipPair(
+  request: Pick<NavalBattleRequest, "initiatingShipId" | "targetShipId">,
+  initiatingShipId: string,
+  targetShipId: string
+): boolean {
+  return (
+    request.initiatingShipId === initiatingShipId &&
+    request.targetShipId === targetShipId
+  ) || (
+    request.initiatingShipId === targetShipId &&
+    request.targetShipId === initiatingShipId
+  );
+}
+
 export function createNavalBattleRequest(input: {
-  scene: Pick<NavalSceneState, "ships" | "turn">;
+  scene: Pick<NavalSceneState, "ships" | "turn" | "navalBattleRequests">;
   requestId: string;
   initiatingShipId: string;
   targetShipId: string;
   detectedTargetShipIds: ReadonlySet<string>;
 }): CreateNavalBattleRequestResult {
+  if ((input.scene.navalBattleRequests ?? []).some((request) =>
+    isSameShipPair(request, input.initiatingShipId, input.targetShipId)
+  )) {
+    return { ok: false, reason: "NAVAL_BATTLE_REQUEST_ALREADY_PENDING" };
+  }
+
   const request: NavalBattleRequest = {
     id: input.requestId,
     initiatingShipId: input.initiatingShipId,

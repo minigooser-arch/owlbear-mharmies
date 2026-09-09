@@ -69,3 +69,20 @@ it("in POST_MOVEMENT enables naval battle requests and removes impossible transp
   expect(screen.getByRole("button", { name: "Инициировать морской бой" })).toBeEnabled();
   expect(screen.queryByRole("button", { name: "Погрузить армию" })).toBeNull();
 });
+
+it("hides ship route actions after MOVEMENT and explains why", () => {
+  render(
+    <FleetPage
+      ships={[cruiser]}
+      armies={[]}
+      sides={sides}
+      role="PLAYER"
+      leaderSideIds={new Set(["red"])}
+      turnPhase="POST_MOVEMENT"
+      onAction={vi.fn()}
+    />
+  );
+
+  expect(screen.queryByRole("button", { name: "Проложить переход" })).toBeNull();
+  expect(screen.getByText("Маршрут корабля задаётся только в фазе перемещения.")).toBeInTheDocument();
+});

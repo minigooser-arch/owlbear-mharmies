@@ -31,11 +31,31 @@ export interface LocalClonePort {
   createClone(source: SceneItemRecord): SceneItemRecord;
 }
 
+function objectRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
 function cloneSourceId(item: SceneItemRecord): string | undefined {
-  const metadata = item.metadata[METADATA_KEYS.localClone];
-  if (typeof metadata !== "object" || metadata === null) return undefined;
-  const sourceItemId = (metadata as Record<string, unknown>).sourceItemId;
+  const metadata = objectRecord(item.metadata[METADATA_KEYS.localClone]);
+  const sourceItemId = metadata?.sourceItemId;
   return typeof sourceItemId === "string" ? sourceItemId : undefined;
+}
+
+function sourceHasRoute(source: SceneItemRecord): boolean {
+  const ship = objectRecord(source.metadata[METADATA_KEYS.ship]);
+  if (Array.isArray(ship?.plannedRoute)) return ship.plannedRoute.length > 0;
+  const army = objectRecord(source.metadata[METADATA_KEYS.army]);
+  const plannedRoute = objectRecord(army?.plannedRoute);
+  return Array.isArray(plannedRoute?.cells) && plannedRoute.cells.length > 0;
+}
+
+export function localCloneMetadataForSource(source: SceneItemRecord): Record<string, unknown> {
+  return {
+    sourceItemId: source.id,
+    hasRoute: sourceHasRoute(source)
+  };
 }
 
 const RENDER_FIELDS = [
@@ -61,6 +81,15 @@ function changedRenderFields(source: SceneItemRecord, clone: SceneItemRecord): I
     }
   }
   if (clone.visible !== true) update.visible = true;
+  if (clone.locked !== true) update.locked = true;
+  if (clone.disableHit !== false) update.disableHit = false;
+  const desiredCloneMetadata = localCloneMetadataForSource(source);
+  if (JSON.stringify(clone.metadata[METADATA_KEYS.localClone]) !== JSON.stringify(desiredCloneMetadata)) {
+    update.metadata = {
+      ...clone.metadata,
+      [METADATA_KEYS.localClone]: desiredCloneMetadata
+    };
+  }
   return update;
 }
 

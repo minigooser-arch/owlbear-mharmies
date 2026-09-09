@@ -12,7 +12,10 @@ import type { GridSdkPort } from "../grid/gridDistance";
 import { METADATA_KEYS } from "../shared/constants";
 import type { ItemUpdate, SceneItemRecord, Vector2 } from "../shared/types";
 import type { MetadataPort } from "../storage/metadataRepository";
-import type { LocalClonePort } from "../visibility/localCloneReconciler";
+import {
+  localCloneMetadataForSource,
+  type LocalClonePort
+} from "../visibility/localCloneReconciler";
 import type { NotificationPort } from "./notifications";
 
 export interface OwlbearPort
@@ -149,8 +152,8 @@ function applyNormalizedLocalItem(
   }
 }
 
-function localCloneMetadata(sourceItemId: string): Record<string, unknown> {
-  return { [METADATA_KEYS.localClone]: { sourceItemId } };
+function localCloneMetadata(source: SceneItemRecord): Record<string, unknown> {
+  return { [METADATA_KEYS.localClone]: localCloneMetadataForSource(source) };
 }
 
 export function createLocalImageClone(
@@ -161,7 +164,7 @@ export function createLocalImageClone(
     ...structuredClone(source),
     id: createId(),
     visible: true,
-    metadata: localCloneMetadata(source.id)
+    metadata: localCloneMetadata(source)
   };
   return clone;
 }
@@ -188,9 +191,9 @@ export function createSdkImageClone(
     .zIndex(source.zIndex ?? 0)
     .visible(true)
     .locked(true)
-    .disableHit(true)
+    .disableHit(false)
     .disableAutoZIndex(true)
-    .metadata(localCloneMetadata(source.id) as Metadata)
+    .metadata(localCloneMetadata(source) as Metadata)
     .text(image.text)
     .textItemType(image.textItemType);
   if (typeof source.description === "string") builder = builder.description(source.description);

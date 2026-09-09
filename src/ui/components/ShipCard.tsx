@@ -131,6 +131,7 @@ export function ShipCard({
   sideColor,
   isGM,
   canPlanRoute,
+  routePlanningEnabled = true,
   embarkedArmyName,
   relations = {},
   onAction
@@ -139,6 +140,7 @@ export function ShipCard({
   sideColor: string;
   isGM: boolean;
   canPlanRoute: boolean;
+  routePlanningEnabled?: boolean;
   embarkedArmyName?: string;
   relations?: Readonly<Record<string, Readonly<Record<string, SideRelation>>>>;
   onAction(command: UiCommand): void;
@@ -149,10 +151,11 @@ export function ShipCard({
   const broadside = ship.normalDice > 0
     ? `${ship.normalDice}d6 · дальность ${ship.normalRangeMin === ship.normalRangeMax ? ship.normalRangeMin : `${ship.normalRangeMin}–${ship.normalRangeMax}`}`
     : "Обычный залп недоступен";
-  const route = ship.plannedRouteCellCount > 0
+  const hasPlannedRoute = ship.plannedRouteCellCount > 0;
+  const route = hasPlannedRoute
     ? `Маршрут: ${ship.plannedRouteCellCount} кл.`
     : "Маршрут не задан";
-  const routeUnavailable = destroyed || inBattle || ship.plannedRouteCellCount > 0 || ship.movementRemaining <= 0;
+  const routeUnavailable = destroyed || inBattle || (!hasPlannedRoute && ship.movementRemaining <= 0);
   const canControlTactical = canPlanRoute && !destroyed && !exited && inBattle && ship.isCurrentNavalTurn === true;
   const canConfirmExit = isGM && !destroyed && !exited && inBattle && ship.isCurrentNavalTurn === true;
   const broadsideTargets = ship.broadsideTargets ?? [];
@@ -407,7 +410,7 @@ export function ShipCard({
         </div>
       )}
 
-      {canPlanRoute && (
+      {canPlanRoute && routePlanningEnabled && (
         <div className="card-actions ship-route-actions">
           <button
             className="button primary"
@@ -415,7 +418,7 @@ export function ShipCard({
             disabled={routeUnavailable}
             onClick={() => onAction({ type: "EDIT_SHIP_ROUTE", shipId: ship.id })}
           >
-            Проложить переход
+            {hasPlannedRoute ? "Изменить переход" : "Проложить переход"}
           </button>
         </div>
       )}

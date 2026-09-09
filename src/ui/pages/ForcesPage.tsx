@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Side, SideRelation, TurnState } from "../../shared/types";
-import type { ArmyView, NavalRequestTargetView, ShipView, TransportEmbarkRequestView, TransportEmbarkTargetView, UiCommand } from "../state/useExtensionState";
+import type { ArmyView, NavalBattleRequestView, NavalRequestTargetView, ShipView, TransportEmbarkRequestView, TransportEmbarkTargetView, UiCommand } from "../state/useExtensionState";
 import { ArmiesPage } from "./ArmiesPage";
 import { FleetPage } from "./FleetPage";
 
@@ -16,6 +16,7 @@ export function ForcesPage({
   memberSideIds,
   relations = {},
   navalRequestTargets = [],
+  pendingNavalBattleRequests = [],
   transportEmbarkTargets = [],
   pendingTransportEmbarkRequests = [],
   turnPhase,
@@ -30,6 +31,7 @@ export function ForcesPage({
   memberSideIds: ReadonlySet<string>;
   relations?: Readonly<Record<string, Readonly<Record<string, SideRelation>>>>;
   navalRequestTargets?: readonly NavalRequestTargetView[];
+  pendingNavalBattleRequests?: readonly NavalBattleRequestView[];
   transportEmbarkTargets?: readonly TransportEmbarkTargetView[];
   pendingTransportEmbarkRequests?: readonly TransportEmbarkRequestView[];
   turnPhase?: TurnState["phase"];
@@ -67,6 +69,7 @@ export function ForcesPage({
           leaderSideIds={leaderSideIds}
           relations={relations}
           navalRequestTargets={navalRequestTargets}
+          pendingNavalBattleRequests={pendingNavalBattleRequests}
           transportEmbarkTargets={transportEmbarkTargets}
           turnPhase={turnPhase}
           onAction={onAction}

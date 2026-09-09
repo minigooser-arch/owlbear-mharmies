@@ -9,7 +9,8 @@ const mocks = vi.hoisted(() => {
     setUnloadCallback: (callback: () => void) => { unloadCallback = callback; },
     unloadCallback: () => unloadCallback,
     startBackgroundApplication: vi.fn(),
-    registerContextMenu: vi.fn(),
+    registerInterceptionContextMenu: vi.fn(),
+    registerRouteContextMenu: vi.fn(),
     contextMenuCreate: vi.fn(),
     contextMenuRemove: vi.fn(),
     notificationShow: vi.fn()
@@ -32,14 +33,19 @@ vi.mock("./application", () => ({
 }));
 
 vi.mock("../owlbear/navalInterceptionContextMenu", () => ({
-  registerNavalInterceptionContextMenu: mocks.registerContextMenu
+  registerNavalInterceptionContextMenu: mocks.registerInterceptionContextMenu
+}));
+
+vi.mock("../owlbear/routeContextMenu", () => ({
+  registerRouteContextMenu: mocks.registerRouteContextMenu
 }));
 
 beforeEach(() => {
   vi.resetModules();
   mocks.onReady.mockClear();
   mocks.startBackgroundApplication.mockReset();
-  mocks.registerContextMenu.mockReset();
+  mocks.registerInterceptionContextMenu.mockReset();
+  mocks.registerRouteContextMenu.mockReset();
   mocks.contextMenuCreate.mockReset();
   mocks.contextMenuRemove.mockReset();
   mocks.notificationShow.mockReset();
@@ -53,40 +59,55 @@ beforeEach(() => {
   });
 });
 
-it("registers interception right-click in the persistent background and disposes it on unload", async () => {
+it("registers persistent interception and token route context menus and disposes both on unload", async () => {
   const application = {
     activateInterception: vi.fn(async () => undefined),
     stop: vi.fn(async () => undefined)
   };
-  const removeContextMenu = vi.fn(async () => undefined);
+  const removeInterceptionContextMenu = vi.fn(async () => undefined);
+  const removeRouteContextMenu = vi.fn(async () => undefined);
   mocks.startBackgroundApplication.mockResolvedValue(application);
-  mocks.registerContextMenu.mockResolvedValue(removeContextMenu);
+  mocks.registerInterceptionContextMenu.mockResolvedValue(removeInterceptionContextMenu);
+  mocks.registerRouteContextMenu.mockResolvedValue(removeRouteContextMenu);
 
   await import("./index");
   mocks.readyCallback()?.();
 
   await vi.waitFor(() => expect(mocks.startBackgroundApplication).toHaveBeenCalledTimes(1));
-  await vi.waitFor(() => expect(mocks.registerContextMenu).toHaveBeenCalledTimes(1));
-  expect(mocks.registerContextMenu).toHaveBeenCalledWith(
-    expect.objectContaining({
-      create: expect.any(Function),
-      remove: expect.any(Function)
-    }),
+  await vi.waitFor(() => expect(mocks.registerInterceptionContextMenu).toHaveBeenCalledTimes(1));
+  await vi.waitFor(() => expect(mocks.registerRouteContextMenu).toHaveBeenCalledTimes(1));
+
+  const expectedPort = expect.objectContaining({
+    create: expect.any(Function),
+    remove: expect.any(Function)
+  });
+  expect(mocks.registerInterceptionContextMenu).toHaveBeenCalledWith(
+    expectedPort,
     application,
     "/icon-1.2.png"
   );
+  expect(mocks.registerRouteContextMenu).toHaveBeenCalledWith(
+    expectedPort,
+    expect.anything(),
+    "/icon-1.2.png"
+  );
+  const routeService = mocks.registerRouteContextMenu.mock.calls[0]?.[1] as {
+    openRouteForLocalItem?: unknown;
+  };
+  expect(typeof routeService.openRouteForLocalItem).toBe("function");
 
-  const contextMenuPort = mocks.registerContextMenu.mock.calls[0]?.[0] as {
+  const contextMenuPort = mocks.registerRouteContextMenu.mock.calls[0]?.[0] as {
     create(entry: unknown): unknown;
     remove(id: string): unknown;
   };
-  const sdkEntry = { id: "interception-test" };
+  const sdkEntry = { id: "route-test" };
   contextMenuPort.create(sdkEntry);
-  contextMenuPort.remove("interception-test");
+  contextMenuPort.remove("route-test");
   expect(mocks.contextMenuCreate).toHaveBeenCalledWith(sdkEntry);
-  expect(mocks.contextMenuRemove).toHaveBeenCalledWith("interception-test");
+  expect(mocks.contextMenuRemove).toHaveBeenCalledWith("route-test");
 
   mocks.unloadCallback()?.();
-  await vi.waitFor(() => expect(removeContextMenu).toHaveBeenCalledTimes(1));
+  await vi.waitFor(() => expect(removeInterceptionContextMenu).toHaveBeenCalledTimes(1));
+  await vi.waitFor(() => expect(removeRouteContextMenu).toHaveBeenCalledTimes(1));
   await vi.waitFor(() => expect(application.stop).toHaveBeenCalledTimes(1));
 });

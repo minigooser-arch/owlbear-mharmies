@@ -41,6 +41,7 @@ export type NotificationCode =
   | "ROUTE_NOT_ACTIVE_TURN"
   | "ROUTE_REQUIRES_REPLAN"
   | "TURN_POSITION_UNAVAILABLE"
+  | "NOT_MOVEMENT_PHASE"
   | "INVALID_METADATA"
   | "NO_ACTIVE_NAVAL_BATTLE"
   | "SHIP_NOT_IN_NAVAL_BATTLE"
@@ -52,6 +53,7 @@ export type NotificationCode =
   | "INSUFFICIENT_NAVAL_MOVEMENT"
   | "NAVAL_ACTION_ALREADY_USED"
   | "INVALID_NAVAL_TACTICAL_ACTION"
+  | "NAVAL_BATTLE_REQUEST_ALREADY_PENDING"
   | "INVALID_NAVAL_BATTLE_AREA"
   | "INVALID_NAVAL_BATTLE"
   | "SHIP_ALREADY_EXITED";
@@ -99,6 +101,7 @@ const RUSSIAN_MESSAGES: Readonly<Record<NotificationCode, string>> = {
   ROUTE_NOT_ACTIVE_TURN: "Этот маршрут назначен на другой глобальный ход.",
   ROUTE_REQUIRES_REPLAN: "Старый маршрут нужно спланировать заново.",
   TURN_POSITION_UNAVAILABLE: "Не удалось определить стратегическую клетку армии для смены хода.",
+  NOT_MOVEMENT_PHASE: "Маршрут корабля можно задавать только в фазе перемещения.",
   INVALID_METADATA: "Данные расширения повреждены или имеют неизвестную версию.",
   NO_ACTIVE_NAVAL_BATTLE: "Сейчас нет активного морского боя.",
   SHIP_NOT_IN_NAVAL_BATTLE: "Этот корабль не участвует в текущем морском бою.",
@@ -110,6 +113,7 @@ const RUSSIAN_MESSAGES: Readonly<Record<NotificationCode, string>> = {
   INSUFFICIENT_NAVAL_MOVEMENT: "У корабля не хватает очков перемещения для этого манёвра.",
   NAVAL_ACTION_ALREADY_USED: "После активного действия корабль больше не может двигаться в этот ход.",
   INVALID_NAVAL_TACTICAL_ACTION: "Этот морской манёвр сейчас недоступен.",
+  NAVAL_BATTLE_REQUEST_ALREADY_PENDING: "Заявка на эту пару кораблей уже ожидает ведущего.",
   INVALID_NAVAL_BATTLE_AREA: "Поле морского боя может состоять только из морских клеток.",
   INVALID_NAVAL_BATTLE: "Не удалось начать морской бой. Проверьте, что все выбранные корабли находятся внутри выбранной области боя.",
   SHIP_ALREADY_EXITED: "Этот корабль уже вышел из морского боя."

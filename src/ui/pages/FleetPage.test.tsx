@@ -72,11 +72,18 @@ describe("fleet strategic route action", () => {
 
   it.each([
     ["battle", ship({ status: "IN_NAVAL_BATTLE" })],
-    ["planned", ship({ plannedRouteCellCount: 1 })],
     ["no movement", ship({ movementRemaining: 0 })]
   ])("disables route planning for %s ship", (_label, current) => {
     renderFleet({ ship: current });
     expect(screen.getByRole("button", { name: "Проложить переход" })).toBeDisabled();
+  });
+
+  it("lets a leader edit an already planned ship route", () => {
+    const onAction = renderFleet({ ship: ship({ plannedRouteCellCount: 1, movementRemaining: 0 }) });
+    const button = screen.getByRole("button", { name: "Изменить переход" });
+    expect(button).toBeEnabled();
+    fireEvent.click(button);
+    expect(onAction).toHaveBeenCalledWith({ type: "EDIT_SHIP_ROUTE", shipId: "ship" });
   });
 
   it("lets the GM plan a route for any READY ship", () => {

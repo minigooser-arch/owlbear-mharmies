@@ -59,6 +59,32 @@ describe("route tool", () => {
     });
   });
 
+  it("keeps two snapped army cells on the same row despite floating-point grid jitter", async () => {
+    const jitterPort: GridRoutePort = {
+      distance: async (from, to) => Math.hypot(to.x - from.x, to.y - from.y) / 100,
+      snapGridCenter: async (point) => ({ ...point })
+    };
+    const tool = new RouteToolController(jitterPort);
+    tool.activate(activation({
+      start: { x: 100, y: 100 },
+      startCell: { x: 1, y: 1 },
+      movementUnits: 6,
+      maxUnits: 6,
+      gridMap: {
+        version: 1,
+        revision: 0,
+        cells: {
+          "2,1": { terrainId: "road", impassable: false, factionTerritoryIds: ["red"], recognizedStateId: null, deFactoStateId: null },
+          "3,1": { terrainId: "road", impassable: false, factionTerritoryIds: ["red"], recognizedStateId: null, deFactoStateId: null }
+        }
+      }
+    }));
+
+    expect(await tool.click({ x: 200, y: 100.0000001 })).toEqual({ accepted: true });
+    expect(await tool.click({ x: 300, y: 99.9999999 })).toEqual({ accepted: true });
+    expect(tool.snapshot()?.cells).toEqual([{ x: 2, y: 1 }, { x: 3, y: 1 }]);
+  });
+
   it("rejects diagonal, distant, and impassable cells before adding them", async () => {
     const tool = new RouteToolController(hundredPixelCells);
     tool.activate(activation());

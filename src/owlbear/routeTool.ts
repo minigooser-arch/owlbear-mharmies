@@ -1,5 +1,5 @@
 import { firstBarrierIntersection, type BarrierSegment } from "../barriers/barrierGeometry";
-import { StrategicGridAdapter, isOrthogonalNeighbor } from "../grid/strategicGrid";
+import { isOrthogonalNeighbor } from "../grid/strategicGrid";
 import { validateMovementStep } from "../movement/movementRules";
 import type { GridRoutePort } from "../routes/routeMath";
 import { readCell } from "../terrain/gridMap";
@@ -98,6 +98,20 @@ function messageForPreview(reason: RoutePreview["reason"], missingUnits?: number
     case "INACTIVE": return "Инструмент маршрута не активен";
     default: return "";
   }
+}
+
+function cellForSnappedPoint(active: RouteToolActivation, point: Vector2): GridCellCoord {
+  return {
+    x: active.startCell.x + Math.round((point.x - active.start.x) / active.gridDpi),
+    y: active.startCell.y + Math.round((point.y - active.start.y) / active.gridDpi)
+  };
+}
+
+function pointForCell(active: RouteToolActivation, cell: GridCellCoord): Vector2 {
+  return {
+    x: active.start.x + (cell.x - active.startCell.x) * active.gridDpi,
+    y: active.start.y + (cell.y - active.startCell.y) * active.gridDpi
+  };
 }
 
 export class RouteToolController {
@@ -246,9 +260,8 @@ export class RouteToolController {
       };
     }
     const snapped = await this.gridPort.snapGridCenter(pointer);
-    const adapter = new StrategicGridAdapter({ dpi: active.gridDpi, offset: { x: 0, y: 0 } });
-    const cell = adapter.sceneToCell(snapped);
-    const point = adapter.cellToSceneCenter(cell);
+    const cell = cellForSnappedPoint(active, snapped);
+    const point = pointForCell(active, cell);
     const anchorCell = this.cells.at(-1) ?? active.startCell;
     const anchorPoint = this.points.at(-1) ?? active.start;
     const spent = this.costs.reduce((sum, value) => sum + value, 0);

@@ -31,6 +31,7 @@ export function App({ services }: { services: ExtensionServices }) {
   if (state.futureSchema) return <main className="state-screen warning">Данные созданы более новой версией расширения. Доступен только просмотр.</main>;
 
   const isGM = state.role === "GM";
+  const navalRequestCount = isGM ? (state.pendingNavalBattleRequests?.length ?? 0) : 0;
   const tabs: readonly Tab[] = isGM
     ? ["OVERVIEW", "ARMIES", "MAP", "BATTLES", "MANAGEMENT"]
     : ["ARMIES", "TURN", "BATTLES"];
@@ -46,7 +47,7 @@ export function App({ services }: { services: ExtensionServices }) {
     <main className="app-shell" data-theme="letopis-wiki-light">
       <header className="topbar wiki-topbar">
         <div className="brand-cluster">
-          <img className="brand-mark" src={`${import.meta.env.BASE_URL}icon-1.2.png`} alt="Летопись: Военная панель" />
+          <img className="brand-mark" src={`${import.meta.env.BASE_URL}cover.png`} alt="Летопись: Военная панель" />
           <div className="brand-copy">
             <p className="brand-kicker">Летопись</p>
             <h1>Военная панель</h1>
@@ -56,15 +57,35 @@ export function App({ services }: { services: ExtensionServices }) {
       </header>
       <nav className="tabs tabs-primary wiki-nav" aria-label="Разделы Летописи">
         {tabs.map((item) => (
-          <button type="button" key={item} className={tab === item ? "active" : ""} onClick={() => selectTab(item)}>
+          <button
+            type="button"
+            key={item}
+            aria-label={LABELS[item]}
+            className={tab === item ? "active" : ""}
+            onClick={() => selectTab(item)}
+          >
             {LABELS[item]}
+            {isGM && item === "BATTLES" && navalRequestCount > 0 && (
+              <span className="count-pill" aria-hidden="true">{navalRequestCount}</span>
+            )}
           </button>
         ))}
       </nav>
       <div className="content wiki-content">
+        {isGM && navalRequestCount > 0 && tab !== "BATTLES" && (
+          <aside className="registration-card naval-request-notice" role="status" aria-label="Заявки на морской бой">
+            <div className="registration-copy">
+              <strong>Заявки на морской бой: {navalRequestCount}</strong>
+              <small>Есть ожидающие решения ведущего заявки. Все они собраны в одном списке.</small>
+            </div>
+            <button className="button primary" type="button" onClick={() => setGmTab("BATTLES")}>
+              Открыть заявки
+            </button>
+          </aside>
+        )}
         {tab === "OVERVIEW" && isGM && <OverviewPage armies={state.armies} wars={state.wars} turn={state.turn} onAction={send} />}
         {tab === "ARMIES" && <>
-          <ForcesPage armies={state.armies} ships={state.ships} sides={state.sides} role={state.role} playerId={state.playerId} leaderSideIds={state.leaderSideIds} memberSideIds={state.memberSideIds} relations={state.relations} navalRequestTargets={state.navalRequestTargets} transportEmbarkTargets={state.transportEmbarkTargets} pendingTransportEmbarkRequests={state.pendingTransportEmbarkRequests} turnPhase={state.turn.phase} onAction={send} />
+          <ForcesPage armies={state.armies} ships={state.ships} sides={state.sides} role={state.role} playerId={state.playerId} leaderSideIds={state.leaderSideIds} memberSideIds={state.memberSideIds} relations={state.relations} navalRequestTargets={state.navalRequestTargets} pendingNavalBattleRequests={state.pendingNavalBattleRequests} transportEmbarkTargets={state.transportEmbarkTargets} pendingTransportEmbarkRequests={state.pendingTransportEmbarkRequests} turnPhase={state.turn.phase} onAction={send} />
           {!isGM && state.leaderSideIds.size > 0 && <details className="leader-management"><summary>Управление фракцией</summary><SidesPage role="PLAYER" playerId={state.playerId} sides={state.sides.filter((side) => state.leaderSideIds.has(side.id))} players={state.players} leaderSideIds={state.leaderSideIds} onAction={send} /></details>}
         </>}
         {tab === "TURN" && !isGM && <MovementPage armies={state.armies} turn={state.turn} isGM={false} leaderSideIds={state.leaderSideIds} onAction={send} />}

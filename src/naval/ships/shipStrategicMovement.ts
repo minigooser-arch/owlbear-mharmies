@@ -26,6 +26,24 @@ export type ShipStrategicRoutePlan =
 
 type StrategicMovementScene = Pick<SceneState, "terrain" | "gridMap">;
 
+export function shipStrategicRouteCost(
+  startCell: GridCellCoord,
+  initialFacing: ShipFacing,
+  cells: readonly GridCellCoord[]
+): number | undefined {
+  let previous = startCell;
+  let facing = initialFacing;
+  let cost = 0;
+  for (const cell of cells) {
+    const requiredFacing = facingForStep(previous, cell);
+    if (!requiredFacing) return undefined;
+    cost += quarterTurnCost(facing, requiredFacing) + 1;
+    facing = requiredFacing;
+    previous = cell;
+  }
+  return cost;
+}
+
 export function planShipStrategicRoute(
   scene: StrategicMovementScene,
   ship: ShipState,

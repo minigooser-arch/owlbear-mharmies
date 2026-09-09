@@ -136,6 +136,11 @@ function NavalBattleRequestCard({
         </div>
         {request.createdOnTurn !== undefined && <span>Ход {request.createdOnTurn}</span>}
       </div>
+
+      <div className="naval-request-step">
+        <strong>1. Выберите область боя</strong>
+        <small className="muted">Отметьте морские клетки, внутри которых пройдёт бой.</small>
+      </div>
       <div className="battle-management naval-request-actions">
         <button
           className="button ghost"
@@ -151,9 +156,14 @@ function NavalBattleRequestCard({
             : "Область не выбрана"}
         </span>
       </div>
-      {extraCandidates.length > 0 && (
+
+      <div className="naval-request-step">
+        <strong>2. Выберите дополнительные корабли</strong>
+        <small className="muted">Инициатор и цель уже включены в бой. Остальные корабли добавляются при необходимости.</small>
+      </div>
+      {extraCandidates.length > 0 ? (
         <fieldset className="naval-request-participants">
-          <legend>Дополнительные корабли</legend>
+          <legend className="sr-only">Дополнительные корабли</legend>
           {extraCandidates.map((ship) => (
             <label key={ship.id}>
               <input
@@ -174,7 +184,16 @@ function NavalBattleRequestCard({
             </label>
           ))}
         </fieldset>
+      ) : (
+        <small className="muted">Дополнительных кораблей нет — можно переходить к запуску.</small>
       )}
+
+      <div className="naval-request-step">
+        <strong>3. Начните морской бой</strong>
+        <small className="muted">
+          {matchingDraft ? "Область выбрана. Проверьте участников и запустите бой." : "Сначала выберите область боя."}
+        </small>
+      </div>
       <div className="battle-management">
         <button
           className="button primary"

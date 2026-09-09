@@ -4,7 +4,7 @@ import type { ComponentType } from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Side } from "../../shared/types";
-import type { NavalRequestTargetView, ShipView, UiCommand } from "../state/useExtensionState";
+import type { NavalBattleRequestView, NavalRequestTargetView, ShipView, UiCommand } from "../state/useExtensionState";
 import { FleetPage } from "./FleetPage";
 
 const sides: Side[] = [
@@ -59,8 +59,23 @@ const target: NavalRequestTargetView = {
   sideName: "Синие"
 };
 
+const secondTarget: NavalRequestTargetView = {
+  id: "blue-second",
+  name: "Второй линкор",
+  sideId: "blue",
+  sideName: "Синие"
+};
+
+const pendingRequest: NavalBattleRequestView = {
+  id: "pending-1",
+  initiatingShipId: "red-1",
+  targetShipId: "blue-visible",
+  createdOnTurn: 7
+};
+
 type RequestAwareFleetProps = React.ComponentProps<typeof FleetPage> & {
   navalRequestTargets: readonly NavalRequestTargetView[];
+  pendingNavalBattleRequests?: readonly NavalBattleRequestView[];
 };
 const RequestAwareFleet = FleetPage as unknown as ComponentType<RequestAwareFleetProps>;
 
@@ -94,6 +109,37 @@ describe("fleet naval battle request controls", () => {
       targetShipId: "blue-visible"
     });
     expect(onAction).not.toHaveBeenCalledWith(expect.objectContaining({ type: "START_NAVAL_BATTLE" }));
+  });
+
+  it("marks an already pending ship-target pair as requested while another pair stays available", () => {
+    const onAction = vi.fn<(command: UiCommand) => void>();
+    render(
+      <RequestAwareFleet
+        ships={[ship("red-1", "Аврора")]}
+        armies={[]}
+        sides={sides}
+        role="PLAYER"
+        leaderSideIds={new Set(["red"])}
+        navalRequestTargets={[target, secondTarget]}
+        pendingNavalBattleRequests={[pendingRequest]}
+        turnPhase="POST_MOVEMENT"
+        onAction={onAction}
+      />
+    );
+
+    const pendingButton = screen.getByRole("button", { name: "Запрошено — ожидает ведущего" });
+    expect(pendingButton).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText("Цель морского боя"), { target: { value: "blue-second" } });
+    const availableButton = screen.getByRole("button", { name: "Инициировать морской бой" });
+    expect(availableButton).toBeEnabled();
+    fireEvent.click(availableButton);
+
+    expect(onAction).toHaveBeenCalledWith({
+      type: "REQUEST_NAVAL_BATTLE",
+      initiatingShipId: "red-1",
+      targetShipId: "blue-second"
+    });
   });
 
   it("does not expose naval request controls to an ordinary faction member", () => {

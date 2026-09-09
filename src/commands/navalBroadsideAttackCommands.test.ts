@@ -97,6 +97,18 @@ function state(targetSide = "blue", targetHp = 30): CommandState {
   };
 }
 
+function shipTable(commandState: CommandState): Record<string, ShipState> {
+  const ships = commandState.scene.ships;
+  if (!ships) throw new Error("Expected ship table in naval combat fixture");
+  return ships;
+}
+
+function positionTable(commandState: CommandState): Record<string, Vector2> {
+  const positions = commandState.positions;
+  if (!positions) throw new Error("Expected positions in naval combat fixture");
+  return positions;
+}
+
 function command(playerId = "red-leader", confirmed = false): ArmyCommand {
   return {
     protocolVersion: COMMAND_PROTOCOL_VERSION,
@@ -160,6 +172,40 @@ describe("NAVAL_BROADSIDE_ATTACK command", () => {
       armor: 3,
       damage: 7
     }));
+  });
+
+  it("enforces the ironclad adjacent-only port/starboard arc in the authoritative command", () => {
+    const adjacent = state();
+    shipTable(adjacent).attacker = navalShip("red", "IRONCLAD", "NORTH");
+    positionTable(adjacent).target = { x: 650, y: 550 };
+
+    const closeResult = processor([6, 5, 4]).execute(context(adjacent), command());
+    expect(closeResult.status).toBe("ACCEPTED");
+    if (closeResult.status !== "ACCEPTED") return;
+    expect(closeResult.state.scene.ships?.target?.hp).toBe(15);
+    expect(closeResult.state.scene.activeNavalBattle?.events).toContainEqual(expect.objectContaining({
+      type: "BROADSIDE_ATTACK",
+      attackerShipId: "attacker",
+      targetShipId: "target",
+      rolledDamage: 15,
+      armor: 0,
+      damage: 15
+    }));
+
+    const distant = state();
+    shipTable(distant).attacker = navalShip("red", "IRONCLAD", "NORTH");
+    expect(processor([6, 5, 4]).execute(context(distant), command())).toEqual({
+      status: "REJECTED",
+      reason: "OUTSIDE_BROADSIDE_SECTOR"
+    });
+
+    const bow = state();
+    shipTable(bow).attacker = navalShip("red", "IRONCLAD", "NORTH");
+    positionTable(bow).target = { x: 550, y: 450 };
+    expect(processor([6, 5, 4]).execute(context(bow), command())).toEqual({
+      status: "REJECTED",
+      reason: "OUTSIDE_BROADSIDE_SECTOR"
+    });
   });
 
   it("requires confirmation for same-side or allied participants but not enemy targets", () => {

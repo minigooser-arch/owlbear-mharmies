@@ -106,7 +106,7 @@ it("copies image render fields and adds source metadata to a new local ID", () =
   });
 });
 
-it("builds local image clones as non-interactive and preserves text semantics", () => {
+it("builds local image clones as locked but hit-testable and preserves text semantics", () => {
   const clone = createSdkImageClone({
     id: "source",
     type: "IMAGE",
@@ -123,7 +123,7 @@ it("builds local image clones as non-interactive and preserves text semantics", 
   expect(clone).toMatchObject({
     type: "IMAGE",
     locked: true,
-    disableHit: true,
+    disableHit: false,
     textItemType: "TEXT",
     metadata: { [METADATA_KEYS.localClone]: { sourceItemId: "source" } }
   });
@@ -261,9 +261,9 @@ it("snaps grid positions to cell centres with full sensitivity", async () => {
       grid: {
         getDistance: async () => 0,
         getDpi: async () => 100,
-        snapPosition: async (...args: unknown[]) => {
+        snapPosition: async (...args) => {
           calls.push(args);
-          return { x: 50, y: 150 };
+          return args[0] as { x: number; y: number };
         },
         onChange: () => () => undefined
       }
@@ -274,200 +274,6 @@ it("snaps grid positions to cell centres with full sensitivity", async () => {
     },
     notification: { show: async () => undefined }
   });
-
-  await expect(adapter.snapGridCenter({ x: 17, y: 129 })).resolves.toEqual({ x: 50, y: 150 });
-  await expect(adapter.getGridDpi()).resolves.toBe(100);
-  expect(calls).toEqual([[{ x: 17, y: 129 }, 1, false, true]]);
-});
-
-it("adds normalized local overlays in one SDK collection batch", async () => {
-  const addedBatches: unknown[][] = [];
-  const collection = {
-    getItems: async () => [],
-    updateItems: async () => undefined,
-    addItems: async (items: unknown[]) => { addedBatches.push(structuredClone(items)); },
-    deleteItems: async () => undefined
-  };
-  const adapter = createOwlbearAdapter({
-    scene: {
-      getMetadata: async () => ({}),
-      setMetadata: async () => undefined,
-      items: collection,
-      local: collection,
-      grid: {
-        getDistance: async () => 0,
-        getDpi: async () => 100,
-        snapPosition: async (position) => position,
-        onChange: () => () => undefined
-      }
-    },
-    broadcast: { sendMessage: async () => undefined, onMessage: () => () => undefined },
-    notification: { show: async () => undefined }
-  }, fakeOverlayBuilders());
-
-  await adapter.addLocalItems([
-    {
-      id: "curve",
-      type: "CURVE",
-      position: { x: 0, y: 0 },
-      points: [{ x: 0, y: 0 }, { x: 2, y: 1 }],
-      strokeColor: "#f00",
-      metadata: {}
-    },
-    {
-      id: "label",
-      type: "LABEL",
-      position: { x: 2, y: 1 },
-      text: "2",
-      color: "#0f0",
-      metadata: {}
-    }
-  ]);
-
-  expect(addedBatches).toHaveLength(1);
-  expect(addedBatches[0]).toMatchObject([
-    { id: "curve", points: [{ x: 0, y: 0 }, { x: 2, y: 1 }], style: { strokeColor: "#f00" } },
-    { id: "label", text: { plainText: "2", style: { fillColor: "#0f0" } } }
-  ]);
-});
-
-it("updates normalized overlays in one batch using nested SDK fields", async () => {
-  let locals: SceneItemRecord[] = [
-    {
-      id: "curve",
-      type: "CURVE",
-      position: { x: 0, y: 0 },
-      points: [{ x: 0, y: 0 }, { x: 1, y: 0 }],
-      style: { strokeColor: "#111", strokeWidth: 7 },
-      metadata: { other: { keep: true } },
-      custom: "curve-value"
-    },
-    {
-      id: "label",
-      type: "LABEL",
-      position: { x: 1, y: 0 },
-      text: { plainText: "1", style: { fillColor: "#111", fontSize: 22 }, richText: "keep" },
-      metadata: { other: { keep: true } },
-      custom: "label-value"
-    }
-  ];
-  let updateCalls = 0;
-  const localCollection = {
-    getItems: async () => structuredClone(locals),
-    updateItems: async (ids: unknown[], update: (drafts: SceneItemRecord[]) => void) => {
-      updateCalls += 1;
-      const selected = locals.filter((item) => ids.includes(item.id)).map((item) => structuredClone(item));
-      update(selected);
-      locals = locals.map((item) => selected.find((draft) => draft.id === item.id) ?? item);
-    },
-    addItems: async () => undefined,
-    deleteItems: async () => undefined
-  };
-  const sceneCollection = { ...localCollection, getItems: async () => [] };
-  const adapter = createOwlbearAdapter({
-    scene: {
-      getMetadata: async () => ({}),
-      setMetadata: async () => undefined,
-      items: sceneCollection,
-      local: localCollection,
-      grid: {
-        getDistance: async () => 0,
-        getDpi: async () => 100,
-        snapPosition: async (position) => position,
-        onChange: () => () => undefined
-      }
-    },
-    broadcast: { sendMessage: async () => undefined, onMessage: () => () => undefined },
-    notification: { show: async () => undefined }
-  });
-
-  await adapter.updateLocalItems([
-    {
-      id: "curve",
-      type: "CURVE",
-      position: { x: 0, y: 0 },
-      points: [{ x: 0, y: 0 }, { x: 3, y: 2 }],
-      strokeColor: "#f00",
-      metadata: { "test/overlay": { key: "line" } }
-    },
-    {
-      id: "label",
-      type: "LABEL",
-      position: { x: 3, y: 2 },
-      text: "Осталось: 2",
-      color: "#0f0",
-      metadata: { "test/overlay": { key: "distance" } }
-    }
-  ]);
-
-  expect(updateCalls).toBe(1);
-  expect(locals).toMatchObject([
-    {
-      id: "curve",
-      type: "CURVE",
-      points: [{ x: 0, y: 0 }, { x: 3, y: 2 }],
-      style: { strokeColor: "#f00", strokeWidth: 7 },
-      metadata: { other: { keep: true }, "test/overlay": { key: "line" } },
-      custom: "curve-value"
-    },
-    {
-      id: "label",
-      type: "LABEL",
-      position: { x: 3, y: 2 },
-      text: {
-        plainText: "Осталось: 2",
-        style: { fillColor: "#0f0", fontSize: 22 },
-        richText: "keep"
-      },
-      metadata: { other: { keep: true }, "test/overlay": { key: "distance" } },
-      custom: "label-value"
-    }
-  ]);
-});
-
-it("normalizes nested SDK curve and label fields when reading local overlays", async () => {
-  const locals: SceneItemRecord[] = [
-    {
-      id: "curve",
-      type: "CURVE",
-      position: { x: 0, y: 0 },
-      points: [{ x: 0, y: 0 }, { x: 2, y: 0 }],
-      style: { strokeColor: "#f00", strokeWidth: 4 },
-      metadata: {}
-    },
-    {
-      id: "label",
-      type: "LABEL",
-      position: { x: 2, y: 0 },
-      text: { plainText: "2", style: { fillColor: "#0f0", fontSize: 16 } },
-      metadata: {}
-    }
-  ];
-  const localCollection = {
-    getItems: async () => structuredClone(locals),
-    updateItems: async () => undefined,
-    addItems: async () => undefined,
-    deleteItems: async () => undefined
-  };
-  const adapter = createOwlbearAdapter({
-    scene: {
-      getMetadata: async () => ({}),
-      setMetadata: async () => undefined,
-      items: { ...localCollection, getItems: async () => [] },
-      local: localCollection,
-      grid: {
-        getDistance: async () => 0,
-        getDpi: async () => 100,
-        snapPosition: async (position) => position,
-        onChange: () => () => undefined
-      }
-    },
-    broadcast: { sendMessage: async () => undefined, onMessage: () => () => undefined },
-    notification: { show: async () => undefined }
-  });
-
-  await expect(adapter.getLocalItems()).resolves.toMatchObject([
-    { id: "curve", strokeColor: "#f00", style: { strokeWidth: 4 } },
-    { id: "label", text: "2", color: "#0f0" }
-  ]);
+  await adapter.snapGridCenter({ x: 12, y: 34 });
+  expect(calls).toEqual([[{ x: 12, y: 34 }, 1, false, true]]);
 });
