@@ -53,6 +53,7 @@ export type NotificationCode =
   | "INSUFFICIENT_NAVAL_MOVEMENT"
   | "NAVAL_ACTION_ALREADY_USED"
   | "INVALID_NAVAL_TACTICAL_ACTION"
+  | "NAVAL_BATTLE_REQUEST_ALREADY_PENDING"
   | "INVALID_NAVAL_BATTLE_AREA"
   | "INVALID_NAVAL_BATTLE"
   | "SHIP_ALREADY_EXITED";
@@ -112,6 +113,7 @@ const RUSSIAN_MESSAGES: Readonly<Record<NotificationCode, string>> = {
   INSUFFICIENT_NAVAL_MOVEMENT: "У корабля не хватает очков перемещения для этого манёвра.",
   NAVAL_ACTION_ALREADY_USED: "После активного действия корабль больше не может двигаться в этот ход.",
   INVALID_NAVAL_TACTICAL_ACTION: "Этот морской манёвр сейчас недоступен.",
+  NAVAL_BATTLE_REQUEST_ALREADY_PENDING: "Заявка на эту пару кораблей уже ожидает ведущего.",
   INVALID_NAVAL_BATTLE_AREA: "Поле морского боя может состоять только из морских клеток.",
   INVALID_NAVAL_BATTLE: "Не удалось начать морской бой. Проверьте, что все выбранные корабли находятся внутри выбранной области боя.",
   SHIP_ALREADY_EXITED: "Этот корабль уже вышел из морского боя."
