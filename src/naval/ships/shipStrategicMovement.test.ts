@@ -34,20 +34,48 @@ function movementScene(): Pick<SceneState, "terrain" | "gridMap"> {
         "2,0": { terrainId: "canal", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null },
         "3,0": { terrainId: "land", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null },
         "1,1": { terrainId: "sea", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null },
-        "0,1": { terrainId: "sea", impassable: true, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null }
+        "0,1": { terrainId: "sea", impassable: true, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null },
+        "0,-1": { terrainId: "sea", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null },
+        "-1,0": { terrainId: "sea", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null }
       }
     }
   };
 }
 
 describe("strategic ship movement", () => {
-  it("accepts an orthogonal route through sea and canal cells", () => {
+  it("accepts an orthogonal route through sea and canal cells without turn cost when already facing forward", () => {
     const ship = createRegisteredShip("red", "IRONCLAD", "EAST");
     expect(planShipStrategicRoute(movementScene(), ship, { x: 0, y: 0 }, [{ x: 1, y: 0 }, { x: 2, y: 0 }])).toEqual({
       ok: true,
       cells: [{ x: 1, y: 0 }, { x: 2, y: 0 }],
       cost: 2,
-      remainingMovement: 2
+      remainingMovement: 2,
+      finalFacing: "EAST",
+      stepCosts: [1, 1]
+    });
+  });
+
+  it("charges one OP for a 90 degree turn before moving", () => {
+    const ship = createRegisteredShip("red", "IRONCLAD", "EAST");
+    expect(planShipStrategicRoute(movementScene(), ship, { x: 0, y: 0 }, [{ x: 0, y: -1 }])).toEqual({
+      ok: true,
+      cells: [{ x: 0, y: -1 }],
+      cost: 2,
+      remainingMovement: 2,
+      finalFacing: "NORTH",
+      stepCosts: [2]
+    });
+  });
+
+  it("charges two OP for a 180 degree turn before moving", () => {
+    const ship = createRegisteredShip("red", "IRONCLAD", "EAST");
+    expect(planShipStrategicRoute(movementScene(), ship, { x: 0, y: 0 }, [{ x: -1, y: 0 }])).toEqual({
+      ok: true,
+      cells: [{ x: -1, y: 0 }],
+      cost: 3,
+      remainingMovement: 1,
+      finalFacing: "WEST",
+      stepCosts: [3]
     });
   });
 
@@ -78,20 +106,21 @@ describe("strategic ship movement", () => {
     });
   });
 
-  it("rejects a route longer than the ship's remaining global movement", () => {
+  it("rejects a route when movement plus required turns exceed remaining OP", () => {
     const ship = { ...createRegisteredShip("red", "CRUISER", "EAST"), globalMovementRemaining: 1 };
-    expect(planShipStrategicRoute(movementScene(), ship, { x: 0, y: 0 }, [{ x: 1, y: 0 }, { x: 2, y: 0 }])).toEqual({
+    expect(planShipStrategicRoute(movementScene(), ship, { x: 0, y: 0 }, [{ x: 0, y: -1 }])).toEqual({
       ok: false,
-      reason: "INSUFFICIENT_MOVEMENT_POINTS"
+      reason: "INSUFFICIENT_MOVEMENT_POINTS",
+      cell: { x: 0, y: -1 }
     });
   });
 
-  it("commits the route by spending one movement point per cell without rotating the ship", () => {
+  it("commits the route using the calculated cost and final facing", () => {
     const ship = createRegisteredShip("red", "CRUISER", "SOUTH");
-    const result = commitShipStrategicRoute(ship, [{ x: 1, y: 0 }, { x: 2, y: 0 }]);
+    const result = commitShipStrategicRoute(ship, [{ x: 1, y: 0 }], 2, "EAST");
     expect(result).toMatchObject({
-      facing: "SOUTH",
-      plannedRoute: [{ x: 1, y: 0 }, { x: 2, y: 0 }],
+      facing: "EAST",
+      plannedRoute: [{ x: 1, y: 0 }],
       globalMovementRemaining: 1,
       movementSpentThisTurn: true,
       revision: 2
