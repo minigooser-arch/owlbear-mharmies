@@ -135,26 +135,25 @@ function processor(rolls = [3, 4, 5]) {
   );
 }
 
+function bombardmentCommand() {
+  return envelope("leader", {
+    type: "NAVAL_SHORE_BOMBARDMENT",
+    shipId: "attacker",
+    armyId: "army",
+    friendlyFireConfirmed: false
+  });
+}
+
 describe("naval shore bombardment command", () => {
   it("parses an explicit ship-to-army bombardment command", () => {
-    expect(validateArmyCommand(envelope("leader", {
-      type: "NAVAL_SHORE_BOMBARDMENT",
-      shipId: "attacker",
-      armyId: "army",
-      friendlyFireConfirmed: false
-    }))).toMatchObject({
+    expect(validateArmyCommand(bombardmentCommand())).toMatchObject({
       ok: true,
       command: { type: "NAVAL_SHORE_BOMBARDMENT", shipId: "attacker", armyId: "army" }
     });
   });
 
   it("applies deterministic shore damage and marks the one-use-per-global-turn action", () => {
-    const result = processor().execute(context("leader"), envelope("leader", {
-      type: "NAVAL_SHORE_BOMBARDMENT",
-      shipId: "attacker",
-      armyId: "army",
-      friendlyFireConfirmed: false
-    }));
+    const result = processor().execute(context("leader"), bombardmentCommand());
 
     expect(result.status).toBe("ACCEPTED");
     if (result.status !== "ACCEPTED") return;
@@ -165,12 +164,7 @@ describe("naval shore bombardment command", () => {
   });
 
   it("destroys a zero-hp army through the normal army lifecycle and cleans its land battle", () => {
-    const result = processor([6, 6, 6]).execute(context("leader", state(5)), envelope("leader", {
-      type: "NAVAL_SHORE_BOMBARDMENT",
-      shipId: "attacker",
-      armyId: "army",
-      friendlyFireConfirmed: false
-    }));
+    const result = processor([6, 6, 6]).execute(context("leader", state(5)), bombardmentCommand());
 
     expect(result.status).toBe("ACCEPTED");
     if (result.status !== "ACCEPTED") return;
@@ -178,7 +172,7 @@ describe("naval shore bombardment command", () => {
     expect(result.state.scene.battleGroups).toEqual([]);
   });
 
-  it("uses the canonical exact broadside without an injected resolver", () => {
+  it("uses the canonical exact battleship broadside without an injected resolver", () => {
     const result = new CommandProcessor(
       () => new Date(),
       cellForPosition,
@@ -186,16 +180,48 @@ describe("naval shore bombardment command", () => {
       () => new Set(),
       () => 1,
       () => new Set(["army"])
-    ).execute(context("leader"), envelope("leader", {
-      type: "NAVAL_SHORE_BOMBARDMENT",
-      shipId: "attacker",
-      armyId: "army",
-      friendlyFireConfirmed: false
-    }));
+    ).execute(context("leader"), bombardmentCommand());
 
     expect(result.status).toBe("ACCEPTED");
     if (result.status !== "ACCEPTED") return;
     expect(result.state.armies.army?.health.hp).toBe(17);
+  });
+
+  it("uses the cruiser firing arc for shore bombardment and rejects bow/stern targets", () => {
+    const sideTarget = state();
+    sideTarget.scene.ships!.attacker = createRegisteredShip("red", "CRUISER", "NORTH");
+    const accepted = processor([3, 4]).execute(context("leader", sideTarget), bombardmentCommand());
+    expect(accepted.status).toBe("ACCEPTED");
+    if (accepted.status !== "ACCEPTED") return;
+    expect(accepted.state.armies.army?.health.hp).toBe(13);
+
+    const bowTarget = state();
+    bowTarget.scene.ships!.attacker = createRegisteredShip("red", "CRUISER", "NORTH");
+    bowTarget.positions!.army = centerForCell({ x: 1, y: 0 });
+    bowTarget.items.army!.position = centerForCell({ x: 1, y: 0 });
+    expect(processor([3, 4]).execute(context("leader", bowTarget), bombardmentCommand())).toEqual({
+      status: "REJECTED",
+      reason: "OUTSIDE_BROADSIDE_SECTOR"
+    });
+  });
+
+  it("does not let an ironclad bombard armies even from its adjacent broadside cell", () => {
+    const commandState = state();
+    commandState.scene.ships!.attacker = createRegisteredShip("red", "IRONCLAD", "NORTH");
+    commandState.scene.gridMap.cells["2,1"] = {
+      terrainId: "plain",
+      impassable: false,
+      factionTerritoryIds: [],
+      recognizedStateId: null,
+      deFactoStateId: null
+    };
+    commandState.positions!.army = centerForCell({ x: 2, y: 1 });
+    commandState.items.army!.position = centerForCell({ x: 2, y: 1 });
+
+    expect(processor([6, 6, 6]).execute(context("leader", commandState), bombardmentCommand())).toEqual({
+      status: "REJECTED",
+      reason: "SHIP_CANNOT_BOMBARD"
+    });
   });
 
   it("uses ship-side leader authorization", () => {
