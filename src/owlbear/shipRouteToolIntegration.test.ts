@@ -4,7 +4,6 @@ import {
   DEFAULT_TERRAIN,
   SHIP_ROUTE_CANCEL_ACTION_ID,
   SHIP_ROUTE_CLEAR_ACTION_ID,
-  SHIP_ROUTE_FINISH_ACTION_ID,
   SHIP_ROUTE_RETURN_TOOL_KEY,
   SHIP_ROUTE_SHIP_ID_KEY,
   SHIP_ROUTE_TOOL_ID,
@@ -68,8 +67,9 @@ function fixture() {
       start: { x: 50, y: 50 },
       startCell: { x: 0, y: 0 },
       gridDpi: 100,
-      movementPoints: 2,
+      movementPoints: 4,
       maxMovementPoints: 4,
+      facing: "EAST",
       terrain: navalTerrain(),
       gridMap: { version: 1, revision: 0, cells: {} }
     }),
@@ -97,20 +97,18 @@ function action(api: FakeToolApi, id: string): ToolAction {
 }
 
 describe("ship route tool SDK integration", () => {
-  it("registers a dedicated ship route tool, mode, and four actions", async () => {
+  it("registers ship route tool with undo, clear, and cancel actions only", async () => {
     const f = fixture();
     const cleanup = await registerShipRouteTool(f.api, f.port, f.grid, "/icon.svg");
     expect(f.api.tools[0]?.id).toBe(SHIP_ROUTE_TOOL_ID);
     expect(f.api.modes[0]?.id).toBe(SHIP_ROUTE_TOOL_MODE_ID);
     expect(f.api.actions.map((candidate) => candidate.id)).toEqual([
-      SHIP_ROUTE_FINISH_ACTION_ID,
       SHIP_ROUTE_UNDO_ACTION_ID,
       SHIP_ROUTE_CLEAR_ACTION_ID,
       SHIP_ROUTE_CANCEL_ACTION_ID
     ]);
     await cleanup();
     expect(f.api.removed).toEqual([
-      SHIP_ROUTE_FINISH_ACTION_ID,
       SHIP_ROUTE_UNDO_ACTION_ID,
       SHIP_ROUTE_CLEAR_ACTION_ID,
       SHIP_ROUTE_CANCEL_ACTION_ID,
@@ -119,7 +117,7 @@ describe("ship route tool SDK integration", () => {
     ]);
   });
 
-  it("commits exactly once from the finish action and restores the previous tool", async () => {
+  it("commits exactly once by clicking the finish affordance above the last route cell", async () => {
     const f = fixture();
     await registerShipRouteTool(f.api, f.port, f.grid, "/icon.svg");
     const mode = f.api.modes[0];
@@ -131,7 +129,7 @@ describe("ship route tool SDK integration", () => {
     mode.onKeyDown?.(ctx, keyEvent("Enter"));
     await Promise.resolve();
     expect(f.commits).toEqual([]);
-    action(f.api, SHIP_ROUTE_FINISH_ACTION_ID).onClick?.(ctx, SHIP_ROUTE_FINISH_ACTION_ID);
+    expect(await mode.onToolClick?.(ctx, toolEvent(150, 15))).toBe(false);
     await vi.waitFor(() => expect(f.commits).toEqual([{ shipId: "ship", cells: [{ x: 1, y: 0 }] }]));
     expect(f.restored).toEqual(["select-tool"]);
   });
