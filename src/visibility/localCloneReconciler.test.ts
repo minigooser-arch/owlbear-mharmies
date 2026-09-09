@@ -32,9 +32,10 @@ class MemoryClonePort implements LocalClonePort {
       ...structuredClone(source),
       id: `new-${source.id}`,
       visible: true,
+      locked: true,
+      disableHit: true,
       metadata: {
-        ...source.metadata,
-        [METADATA_KEYS.localClone]: { sourceItemId: source.id }
+        [METADATA_KEYS.localClone]: { sourceItemId: source.id, hasRoute: false }
       }
     };
   }
@@ -59,7 +60,9 @@ function clone(id: string): SceneItemRecord {
     ...source(),
     id,
     position: { x: 0, y: 0 },
-    metadata: { [METADATA_KEYS.localClone]: { sourceItemId: "source-a" } }
+    locked: true,
+    disableHit: true,
+    metadata: { [METADATA_KEYS.localClone]: { sourceItemId: "source-a", hasRoute: false } }
   };
 }
 
@@ -73,6 +76,28 @@ describe("LocalCloneReconciler", () => {
     expect(port.localItems).toHaveLength(1);
     expect(port.localItems[0]?.id).toBe("clone-a");
     expect(port.localItems[0]?.position).toEqual({ x: 20, y: 10 });
+  });
+
+  it("keeps visible unit clones locked, makes them hit-testable, and syncs whether a route exists", async () => {
+    const port = new MemoryClonePort();
+    port.localItems.push(clone("clone-a"));
+    const routedSource = {
+      ...source(),
+      metadata: {
+        [METADATA_KEYS.ship]: { plannedRoute: [{ x: 1, y: 0 }] }
+      }
+    };
+
+    await new LocalCloneReconciler(port, new UpdateOriginGuard())
+      .reconcile(new Set(["source-a"]), [routedSource]);
+
+    expect(port.localItems[0]).toMatchObject({
+      locked: true,
+      disableHit: false,
+      metadata: {
+        [METADATA_KEYS.localClone]: { sourceItemId: "source-a", hasRoute: true }
+      }
+    });
   });
 
   it("removes a clone after the source becomes hidden", async () => {
