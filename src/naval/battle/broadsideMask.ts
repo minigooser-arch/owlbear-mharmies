@@ -65,7 +65,8 @@ export function isInNormalBroadsideMask(
   const northKey = key(northDx, northDy);
 
   if (classId === "BATTLESHIP") return BATTLESHIP_NORTH.has(northKey);
-  if (classId === "CRUISER" || classId === "IRONCLAD") return CRUISER_NORTH.has(northKey);
+  if (classId === "CRUISER") return CRUISER_NORTH.has(northKey);
+  if (classId === "IRONCLAD") return IRONCLAD_ADJACENT_NORTH.has(northKey);
   return false;
 }
 
