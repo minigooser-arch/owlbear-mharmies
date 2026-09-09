@@ -157,4 +157,22 @@ describe("naval battle request command processing", () => {
       reason: "TARGET_NOT_DETECTED"
     });
   });
+
+  it("rejects a duplicate pending request for the same initiating and target ships", () => {
+    const ctx = context("leader");
+    ctx.state.scene.navalBattleRequests = [
+      {
+        id: "already-pending",
+        initiatingShipId: "red-ship",
+        targetShipId: "blue-ship",
+        createdOnTurn: 7
+      }
+    ];
+
+    expect(processor().execute(ctx, command("leader"))).toEqual({
+      status: "REJECTED",
+      reason: "NAVAL_BATTLE_REQUEST_ALREADY_PENDING"
+    });
+    expect(ctx.state.scene.navalBattleRequests).toHaveLength(1);
+  });
 });
