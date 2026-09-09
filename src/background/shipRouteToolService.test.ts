@@ -91,7 +91,8 @@ describe("ShipRouteToolService", () => {
       startCell: { x: 0, y: 0 },
       gridDpi: 100,
       movementPoints: 4,
-      maxMovementPoints: 4
+      maxMovementPoints: 4,
+      facing: "EAST"
     });
   });
 
@@ -143,15 +144,17 @@ describe("ShipRouteToolService", () => {
     const service = new ShipRouteToolService(port, { send: vi.fn() });
     await service.renderPreview({
       shipId: "ship", start: { x: 50, y: 50 }, startCell: { x: 0, y: 0 },
-      points: [{ x: 150, y: 50 }], cells: [{ x: 1, y: 0 }],
-      spentMovementPoints: 1, remainingMovementPoints: 3, maxMovementPoints: 4,
+      points: [{ x: 150, y: 50 }], cells: [{ x: 1, y: 0 }], stepCosts: [1],
+      spentMovementPoints: 1, remainingMovementPoints: 3, maxMovementPoints: 4, finalFacing: "EAST",
+      finishButton: { position: { x: 150, y: 15 }, label: "Завершить маршрут", halfWidth: 75, halfHeight: 20 },
       preview: {
         point: { x: 250, y: 50 }, cell: { x: 2, y: 0 }, valid: true,
-        color: "#4f687a", label: "Шаг: 1 ОП", spentMovementPoints: 2, remainingMovementPoints: 2
+        color: "#4f687a", label: "Шаг: 1 ОП", spentMovementPoints: 2, remainingMovementPoints: 2,
+        stepCost: 1, nextFacing: "EAST"
       }
     });
     expect(port.localItems.filter((item) => item.type === "LABEL").map((item) => item.text))
-      .toEqual(expect.arrayContaining(["1 ОП", "Шаг: 1 ОП"]));
+      .toEqual(expect.arrayContaining(["1 ОП", "✓ Завершить маршрут", "Шаг: 1 ОП"]));
     await service.clearPreview();
     expect(port.localItems.map((item) => item.id)).toEqual(["keep"]);
   });
