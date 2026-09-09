@@ -87,6 +87,7 @@ export class ShipRouteToolService {
       gridDpi,
       movementPoints: authorized.ship.state.globalMovementRemaining,
       maxMovementPoints: SHIP_CLASSES[authorized.ship.state.classId].movement,
+      facing: authorized.ship.state.facing,
       terrain: structuredClone(authorized.scene.terrain),
       gridMap: structuredClone(authorized.scene.gridMap)
     };
@@ -121,24 +122,15 @@ export class ShipRouteToolService {
 
   async renderPreview(snapshot: ShipRouteToolSnapshot): Promise<void> {
     const overlays: DesiredLocalOverlay[] = [];
-    const polyline = [
-      snapshot.start,
-      ...snapshot.points,
-      ...(snapshot.preview ? [snapshot.preview.point] : [])
-    ].map((point) => ({ ...point }));
+    const polyline = [snapshot.start, ...snapshot.points, ...(snapshot.preview ? [snapshot.preview.point] : [])]
+      .map((point) => ({ ...point }));
     if (polyline.length >= 2) {
       overlays.push({
         key: `${snapshot.shipId}/LINE`,
         item: {
-          type: "CURVE",
-          position: { x: 0, y: 0 },
-          visible: true,
-          disableHit: true,
-          points: polyline,
+          type: "CURVE", position: { x: 0, y: 0 }, visible: true, disableHit: true, points: polyline,
           strokeColor: snapshot.preview?.color ?? "#4f687a",
-          metadata: {
-            [METADATA_KEYS.shipRoutePreview]: { shipId: snapshot.shipId, kind: "LINE" }
-          }
+          metadata: { [METADATA_KEYS.shipRoutePreview]: { shipId: snapshot.shipId, kind: "LINE" } }
         }
       });
     }
@@ -146,35 +138,29 @@ export class ShipRouteToolService {
       overlays.push({
         key: `${snapshot.shipId}/WAYPOINT/${index}`,
         item: {
-          type: "LABEL",
-          position: { ...point },
-          visible: true,
-          disableHit: true,
-          text: `${index + 1} ОП`,
-          color: "#4f687a",
-          metadata: {
-            [METADATA_KEYS.shipRoutePreview]: {
-              shipId: snapshot.shipId,
-              kind: "WAYPOINT",
-              index
-            }
-          }
+          type: "LABEL", position: { ...point }, visible: true, disableHit: true,
+          text: `${snapshot.stepCosts[index] ?? 0} ОП`, color: "#4f687a",
+          metadata: { [METADATA_KEYS.shipRoutePreview]: { shipId: snapshot.shipId, kind: "WAYPOINT", index } }
         }
       });
     });
+    if (snapshot.finishButton) {
+      overlays.push({
+        key: `${snapshot.shipId}/FINISH`,
+        item: {
+          type: "LABEL", position: { ...snapshot.finishButton.position }, visible: true, disableHit: true,
+          text: `✓ ${snapshot.finishButton.label}`, color: "#1565c0",
+          metadata: { [METADATA_KEYS.shipRoutePreview]: { shipId: snapshot.shipId, kind: "FINISH" } }
+        }
+      });
+    }
     if (snapshot.preview) {
       overlays.push({
         key: `${snapshot.shipId}/DISTANCE`,
         item: {
-          type: "LABEL",
-          position: { ...snapshot.preview.point },
-          visible: true,
-          disableHit: true,
-          text: snapshot.preview.label,
-          color: snapshot.preview.color,
-          metadata: {
-            [METADATA_KEYS.shipRoutePreview]: { shipId: snapshot.shipId, kind: "DISTANCE" }
-          }
+          type: "LABEL", position: { ...snapshot.preview.point }, visible: true, disableHit: true,
+          text: snapshot.preview.label, color: snapshot.preview.color,
+          metadata: { [METADATA_KEYS.shipRoutePreview]: { shipId: snapshot.shipId, kind: "DISTANCE" } }
         }
       });
     }
@@ -195,49 +181,27 @@ export class ShipRouteToolService {
 
   private async loadAuthorized(shipId: string): Promise<AuthorizedShipRouteSession> {
     const [identity, scene, ships] = await Promise.all([
-      this.port.getPlayerIdentity(),
-      this.repository.readScene(),
-      this.repository.readShips()
+      this.port.getPlayerIdentity(), this.repository.readScene(), this.repository.readShips()
     ]);
     const ship = ships.find((record) => record.item.id === shipId);
     if (!ship) throw new ShipRouteToolAuthorizationError("SHIP_NOT_FOUND");
     const authorization = authorizeArmyCommand(
       {
-        role: identity.role,
-        playerId: identity.id,
-        armies: new Map(),
+        role: identity.role, playerId: identity.id, armies: new Map(),
         ships: new Map(ships.map((record) => [record.item.id, record.state])),
-        sides: scene.sides,
-        settings: scene.settings,
-        connectedPlayerIds: new Set([identity.id])
+        sides: scene.sides, settings: scene.settings, connectedPlayerIds: new Set([identity.id])
       },
       {
-        protocolVersion: COMMAND_PROTOCOL_VERSION,
-        requestId: "ship-route-tool-authorization",
-        senderPlayerId: identity.id,
-        senderConnectionId: identity.connectionId,
-        expectedRevision: scene.revision,
-        type: "SET_SHIP_ROUTE",
-        shipId,
-        startCell: { x: 0, y: 0 },
-        cells: [{ x: 1, y: 0 }]
+        protocolVersion: COMMAND_PROTOCOL_VERSION, requestId: "ship-route-tool-authorization",
+        senderPlayerId: identity.id, senderConnectionId: identity.connectionId, expectedRevision: scene.revision,
+        type: "SET_SHIP_ROUTE", shipId, startCell: { x: 0, y: 0 }, cells: [{ x: 1, y: 0 }]
       }
     );
-    if (!authorization.allowed) {
-      throw new ShipRouteToolAuthorizationError(authorization.reason);
-    }
-    if (ship.state.hp <= 0) {
-      throw new ShipRouteToolAuthorizationError("SHIP_DESTROYED");
-    }
-    if (ship.state.status !== "READY") {
-      throw new ShipRouteToolAuthorizationError("SHIP_NOT_READY");
-    }
-    if (ship.state.plannedRoute.length > 0) {
-      throw new ShipRouteToolAuthorizationError("SHIP_ROUTE_ALREADY_PLANNED");
-    }
-    if (ship.state.globalMovementRemaining <= 0) {
-      throw new ShipRouteToolAuthorizationError("INSUFFICIENT_MOVEMENT_POINTS");
-    }
+    if (!authorization.allowed) throw new ShipRouteToolAuthorizationError(authorization.reason);
+    if (ship.state.hp <= 0) throw new ShipRouteToolAuthorizationError("SHIP_DESTROYED");
+    if (ship.state.status !== "READY") throw new ShipRouteToolAuthorizationError("SHIP_NOT_READY");
+    if (ship.state.plannedRoute.length > 0) throw new ShipRouteToolAuthorizationError("SHIP_ROUTE_ALREADY_PLANNED");
+    if (ship.state.globalMovementRemaining <= 0) throw new ShipRouteToolAuthorizationError("INSUFFICIENT_MOVEMENT_POINTS");
     return { identity, scene, ship };
   }
 }

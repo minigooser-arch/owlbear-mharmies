@@ -20,8 +20,9 @@ function activation() {
     start: { x: 0, y: 0 },
     startCell: { x: 0, y: 0 },
     gridDpi: 1,
-    movementPoints: 2,
+    movementPoints: 4,
     maxMovementPoints: 4,
+    facing: "EAST" as const,
     terrain: {
       ...DEFAULT_TERRAIN,
       defaultTerrainId: "land",
@@ -38,7 +39,9 @@ function activation() {
         "1,0": { terrainId: "sea", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null },
         "2,0": { terrainId: "canal", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null },
         "1,1": { terrainId: "land", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null },
-        "0,1": { terrainId: "sea", impassable: true, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null }
+        "0,1": { terrainId: "sea", impassable: true, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null },
+        "0,-1": { terrainId: "sea", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null },
+        "-1,0": { terrainId: "sea", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null }
       }
     }
   };
@@ -51,7 +54,7 @@ function controller() {
 }
 
 describe("ship route tool", () => {
-  it("accepts orthogonal SEA and CANAL cells at one OP each", async () => {
+  it("accepts forward SEA and CANAL cells at one OP each", async () => {
     const tool = controller();
     tool.activate(activation());
 
@@ -59,19 +62,49 @@ describe("ship route tool", () => {
     expect(await tool.click({ x: 2, y: 0 })).toEqual({ accepted: true });
     expect(tool.snapshot()).toMatchObject({
       cells: [{ x: 1, y: 0 }, { x: 2, y: 0 }],
+      stepCosts: [1, 1],
       spentMovementPoints: 2,
-      remainingMovementPoints: 0
-    });
-    expect(tool.finish()).toEqual({
-      action: "COMMIT",
-      shipId: "ship",
-      startCell: { x: 0, y: 0 },
-      points: [{ x: 1, y: 0 }, { x: 2, y: 0 }],
-      cells: [{ x: 1, y: 0 }, { x: 2, y: 0 }]
+      remainingMovementPoints: 2,
+      finalFacing: "EAST"
     });
   });
 
-  it("rejects diagonal, LAND-only, impassable, and over-budget cells", async () => {
+  it("automatically includes turn OP in route cost", async () => {
+    const tool = controller();
+    tool.activate(activation());
+
+    expect(await tool.click({ x: 0, y: -1 })).toEqual({ accepted: true });
+    expect(tool.snapshot()).toMatchObject({
+      cells: [{ x: 0, y: -1 }],
+      stepCosts: [2],
+      spentMovementPoints: 2,
+      remainingMovementPoints: 2,
+      finalFacing: "NORTH"
+    });
+  });
+
+  it("rejects a step when turn plus movement exceeds remaining OP", async () => {
+    const tool = controller();
+    tool.activate({ ...activation(), movementPoints: 1 });
+    expect(await tool.click({ x: 0, y: -1 })).toEqual({
+      accepted: false,
+      reason: "INSUFFICIENT_MOVEMENT_POINTS"
+    });
+  });
+
+  it("places a finish affordance above the last selected cell", async () => {
+    const tool = controller();
+    tool.activate(activation());
+    await tool.click({ x: 1, y: 0 });
+    expect(tool.snapshot()?.finishButton).toEqual({
+      position: { x: 1, y: -0.35 },
+      label: "Завершить маршрут",
+      halfWidth: 0.75,
+      halfHeight: 0.2
+    });
+  });
+
+  it("rejects diagonal, LAND-only and impassable cells", async () => {
     const diagonal = controller();
     diagonal.activate(activation());
     expect(await diagonal.click({ x: 1, y: 1 })).toEqual({ accepted: false, reason: "NOT_ORTHOGONAL" });
@@ -84,11 +117,6 @@ describe("ship route tool", () => {
     const impassable = controller();
     impassable.activate(activation());
     expect(await impassable.click({ x: 0, y: 1 })).toEqual({ accepted: false, reason: "IMPASSABLE" });
-
-    const budget = controller();
-    budget.activate({ ...activation(), movementPoints: 1 });
-    await budget.click({ x: 1, y: 0 });
-    expect(await budget.click({ x: 2, y: 0 })).toEqual({ accepted: false, reason: "INSUFFICIENT_MOVEMENT_POINTS" });
   });
 
   it("supports undo and clear before commit", async () => {

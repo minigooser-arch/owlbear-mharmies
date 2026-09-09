@@ -2,11 +2,11 @@ import { expect, it } from "vitest";
 import { CommandGateway } from "../commands/commandGateway";
 import { createRegisteredShip } from "../naval/ships/shipLifecycle";
 import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE, METADATA_KEYS } from "../shared/constants";
-import { COMMAND_PROTOCOL_VERSION, type NavalSceneState, type SceneItemRecord } from "../shared/types";
+import { COMMAND_PROTOCOL_VERSION, type ItemUpdate, type NavalSceneState, type SceneItemRecord } from "../shared/types";
 import type { OwlbearPort } from "../owlbear/sdkAdapter";
 import { ProductionEngine } from "./application";
 
-it("accepts and persists a valid SET_SHIP_ROUTE through ProductionEngine", async () => {
+it("persists a heading-aware ship route and resolves it when movement phase ends", async () => {
   const terrain = structuredClone(DEFAULT_TERRAIN);
   terrain.types.sea = {
     id: "sea",
@@ -96,12 +96,23 @@ it("accepts and persists a valid SET_SHIP_ROUTE through ProductionEngine", async
     getRole: async () => "GM" as const,
     getItem: async () => undefined,
     getSceneState: async () => scene,
-    updateItem: async () => undefined,
+    updateItem: async (id: string, update: ItemUpdate) => {
+      const item = items.find((candidate) => candidate.id === id);
+      if (!item) throw new Error(`Missing item ${id}`);
+      Object.assign(item, structuredClone(update));
+    },
     deleteLocalItemsForSource: async () => undefined
   } as unknown as OwlbearPort;
 
   const engine = new ProductionEngine(port);
   engine.setCoordinator(true, "gm-connection");
+  const context = {
+    role: "GM" as const,
+    playerId: "gm",
+    connectionId: "gm-connection",
+    connectedPlayerIds: new Set(["gm"])
+  };
+
   await engine.processCommand({
     connectionId: "gm-connection",
     data: {
@@ -115,12 +126,7 @@ it("accepts and persists a valid SET_SHIP_ROUTE through ProductionEngine", async
       startCell: { x: 0, y: 0 },
       cells: [{ x: 1, y: 0 }, { x: 2, y: 0 }]
     }
-  }, {
-    role: "GM",
-    playerId: "gm",
-    connectionId: "gm-connection",
-    connectedPlayerIds: new Set(["gm"])
-  });
+  }, context);
 
   expect(sent.at(-1)).toMatchObject({
     channel: CommandGateway.ACK_CHANNEL,
@@ -129,13 +135,45 @@ it("accepts and persists a valid SET_SHIP_ROUTE through ProductionEngine", async
   expect(scene.ships.ship).toMatchObject({
     facing: "SOUTH",
     plannedRoute: [{ x: 1, y: 0 }, { x: 2, y: 0 }],
-    globalMovementRemaining: 2,
+    globalMovementRemaining: 1,
     movementSpentThisTurn: true,
     revision: 2
   });
   expect(items[0]?.metadata[METADATA_KEYS.ship]).toMatchObject({
     plannedRoute: [{ x: 1, y: 0 }, { x: 2, y: 0 }],
-    globalMovementRemaining: 2,
+    globalMovementRemaining: 1,
     revision: 2
+  });
+
+  await engine.processCommand({
+    connectionId: "gm-connection",
+    data: {
+      protocolVersion: COMMAND_PROTOCOL_VERSION,
+      requestId: "complete-movement",
+      senderPlayerId: "gm",
+      senderConnectionId: "gm-connection",
+      expectedRevision: 3,
+      type: "COMPLETE_MOVEMENT_PHASE"
+    }
+  }, context);
+
+  expect(sent.at(-1)).toMatchObject({
+    channel: CommandGateway.ACK_CHANNEL,
+    data: { requestId: "complete-movement", status: "ACCEPTED" }
+  });
+  expect(scene.turn.phase).toBe("POST_MOVEMENT");
+  expect(scene.ships.ship).toMatchObject({
+    facing: "EAST",
+    plannedRoute: [],
+    globalMovementRemaining: 1,
+    movementSpentThisTurn: true,
+    revision: 3
+  });
+  expect(items[0]?.position).toEqual({ x: 250, y: 50 });
+  expect(items[0]?.metadata[METADATA_KEYS.ship]).toMatchObject({
+    facing: "EAST",
+    plannedRoute: [],
+    globalMovementRemaining: 1,
+    revision: 3
   });
 });

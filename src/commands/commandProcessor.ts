@@ -8,6 +8,7 @@ import { applyCellPatchBatch, readCell } from "../terrain/gridMap";
 import { validatePlannedRoute } from "../movement/movementRules";
 import { unenteredRouteCells } from "../movement/strategicProgress";
 import { createRegisteredShip, destroyShip } from "../naval/ships/shipLifecycle";
+import { resolvePlannedShipRoutes } from "../naval/ships/shipMovementPhase";
 import { SHIP_CLASSES } from "../naval/ships/shipClasses";
 import { cellSupportsDomain } from "../terrain/movementDomains";
 import { authorizeArmyCommand } from "../shared/permissions";
@@ -182,8 +183,6 @@ export class CommandProcessor {
     shoreBombardmentHasLineOfSight: (from: GridCellCoord, to: GridCellCoord) => boolean = () => false,
     shoreBombardmentWindowOpen: () => boolean = () => false
   ) {
-    // Retain the legacy positional signature while the old tests/UI are migrated.
-    // Final shore validation is authoritative and does not depend on injected shims.
     void shoreBombardmentSectorResolver;
     void shoreBombardmentDistanceCells;
     void shoreBombardmentHasLineOfSight;
@@ -719,7 +718,9 @@ export class CommandProcessor {
           .flatMap(([shipId]) => {
             const position = commandPosition(state, shipId);
             return position
-              ? [this.cellForPosition?.(position)].filter((cell): cell is GridCellCoord => cell !== undefined)
+              ? [this.cellForPosition?.(position)].filter(
+                  (cell): cell is GridCellCoord => cell !== undefined
+                )
               : [];
           });
         const result = commitShoreBombardment({
@@ -897,11 +898,21 @@ export class CommandProcessor {
           return "INVALID_NAVAL_BATTLE";
         }
       }
-      case "COMPLETE_MOVEMENT_PHASE":
+      case "COMPLETE_MOVEMENT_PHASE": {
         if (state.scene.turn.phase !== "MOVEMENT") return "NOT_MOVEMENT_PHASE";
+        state.positions ??= {};
+        const resolved = resolvePlannedShipRoutes(
+          state.scene,
+          state.items,
+          state.positions,
+          this.cellForPosition,
+          this.positionForCell
+        );
+        if (!resolved.ok) return resolved.reason;
         state.scene.turn.phase = "POST_MOVEMENT";
         state.scene.transportEmbarkRequests = [];
         return undefined;
+      }
       case "REOPEN_MOVEMENT_PHASE":
         if (state.scene.turn.phase !== "POST_MOVEMENT") return "NOT_POST_MOVEMENT_PHASE";
         if (state.scene.activeNavalBattle?.status === "ACTIVE") return "NAVAL_BATTLE_ACTIVE";

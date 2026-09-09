@@ -31,7 +31,20 @@ export function TurnStatusCard({
       {role === "GM" && (
         <div className="turn-admin">
           <div className="turn-actions">
-            <button className="button primary" type="button" onClick={() => onAction({ type: "COMPLETE_TURN_NOW" })}>Завершить ход сейчас</button>
+            {turn.phase === "MOVEMENT" ? (
+              <button className="button primary" type="button" onClick={() => onAction({ type: "COMPLETE_MOVEMENT_PHASE" })}>
+                Завершить фазу перемещения
+              </button>
+            ) : (
+              <>
+                <button className="button primary" type="button" onClick={() => onAction({ type: "COMPLETE_TURN_NOW" })}>
+                  Завершить ход сейчас
+                </button>
+                <button type="button" onClick={() => onAction({ type: "REOPEN_MOVEMENT_PHASE" })}>
+                  Вернуться к перемещению
+                </button>
+              </>
+            )}
             {turn.autoTurnsPaused && <button type="button" onClick={() => onAction({ type: "RESUME_AUTO_TURNS" })}>Возобновить ходы</button>}
           </div>
           {!turn.autoTurnsPaused && (

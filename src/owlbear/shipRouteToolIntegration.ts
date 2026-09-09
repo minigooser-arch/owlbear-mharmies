@@ -2,7 +2,6 @@ import type { KeyEvent, Metadata, Tool, ToolAction, ToolContext, ToolEvent, Tool
 import {
   SHIP_ROUTE_CANCEL_ACTION_ID,
   SHIP_ROUTE_CLEAR_ACTION_ID,
-  SHIP_ROUTE_FINISH_ACTION_ID,
   SHIP_ROUTE_RETURN_TOOL_KEY,
   SHIP_ROUTE_SHIP_ID_KEY,
   SHIP_ROUTE_TOOL_ID,
@@ -61,7 +60,7 @@ function clickFailureMessage(reason: string): string {
     case "NOT_ORTHOGONAL": return "Корабль может двигаться только по горизонтали или вертикали";
     case "IMPASSABLE": return "Эта клетка непроходима";
     case "NON_NAVAL_TERRAIN": return "Корабль может идти только по морю или каналу";
-    case "INSUFFICIENT_MOVEMENT_POINTS": return "Не хватает очков перемещения";
+    case "INSUFFICIENT_MOVEMENT_POINTS": return "Не хватает очков перемещения с учётом необходимого поворота";
     default: return "Эту клетку нельзя добавить в маршрут корабля";
   }
 }
@@ -80,22 +79,13 @@ export async function registerShipRouteTool(
   let returnToolId: string | undefined;
   let generation = 0;
 
-  const safeNotify = async (
-    message: string,
-    variant: "INFO" | "WARNING" | "ERROR"
-  ): Promise<void> => {
-    try {
-      await port.notify(message, variant);
-    } catch {
-      // Notifications are best effort and must not break the tool queue.
-    }
+  const safeNotify = async (message: string, variant: "INFO" | "WARNING" | "ERROR"): Promise<void> => {
+    try { await port.notify(message, variant); } catch { /* best effort */ }
   };
 
   const enqueue = (operation: () => Promise<void>): Promise<void> => {
     const queued = tail.then(operation, operation);
-    tail = queued.catch((error: unknown) =>
-      safeNotify(`Не удалось изменить маршрут корабля: ${messageFrom(error)}`, "ERROR")
-    );
+    tail = queued.catch((error: unknown) => safeNotify(`Не удалось изменить маршрут корабля: ${messageFrom(error)}`, "ERROR"));
     return tail;
   };
 
@@ -113,34 +103,43 @@ export async function registerShipRouteTool(
     active = false;
     returnToolId = undefined;
     let failure: unknown;
-
     if (shouldClear) {
-      try {
-        await port.clearPreview();
-        previewRendered = false;
-      } catch (error) {
-        failure = error;
-      }
+      try { await port.clearPreview(); previewRendered = false; } catch (error) { failure = error; }
     }
-
     try {
       await api.setMetadata(SHIP_ROUTE_TOOL_ID, {
         [SHIP_ROUTE_SHIP_ID_KEY]: null,
         [SHIP_ROUTE_RETURN_TOOL_KEY]: null
       });
-    } catch (error) {
-      failure ??= error;
-    }
-
+    } catch (error) { failure ??= error; }
     if (restorePrevious && previousToolId && previousToolId !== SHIP_ROUTE_TOOL_ID) {
-      try {
-        await port.restoreTool(previousToolId);
-      } catch (error) {
-        failure ??= error;
-      }
+      try { await port.restoreTool(previousToolId); } catch (error) { failure ??= error; }
     }
-
     if (failure) throw failure;
+  };
+
+  const commitCurrentRoute = async (): Promise<boolean> => {
+    if (!active) return false;
+    const snapshot = controller.snapshot();
+    if (!snapshot || snapshot.cells.length === 0) {
+      await safeNotify("Добавьте хотя бы одну клетку маршрута", "WARNING");
+      return false;
+    }
+    try {
+      await port.commitRoute(snapshot.shipId, snapshot.startCell, snapshot.cells);
+    } catch (error) {
+      await safeNotify(`Не удалось сохранить маршрут корабля: ${messageFrom(error)}`, "ERROR");
+      return false;
+    }
+    await finishSession(true);
+    return true;
+  };
+
+  const isFinishButtonHit = (point: Vector2): boolean => {
+    const button = controller.snapshot()?.finishButton;
+    if (!button) return false;
+    return Math.abs(point.x - button.position.x) <= button.halfWidth
+      && Math.abs(point.y - button.position.y) <= button.halfHeight;
   };
 
   const activate = (context: ToolContext): void => {
@@ -151,32 +150,24 @@ export async function registerShipRouteTool(
       const shipId = context.metadata[SHIP_ROUTE_SHIP_ID_KEY];
       const previousToolId = context.metadata[SHIP_ROUTE_RETURN_TOOL_KEY];
       returnToolId = typeof previousToolId === "string" ? previousToolId : undefined;
-
       if (typeof shipId !== "string" || shipId.length === 0) {
         await safeNotify("Не выбран корабль для маршрута", "WARNING");
         if (returnToolId && returnToolId !== SHIP_ROUTE_TOOL_ID) {
-          const toolId = returnToolId;
-          returnToolId = undefined;
-          await port.restoreTool(toolId);
+          const toolId = returnToolId; returnToolId = undefined; await port.restoreTool(toolId);
         }
         return;
       }
-
       let session: ShipRouteToolActivation;
-      try {
-        session = await port.loadSession(shipId);
-      } catch (error) {
+      try { session = await port.loadSession(shipId); }
+      catch (error) {
         if (!closed && activation === generation) {
           await safeNotify(`Не удалось открыть маршрут корабля: ${messageFrom(error)}`, "ERROR");
           if (returnToolId && returnToolId !== SHIP_ROUTE_TOOL_ID) {
-            const toolId = returnToolId;
-            returnToolId = undefined;
-            await port.restoreTool(toolId);
+            const toolId = returnToolId; returnToolId = undefined; await port.restoreTool(toolId);
           }
         }
         return;
       }
-
       if (closed || activation !== generation) return;
       controller.activate(session);
       active = true;
@@ -188,9 +179,22 @@ export async function registerShipRouteTool(
     if (closed) return false;
     await enqueue(async () => {
       if (!active) return;
+      if (isFinishButtonHit(event.pointerPosition)) {
+        await commitCurrentRoute();
+        return;
+      }
       const result = await controller.click(event.pointerPosition);
+      if (!result.accepted) {
+        await renderSnapshot();
+        await safeNotify(clickFailureMessage(result.reason), "WARNING");
+        return;
+      }
+      const snapshot = controller.snapshot();
+      if (snapshot && snapshot.cells.length > 0 && snapshot.remainingMovementPoints === 0) {
+        await commitCurrentRoute();
+        return;
+      }
       await renderSnapshot();
-      if (!result.accepted) await safeNotify(clickFailureMessage(result.reason), "WARNING");
     });
     return false;
   };
@@ -212,58 +216,16 @@ export async function registerShipRouteTool(
   };
 
   const actionFilter = { activeTools: [SHIP_ROUTE_TOOL_ID] };
-  const finishAction: ToolAction = {
-    id: SHIP_ROUTE_FINISH_ACTION_ID,
-    icons: [{ icon: iconUrl, label: "Завершить маршрут", filter: actionFilter }],
-    onClick: () => {
-      void enqueue(async () => {
-        if (!active) return;
-        const result = controller.finish();
-        if (result.action === "INVALID") {
-          await safeNotify(
-            result.reason === "EMPTY_ROUTE"
-              ? "Добавьте хотя бы одну клетку маршрута"
-              : clickFailureMessage(result.reason),
-            "WARNING"
-          );
-          return;
-        }
-        if (result.action !== "COMMIT") return;
-        try {
-          await port.commitRoute(result.shipId, result.startCell, result.cells);
-        } catch (error) {
-          await safeNotify(`Не удалось сохранить маршрут корабля: ${messageFrom(error)}`, "ERROR");
-          return;
-        }
-        await finishSession(true);
-      });
-    }
-  };
-
   const undoAction: ToolAction = {
     id: SHIP_ROUTE_UNDO_ACTION_ID,
     icons: [{ icon: iconUrl, label: "Шаг назад", filter: actionFilter }],
-    onClick: () => {
-      void enqueue(async () => {
-        if (!active) return;
-        controller.undo();
-        await renderSnapshot();
-      });
-    }
+    onClick: () => { void enqueue(async () => { if (active) { controller.undo(); await renderSnapshot(); } }); }
   };
-
   const clearAction: ToolAction = {
     id: SHIP_ROUTE_CLEAR_ACTION_ID,
     icons: [{ icon: iconUrl, label: "Очистить маршрут", filter: actionFilter }],
-    onClick: () => {
-      void enqueue(async () => {
-        if (!active) return;
-        controller.clear();
-        await renderSnapshot();
-      });
-    }
+    onClick: () => { void enqueue(async () => { if (active) { controller.clear(); await renderSnapshot(); } }); }
   };
-
   const cancelAction: ToolAction = {
     id: SHIP_ROUTE_CANCEL_ACTION_ID,
     icons: [{ icon: iconUrl, label: "Отмена", filter: actionFilter }],
@@ -273,43 +235,29 @@ export async function registerShipRouteTool(
   const tool: Tool = {
     id: SHIP_ROUTE_TOOL_ID,
     icons: [{ icon: iconUrl, label: "Маршрут корабля" }],
-    defaultMetadata: {
-      [SHIP_ROUTE_SHIP_ID_KEY]: null,
-      [SHIP_ROUTE_RETURN_TOOL_KEY]: null
-    }
+    defaultMetadata: { [SHIP_ROUTE_SHIP_ID_KEY]: null, [SHIP_ROUTE_RETURN_TOOL_KEY]: null }
   };
-
   const mode: ToolMode = {
     id: SHIP_ROUTE_TOOL_MODE_ID,
-    icons: [{
-      icon: iconUrl,
-      label: "Проложить переход",
-      filter: { activeTools: [SHIP_ROUTE_TOOL_ID] }
-    }],
+    icons: [{ icon: iconUrl, label: "Проложить переход", filter: { activeTools: [SHIP_ROUTE_TOOL_ID] } }],
     cursors: [{ cursor: "crosshair" }],
     onActivate: activate,
     onDeactivate: deactivate,
     onToolMove: (_context, event) => {
-      void enqueue(async () => {
-        if (!active) return;
-        await controller.move(event.pointerPosition);
-        await renderSnapshot();
-      });
+      void enqueue(async () => { if (active) { await controller.move(event.pointerPosition); await renderSnapshot(); } });
     },
     onToolClick: (_context, event) => click(event),
     onKeyDown: (_context, event) => keyDown(event)
   };
 
   await api.create(tool);
-  const actions = [finishAction, undoAction, clearAction, cancelAction];
+  const actions = [undoAction, clearAction, cancelAction];
   try {
     await api.createMode(mode);
     for (const action of actions) await api.createAction(action);
   } catch (error) {
-    for (const action of actions) {
-      try { await api.removeAction(action.id); } catch { /* best effort rollback */ }
-    }
-    try { await api.removeMode(SHIP_ROUTE_TOOL_MODE_ID); } catch { /* best effort rollback */ }
+    for (const action of actions) { try { await api.removeAction(action.id); } catch { /* best effort */ } }
+    try { await api.removeMode(SHIP_ROUTE_TOOL_MODE_ID); } catch { /* best effort */ }
     await api.remove(SHIP_ROUTE_TOOL_ID);
     throw error;
   }
@@ -321,19 +269,13 @@ export async function registerShipRouteTool(
     await tail;
     let failure: unknown;
     try { await finishSession(false); } catch (error) { failure = error; }
-    for (const actionId of [
-      SHIP_ROUTE_FINISH_ACTION_ID,
-      SHIP_ROUTE_UNDO_ACTION_ID,
-      SHIP_ROUTE_CLEAR_ACTION_ID,
-      SHIP_ROUTE_CANCEL_ACTION_ID
-    ]) {
+    for (const actionId of [SHIP_ROUTE_UNDO_ACTION_ID, SHIP_ROUTE_CLEAR_ACTION_ID, SHIP_ROUTE_CANCEL_ACTION_ID]) {
       try { await api.removeAction(actionId); } catch (error) { failure ??= error; }
     }
     try { await api.removeMode(SHIP_ROUTE_TOOL_MODE_ID); } catch (error) { failure ??= error; }
     try { await api.remove(SHIP_ROUTE_TOOL_ID); } catch (error) { failure ??= error; }
     if (failure) throw failure;
   };
-
   const registration = remove as ShipRouteToolRegistration;
   registration.cancelSession = async (): Promise<void> => {
     if (closed) return;

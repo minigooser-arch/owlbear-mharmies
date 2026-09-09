@@ -84,7 +84,7 @@ it("shows turn administration on the turn page only to the GM", () => {
 
   render(<App services={services({ role: "GM", mapVisibleSourceIds: new Set() })} />);
   expect(screen.getByRole("button", { name: "Обзор" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Завершить ход сейчас" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Завершить фазу перемещения" })).toBeInTheDocument();
 });
 
 it("keeps leader faction management inside the troops screen", () => {

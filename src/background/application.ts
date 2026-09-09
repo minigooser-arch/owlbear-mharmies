@@ -787,6 +787,7 @@ export class ProductionEngine {
     let commandPositionForCell: ((cell: import("../shared/types").GridCellCoord) => Vector2) | undefined;
     if (
       command.type === "COMPLETE_TURN_NOW" ||
+      command.type === "COMPLETE_MOVEMENT_PHASE" ||
       command.type === "REGISTER_SHIP" ||
       command.type === "SET_SHIP_ROUTE" ||
       command.type === "NAVAL_MOVE_FORWARD" ||

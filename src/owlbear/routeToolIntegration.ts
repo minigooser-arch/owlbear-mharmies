@@ -6,7 +6,6 @@ import {
   ROUTE_RETURN_TOOL_KEY,
   ROUTE_TOOL_ID,
   ROUTE_TOOL_MODE_ID,
-  ROUTE_FINISH_ACTION_ID,
   ROUTE_UNDO_ACTION_ID,
   ROUTE_CLEAR_ACTION_ID,
   ROUTE_CANCEL_ACTION_ID
@@ -297,11 +296,6 @@ export async function registerRouteTool(
   };
 
   const actionFilter = { activeTools: [ROUTE_TOOL_ID] };
-  const finishAction: ToolAction = {
-    id: ROUTE_FINISH_ACTION_ID,
-    icons: [{ icon: iconUrl, label: "Завершить маршрут", filter: actionFilter }],
-    onClick: () => { void enqueue(async () => { await commitCurrentRoute(); }); }
-  };
   const undoAction: ToolAction = {
     id: ROUTE_UNDO_ACTION_ID,
     icons: [{ icon: iconUrl, label: "Шаг назад", filter: actionFilter }],
@@ -342,7 +336,7 @@ export async function registerRouteTool(
   };
 
   await api.create(tool);
-  const actions = [finishAction, undoAction, clearAction, cancelAction];
+  const actions = [undoAction, clearAction, cancelAction];
   try {
     await api.createMode(mode);
     for (const action of actions) await api.createAction(action);
@@ -375,7 +369,7 @@ export async function registerRouteTool(
     } catch (error) {
       failure = error;
     }
-    for (const actionId of [ROUTE_FINISH_ACTION_ID, ROUTE_UNDO_ACTION_ID, ROUTE_CLEAR_ACTION_ID, ROUTE_CANCEL_ACTION_ID]) {
+    for (const actionId of [ROUTE_UNDO_ACTION_ID, ROUTE_CLEAR_ACTION_ID, ROUTE_CANCEL_ACTION_ID]) {
       try { await api.removeAction(actionId); } catch (error) { failure ??= error; }
     }
     try {

@@ -37,6 +37,19 @@ it("starts a new turn with exactly five OP and starts only routes due on that tu
   expect(result.armies.a?.status).toBe("MOVING");
 });
 
+it("always starts the new turn in movement phase", () => {
+  const current = scene();
+  current.turn.phase = "POST_MOVEMENT";
+  const result = completeTurn(current, {}, {
+    source: "MANUAL",
+    completedAt: new Date("2026-09-09T10:00:00.000Z"),
+    armyCells: {}
+  });
+  expect(result.changed).toBe(true); if (!result.changed) return;
+  expect(result.scene.turn.turnNumber).toBe(2);
+  expect(result.scene.turn.phase).toBe("MOVEMENT");
+});
+
 it("disbands pending armies before the new turn", () => {
   const pending = army(3); pending.disband = { pending:true, requestedOnTurn:1, requestedByPlayerId:"member" };
   const result = completeTurn(scene(), { a: pending }, { source:"MANUAL", completedAt:new Date("2026-09-02T10:00:00Z"), armyCells:{a:{x:0,y:0}} });

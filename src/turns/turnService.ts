@@ -171,6 +171,7 @@ export function completeTurn(
   nextScene.turn = {
     ...nextScene.turn,
     turnNumber: nextTurn,
+    phase: "MOVEMENT",
     deferredUntil: null,
     lastCompletedAt: completedAtIso,
     lastCompletedBy: input.source,
