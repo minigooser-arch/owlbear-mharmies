@@ -40,6 +40,8 @@ const cruiserNorth = [
   "-2,2", "2,2"
 ].sort();
 
+const ironcladNorth = ["-1,0", "1,0"].sort();
+
 describe("exact naval broadside masks", () => {
   it("matches the canonical north-facing battleship diagram exactly", () => {
     expect(allowedOffsets("BATTLESHIP", "NORTH", 3)).toEqual(battleshipNorth);
@@ -49,8 +51,8 @@ describe("exact naval broadside masks", () => {
     expect(allowedOffsets("CRUISER", "NORTH", 2)).toEqual(cruiserNorth);
   });
 
-  it("uses the cruiser normal mask for ironclads", () => {
-    expect(allowedOffsets("IRONCLAD", "NORTH", 2)).toEqual(cruiserNorth);
+  it("uses only adjacent port/starboard cells for ironclads", () => {
+    expect(allowedOffsets("IRONCLAD", "NORTH", 2)).toEqual(ironcladNorth);
   });
 
   it("does not give hospital ships or transports a normal firing mask", () => {
@@ -66,6 +68,10 @@ describe("exact naval broadside masks", () => {
     expect(isInNormalBroadsideMask("CRUISER", "EAST", origin, target(2, 0))).toBe(false);
     expect(isInNormalBroadsideMask("CRUISER", "SOUTH", origin, target(-2, 0))).toBe(true);
     expect(isInNormalBroadsideMask("CRUISER", "WEST", origin, target(0, -2))).toBe(true);
+
+    expect(isInNormalBroadsideMask("IRONCLAD", "NORTH", origin, target(1, 0))).toBe(true);
+    expect(isInNormalBroadsideMask("IRONCLAD", "EAST", origin, target(0, 1))).toBe(true);
+    expect(isInNormalBroadsideMask("IRONCLAD", "EAST", origin, target(1, 0))).toBe(false);
   });
 
   it("keeps bow and stern out of every normal broadside mask", () => {
@@ -73,6 +79,8 @@ describe("exact naval broadside masks", () => {
     expect(isInNormalBroadsideMask("BATTLESHIP", "NORTH", origin, target(0, 3))).toBe(false);
     expect(isInNormalBroadsideMask("CRUISER", "EAST", origin, target(2, 0))).toBe(false);
     expect(isInNormalBroadsideMask("CRUISER", "EAST", origin, target(-2, 0))).toBe(false);
+    expect(isInNormalBroadsideMask("IRONCLAD", "NORTH", origin, target(0, -1))).toBe(false);
+    expect(isInNormalBroadsideMask("IRONCLAD", "NORTH", origin, target(0, 1))).toBe(false);
   });
 
   it("defines the ironclad adjacent special only on its port/starboard cells", () => {
