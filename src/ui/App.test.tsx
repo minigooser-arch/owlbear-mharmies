@@ -48,11 +48,11 @@ it("does not render a hidden enemy in cards, filters, or counters", () => {
   expect(screen.getByTestId("army-count")).toHaveTextContent("1");
 });
 
-it("uses the versioned sword icon in the popover header", () => {
+it("uses the exact Letopis feather in the popover header", () => {
   render(<App services={services()} />);
   expect(screen.getByRole("img", { name: "Летопись: Военная панель" })).toHaveAttribute(
     "src",
-    "/icon-1.2.png"
+    "/cover.png"
   );
 });
 
