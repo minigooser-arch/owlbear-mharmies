@@ -20,6 +20,8 @@ import manifest from "../../public/manifest.json";
 
 const rootDir = fileURLToPath(new URL("../../", import.meta.url));
 const iconPath = new URL("../../public/icon-1.2.png", import.meta.url);
+const coverPath = new URL("../../public/cover.png", import.meta.url);
+const strayRootImagePath = new URL("../../icon-1.2.png", import.meta.url);
 
 interface DecodedRgbaPng {
   width: number;
@@ -155,6 +157,15 @@ it("ships a square RGBA sword icon with transparent corners", () => {
     alphaAt(0, image.height - 1),
     alphaAt(image.width - 1, image.height - 1)
   ]).toEqual([0, 0, 0, 0]);
+});
+
+it("publishes the extension hero image from public instead of leaving it at repository root", () => {
+  expect(existsSync(coverPath)).toBe(true);
+  expect(existsSync(strayRootImagePath)).toBe(false);
+  const png = readFileSync(coverPath);
+  expect(png.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  expect(png.readUInt32BE(16)).toBeGreaterThan(0);
+  expect(png.readUInt32BE(20)).toBeGreaterThan(0);
 });
 
 it("retires the unversioned SVG from production", () => {
