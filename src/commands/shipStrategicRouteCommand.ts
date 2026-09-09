@@ -34,7 +34,7 @@ export function applyShipStrategicRouteCommand(
 
   state.scene.ships = {
     ...state.scene.ships,
-    [command.shipId]: commitShipStrategicRoute(ship, planned.cells, planned.cost, planned.finalFacing)
+    [command.shipId]: commitShipStrategicRoute(ship, planned.cells, planned.cost)
   };
   return undefined;
 }
