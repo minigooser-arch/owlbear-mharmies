@@ -112,7 +112,7 @@ it("does not expose naval request targets to an ordinary faction member", () => 
   expect(snapshot).toMatchObject({ navalRequestTargets: [] });
 });
 
-it("exposes pending naval battle requests only to the GM", () => {
+it("exposes all pending naval requests to GM, only own-side requests to leaders, and none to ordinary members", () => {
   const current = scene();
   const gm = buildRoleSafeSnapshot({
     role: "GM",
@@ -132,16 +132,23 @@ it("exposes pending naval battle requests only to the GM", () => {
     ships: shipRecords(current),
     mapVisibleSourceIds: new Set(["blue-visible"])
   });
-
-  expect(gm).toMatchObject({
-    pendingNavalBattleRequests: [
-      {
-        id: "req-1",
-        initiatingShipId: "red-ship",
-        targetShipId: "blue-visible",
-        createdOnTurn: 7
-      }
-    ]
+  const member = buildRoleSafeSnapshot({
+    role: "PLAYER",
+    playerId: "member",
+    scene: current,
+    players: [],
+    armies: [],
+    ships: shipRecords(current),
+    mapVisibleSourceIds: new Set(["blue-visible"])
   });
-  expect(leader).toMatchObject({ pendingNavalBattleRequests: [] });
+
+  const expectedRequest = {
+    id: "req-1",
+    initiatingShipId: "red-ship",
+    targetShipId: "blue-visible",
+    createdOnTurn: 7
+  };
+  expect(gm).toMatchObject({ pendingNavalBattleRequests: [expectedRequest] });
+  expect(leader).toMatchObject({ pendingNavalBattleRequests: [expectedRequest] });
+  expect(member).toMatchObject({ pendingNavalBattleRequests: [] });
 });
