@@ -115,12 +115,15 @@ describe("strategic ship movement", () => {
     });
   });
 
-  it("commits the route using the calculated cost and final facing", () => {
+  it("reserves the calculated route cost without rotating before movement resolves", () => {
     const ship = createRegisteredShip("red", "CRUISER", "SOUTH");
     const result = commitShipStrategicRoute(ship, [{ x: 1, y: 0 }], 2, "EAST");
     expect(result).toMatchObject({
-      facing: "EAST",
+      facing: "SOUTH",
       plannedRoute: [{ x: 1, y: 0 }],
+      plannedRouteCost: 2,
+      plannedRouteStartFacing: "SOUTH",
+      plannedRouteFinalFacing: "EAST",
       globalMovementRemaining: 1,
       movementSpentThisTurn: true,
       revision: 2
