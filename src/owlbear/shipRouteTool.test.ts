@@ -54,6 +54,22 @@ function controller() {
 }
 
 describe("ship route tool", () => {
+  it("preloads an existing route so it can be edited rather than rejected", () => {
+    const tool = controller();
+    tool.activate({ ...activation(), initialCells: [{ x: 1, y: 0 }, { x: 2, y: 0 }] });
+
+    expect(tool.snapshot()).toMatchObject({
+      cells: [{ x: 1, y: 0 }, { x: 2, y: 0 }],
+      points: [{ x: 1.5, y: 0.5 }, { x: 2.5, y: 0.5 }],
+      stepCosts: [1, 1],
+      spentMovementPoints: 2,
+      remainingMovementPoints: 2,
+      finalFacing: "EAST"
+    });
+    expect(tool.undo()).toEqual({ action: "EDITING" });
+    expect(tool.snapshot()?.cells).toEqual([{ x: 1, y: 0 }]);
+  });
+
   it("accepts forward SEA and CANAL cells at one OP each", async () => {
     const tool = controller();
     tool.activate(activation());
