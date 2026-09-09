@@ -131,6 +131,7 @@ export function ShipCard({
   sideColor,
   isGM,
   canPlanRoute,
+  routePlanningEnabled = true,
   embarkedArmyName,
   relations = {},
   onAction
@@ -139,6 +140,7 @@ export function ShipCard({
   sideColor: string;
   isGM: boolean;
   canPlanRoute: boolean;
+  routePlanningEnabled?: boolean;
   embarkedArmyName?: string;
   relations?: Readonly<Record<string, Readonly<Record<string, SideRelation>>>>;
   onAction(command: UiCommand): void;
@@ -407,7 +409,7 @@ export function ShipCard({
         </div>
       )}
 
-      {canPlanRoute && (
+      {canPlanRoute && routePlanningEnabled && (
         <div className="card-actions ship-route-actions">
           <button
             className="button primary"
