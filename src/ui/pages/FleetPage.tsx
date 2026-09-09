@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { SHIP_CLASSES } from "../../naval/ships/shipClasses";
 import type { ShipClassId, ShipFacing, Side, SideRelation, TurnState } from "../../shared/types";
 import { ShipCard } from "../components/ShipCard";
-import type { ArmyView, NavalRequestTargetView, ShipView, TransportEmbarkTargetView, UiCommand } from "../state/useExtensionState";
+import type { ArmyView, NavalBattleRequestView, NavalRequestTargetView, ShipView, TransportEmbarkTargetView, UiCommand } from "../state/useExtensionState";
 
 const CLASS_IDS = Object.keys(SHIP_CLASSES) as ShipClassId[];
 const FACING_OPTIONS: Array<{ value: ShipFacing; label: string }> = [
@@ -20,6 +20,7 @@ export function FleetPage({
   leaderSideIds,
   relations = {},
   navalRequestTargets = [],
+  pendingNavalBattleRequests = [],
   transportEmbarkTargets = [],
   turnPhase,
   onAction
@@ -31,6 +32,7 @@ export function FleetPage({
   leaderSideIds: ReadonlySet<string>;
   relations?: Readonly<Record<string, Readonly<Record<string, SideRelation>>>>;
   navalRequestTargets?: readonly NavalRequestTargetView[];
+  pendingNavalBattleRequests?: readonly NavalBattleRequestView[];
   transportEmbarkTargets?: readonly TransportEmbarkTargetView[];
   turnPhase?: TurnState["phase"];
   onAction(command: UiCommand): void;
@@ -68,7 +70,15 @@ export function FleetPage({
   const selectedRequestTargetShipId = navalRequestTargets.some((target) => target.id === requestTargetShipId)
     ? requestTargetShipId
     : (navalRequestTargets[0]?.id ?? "");
-  const canRequestNavalBattle = postMovementPhase && selectedRequestInitiatingShipId !== "" && selectedRequestTargetShipId !== "";
+  const requestAlreadyPending = pendingNavalBattleRequests.some((request) =>
+    request.initiatingShipId === selectedRequestInitiatingShipId &&
+    request.targetShipId === selectedRequestTargetShipId
+  );
+  const canRequestNavalBattle =
+    postMovementPhase &&
+    selectedRequestInitiatingShipId !== "" &&
+    selectedRequestTargetShipId !== "" &&
+    !requestAlreadyPending;
   const embarkTransports = movementPhase
     ? ships.filter((ship) =>
         ship.classId === "TRANSPORT" &&
@@ -181,7 +191,7 @@ export function FleetPage({
                 });
               }}
             >
-              Инициировать морской бой
+              {requestAlreadyPending ? "Запрошено — ожидает ведущего" : "Инициировать морской бой"}
             </button>
           </div>
         </section>
