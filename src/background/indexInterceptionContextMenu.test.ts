@@ -62,7 +62,6 @@ beforeEach(() => {
 it("registers persistent interception and token route context menus and disposes both on unload", async () => {
   const application = {
     activateInterception: vi.fn(async () => undefined),
-    openRouteForLocalItem: vi.fn(async () => undefined),
     stop: vi.fn(async () => undefined)
   };
   const removeInterceptionContextMenu = vi.fn(async () => undefined);
@@ -89,9 +88,13 @@ it("registers persistent interception and token route context menus and disposes
   );
   expect(mocks.registerRouteContextMenu).toHaveBeenCalledWith(
     expectedPort,
-    application,
+    expect.anything(),
     "/icon-1.2.png"
   );
+  const routeService = mocks.registerRouteContextMenu.mock.calls[0]?.[1] as {
+    openRouteForLocalItem?: unknown;
+  };
+  expect(typeof routeService.openRouteForLocalItem).toBe("function");
 
   const contextMenuPort = mocks.registerRouteContextMenu.mock.calls[0]?.[0] as {
     create(entry: unknown): unknown;
