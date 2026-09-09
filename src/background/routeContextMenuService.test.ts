@@ -18,7 +18,7 @@ class MemoryPort implements RouteContextMenuServicePort {
   sceneItems: SceneItemRecord[] = [];
   metadataCalls: Array<{ toolId: string; metadata: Record<string, unknown> }> = [];
   activatedTools: string[] = [];
-  activatedModes: string[] = [];
+  activatedModes: Array<{ toolId: string; modeId: string }> = [];
   messages: string[] = [];
 
   async getLocalItems() { return structuredClone(this.localItems); }
@@ -28,7 +28,7 @@ class MemoryPort implements RouteContextMenuServicePort {
     this.metadataCalls.push({ toolId, metadata: structuredClone(metadata) });
   }
   async activateTool(toolId: string) { this.activatedTools.push(toolId); }
-  async activateMode(modeId: string) { this.activatedModes.push(modeId); }
+  async activateMode(toolId: string, modeId: string) { this.activatedModes.push({ toolId, modeId }); }
   async show(message: string) { this.messages.push(message); }
 }
 
@@ -68,7 +68,7 @@ describe("RouteContextMenuService", () => {
       }
     }]);
     expect(port.activatedTools).toEqual([ROUTE_TOOL_ID]);
-    expect(port.activatedModes).toEqual([ROUTE_TOOL_MODE_ID]);
+    expect(port.activatedModes).toEqual([{ toolId: ROUTE_TOOL_ID, modeId: ROUTE_TOOL_MODE_ID }]);
   });
 
   it("opens the ship route tool for a ship clone using the authoritative source id", async () => {
@@ -86,7 +86,7 @@ describe("RouteContextMenuService", () => {
       }
     }]);
     expect(port.activatedTools).toEqual([SHIP_ROUTE_TOOL_ID]);
-    expect(port.activatedModes).toEqual([SHIP_ROUTE_TOOL_MODE_ID]);
+    expect(port.activatedModes).toEqual([{ toolId: SHIP_ROUTE_TOOL_ID, modeId: SHIP_ROUTE_TOOL_MODE_ID }]);
   });
 
   it("does not open a route tool for a stale or unknown clone", async () => {
