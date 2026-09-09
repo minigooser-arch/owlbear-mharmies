@@ -175,4 +175,27 @@ describe("naval battle request command processing", () => {
     });
     expect(ctx.state.scene.navalBattleRequests).toHaveLength(1);
   });
+
+  it("rejects a mirrored pending request for the same pair of ships", () => {
+    const ctx = context("blue-leader");
+    ctx.state.scene.navalBattleRequests = [
+      {
+        id: "already-pending",
+        initiatingShipId: "red-ship",
+        targetShipId: "blue-ship",
+        createdOnTurn: 7
+      }
+    ];
+    const reverseCommand = {
+      ...rawRequest("blue-leader"),
+      initiatingShipId: "blue-ship",
+      targetShipId: "red-ship"
+    } as unknown as ArmyCommand;
+
+    expect(processor(new Set(["red-ship"])).execute(ctx, reverseCommand)).toEqual({
+      status: "REJECTED",
+      reason: "NAVAL_BATTLE_REQUEST_ALREADY_PENDING"
+    });
+    expect(ctx.state.scene.navalBattleRequests).toHaveLength(1);
+  });
 });
