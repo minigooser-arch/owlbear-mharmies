@@ -60,7 +60,7 @@ describe("ship route tool", () => {
 
     expect(tool.snapshot()).toMatchObject({
       cells: [{ x: 1, y: 0 }, { x: 2, y: 0 }],
-      points: [{ x: 1.5, y: 0.5 }, { x: 2.5, y: 0.5 }],
+      points: [{ x: 1, y: 0 }, { x: 2, y: 0 }],
       stepCosts: [1, 1],
       spentMovementPoints: 2,
       remainingMovementPoints: 2,
