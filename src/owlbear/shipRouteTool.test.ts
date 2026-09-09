@@ -85,6 +85,29 @@ describe("ship route tool", () => {
     });
   });
 
+  it("keeps two snapped cells on the same row despite floating-point grid jitter", async () => {
+    const tool = controller();
+    const base = activation();
+    tool.activate({
+      ...base,
+      start: { x: 100, y: 100 },
+      startCell: { x: 1, y: 1 },
+      gridDpi: 100,
+      gridMap: {
+        ...base.gridMap,
+        cells: {
+          ...base.gridMap.cells,
+          "2,1": { terrainId: "sea", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null },
+          "3,1": { terrainId: "sea", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null }
+        }
+      }
+    });
+
+    expect(await tool.click({ x: 200, y: 100.0000001 })).toEqual({ accepted: true });
+    expect(await tool.click({ x: 300, y: 99.9999999 })).toEqual({ accepted: true });
+    expect(tool.snapshot()?.cells).toEqual([{ x: 2, y: 1 }, { x: 3, y: 1 }]);
+  });
+
   it("automatically includes turn OP in route cost", async () => {
     const tool = controller();
     tool.activate(activation());
