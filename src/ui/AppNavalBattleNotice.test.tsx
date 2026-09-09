@@ -46,13 +46,17 @@ function services(): ExtensionServices {
   };
 }
 
-it("shows one aggregated GM notice for multiple naval battle requests and opens the queue", () => {
-  render(<App services={services()} />);
+it("shows one aggregated GM notice for multiple naval battle requests without changing the app grid", () => {
+  const { container } = render(<App services={services()} />);
 
   const notices = screen.getAllByRole("status", { name: "Заявки на морской бой" });
   expect(notices).toHaveLength(1);
   expect(notices[0]).toHaveTextContent("Заявки на морской бой: 3");
   expect(screen.getByRole("button", { name: "Бои" })).toHaveTextContent("3");
+
+  const content = container.querySelector(".content.wiki-content");
+  expect(content).not.toBeNull();
+  expect(content).toContainElement(notices[0]);
 
   fireEvent.click(screen.getByRole("button", { name: "Открыть заявки" }));
 
