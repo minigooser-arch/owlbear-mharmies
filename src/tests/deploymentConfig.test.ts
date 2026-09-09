@@ -119,6 +119,32 @@ it("keeps the source manifest and package versions aligned without hard-coding a
   expect(packageJson.scripts.build).toContain("stamp-manifest.mjs");
 });
 
+it("uses the exact Letopis feather as the extension icon with transparent corners", () => {
+  const icon = readFileSync(iconPath);
+  const cover = readFileSync(coverPath);
+  expect(icon).toEqual(cover);
+
+  const image = decodeRgbaPng(icon);
+  expect(image.width).toBe(image.height);
+  expect(image.width).toBeGreaterThanOrEqual(64);
+  const alphaAt = (x: number, y: number) => image.pixels[(y * image.width + x) * 4 + 3];
+  expect([
+    alphaAt(0, 0),
+    alphaAt(image.width - 1, 0),
+    alphaAt(0, image.height - 1),
+    alphaAt(image.width - 1, image.height - 1)
+  ]).toEqual([0, 0, 0, 0]);
+});
+
+it("publishes the extension hero image from public instead of leaving it at repository root", () => {
+  expect(existsSync(coverPath)).toBe(true);
+  expect(existsSync(strayRootImagePath)).toBe(false);
+  const png = readFileSync(coverPath);
+  expect(png.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  expect(png.readUInt32BE(16)).toBeGreaterThan(0);
+  expect(png.readUInt32BE(20)).toBeGreaterThan(0);
+});
+
 it("stamps built entrypoints with a deployment-specific GitHub SHA", () => {
   const temporaryDirectory = mkdtempSync(join(tmpdir(), "letopis-manifest-"));
   const manifestPath = join(temporaryDirectory, "manifest.json");
@@ -144,28 +170,6 @@ it("stamps built entrypoints with a deployment-specific GitHub SHA", () => {
   } finally {
     rmSync(temporaryDirectory, { recursive: true, force: true });
   }
-});
-
-it("ships a square RGBA sword icon with transparent corners", () => {
-  const image = decodeRgbaPng(readFileSync(iconPath));
-  expect(image.width).toBe(image.height);
-  expect(image.width).toBeGreaterThanOrEqual(64);
-  const alphaAt = (x: number, y: number) => image.pixels[(y * image.width + x) * 4 + 3];
-  expect([
-    alphaAt(0, 0),
-    alphaAt(image.width - 1, 0),
-    alphaAt(0, image.height - 1),
-    alphaAt(image.width - 1, image.height - 1)
-  ]).toEqual([0, 0, 0, 0]);
-});
-
-it("publishes the extension hero image from public instead of leaving it at repository root", () => {
-  expect(existsSync(coverPath)).toBe(true);
-  expect(existsSync(strayRootImagePath)).toBe(false);
-  const png = readFileSync(coverPath);
-  expect(png.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
-  expect(png.readUInt32BE(16)).toBeGreaterThan(0);
-  expect(png.readUInt32BE(20)).toBeGreaterThan(0);
 });
 
 it("retires the unversioned SVG from production", () => {
