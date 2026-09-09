@@ -13,6 +13,7 @@ export interface ShipRouteToolActivation {
   movementPoints: number;
   maxMovementPoints: number;
   facing: ShipFacing;
+  initialCells?: readonly GridCellCoord[];
   terrain: TerrainRegistryState;
   gridMap: GridMapState;
 }
@@ -88,6 +89,19 @@ export class ShipRouteToolController {
     this.cells = [];
     this.stepCosts = [];
     this.facings = [];
+    const grid = new StrategicGridAdapter({ dpi: input.gridDpi, offset: { x: 0, y: 0 } });
+    let previous = input.startCell;
+    let facing = input.facing;
+    for (const cell of input.initialCells ?? []) {
+      const requiredFacing = facingForStep(previous, cell);
+      if (!requiredFacing) break;
+      this.cells.push({ ...cell });
+      this.points.push(grid.cellToSceneCenter(cell));
+      this.stepCosts.push(quarterTurnCost(facing, requiredFacing) + 1);
+      this.facings.push(requiredFacing);
+      facing = requiredFacing;
+      previous = cell;
+    }
     this.currentPreview = undefined;
     this.sequence += 1;
   }
