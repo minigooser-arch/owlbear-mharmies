@@ -535,6 +535,9 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
   CANCEL_TURN_DEFERRAL: () => ({ type: "CANCEL_TURN_DEFERRAL" }),
   PAUSE_AUTO_TURNS: () => ({ type: "PAUSE_AUTO_TURNS" }),
   RESUME_AUTO_TURNS: () => ({ type: "RESUME_AUTO_TURNS" }),
+  SET_TURN_NUMBER: (value) => Number.isInteger(value.turnNumber) && (value.turnNumber as number) >= 1
+    ? { type: "SET_TURN_NUMBER", turnNumber: value.turnNumber as number }
+    : undefined,
   COMPLETE_TURN_NOW: () => ({ type: "COMPLETE_TURN_NOW" })
 };
 

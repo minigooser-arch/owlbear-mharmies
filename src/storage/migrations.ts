@@ -41,24 +41,20 @@ function migrateLegacyTerrainToNavalSafe(value: unknown): unknown {
   return { ...value, types };
 }
 
-function ensureBuiltInSeaTerrain(value: unknown): unknown {
+function ensureBuiltInTerrains(value: unknown): unknown {
   if (!isRecord(value) || !isRecord(value.types)) return structuredClone(DEFAULT_TERRAIN);
-  const defaultSea = DEFAULT_TERRAIN.types.sea;
-  if (!defaultSea) return value;
-  const existingSea = value.types.sea;
-  return {
-    ...value,
-    types: {
-      ...value.types,
-      sea: {
-        ...structuredClone(defaultSea),
-        ...(isRecord(existingSea) ? existingSea : {}),
-        id: "sea",
-        movementDomains: ["SEA"],
-        blocksNavalLos: false
-      }
-    }
-  };
+  const types: Record<string, unknown> = { ...value.types };
+  for (const [id, defaultTerrain] of Object.entries(DEFAULT_TERRAIN.types)) {
+    const existing = types[id];
+    types[id] = {
+      ...structuredClone(defaultTerrain),
+      ...(isRecord(existing) ? existing : {}),
+      id,
+      ...(id === "sea" ? { movementDomains: ["SEA"], blocksNavalLos: false } : {}),
+      ...(id === "ice" ? { movementDomains: ["LAND"], blocksNavalLos: true } : {})
+    };
+  }
+  return { ...value, types };
 }
 
 export function migrateSceneState(raw: unknown): ValidationResult<SceneState> {
@@ -140,7 +136,7 @@ export function migrateSceneState(raw: unknown): ValidationResult<SceneState> {
   if (migrated.version === 6) {
     migrated = {
       ...migrated,
-      terrain: ensureBuiltInSeaTerrain(migrated.terrain)
+      terrain: ensureBuiltInTerrains(migrated.terrain)
     };
   }
   return normalizeSceneState(migrated);

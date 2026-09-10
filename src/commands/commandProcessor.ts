@@ -2,7 +2,7 @@ import { joinReinforcements, releaseBattleGroup } from "../battles/battleGroupSe
 import { destroyArmy } from "../armies/armyLifecycle";
 import { healArmy } from "../health/armyHealth";
 import { requestArmyDisband } from "../disband/disbandService";
-import { cancelTurnDeferral, completeTurn, deferTurn, pauseAutoTurns, resumeAutoTurns } from "../turns/turnService";
+import { cancelTurnDeferral, completeTurn, deferTurn, pauseAutoTurns, resumeAutoTurns, setTurnNumber } from "../turns/turnService";
 import { parseCellKey } from "../grid/strategicGrid";
 import { applyCellPatchBatch, readCell } from "../terrain/gridMap";
 import { validatePlannedRoute } from "../movement/movementRules";
@@ -1440,6 +1440,16 @@ export class CommandProcessor {
       case "RESUME_AUTO_TURNS":
         state.scene.turn = resumeAutoTurns(state.scene.turn, this.now());
         return undefined;
+      case "SET_TURN_NUMBER": {
+        state.scene.turn = setTurnNumber(state.scene.turn, command.turnNumber);
+        for (const [armyId, army] of Object.entries(state.armies)) {
+          if (army.plannedRoute.executeOnTurn === 0 || army.plannedRoute.executeOnTurn === command.turnNumber) continue;
+          state.armies[armyId] = bumpArmy(army, {
+            plannedRoute: { ...army.plannedRoute, requiresReplan: true }
+          });
+        }
+        return undefined;
+      }
       case "COMPLETE_TURN_NOW": {
         if (state.scene.activeNavalBattle?.status === "ACTIVE") return "NAVAL_BATTLE_ACTIVE";
         if (state.scene.turn.phase !== "POST_MOVEMENT") return "NOT_POST_MOVEMENT_PHASE";
