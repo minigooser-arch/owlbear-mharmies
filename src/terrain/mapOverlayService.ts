@@ -68,6 +68,7 @@ export class MapOverlayService {
         const terrain = source.terrain.types[cell.terrainId];
         if (terrain?.enabled) {
           const marker = overlayMetadata(rawCellKey, "TERRAIN");
+          const color = terrain.color ?? "#42a5f5";
           overlays.push({
             key: marker.key,
             item: {
@@ -82,7 +83,10 @@ export class MapOverlayService {
                 { x: center.x - half, y: center.y + half },
                 { x: center.x - half, y: center.y - half }
               ],
-              strokeColor: terrain.color ?? "#42a5f5",
+              strokeColor: color,
+              strokeWidth: Math.max(3, source.dpi * 0.035),
+              fillColor: color,
+              fillOpacity: 0.22,
               metadata: marker.metadata
             }
           });
@@ -104,7 +108,6 @@ export class MapOverlayService {
           }
         });
       }
-
 
       if (cell.recognizedStateId) {
         const state = statesById.get(cell.recognizedStateId);
