@@ -102,6 +102,24 @@ describe("safe manual turn renumbering", () => {
     expect(result.scene.ships?.ship?.plannedRoute).toEqual([{ x: 1, y: 0 }]);
   });
 
+  it("keeps already-expired markers before the new current turn", () => {
+    const scene = sceneFixture();
+    const ship = scene.ships?.ship;
+    if (!ship) throw new Error("fixture ship missing");
+    ship.shoreBombardmentUsedOnTurn = 25;
+    ship.logisticsActionUsedOnTurn = 25;
+    scene.navalRevealUntilTurn = { B: { ship: 25 } };
+    const army = armyFixture();
+    army.supply.checkedOnTurn = 25;
+
+    const result = renumberSceneTurn(scene, { army }, 1);
+
+    expect(result.scene.ships?.ship?.shoreBombardmentUsedOnTurn).toBe(0);
+    expect(result.scene.ships?.ship?.logisticsActionUsedOnTurn).toBe(0);
+    expect(result.scene.navalRevealUntilTurn?.B?.ship).toBe(0);
+    expect(result.armies.army?.supply.checkedOnTurn).toBe(0);
+  });
+
   it("allows renumbering only in movement with no active naval battle", () => {
     const scene = sceneFixture();
     expect(canRenumberTurn(scene)).toBe(true);
