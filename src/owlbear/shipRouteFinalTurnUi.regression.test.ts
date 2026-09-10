@@ -64,17 +64,22 @@ describe("ship strategic final-turn controls", () => {
     expect(snapshot.turnButton?.position.y).toBeGreaterThan(snapshot.finishButton?.position.y ?? Infinity);
   });
 
-  it("opens four direction choices with the correct OP cost", () => {
+  it("opens only the three alternative direction choices with the correct OP cost", () => {
     const route = controller();
     (route as unknown as TurnController).toggleTurnMenu();
     const snapshot = route.snapshot() as unknown as TurnSnapshot;
 
     expect(snapshot.turnChoices?.map(({ facing, cost, affordable }) => ({ facing, cost, affordable }))).toEqual([
       { facing: "NORTH", cost: 1, affordable: true },
-      { facing: "EAST", cost: 0, affordable: true },
       { facing: "SOUTH", cost: 1, affordable: true },
       { facing: "WEST", cost: 2, affordable: true }
     ]);
+  });
+
+  it("rejects selecting the direction the ship already faces", () => {
+    const route = controller();
+    const turn = route as unknown as TurnController;
+    expect(turn.selectFinalFacing("EAST")).toEqual({ accepted: false, reason: "SAME_FACING" });
   });
 
   it("selects a terminal turn, charges it, and clears it if movement is extended", async () => {
