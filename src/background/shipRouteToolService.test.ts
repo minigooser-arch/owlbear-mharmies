@@ -97,7 +97,7 @@ describe("ShipRouteToolService", () => {
     });
   });
 
-  it("loads an already planned route for editing and restores its reserved OP to the editor budget", async () => {
+  it("starts an already planned ship route from scratch while restoring its reserved OP", async () => {
     const planned = {
       ...shipState,
       plannedRoute: [{ x: 1, y: 0 }],
@@ -107,13 +107,27 @@ describe("ShipRouteToolService", () => {
     const port = new MemoryPort();
     port.items = [shipItem(planned)];
     port.scene.ships = { ship: planned };
+    port.localItems = [{
+      id: "saved-route-line",
+      type: "CURVE",
+      position: { x: 0, y: 0 },
+      points: [{ x: 50, y: 50 }, { x: 150, y: 50 }],
+      metadata: { [METADATA_KEYS.shipRouteOverlay]: { shipId: "ship", kind: "LINE" } }
+    }];
     const service = new ShipRouteToolService(port, { send: vi.fn() });
 
     await expect(service.loadSession("ship")).resolves.toMatchObject({
       shipId: "ship",
       movementPoints: 4,
-      initialCells: [{ x: 1, y: 0 }]
+      initialCells: []
     });
+    expect(port.localItems.some((item) => item.id === "saved-route-line")).toBe(false);
+    expect(port.localItems).toContainEqual(expect.objectContaining({
+      visible: false,
+      metadata: {
+        [METADATA_KEYS.shipRoutePreview]: { shipId: "ship", kind: "EDITING" }
+      }
+    }));
   });
 
   it("rejects an ordinary faction member", async () => {
