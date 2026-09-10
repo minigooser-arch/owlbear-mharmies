@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { expect, it } from "vitest";
 import type { SceneItemRecord } from "../shared/types";
 import { createSdkLocalItem } from "./sdkAdapter";
