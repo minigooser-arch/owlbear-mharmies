@@ -35,7 +35,7 @@ it("restores built-in sea terrain when an existing v6 scene does not contain it"
         types: {
           sea: {
             id: "sea",
-            name: "Море",
+            name: "Океан / озёра",
             movementDomains: ["SEA"],
             blocksNavalLos: false,
             enabled: true
