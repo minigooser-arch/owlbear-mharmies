@@ -57,7 +57,7 @@ function navalTerrain() {
 
 function fixture() {
   const api = new FakeToolApi();
-  const commits: Array<{ shipId: string; cells: readonly { x: number; y: number }[] }> = [];
+  const commits: unknown[][] = [];
   const rendered: ShipRouteToolSnapshot[] = [];
   const restored: string[] = [];
   let clearCount = 0;
@@ -73,7 +73,7 @@ function fixture() {
       terrain: navalTerrain(),
       gridMap: { version: 1, revision: 0, cells: {} }
     }),
-    commitRoute: async (shipId, _startCell, cells) => { commits.push({ shipId, cells: structuredClone(cells) }); },
+    commitRoute: async (...args) => { commits.push(structuredClone(args)); },
     renderPreview: async (snapshot) => { rendered.push(structuredClone(snapshot)); },
     clearPreview: async () => { clearCount += 1; },
     notify: async () => {},
@@ -130,7 +130,33 @@ describe("ship route tool SDK integration", () => {
     await Promise.resolve();
     expect(f.commits).toEqual([]);
     expect(await mode.onToolClick?.(ctx, toolEvent(150, 15))).toBe(false);
-    await vi.waitFor(() => expect(f.commits).toEqual([{ shipId: "ship", cells: [{ x: 1, y: 0 }] }]));
+    await vi.waitFor(() => expect(f.commits).toEqual([["ship", { x: 0, y: 0 }, [{ x: 1, y: 0 }]]]));
+    expect(f.restored).toEqual(["select-tool"]);
+  });
+
+  it("can plan only a turn by using the map Turn control and one of three alternative facings", async () => {
+    const f = fixture();
+    await registerShipRouteTool(f.api, f.port, f.grid, "/icon.svg");
+    const mode = f.api.modes[0];
+    if (!mode) throw new Error("Mode missing");
+    const ctx = context({ [SHIP_ROUTE_SHIP_ID_KEY]: "ship", [SHIP_ROUTE_RETURN_TOOL_KEY]: "select-tool" });
+    mode.onActivate?.(ctx);
+    await vi.waitFor(() => expect(f.rendered.length).toBeGreaterThan(0));
+
+    // Start is (50, 50). Turn control is below Finish at y=15.
+    expect(await mode.onToolClick?.(ctx, toolEvent(50, 15))).toBe(false);
+    await vi.waitFor(() => expect(f.rendered.at(-1)?.turnChoices).toHaveLength(3));
+    expect(f.rendered.at(-1)?.turnChoices?.map((choice) => choice.facing)).toEqual(["NORTH", "SOUTH", "WEST"]);
+
+    const west = f.rendered.at(-1)?.turnChoices?.find((choice) => choice.facing === "WEST");
+    if (!west) throw new Error("West choice missing");
+    expect(await mode.onToolClick?.(ctx, toolEvent(west.position.x, west.position.y))).toBe(false);
+    await vi.waitFor(() => expect(f.rendered.at(-1)?.plannedFacing).toBe("WEST"));
+
+    const finish = f.rendered.at(-1)?.finishButton;
+    if (!finish) throw new Error("Finish button missing");
+    expect(await mode.onToolClick?.(ctx, toolEvent(finish.position.x, finish.position.y))).toBe(false);
+    await vi.waitFor(() => expect(f.commits).toEqual([["ship", { x: 0, y: 0 }, [], "WEST"]]));
     expect(f.restored).toEqual(["select-tool"]);
   });
 
