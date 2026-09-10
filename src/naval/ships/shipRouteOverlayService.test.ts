@@ -118,3 +118,30 @@ it("hides the saved route while that ship is being edited", async () => {
 
   expect(port.items.map((item) => item.id)).toEqual(["editing-marker"]);
 });
+
+it("restores the saved route after editing is cancelled and the marker disappears", async () => {
+  const port = new MemoryOverlayPort();
+  const service = new ShipRouteOverlayService(port);
+  port.items = [{
+    id: "editing-marker",
+    type: "LABEL",
+    position: { x: 0.5, y: 0.5 },
+    visible: false,
+    disableHit: true,
+    text: "",
+    metadata: {
+      [METADATA_KEYS.shipRoutePreview]: { shipId: "ship", kind: "EDITING" }
+    }
+  }];
+
+  await service.reconcile([route], viewer("LEADER"));
+  expect(port.items.map((item) => item.id)).toEqual(["editing-marker"]);
+
+  port.items = port.items.filter((item) => item.id !== "editing-marker");
+  await service.reconcile([route], viewer("LEADER"));
+
+  expect(port.items.find((item) => item.type === "CURVE")?.points).toEqual([
+    route.start,
+    ...route.waypoints
+  ]);
+});
