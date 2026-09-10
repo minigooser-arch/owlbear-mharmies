@@ -11,7 +11,7 @@ import {
 } from "../shared/types";
 import { ProductionEngine } from "./application";
 
-it("starts and persists a naval battle from authoritative Owlbear ship positions", async () => {
+it("starts and persists a naval battle from authoritative Owlbear ship positions even when the drawn area misses a participant cell", async () => {
   const redShip: ShipState = createRegisteredShip("red", "CRUISER", "EAST");
   const blueShip: ShipState = createRegisteredShip("blue", "BATTLESHIP", "WEST");
   let scene: NavalSceneState = {
@@ -64,7 +64,7 @@ it("starts and persists a naval battle from authoritative Owlbear ship positions
       id: "blue-ship",
       type: "IMAGE",
       name: "Синий линкор",
-      position: { x: 150, y: 50 },
+      position: { x: 250, y: 50 },
       rotation: 270,
       visible: false,
       metadata: { [METADATA_KEYS.ship]: structuredClone(blueShip) }
@@ -148,6 +148,7 @@ it("starts and persists a naval battle from authoritative Owlbear ship positions
     id: "naval-1",
     requestId: "req-1",
     participantShipIds: ["red-ship", "blue-ship"],
+    areaCells: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }],
     snapshots: {
       "red-ship": {
         shipId: "red-ship",
@@ -157,8 +158,8 @@ it("starts and persists a naval battle from authoritative Owlbear ship positions
       },
       "blue-ship": {
         shipId: "blue-ship",
-        strategicCell: { x: 1, y: 0 },
-        strategicPosition: { x: 150, y: 50 },
+        strategicCell: { x: 2, y: 0 },
+        strategicPosition: { x: 250, y: 50 },
         strategicFacing: "WEST"
       }
     }
