@@ -1340,6 +1340,7 @@ export class ProductionEngine {
     );
 
     const sceneItemById = new Map(sceneItems.map((item) => [item.id, item]));
+    const viewportScale = await this.port.getViewportScale?.() ?? 1;
     await new NavalShipOverlayService(overlayPort).reconcile(
       Object.entries(scene.ships ?? {}).flatMap(([shipId, state]) => {
         const item = sceneItemById.get(shipId);
@@ -1354,7 +1355,8 @@ export class ProductionEngine {
           color: sideColors.get(state.sideId) ?? "#ffffff"
         }];
       }),
-      visibleShipIds
+      visibleShipIds,
+      viewportScale
     );
 
     const interceptionViewer = { isGM: role === "GM", leaderSideIds };

@@ -26,6 +26,7 @@ export interface OwlbearPort
     NotificationPort {
   addLocalItems(items: readonly SceneItemRecord[]): Promise<void>;
   updateLocalItems(items: readonly SceneItemRecord[]): Promise<void>;
+  getViewportScale?(): Promise<number>;
   patchSceneItemMetadata(
     id: string,
     key: string,
@@ -59,6 +60,9 @@ interface OwlbearSdkLike {
       ): Promise<Vector2>;
       onChange(callback: () => void): () => void;
     };
+  };
+  viewport?: {
+    getScale(): Promise<number>;
   };
   broadcast: {
     sendMessage(channel: string, data: unknown, options: { destination: "ALL" }): Promise<void>;
@@ -366,6 +370,7 @@ export function createOwlbearAdapter(
     on: (channel, listener) => sdk.broadcast.onMessage(channel, listener),
     getGridDistance: (from, to) => sdk.scene.grid.getDistance(from, to),
     getGridDpi: () => sdk.scene.grid.getDpi(),
+    getViewportScale: async () => sdk.viewport ? sdk.viewport.getScale() : 1,
     snapGridCenter: (position) => sdk.scene.grid.snapPosition(position, 1, false, true),
     onGridChange: (callback) => sdk.scene.grid.onChange(callback),
     show: async (message, variant) => {

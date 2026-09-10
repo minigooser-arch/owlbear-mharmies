@@ -43,9 +43,16 @@ function cloneSourceId(item: SceneItemRecord): string | undefined {
   return typeof sourceItemId === "string" ? sourceItemId : undefined;
 }
 
+function validShipFacing(value: unknown): boolean {
+  return value === "NORTH" || value === "EAST" || value === "SOUTH" || value === "WEST";
+}
+
 function sourceHasRoute(source: SceneItemRecord): boolean {
   const ship = objectRecord(source.metadata[METADATA_KEYS.ship]);
-  if (Array.isArray(ship?.plannedRoute)) return ship.plannedRoute.length > 0;
+  if (ship) {
+    return (Array.isArray(ship.plannedRoute) && ship.plannedRoute.length > 0) ||
+      validShipFacing(ship.plannedFacing);
+  }
   const army = objectRecord(source.metadata[METADATA_KEYS.army]);
   const plannedRoute = objectRecord(army?.plannedRoute);
   return Array.isArray(plannedRoute?.cells) && plannedRoute.cells.length > 0;
