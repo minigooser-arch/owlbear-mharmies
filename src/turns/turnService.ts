@@ -220,6 +220,90 @@ export function setTurnNumber(turn: TurnState, turnNumber: number): TurnState {
   return { ...turn, turnNumber };
 }
 
+function rebaseTurnIndex(value: number | null | undefined, delta: number): number | null | undefined {
+  if (value == null || value === 0) return value;
+  return Math.max(1, value + delta);
+}
+
+export function canRenumberTurn(scene: SceneState): boolean {
+  return scene.turn.phase === "MOVEMENT" && scene.activeNavalBattle?.status !== "ACTIVE";
+}
+
+export function renumberSceneTurn(
+  scene: SceneState,
+  armies: Readonly<Record<string, ArmyState>>,
+  turnNumber: number
+): { scene: SceneState; armies: Record<string, ArmyState> } {
+  const nextTurn = setTurnNumber(scene.turn, turnNumber);
+  const delta = turnNumber - scene.turn.turnNumber;
+  const nextScene = structuredClone(scene);
+  const nextArmies = structuredClone(armies) as Record<string, ArmyState>;
+  nextScene.turn = nextTurn;
+
+  for (const [armyId, army] of Object.entries(nextArmies)) {
+    const executeOnTurn = rebaseTurnIndex(army.plannedRoute.executeOnTurn, delta) ?? 0;
+    const checkedOnTurn = rebaseTurnIndex(army.supply.checkedOnTurn, delta) ?? 0;
+    const requestedOnTurn = rebaseTurnIndex(army.disband.requestedOnTurn, delta);
+    nextArmies[armyId] = {
+      ...army,
+      plannedRoute: {
+        ...army.plannedRoute,
+        executeOnTurn,
+        requiresReplan: army.plannedRoute.requiresReplan
+      },
+      supply: { ...army.supply, checkedOnTurn },
+      disband: {
+        ...army.disband,
+        requestedOnTurn: requestedOnTurn == null ? null : requestedOnTurn
+      },
+      revision: army.revision + 1
+    };
+  }
+
+  if (nextScene.ships) {
+    for (const [shipId, ship] of Object.entries(nextScene.ships)) {
+      const shoreBombardmentUsedOnTurn = rebaseTurnIndex(ship.shoreBombardmentUsedOnTurn, delta);
+      const logisticsActionUsedOnTurn = rebaseTurnIndex(ship.logisticsActionUsedOnTurn, delta);
+      nextScene.ships[shipId] = {
+        ...ship,
+        shoreBombardmentUsedOnTurn: shoreBombardmentUsedOnTurn == null ? null : shoreBombardmentUsedOnTurn,
+        logisticsActionUsedOnTurn: logisticsActionUsedOnTurn == null ? null : logisticsActionUsedOnTurn,
+        revision: ship.revision + 1
+      };
+    }
+  }
+
+  if (nextScene.navalBattleRequests) {
+    nextScene.navalBattleRequests = nextScene.navalBattleRequests.map((request) => {
+      const createdOnTurn = rebaseTurnIndex(request.createdOnTurn, delta);
+      return createdOnTurn === undefined ? { ...request } : { ...request, createdOnTurn };
+    });
+  }
+
+  if (nextScene.navalRevealUntilTurn) {
+    nextScene.navalRevealUntilTurn = Object.fromEntries(
+      Object.entries(nextScene.navalRevealUntilTurn).map(([sideId, reveals]) => [
+        sideId,
+        Object.fromEntries(
+          Object.entries(reveals).map(([shipId, untilTurn]) => [
+            shipId,
+            rebaseTurnIndex(untilTurn, delta) ?? turnNumber
+          ])
+        )
+      ])
+    );
+  }
+
+  if (nextScene.navalBattleHistory) {
+    nextScene.navalBattleHistory = nextScene.navalBattleHistory.map((battle) => ({
+      ...battle,
+      startedOnTurn: rebaseTurnIndex(battle.startedOnTurn, delta) ?? 1
+    }));
+  }
+
+  return { scene: nextScene, armies: nextArmies };
+}
+
 export function pauseAutoTurns(turn: TurnState): TurnState {
   return { ...turn, autoTurnsPaused: true, deferredUntil: null };
 }
