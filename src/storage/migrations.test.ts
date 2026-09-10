@@ -187,7 +187,7 @@ it("migrates v4 scene through state territory and naval schemas", () => {
         types: {
           sea: {
             id: "sea",
-            name: "Море",
+            name: "Океан / озёра",
             movementDomains: ["SEA"],
             blocksNavalLos: false
           }
