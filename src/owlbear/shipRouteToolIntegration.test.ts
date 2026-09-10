@@ -132,7 +132,7 @@ describe("ship route tool SDK integration", () => {
     const finish = f.rendered.at(-1)?.finishButton;
     if (!finish) throw new Error("Finish button missing");
     expect(await mode.onToolClick?.(ctx, toolEvent(finish.position.x, finish.position.y))).toBe(false);
-    await vi.waitFor(() => expect(f.commits).toEqual([["ship", { x: 0, y: 0 }, [{ x: 1, y: 0 }]]]));
+    await vi.waitFor(() => expect(f.commits).toEqual([["ship", { x: 0, y: 0 }, [{ x: 1, y: 0 }], undefined]]));
     expect(f.restored).toEqual(["select-tool"]);
   });
 
