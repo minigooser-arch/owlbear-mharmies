@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { TurnState } from "../../shared/types";
 import { moscowLocalInputToIso, turnStatusPresentation } from "../presentation/turns";
 import type { UiCommand } from "../state/useExtensionState";
@@ -15,10 +15,21 @@ export function TurnStatusCard({
   now?: Date;
 }) {
   const [deferValue, setDeferValue] = useState("");
+  const [turnNumberValue, setTurnNumberValue] = useState(String(turn.turnNumber));
   const presentation = turnStatusPresentation(turn, now);
+  const parsedTurnNumber = Number(turnNumberValue);
+  const validTurnNumber = Number.isInteger(parsedTurnNumber) && parsedTurnNumber >= 1;
+
+  useEffect(() => {
+    setTurnNumberValue(String(turn.turnNumber));
+  }, [turn.turnNumber]);
+
   const defer = () => {
     const until = moscowLocalInputToIso(deferValue);
     if (until) onAction({ type: "DEFER_TURN", until });
+  };
+  const setTurnNumber = () => {
+    if (validTurnNumber) onAction({ type: "SET_TURN_NUMBER", turnNumber: parsedTurnNumber });
   };
 
   return (
@@ -47,21 +58,27 @@ export function TurnStatusCard({
             )}
             {turn.autoTurnsPaused && <button type="button" onClick={() => onAction({ type: "RESUME_AUTO_TURNS" })}>Возобновить ходы</button>}
           </div>
-          {!turn.autoTurnsPaused && (
-            <details className="turn-more">
-              <summary>Настройки хода</summary>
-              <div className="turn-more-content">
-                <div className="turn-actions">
-                  <button type="button" onClick={() => onAction({ type: "PAUSE_AUTO_TURNS" })}>Остановить ходы</button>
-                  {turn.deferredUntil && <button type="button" onClick={() => onAction({ type: "CANCEL_TURN_DEFERRAL" })}>Отменить перенос</button>}
-                </div>
-                <div className="turn-defer-row">
-                  <label>Новая дата и время (МСК)<input aria-label="Новая дата и время (МСК)" type="datetime-local" value={deferValue} onChange={(event) => setDeferValue(event.target.value)} /></label>
-                  <button type="button" disabled={!moscowLocalInputToIso(deferValue)} onClick={defer}>Отложить ход</button>
-                </div>
+          <details className="turn-more">
+            <summary>Настройки хода</summary>
+            <div className="turn-more-content">
+              <div className="turn-defer-row">
+                <label>Номер хода<input aria-label="Номер хода" type="number" min="1" step="1" value={turnNumberValue} onChange={(event) => setTurnNumberValue(event.target.value)} /></label>
+                <button type="button" disabled={!validTurnNumber || parsedTurnNumber === turn.turnNumber} onClick={setTurnNumber}>Установить номер хода</button>
               </div>
-            </details>
-          )}
+              {!turn.autoTurnsPaused && (
+                <>
+                  <div className="turn-actions">
+                    <button type="button" onClick={() => onAction({ type: "PAUSE_AUTO_TURNS" })}>Остановить ходы</button>
+                    {turn.deferredUntil && <button type="button" onClick={() => onAction({ type: "CANCEL_TURN_DEFERRAL" })}>Отменить перенос</button>}
+                  </div>
+                  <div className="turn-defer-row">
+                    <label>Новая дата и время (МСК)<input aria-label="Новая дата и время (МСК)" type="datetime-local" value={deferValue} onChange={(event) => setDeferValue(event.target.value)} /></label>
+                    <button type="button" disabled={!moscowLocalInputToIso(deferValue)} onClick={defer}>Отложить ход</button>
+                  </div>
+                </>
+              )}
+            </div>
+          </details>
         </div>
       )}
     </article>
