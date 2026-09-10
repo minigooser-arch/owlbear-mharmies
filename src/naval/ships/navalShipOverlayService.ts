@@ -19,6 +19,8 @@ export interface NavalShipOverlay {
 
 type NavalShipOverlayKind = "NAME" | "HP";
 
+const SHIP_LABEL_SCREEN_OFFSET_PX = 28;
+
 function navalShipOverlayKey(item: SceneItemRecord): string | undefined {
   const raw = item.metadata[METADATA_KEYS.navalShipOverlay];
   if (typeof raw !== "object" || raw === null) return undefined;
@@ -43,13 +45,20 @@ function metadata(shipId: string, kind: NavalShipOverlayKind): Record<string, un
   };
 }
 
+function sceneOffsetForScreenPixels(screenPixels: number, viewportScale: number): number {
+  const scale = Number.isFinite(viewportScale) && viewportScale > 0 ? viewportScale : 1;
+  return screenPixels / scale;
+}
+
 export class NavalShipOverlayService {
   constructor(private readonly port: NavalShipOverlayPort) {}
 
   async reconcile(
     ships: readonly NavalShipOverlay[],
-    visibleShipIds: ReadonlySet<string>
+    visibleShipIds: ReadonlySet<string>,
+    viewportScale = 1
   ): Promise<void> {
+    const labelOffset = sceneOffsetForScreenPixels(SHIP_LABEL_SCREEN_OFFSET_PX, viewportScale);
     const overlays: DesiredLocalOverlay[] = ships
       .filter((ship) => visibleShipIds.has(ship.shipId))
       .flatMap((ship): DesiredLocalOverlay[] => [
@@ -57,7 +66,7 @@ export class NavalShipOverlayService {
           key: `${ship.shipId}:NAME`,
           item: {
             type: "LABEL",
-            position: { x: ship.position.x, y: ship.position.y - 28 },
+            position: { x: ship.position.x, y: ship.position.y - labelOffset },
             visible: true,
             disableHit: true,
             text: ship.name,
@@ -73,7 +82,7 @@ export class NavalShipOverlayService {
           key: `${ship.shipId}:HP`,
           item: {
             type: "LABEL",
-            position: { x: ship.position.x, y: ship.position.y + 28 },
+            position: { x: ship.position.x, y: ship.position.y + labelOffset },
             visible: true,
             disableHit: true,
             text: `♥ ${ship.hp} / ${ship.maxHp}`,
