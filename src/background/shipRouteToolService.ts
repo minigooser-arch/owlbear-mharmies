@@ -4,7 +4,7 @@ import { SHIP_CLASSES } from "../naval/ships/shipClasses";
 import { shipStrategicRouteCost } from "../naval/ships/shipStrategicMovement";
 import type { ShipRouteToolSnapshot, ShipRouteToolActivation } from "../owlbear/shipRouteTool";
 import {
-  reconcileLocalOverlays,
+  LocalOverlayReconcileSession,
   type DesiredLocalOverlay,
   type LocalOverlayBatchPort
 } from "../owlbear/localOverlayReconciler";
@@ -66,12 +66,14 @@ function previewOverlayKey(item: SceneItemRecord): string | undefined {
 
 export class ShipRouteToolService {
   private readonly repository: MetadataRepository;
+  private readonly previewOverlays: LocalOverlayReconcileSession;
 
   constructor(
     private readonly port: ShipRouteToolServicePort,
     private readonly gateway: ShipRouteCommandGateway
   ) {
     this.repository = new MetadataRepository(port);
+    this.previewOverlays = new LocalOverlayReconcileSession(port, previewOverlayKey);
   }
 
   async loadSession(shipId: string): Promise<ShipRouteToolActivation> {
@@ -177,11 +179,15 @@ export class ShipRouteToolService {
         }
       });
     }
-    await reconcileLocalOverlays(this.port, previewOverlayKey, overlays);
+    await this.previewOverlays.reconcile(overlays);
   }
 
   async clearPreview(): Promise<void> {
-    await reconcileLocalOverlays(this.port, previewOverlayKey, []);
+    try {
+      await this.previewOverlays.reconcile([]);
+    } finally {
+      this.previewOverlays.invalidate();
+    }
   }
 
   notify(message: string, variant: "INFO" | "WARNING" | "ERROR"): Promise<void> {

@@ -1,5 +1,4 @@
 import { firstBarrierIntersection, type BarrierSegment } from "../barriers/barrierGeometry";
-import { isOrthogonalNeighbor } from "../grid/strategicGrid";
 import { validateMovementStep } from "../movement/movementRules";
 import type { GridRoutePort } from "../routes/routeMath";
 import { readCell } from "../terrain/gridMap";
@@ -11,6 +10,7 @@ import type {
   Vector2,
   WarState
 } from "../shared/types";
+import { straightGridSegment } from "./straightGridSegment";
 
 export interface RoutePreview {
   point: Vector2;
@@ -21,6 +21,9 @@ export interface RoutePreview {
   totalCostUnits: number;
   remainingUnits: number;
   stepCostUnits?: number;
+  segmentCells?: readonly GridCellCoord[];
+  segmentPoints?: readonly Vector2[];
+  segmentStepCostUnits?: readonly number[];
   reason?: MovementDenialReason | "BARRIER" | "INACTIVE";
 }
 
@@ -112,6 +115,17 @@ function pointForCell(active: RouteToolActivation, cell: GridCellCoord): Vector2
     x: active.start.x + (cell.x - active.startCell.x) * active.gridDpi,
     y: active.start.y + (cell.y - active.startCell.y) * active.gridDpi
   };
+}
+
+function samePreview(left: RoutePreview | undefined, right: RoutePreview): boolean {
+  return left !== undefined &&
+    left.cell.x === right.cell.x &&
+    left.cell.y === right.cell.y &&
+    left.valid === right.valid &&
+    left.label === right.label &&
+    left.reason === right.reason &&
+    left.totalCostUnits === right.totalCostUnits &&
+    left.remainingUnits === right.remainingUnits;
 }
 
 export class RouteToolController {
@@ -206,10 +220,13 @@ export class RouteToolController {
     return result;
   }
 
-  async move(point: Vector2): Promise<void> {
+  async move(point: Vector2): Promise<boolean> {
     const sequence = ++this.sequence;
     const preview = await this.analyze(point);
-    if (sequence === this.sequence) this.currentPreview = preview;
+    if (sequence !== this.sequence) return false;
+    if (samePreview(this.currentPreview, preview)) return false;
+    this.currentPreview = preview;
+    return true;
   }
 
   async click(point: Vector2): Promise<RouteClickResult> {
@@ -224,9 +241,13 @@ export class RouteToolController {
     if (!preview.valid) return { accepted: false, reason: preview.reason ?? "INACTIVE" };
     const anchor = this.cells.at(-1) ?? active.startCell;
     if (preview.cell.x === anchor.x && preview.cell.y === anchor.y) return { accepted: true };
-    this.cells.push({ ...preview.cell });
-    this.points.push({ ...preview.point });
-    this.costs.push(preview.stepCostUnits ?? 0);
+
+    const segmentCells = preview.segmentCells ?? [{ ...preview.cell }];
+    const segmentPoints = preview.segmentPoints ?? [{ ...preview.point }];
+    const segmentCosts = preview.segmentStepCostUnits ?? [preview.stepCostUnits ?? 0];
+    this.cells.push(...segmentCells.map((cell) => ({ ...cell })));
+    this.points.push(...segmentPoints.map((segmentPoint) => ({ ...segmentPoint })));
+    this.costs.push(...segmentCosts);
     this.currentPreview = undefined;
     return { accepted: true };
   }
@@ -238,7 +259,6 @@ export class RouteToolController {
       this.deactivate();
       return { action: "CANCEL" };
     }
-    // Enter is intentionally ignored. Route completion is a visible map affordance / ToolAction.
     return { action: "IGNORED" };
   }
 
@@ -266,55 +286,80 @@ export class RouteToolController {
     const anchorPoint = this.points.at(-1) ?? active.start;
     const spent = this.costs.reduce((sum, value) => sum + value, 0);
     const remaining = Math.max(0, active.movementUnits - spent);
+    const segment = straightGridSegment(anchorCell, cell);
 
-    if (cell.x === anchorCell.x && cell.y === anchorCell.y) {
-      return {
-        point, cell, valid: true, color: "#2e7d32",
-        label: `Маршрут: ${formatMovementUnits(spent)} ОП · останется ${formatMovementUnits(remaining)} ОП`,
-        totalCostUnits: spent, remainingUnits: remaining, stepCostUnits: 0
-      };
-    }
-    if (!isOrthogonalNeighbor(anchorCell, cell)) {
+    if (!segment) {
       return {
         point, cell, valid: false, color: "#d32f2f",
         label: messageForPreview("NOT_ORTHOGONAL"), totalCostUnits: spent,
         remainingUnits: remaining, reason: "NOT_ORTHOGONAL"
       };
     }
-    const step = validateMovementStep({
-      from: anchorCell,
-      to: cell,
-      sideId: active.sideId,
-      cell: readCell(active.gridMap, cell),
-      terrain: active.terrain,
-      wars: active.wars,
-      remainingUnits: remaining,
-      withinBounds: true,
-      armyStateAllowsMovement: true
-    });
-    if (!step.allowed) {
+    if (segment.length === 0) {
       return {
-        point, cell, valid: false, color: "#d32f2f",
-        label: messageForPreview(step.reason, step.missingUnits), totalCostUnits: spent,
-        remainingUnits: remaining, reason: step.reason,
-        ...(step.stepCostUnits !== undefined ? { stepCostUnits: step.stepCostUnits } : {})
+        point, cell, valid: true, color: "#2e7d32",
+        label: `Маршрут: ${formatMovementUnits(spent)} ОП · останется ${formatMovementUnits(remaining)} ОП`,
+        totalCostUnits: spent, remainingUnits: remaining, stepCostUnits: 0,
+        segmentCells: [], segmentPoints: [], segmentStepCostUnits: []
       };
     }
-    if (firstBarrierIntersection({ from: anchorPoint, to: point }, active.barriers)) {
-      return {
-        point, cell, valid: false, color: "#d32f2f", label: messageForPreview("BARRIER"),
-        totalCostUnits: spent, remainingUnits: remaining, stepCostUnits: step.stepCostUnits,
-        reason: "BARRIER"
-      };
+
+    const segmentPoints: Vector2[] = [];
+    const segmentCosts: number[] = [];
+    let cursorCell = anchorCell;
+    let cursorPoint = anchorPoint;
+    let cursorRemaining = remaining;
+    let segmentCost = 0;
+    let largestStepCost = 0;
+
+    for (const nextCell of segment) {
+      const nextPoint = pointForCell(active, nextCell);
+      const step = validateMovementStep({
+        from: cursorCell,
+        to: nextCell,
+        sideId: active.sideId,
+        cell: readCell(active.gridMap, nextCell),
+        terrain: active.terrain,
+        wars: active.wars,
+        remainingUnits: cursorRemaining,
+        withinBounds: true,
+        armyStateAllowsMovement: true
+      });
+      if (!step.allowed) {
+        return {
+          point, cell, valid: false, color: "#d32f2f",
+          label: messageForPreview(step.reason, step.missingUnits), totalCostUnits: spent + segmentCost,
+          remainingUnits: cursorRemaining, reason: step.reason,
+          ...(step.stepCostUnits !== undefined ? { stepCostUnits: step.stepCostUnits } : {})
+        };
+      }
+      if (firstBarrierIntersection({ from: cursorPoint, to: nextPoint }, active.barriers)) {
+        return {
+          point, cell, valid: false, color: "#d32f2f", label: messageForPreview("BARRIER"),
+          totalCostUnits: spent + segmentCost, remainingUnits: cursorRemaining,
+          stepCostUnits: step.stepCostUnits, reason: "BARRIER"
+        };
+      }
+      segmentPoints.push(nextPoint);
+      segmentCosts.push(step.stepCostUnits);
+      segmentCost += step.stepCostUnits;
+      largestStepCost = Math.max(largestStepCost, step.stepCostUnits);
+      cursorRemaining = step.remainingAfterUnits;
+      cursorCell = nextCell;
+      cursorPoint = nextPoint;
     }
-    const total = spent + step.stepCostUnits;
+
+    const total = spent + segmentCost;
     return {
       point, cell, valid: true,
-      color: step.stepCostUnits <= 1 ? "#29b6f6" : step.stepCostUnits >= 4 ? "#f9a825" : "#2e7d32",
-      label: `Шаг: ${formatMovementUnits(step.stepCostUnits)} ОП · маршрут: ${formatMovementUnits(total)} ОП · останется ${formatMovementUnits(step.remainingAfterUnits)} ОП`,
+      color: largestStepCost <= 1 ? "#29b6f6" : largestStepCost >= 4 ? "#f9a825" : "#2e7d32",
+      label: `${segment.length > 1 ? "Отрезок" : "Шаг"}: ${formatMovementUnits(segmentCost)} ОП · маршрут: ${formatMovementUnits(total)} ОП · останется ${formatMovementUnits(cursorRemaining)} ОП`,
       totalCostUnits: total,
-      remainingUnits: step.remainingAfterUnits,
-      stepCostUnits: step.stepCostUnits
+      remainingUnits: cursorRemaining,
+      stepCostUnits: segmentCost,
+      segmentCells: segment.map((segmentCell) => ({ ...segmentCell })),
+      segmentPoints: segmentPoints.map((segmentPoint) => ({ ...segmentPoint })),
+      segmentStepCostUnits: [...segmentCosts]
     };
   }
 }

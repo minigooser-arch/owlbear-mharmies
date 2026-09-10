@@ -10,6 +10,7 @@ import {
 } from "../shared/constants";
 import type { GridCellCoord, Vector2 } from "../shared/types";
 import { notificationMessage } from "./notifications";
+import { PointerMoveCoalescer } from "./pointerMoveCoalescer";
 import {
   ShipRouteToolController,
   type ShipRouteToolActivation,
@@ -96,7 +97,16 @@ export async function registerShipRouteTool(
     previewRendered = true;
   };
 
+  const moveCoalescer = new PointerMoveCoalescer(1_000 / 12, (point) =>
+    enqueue(async () => {
+      if (!active) return;
+      const changed = await controller.move(point);
+      if (changed) await renderSnapshot();
+    })
+  );
+
   const finishSession = async (restorePrevious: boolean): Promise<void> => {
+    moveCoalescer.clear();
     const shouldClear = active || previewRendered;
     const previousToolId = returnToolId;
     controller.cancel();
@@ -144,6 +154,7 @@ export async function registerShipRouteTool(
 
   const activate = (context: ToolContext): void => {
     if (closed) return;
+    moveCoalescer.clear();
     const activation = ++generation;
     void enqueue(async () => {
       await finishSession(false);
@@ -177,6 +188,7 @@ export async function registerShipRouteTool(
 
   const click = async (event: ToolEvent): Promise<false> => {
     if (closed) return false;
+    moveCoalescer.clear();
     await enqueue(async () => {
       if (!active) return;
       if (isFinishButtonHit(event.pointerPosition)) {
@@ -201,6 +213,7 @@ export async function registerShipRouteTool(
 
   const keyDown = (event: KeyEvent): void => {
     if (closed || (event.key === "Enter" && event.repeat)) return;
+    moveCoalescer.clear();
     void enqueue(async () => {
       if (!active) return;
       const result = controller.key(event.key);
@@ -211,6 +224,7 @@ export async function registerShipRouteTool(
 
   const deactivate = (): void => {
     if (closed) return;
+    moveCoalescer.clear();
     generation += 1;
     void enqueue(() => finishSession(false));
   };
@@ -219,17 +233,26 @@ export async function registerShipRouteTool(
   const undoAction: ToolAction = {
     id: SHIP_ROUTE_UNDO_ACTION_ID,
     icons: [{ icon: iconUrl, label: "Шаг назад", filter: actionFilter }],
-    onClick: () => { void enqueue(async () => { if (active) { controller.undo(); await renderSnapshot(); } }); }
+    onClick: () => {
+      moveCoalescer.clear();
+      void enqueue(async () => { if (active) { controller.undo(); await renderSnapshot(); } });
+    }
   };
   const clearAction: ToolAction = {
     id: SHIP_ROUTE_CLEAR_ACTION_ID,
     icons: [{ icon: iconUrl, label: "Очистить маршрут", filter: actionFilter }],
-    onClick: () => { void enqueue(async () => { if (active) { controller.clear(); await renderSnapshot(); } }); }
+    onClick: () => {
+      moveCoalescer.clear();
+      void enqueue(async () => { if (active) { controller.clear(); await renderSnapshot(); } });
+    }
   };
   const cancelAction: ToolAction = {
     id: SHIP_ROUTE_CANCEL_ACTION_ID,
     icons: [{ icon: iconUrl, label: "Отмена", filter: actionFilter }],
-    onClick: () => { void enqueue(() => finishSession(true)); }
+    onClick: () => {
+      moveCoalescer.clear();
+      void enqueue(() => finishSession(true));
+    }
   };
 
   const tool: Tool = {
@@ -243,9 +266,7 @@ export async function registerShipRouteTool(
     cursors: [{ cursor: "crosshair" }],
     onActivate: activate,
     onDeactivate: deactivate,
-    onToolMove: (_context, event) => {
-      void enqueue(async () => { if (active) { await controller.move(event.pointerPosition); await renderSnapshot(); } });
-    },
+    onToolMove: (_context, event) => moveCoalescer.push(event.pointerPosition),
     onToolClick: (_context, event) => click(event),
     onKeyDown: (_context, event) => keyDown(event)
   };
@@ -266,6 +287,7 @@ export async function registerShipRouteTool(
     if (closed) return;
     closed = true;
     generation += 1;
+    moveCoalescer.stop();
     await tail;
     let failure: unknown;
     try { await finishSession(false); } catch (error) { failure = error; }
@@ -280,6 +302,7 @@ export async function registerShipRouteTool(
   registration.cancelSession = async (): Promise<void> => {
     if (closed) return;
     generation += 1;
+    moveCoalescer.clear();
     await enqueue(() => finishSession(false));
   };
   return registration;

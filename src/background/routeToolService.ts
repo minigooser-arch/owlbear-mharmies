@@ -32,7 +32,7 @@ import type {
 } from "../owlbear/routeToolIntegration";
 import type { RouteToolSnapshot } from "../owlbear/routeTool";
 import {
-  reconcileLocalOverlays,
+  LocalOverlayReconcileSession,
   type DesiredLocalOverlay,
   type LocalOverlayBatchPort
 } from "../owlbear/localOverlayReconciler";
@@ -136,12 +136,14 @@ function previewOverlayKey(item: SceneItemRecord): string | undefined {
 
 export class RouteToolService implements RouteToolIntegrationPort {
   private readonly repository: MetadataRepository;
+  private readonly previewOverlays: LocalOverlayReconcileSession;
 
   constructor(
     private readonly port: RouteToolServicePort,
     private readonly gateway: RouteCommandGateway
   ) {
     this.repository = new MetadataRepository(port);
+    this.previewOverlays = new LocalOverlayReconcileSession(port, previewOverlayKey);
   }
 
   async loadSession(armyId: string): Promise<RouteToolSession> {
@@ -276,11 +278,15 @@ export class RouteToolService implements RouteToolIntegrationPort {
         }
       });
     }
-    await reconcileLocalOverlays(this.port, previewOverlayKey, overlays);
+    await this.previewOverlays.reconcile(overlays);
   }
 
   async clearPreview(): Promise<void> {
-    await reconcileLocalOverlays(this.port, previewOverlayKey, []);
+    try {
+      await this.previewOverlays.reconcile([]);
+    } finally {
+      this.previewOverlays.invalidate();
+    }
   }
 
   notify(message: string, variant: "INFO" | "WARNING" | "ERROR"): Promise<void> {

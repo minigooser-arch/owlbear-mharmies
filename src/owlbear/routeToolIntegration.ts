@@ -12,6 +12,7 @@ import {
 } from "../shared/constants";
 import type { GridCellCoord, GridMapState, TerrainRegistryState, Vector2, WarState } from "../shared/types";
 import { notificationMessage } from "./notifications";
+import { PointerMoveCoalescer } from "./pointerMoveCoalescer";
 import { RouteToolController, type RouteToolSnapshot } from "./routeTool";
 
 export interface RouteToolSession {
@@ -72,16 +73,12 @@ export async function registerRouteTool(
   iconUrl: string
 ): Promise<RouteToolRegistration> {
   const controller = new RouteToolController(distancePort);
-  const moveIntervalMs = 1_000 / 12;
   let tail: Promise<void> = Promise.resolve();
   let closed = false;
   let active = false;
   let previewRendered = false;
   let returnToolId: string | undefined;
   let generation = 0;
-  let lastMoveAt = 0;
-  let pendingMove: Vector2 | undefined;
-  let moveTimer: ReturnType<typeof setTimeout> | undefined;
 
   const safeNotify = async (
     message: string,
@@ -102,12 +99,6 @@ export async function registerRouteTool(
     return tail;
   };
 
-  const cancelMoveTimer = () => {
-    if (moveTimer !== undefined) clearTimeout(moveTimer);
-    moveTimer = undefined;
-    pendingMove = undefined;
-  };
-
   const renderSnapshot = async () => {
     const snapshot = controller.snapshot();
     if (!snapshot) return;
@@ -115,8 +106,16 @@ export async function registerRouteTool(
     previewRendered = true;
   };
 
-  const finishSession = async (restorePrevious: boolean, cancelMoves = true) => {
-    if (cancelMoves) cancelMoveTimer();
+  const moveCoalescer = new PointerMoveCoalescer(1_000 / 12, (point) =>
+    enqueue(async () => {
+      if (!active) return;
+      const changed = await controller.move(point);
+      if (changed) await renderSnapshot();
+    })
+  );
+
+  const finishSession = async (restorePrevious: boolean) => {
+    moveCoalescer.clear();
     const shouldClear = active || previewRendered;
     const previousToolId = returnToolId;
     controller.cancel();
@@ -174,39 +173,12 @@ export async function registerRouteTool(
       && Math.abs(point.y - button.position.y) <= button.halfHeight;
   };
 
-  const runPendingMove = (): Promise<void> => {
-    if (moveTimer !== undefined) clearTimeout(moveTimer);
-    moveTimer = undefined;
-    const point = pendingMove;
-    pendingMove = undefined;
-    if (!point) return Promise.resolve();
-    lastMoveAt = Date.now();
-    return enqueue(async () => {
-      if (!active) return;
-      await controller.move(point);
-      await renderSnapshot();
-    });
-  };
-
-  const scheduleMove = (point: Vector2) => {
-    pendingMove = { ...point };
-    if (moveTimer !== undefined) return;
-    const delay = Math.max(0, moveIntervalMs - (Date.now() - lastMoveAt));
-    if (delay === 0) {
-      void runPendingMove();
-      return;
-    }
-    moveTimer = setTimeout(() => {
-      void runPendingMove();
-    }, delay);
-  };
-
   const activate = (context: ToolContext) => {
     if (closed) return;
-    cancelMoveTimer();
+    moveCoalescer.clear();
     const activation = ++generation;
     void enqueue(async () => {
-      await finishSession(false, false);
+      await finishSession(false);
       const armyId = context.metadata[ROUTE_ARMY_ID_KEY];
       const previousToolId = context.metadata[ROUTE_RETURN_TOOL_KEY];
       returnToolId = typeof previousToolId === "string" ? previousToolId : undefined;
@@ -242,7 +214,7 @@ export async function registerRouteTool(
 
   const click = async (event: ToolEvent): Promise<false> => {
     if (closed) return false;
-    await runPendingMove();
+    moveCoalescer.clear();
     await enqueue(async () => {
       if (!active) return;
       if (isFinishButtonHit(event.pointerPosition)) {
@@ -278,6 +250,7 @@ export async function registerRouteTool(
 
   const keyDown = (event: KeyEvent) => {
     if (closed || (event.key === "Enter" && event.repeat)) return;
+    moveCoalescer.clear();
     void enqueue(async () => {
       if (!active) return;
       const result = controller.key(event.key);
@@ -291,6 +264,7 @@ export async function registerRouteTool(
 
   const deactivate = () => {
     if (closed) return;
+    moveCoalescer.clear();
     generation += 1;
     void enqueue(() => finishSession(false));
   };
@@ -299,17 +273,26 @@ export async function registerRouteTool(
   const undoAction: ToolAction = {
     id: ROUTE_UNDO_ACTION_ID,
     icons: [{ icon: iconUrl, label: "Шаг назад", filter: actionFilter }],
-    onClick: () => { void enqueue(async () => { if (active) { controller.undo(); await renderSnapshot(); } }); }
+    onClick: () => {
+      moveCoalescer.clear();
+      void enqueue(async () => { if (active) { controller.undo(); await renderSnapshot(); } });
+    }
   };
   const clearAction: ToolAction = {
     id: ROUTE_CLEAR_ACTION_ID,
     icons: [{ icon: iconUrl, label: "Очистить маршрут", filter: actionFilter }],
-    onClick: () => { void enqueue(async () => { if (active) { controller.clear(); await renderSnapshot(); } }); }
+    onClick: () => {
+      moveCoalescer.clear();
+      void enqueue(async () => { if (active) { controller.clear(); await renderSnapshot(); } });
+    }
   };
   const cancelAction: ToolAction = {
     id: ROUTE_CANCEL_ACTION_ID,
     icons: [{ icon: iconUrl, label: "Отмена", filter: actionFilter }],
-    onClick: () => { void enqueue(() => finishSession(true)); }
+    onClick: () => {
+      moveCoalescer.clear();
+      void enqueue(() => finishSession(true));
+    }
   };
 
   const tool: Tool = {
@@ -330,7 +313,7 @@ export async function registerRouteTool(
     cursors: [{ cursor: "crosshair" }],
     onActivate: activate,
     onDeactivate: deactivate,
-    onToolMove: (_context, event) => scheduleMove(event.pointerPosition),
+    onToolMove: (_context, event) => moveCoalescer.push(event.pointerPosition),
     onToolClick: (_context, event) => click(event),
     onKeyDown: (_context, event) => keyDown(event)
   };
@@ -361,7 +344,7 @@ export async function registerRouteTool(
     if (closed) return;
     closed = true;
     generation += 1;
-    cancelMoveTimer();
+    moveCoalescer.stop();
     await tail;
     let failure: unknown;
     try {
@@ -388,7 +371,7 @@ export async function registerRouteTool(
   registration.cancelSession = async () => {
     if (closed) return;
     generation += 1;
-    cancelMoveTimer();
+    moveCoalescer.clear();
     await enqueue(() => finishSession(false));
   };
   return registration;
