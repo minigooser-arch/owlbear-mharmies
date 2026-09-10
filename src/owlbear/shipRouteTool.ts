@@ -78,7 +78,7 @@ export interface ShipRouteToolSnapshot {
 }
 
 export type ShipRouteClickResult = { accepted: true } | { accepted: false; reason: ShipRouteFailure };
-export type ShipRouteTurnResult = { accepted: true } | { accepted: false; reason: ShipRouteFailure };
+export type ShipRouteTurnResult = { accepted: true } | { accepted: false; reason: ShipRouteFailure | "SAME_FACING" };
 export type ShipRouteKeyResult = { action: "EDITING" } | { action: "CANCEL" } | { action: "IGNORED" };
 export type ShipRouteFinishResult =
   | {
@@ -191,20 +191,21 @@ export class ShipRouteToolController {
     const controlY = anchor.y - active.gridDpi * 0.35;
     const halfHeight = active.gridDpi * 0.12;
     const remainingBeforeTerminal = Math.max(0, active.movementPoints - routeSpent);
+    const alternativeFacings = FACINGS.filter((facing) => facing !== movementFacing);
     const turnChoices = this.turnMenuOpen
-      ? FACINGS.map((facing, index): ShipRouteTurnChoice => {
+      ? alternativeFacings.map((facing, index): ShipRouteTurnChoice => {
           const cost = quarterTurnCost(movementFacing, facing);
           return {
             facing,
             label: `${FACING_LABELS[facing]} · ${cost} ОП`,
             cost,
             affordable: cost <= remainingBeforeTerminal,
-            selected: this.terminalFacing === facing || (cost === 0 && this.terminalFacing === undefined),
+            selected: this.terminalFacing === facing,
             position: {
-              x: anchor.x + (index - 1.5) * active.gridDpi * 0.4,
+              x: anchor.x + (index - 1) * active.gridDpi * 0.5,
               y: controlY
             },
-            halfWidth: active.gridDpi * 0.18,
+            halfWidth: active.gridDpi * 0.22,
             halfHeight
           };
         })
@@ -248,13 +249,14 @@ export class ShipRouteToolController {
     const active = this.activation;
     if (!active) return { accepted: false, reason: "INACTIVE" };
     const movementFacing = this.movementFacing();
+    if (facing === movementFacing) return { accepted: false, reason: "SAME_FACING" };
     const turnCost = quarterTurnCost(movementFacing, facing);
     const remaining = active.movementPoints - this.routeSpent();
     if (turnCost > remaining) {
       return { accepted: false, reason: "INSUFFICIENT_MOVEMENT_POINTS" };
     }
     this.sequence += 1;
-    this.terminalFacing = turnCost === 0 ? undefined : facing;
+    this.terminalFacing = facing;
     this.turnMenuOpen = false;
     this.currentPreview = undefined;
     return { accepted: true };
