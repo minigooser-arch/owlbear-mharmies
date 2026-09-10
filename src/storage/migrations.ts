@@ -46,9 +46,20 @@ function ensureBuiltInTerrains(value: unknown): unknown {
   const types: Record<string, unknown> = { ...value.types };
   for (const [id, defaultTerrain] of Object.entries(DEFAULT_TERRAIN.types)) {
     const existing = types[id];
+    const legacyDefaults: Record<string, { name: string; color: string }> = {
+      plain: { name: "Равнина", color: "#90a4ae" },
+      forest: { name: "Лес", color: "#66bb6a" },
+      mountains: { name: "Горы", color: "#8d6e63" },
+      sea: { name: "Море", color: "#42a5f5" }
+    };
+    const legacy = legacyDefaults[id];
+    const existingRecord = isRecord(existing) ? existing : undefined;
+    const migrateLegacyPresentation = legacy && existingRecord &&
+      existingRecord.name === legacy.name && existingRecord.color === legacy.color;
     types[id] = {
       ...structuredClone(defaultTerrain),
-      ...(isRecord(existing) ? existing : {}),
+      ...(existingRecord ?? {}),
+      ...(migrateLegacyPresentation ? { name: defaultTerrain.name, color: defaultTerrain.color } : {}),
       id,
       ...(id === "sea" ? { movementDomains: ["SEA"], blocksNavalLos: false } : {}),
       ...(id === "ice" ? { movementDomains: ["LAND"], blocksNavalLos: true } : {})
