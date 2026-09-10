@@ -25,6 +25,19 @@ it("lets a GM replace the current turn number directly", () => {
   expect(action).toHaveBeenCalledWith({ type: "SET_TURN_NUMBER", turnNumber: 1 });
 });
 
+it("keeps the turn number editor available when automatic turns are paused", () => {
+  render(
+    <TurnStatusCard
+      turn={{ ...DEFAULT_TURN_STATE, turnNumber: 26, autoTurnsPaused: true }}
+      role="GM"
+      onAction={() => undefined}
+    />
+  );
+
+  fireEvent.click(screen.getByText("Настройки хода"));
+  expect(screen.getByLabelText("Номер хода")).toHaveValue(26);
+});
+
 it("does not show the turn number editor to players", () => {
   render(<TurnStatusCard turn={{ ...DEFAULT_TURN_STATE, turnNumber: 26 }} role="PLAYER" onAction={() => undefined} />);
   expect(screen.queryByLabelText("Номер хода")).toBeNull();
