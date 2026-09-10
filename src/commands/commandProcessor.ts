@@ -1440,6 +1440,18 @@ export class CommandProcessor {
       case "RESUME_AUTO_TURNS":
         state.scene.turn = resumeAutoTurns(state.scene.turn, this.now());
         return undefined;
+      case "SET_TURN_NUMBER": {
+        if (!Number.isInteger(command.turnNumber) || command.turnNumber < 1) return "INVALID_COMMAND";
+        if (state.scene.turn.turnNumber === command.turnNumber) return undefined;
+        state.scene.turn = { ...state.scene.turn, turnNumber: command.turnNumber };
+        for (const [armyId, army] of Object.entries(state.armies)) {
+          if (army.plannedRoute.cells.length === 0) continue;
+          state.armies[armyId] = bumpArmy(army, {
+            plannedRoute: { ...army.plannedRoute, requiresReplan: true }
+          });
+        }
+        return undefined;
+      }
       case "COMPLETE_TURN_NOW": {
         if (state.scene.activeNavalBattle?.status === "ACTIVE") return "NAVAL_BATTLE_ACTIVE";
         if (state.scene.turn.phase !== "POST_MOVEMENT") return "NOT_POST_MOVEMENT_PHASE";

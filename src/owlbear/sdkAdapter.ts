@@ -86,9 +86,14 @@ function objectRecord(value: unknown): Record<string, unknown> {
 function normalizeSdkLocalItem(item: SceneItemRecord): SceneItemRecord {
   if (item.type === "CURVE") {
     const style = objectRecord(item.style);
-    return typeof style.strokeColor === "string"
-      ? { ...item, strokeColor: style.strokeColor }
-      : item;
+    return {
+      ...item,
+      ...(typeof style.fillColor === "string" ? { fillColor: style.fillColor } : {}),
+      ...(typeof style.fillOpacity === "number" ? { fillOpacity: style.fillOpacity } : {}),
+      ...(typeof style.strokeColor === "string" ? { strokeColor: style.strokeColor } : {}),
+      ...(typeof style.strokeOpacity === "number" ? { strokeOpacity: style.strokeOpacity } : {}),
+      ...(typeof style.strokeWidth === "number" ? { strokeWidth: style.strokeWidth } : {})
+    };
   }
   if (item.type === "LABEL") {
     const text = objectRecord(item.text);
@@ -135,10 +140,20 @@ function applyNormalizedLocalItem(
   }
   if (source.type === "CURVE" && draft.type === "CURVE") {
     if (hasOwn(source, "points")) draft.points = structuredClone(source.points);
-    if (hasOwn(source, "strokeColor")) {
+    if (
+      hasOwn(source, "fillColor") ||
+      hasOwn(source, "fillOpacity") ||
+      hasOwn(source, "strokeColor") ||
+      hasOwn(source, "strokeOpacity") ||
+      hasOwn(source, "strokeWidth")
+    ) {
       draft.style = {
         ...objectRecord(draft.style),
-        strokeColor: source.strokeColor
+        ...(hasOwn(source, "fillColor") ? { fillColor: source.fillColor } : {}),
+        ...(hasOwn(source, "fillOpacity") ? { fillOpacity: source.fillOpacity } : {}),
+        ...(hasOwn(source, "strokeColor") ? { strokeColor: source.strokeColor } : {}),
+        ...(hasOwn(source, "strokeOpacity") ? { strokeOpacity: source.strokeOpacity } : {}),
+        ...(hasOwn(source, "strokeWidth") ? { strokeWidth: source.strokeWidth } : {})
       };
     }
   }
@@ -237,6 +252,7 @@ export function createSdkLocalItem(
       .disableHit(typeof source.disableHit === "boolean" ? source.disableHit : true)
       .metadata(source.metadata as Metadata)
       .points(points.map((point) => ({ ...point })))
+      .fillColor(typeof source.fillColor === "string" ? source.fillColor : "#ffffff")
       .fillOpacity(numeric(source.fillOpacity, 0))
       .strokeColor(typeof source.strokeColor === "string" ? source.strokeColor : "#2e7d32")
       .strokeOpacity(numeric(source.strokeOpacity, 1))

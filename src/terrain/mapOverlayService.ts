@@ -82,7 +82,11 @@ export class MapOverlayService {
                 { x: center.x - half, y: center.y + half },
                 { x: center.x - half, y: center.y - half }
               ],
+              fillColor: terrain.color ?? "#42a5f5",
+              fillOpacity: 0.24,
               strokeColor: terrain.color ?? "#42a5f5",
+              strokeOpacity: 0.95,
+              strokeWidth: 4,
               metadata: marker.metadata
             }
           });
