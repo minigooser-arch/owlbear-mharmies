@@ -9,12 +9,10 @@ import { compareOrdinal } from "../shared/ordering";
 import { DEFAULT_TERRAIN, DEFAULT_TURN_STATE } from "../shared/constants";
 import {
   normalizeArmyState,
-  normalizeBarrierState
+  normalizeBarrierState,
+  normalizeSceneState,
+  normalizeShipState
 } from "../shared/validation";
-import {
-  normalizeSceneStateWithPlannedFacing,
-  normalizeShipStateWithPlannedFacing
-} from "../shared/navalStateNormalization";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -71,7 +69,7 @@ export function migrateSceneState(raw: unknown): ValidationResult<SceneState> {
   if (version !== undefined && version > 6) {
     return { ok: false, issue: { code: "FUTURE_VERSION", version } };
   }
-  if (!isRecord(raw)) return normalizeSceneStateWithPlannedFacing(raw);
+  if (!isRecord(raw)) return normalizeSceneState(raw);
   let migrated: UnknownRecord = raw;
   if (version === 0 || version === 1 || version === undefined) {
     const sides = Array.isArray(raw.sides)
@@ -145,7 +143,7 @@ export function migrateSceneState(raw: unknown): ValidationResult<SceneState> {
       terrain: ensureBuiltInSeaTerrain(migrated.terrain)
     };
   }
-  return normalizeSceneStateWithPlannedFacing(migrated);
+  return normalizeSceneState(migrated);
 }
 
 export function migrateArmyState(raw: unknown): ValidationResult<ArmyState> {
@@ -211,7 +209,7 @@ export function migrateShipState(raw: unknown): ValidationResult<ShipState> {
   if (version !== undefined && version > 1) {
     return { ok: false, issue: { code: "FUTURE_VERSION", version } };
   }
-  return normalizeShipStateWithPlannedFacing(raw);
+  return normalizeShipState(raw);
 }
 
 export function migrateBarrierState(raw: unknown): ValidationResult<BarrierState> {
