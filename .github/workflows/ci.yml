@@ -9,24 +9,13 @@ on:
   pull_request:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          ref: feat/terrain-visibility-turn-number
-      - name: Apply implementation patch
-        run: python scripts/apply-terrain-turn-patch.py
-      - name: Commit implementation patch
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/shared/types.ts src/commands/commandValidation.ts src/commands/commandProcessor.ts src/terrain/mapOverlayService.ts src/owlbear/sdkAdapter.ts src/storage/migrations.ts
-          git diff --cached --quiet || git commit -m "feat: implement terrain rendering and turn renumbering"
-          git push origin HEAD:feat/terrain-visibility-turn-number
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 24
