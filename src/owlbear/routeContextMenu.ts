@@ -41,6 +41,22 @@ export interface RouteContextMenuActionService {
   openRouteForLocalItem(itemId: string): Promise<void>;
 }
 
+function routeFallbackIcon(iconUrl: string): RouteContextMenuEntry["icons"][number] {
+  return {
+    icon: iconUrl,
+    label: "Маршрут Летописи",
+    filter: {
+      min: 1,
+      max: 1,
+      every: [{
+        key: ["metadata", METADATA_KEYS.localClone],
+        operator: "!=",
+        value: undefined
+      }]
+    }
+  };
+}
+
 function routeIcon(
   label: string,
   hasRoute: boolean,
@@ -80,7 +96,8 @@ export async function registerRouteContextMenu(
     id: ROUTE_SET_CONTEXT_MENU_ID,
     icons: [
       routeIcon("Изменить маршрут", true, iconUrl),
-      routeIcon("Задать маршрут", false, iconUrl)
+      routeIcon("Задать маршрут", false, iconUrl),
+      routeFallbackIcon(iconUrl)
     ],
     onClick: async (context) => {
       const itemId = context.items[0]?.id;

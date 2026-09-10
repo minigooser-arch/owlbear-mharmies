@@ -858,22 +858,28 @@ export class CommandProcessor {
         return undefined;
       }
       case "START_NAVAL_BATTLE": {
-        if (command.areaCells.some((cell) => !cellSupportsDomain(state.scene, cell, "SEA"))) {
-          return "INVALID_NAVAL_BATTLE_AREA";
-        }
         if (!this.cellForPosition) return "SHIP_POSITION_UNAVAILABLE";
         const snapshots: Record<string, import("../shared/types").NavalBattleShipSnapshot> = {};
+        const normalizedArea = new Map(
+          command.areaCells.map((cell) => [`${cell.x},${cell.y}`, { ...cell }])
+        );
         for (const shipId of command.participantShipIds) {
           const ship = state.scene.ships?.[shipId];
           if (!ship) return "SHIP_NOT_FOUND";
           const position = state.positions?.[shipId] ?? state.items[shipId]?.position;
           if (!position) return "SHIP_POSITION_UNAVAILABLE";
+          const strategicCell = this.cellForPosition(position);
           snapshots[shipId] = {
             shipId,
-            strategicCell: this.cellForPosition(position),
+            strategicCell,
             strategicPosition: { ...position },
             strategicFacing: ship.facing
           };
+          normalizedArea.set(`${strategicCell.x},${strategicCell.y}`, { ...strategicCell });
+        }
+        const areaCells = [...normalizedArea.values()];
+        if (areaCells.some((cell) => !cellSupportsDomain(state.scene, cell, "SEA"))) {
+          return "INVALID_NAVAL_BATTLE_AREA";
         }
         const sceneRevision = state.scene.revision;
         try {
@@ -882,7 +888,7 @@ export class CommandProcessor {
             requestId: command.navalRequestId,
             initiatingShipId: command.initiatingShipId,
             participantShipIds: command.participantShipIds,
-            areaCells: command.areaCells,
+            areaCells,
             snapshots,
             startedAt: this.now().getTime(),
             rollD20: () => Math.floor(Math.random() * 20) + 1

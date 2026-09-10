@@ -2,6 +2,7 @@ import type { KeyEvent, Metadata, Tool, ToolAction, ToolContext, ToolEvent, Tool
 import type { BarrierSegment } from "../barriers/barrierGeometry";
 import type { GridRoutePort } from "../routes/routeMath";
 import {
+  PROGRAMMATIC_ONLY_TOOL_FILTER,
   ROUTE_ARMY_ID_KEY,
   ROUTE_RETURN_TOOL_KEY,
   ROUTE_TOOL_ID,
@@ -297,7 +298,7 @@ export async function registerRouteTool(
 
   const tool: Tool = {
     id: ROUTE_TOOL_ID,
-    icons: [{ icon: iconUrl, label: "Маршрут армии" }],
+    icons: [{ icon: iconUrl, label: "Маршрут армии", filter: PROGRAMMATIC_ONLY_TOOL_FILTER }],
     defaultMetadata: {
       [ROUTE_ARMY_ID_KEY]: null,
       [ROUTE_RETURN_TOOL_KEY]: null
