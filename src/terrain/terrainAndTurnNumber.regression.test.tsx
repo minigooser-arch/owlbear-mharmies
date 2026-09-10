@@ -66,10 +66,16 @@ describe("terrain overlay visibility", () => {
 });
 
 describe("manual turn number", () => {
-  it("changes only the counter and invalidates routes planned for another turn", () => {
-    const turn = setTurnNumber(DEFAULT_TURN_STATE, 1);
+  it("changes only the counter", () => {
+    const turn = setTurnNumber({ ...DEFAULT_TURN_STATE, turnNumber: 26 }, 1);
     expect(turn.turnNumber).toBe(1);
     expect(turn.phase).toBe(DEFAULT_TURN_STATE.phase);
+    expect(turn.autoTurnsPaused).toBe(DEFAULT_TURN_STATE.autoTurnsPaused);
+  });
+
+  it("rejects zero and fractional turn numbers", () => {
+    expect(() => setTurnNumber(DEFAULT_TURN_STATE, 0)).toThrow("INVALID_TURN_NUMBER");
+    expect(() => setTurnNumber(DEFAULT_TURN_STATE, 1.5)).toThrow("INVALID_TURN_NUMBER");
   });
 
   it("lets a GM submit a new turn number", () => {
