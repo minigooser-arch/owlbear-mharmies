@@ -17,7 +17,6 @@ export type ShipStrategicRoutePlan =
       remainingMovement: number;
       finalFacing: ShipFacing;
       stepCosts: number[];
-      terminalTurnCost: number;
     }
   | {
       ok: false;
@@ -95,8 +94,7 @@ export function planShipStrategicRoute(
     cost,
     remainingMovement: ship.globalMovementRemaining - cost,
     finalFacing: facing,
-    stepCosts,
-    terminalTurnCost
+    stepCosts
   };
 }
 
