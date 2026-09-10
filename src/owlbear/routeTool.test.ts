@@ -38,7 +38,7 @@ function activation(overrides: Partial<RouteToolActivation> = {}): RouteToolActi
 }
 
 describe("route tool", () => {
-  it("builds only one orthogonal cell per click and charges destination terrain", async () => {
+  it("charges destination terrain for consecutive orthogonal cells", async () => {
     const tool = new RouteToolController(hundredPixelCells);
     tool.activate(activation());
 
@@ -85,13 +85,29 @@ describe("route tool", () => {
     expect(tool.snapshot()?.cells).toEqual([{ x: 2, y: 1 }, { x: 3, y: 1 }]);
   });
 
-  it("rejects diagonal, distant, and impassable cells before adding them", async () => {
+  it("rejects diagonal and impassable cells before adding them", async () => {
     const tool = new RouteToolController(hundredPixelCells);
     tool.activate(activation());
 
     expect(await tool.click({ x: 150, y: 150 })).toEqual({ accepted: false, reason: "NOT_ORTHOGONAL" });
-    expect(await tool.click({ x: 250, y: 50 })).toEqual({ accepted: false, reason: "NOT_ORTHOGONAL" });
     expect(await tool.click({ x: 50, y: 150 })).toEqual({ accepted: false, reason: "IMPASSABLE" });
+    expect(tool.snapshot()?.cells).toEqual([]);
+  });
+
+  it("rejects a straight multi-cell segment atomically when an intermediate cell is impassable", async () => {
+    const tool = new RouteToolController(hundredPixelCells);
+    tool.activate(activation({
+      gridMap: {
+        version: 1,
+        revision: 0,
+        cells: {
+          "1,0": { terrainId: "road", impassable: true, factionTerritoryIds: ["red"], recognizedStateId: null, deFactoStateId: null },
+          "2,0": { terrainId: "road", impassable: false, factionTerritoryIds: ["red"], recognizedStateId: null, deFactoStateId: null }
+        }
+      }
+    }));
+
+    expect(await tool.click({ x: 250, y: 50 })).toEqual({ accepted: false, reason: "IMPASSABLE" });
     expect(tool.snapshot()?.cells).toEqual([]);
   });
 
