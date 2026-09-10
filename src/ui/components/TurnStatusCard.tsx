@@ -56,7 +56,7 @@ export function TurnStatusCard({
             <div className="turn-more-content">
               <div className="turn-defer-row">
                 <label>Номер хода<input aria-label="Номер хода" type="number" min="1" step="1" value={turnNumberValue} onChange={(event) => setTurnNumberValue(event.target.value)} /></label>
-                <button type="button" disabled={!validTurnNumber || parsedTurnNumber === turn.turnNumber} onClick={() => onAction({ type: "SET_TURN_NUMBER", turnNumber: parsedTurnNumber })}>Установить номер хода</button>
+                <button type="button" disabled={!validTurnNumber || parsedTurnNumber === turn.turnNumber || turn.phase !== "MOVEMENT"} onClick={() => onAction({ type: "SET_TURN_NUMBER", turnNumber: parsedTurnNumber })}>Установить номер хода</button>
               </div>
               {!turn.autoTurnsPaused && (
                 <>
