@@ -35,6 +35,15 @@ function overlayKey(item: SceneItemRecord): string | undefined {
     : `${metadata.shipId}/${metadata.kind}`;
 }
 
+function editingShipId(item: SceneItemRecord): string | undefined {
+  const raw = item.metadata[METADATA_KEYS.shipRoutePreview];
+  if (typeof raw !== "object" || raw === null) return undefined;
+  const metadata = raw as Record<string, unknown>;
+  return metadata.kind === "EDITING" && typeof metadata.shipId === "string"
+    ? metadata.shipId
+    : undefined;
+}
+
 export class ShipRouteOverlayService {
   constructor(private readonly port: ShipRouteOverlayPort) {}
 
@@ -42,9 +51,20 @@ export class ShipRouteOverlayService {
     routes: readonly ShipRouteOverlay[],
     viewer: ShipRouteOverlayViewer
   ): Promise<void> {
+    const localItems = await this.port.getLocalItems();
+    const editingShipIds = new Set(
+      localItems.flatMap((item) => {
+        const shipId = editingShipId(item);
+        return shipId ? [shipId] : [];
+      })
+    );
     const overlays: DesiredLocalOverlay[] = [];
     for (const route of routes) {
-      if (route.waypoints.length === 0 || !visibleToViewer(route, viewer)) continue;
+      if (
+        route.waypoints.length === 0 ||
+        !visibleToViewer(route, viewer) ||
+        editingShipIds.has(route.shipId)
+      ) continue;
       const points = [route.start, ...route.waypoints].map((point) => ({ ...point }));
       overlays.push({
         key: `${route.shipId}/LINE`,
@@ -81,6 +101,6 @@ export class ShipRouteOverlayService {
         });
       });
     }
-    await reconcileLocalOverlays(this.port, overlayKey, overlays);
+    await reconcileLocalOverlays(this.port, overlayKey, overlays, localItems);
   }
 }
