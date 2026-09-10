@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import { METADATA_KEYS } from "../../shared/constants";
 import type { SceneItemRecord } from "../../shared/types";
 import {
   ShipRouteOverlayService,
@@ -85,4 +86,35 @@ it("reconciles an identical ship route without rewriting local items", async () 
 
   expect(port.operations).toEqual([]);
   expect(port.items.map((item) => item.id)).toEqual(ids);
+});
+
+it("hides the saved route while that ship is being edited", async () => {
+  const port = new MemoryOverlayPort();
+  port.items = [
+    {
+      id: "editing-marker",
+      type: "LABEL",
+      position: { x: 0.5, y: 0.5 },
+      visible: false,
+      disableHit: true,
+      text: "",
+      metadata: {
+        [METADATA_KEYS.shipRoutePreview]: { shipId: "ship", kind: "EDITING" }
+      }
+    },
+    {
+      id: "saved-line",
+      type: "CURVE",
+      position: { x: 0, y: 0 },
+      points: [route.start, ...route.waypoints],
+      disableHit: true,
+      metadata: {
+        [METADATA_KEYS.shipRouteOverlay]: { shipId: "ship", kind: "LINE" }
+      }
+    }
+  ];
+
+  await new ShipRouteOverlayService(port).reconcile([route], viewer("LEADER"));
+
+  expect(port.items.map((item) => item.id)).toEqual(["editing-marker"]);
 });
