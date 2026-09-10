@@ -1049,7 +1049,7 @@ export class ProductionEngine {
         requestId: command.requestId,
         status: result.status,
         coordinatorConnectionId,
-        recipientConnectionId,
+        recipientConnectionId: sender.connectionId,
         ...(result.status === "REJECTED" ? { reason: result.reason } : { actualRevision: result.actualRevision })
       });
     }
