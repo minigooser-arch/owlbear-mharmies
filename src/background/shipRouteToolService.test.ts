@@ -3,7 +3,7 @@ import type { CommandAck } from "../commands/commandGateway";
 import { createRegisteredShip } from "../naval/ships/shipLifecycle";
 import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE, METADATA_KEYS } from "../shared/constants";
 import { COMMAND_PROTOCOL_VERSION } from "../shared/types";
-import type { ArmyCommand, ItemUpdate, SceneItemRecord, SceneState, ShipState } from "../shared/types";
+import type { ArmyCommand, ItemUpdate, SceneItemRecord, SceneState, ShipFacing, ShipState } from "../shared/types";
 import { ShipRouteToolService, type ShipRouteToolServicePort } from "./shipRouteToolService";
 
 const shipState = createRegisteredShip("red", "IRONCLAD", "EAST");
@@ -97,7 +97,7 @@ describe("ShipRouteToolService", () => {
     });
   });
 
-  it("loads an already planned route for editing and restores its reserved OP to the editor budget", async () => {
+  it("starts an already planned ship route from scratch while restoring its reserved OP", async () => {
     const planned = {
       ...shipState,
       plannedRoute: [{ x: 1, y: 0 }],
@@ -107,12 +107,45 @@ describe("ShipRouteToolService", () => {
     const port = new MemoryPort();
     port.items = [shipItem(planned)];
     port.scene.ships = { ship: planned };
+    port.localItems = [{
+      id: "saved-route-line",
+      type: "CURVE",
+      position: { x: 0, y: 0 },
+      points: [{ x: 50, y: 50 }, { x: 150, y: 50 }],
+      metadata: { [METADATA_KEYS.shipRouteOverlay]: { shipId: "ship", kind: "LINE" } }
+    }];
     const service = new ShipRouteToolService(port, { send: vi.fn() });
 
     await expect(service.loadSession("ship")).resolves.toMatchObject({
       shipId: "ship",
       movementPoints: 4,
-      initialCells: [{ x: 1, y: 0 }]
+      initialCells: []
+    });
+    expect(port.localItems.some((item) => item.id === "saved-route-line")).toBe(false);
+    expect(port.localItems).toContainEqual(expect.objectContaining({
+      visible: false,
+      metadata: {
+        [METADATA_KEYS.shipRoutePreview]: { shipId: "ship", kind: "EDITING" }
+      }
+    }));
+  });
+
+  it("restores both route and final-turn reserved OP when editing", async () => {
+    const planned = {
+      ...shipState,
+      plannedRoute: [{ x: 1, y: 0 }],
+      plannedFacing: "WEST" as ShipFacing,
+      globalMovementRemaining: 1,
+      movementSpentThisTurn: true
+    };
+    const port = new MemoryPort();
+    port.items = [shipItem(planned)];
+    port.scene.ships = { ship: planned };
+    const service = new ShipRouteToolService(port, { send: vi.fn() });
+
+    await expect(service.loadSession("ship")).resolves.toMatchObject({
+      movementPoints: 4,
+      initialCells: []
     });
   });
 
@@ -152,7 +185,28 @@ describe("ShipRouteToolService", () => {
     }));
   });
 
-  it("renders and clears only ship route previews", async () => {
+  it("sends a turn-only SET_SHIP_ROUTE with finalFacing", async () => {
+    const port = new MemoryPort();
+    const send = vi.fn(async (command: ArmyCommand) => accepted(command));
+    const service = new ShipRouteToolService(port, { send });
+    const commitTurnOnly = service.commitRoute.bind(service) as unknown as (
+      shipId: string,
+      startCell: { x: number; y: number },
+      cells: readonly { x: number; y: number }[],
+      finalFacing: ShipFacing
+    ) => Promise<void>;
+
+    await commitTurnOnly("ship", { x: 0, y: 0 }, [], "WEST");
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({
+      type: "SET_SHIP_ROUTE",
+      shipId: "ship",
+      cells: [],
+      finalFacing: "WEST",
+      expectedRevision: 7
+    }));
+  });
+
+  it("renders and clears only ship route previews including turn controls", async () => {
     const port = new MemoryPort();
     port.localItems.push({ id: "keep", type: "LABEL", position: { x: 0, y: 0 }, metadata: { other: true } });
     const service = new ShipRouteToolService(port, { send: vi.fn() });
@@ -160,7 +214,12 @@ describe("ShipRouteToolService", () => {
       shipId: "ship", start: { x: 50, y: 50 }, startCell: { x: 0, y: 0 },
       points: [{ x: 150, y: 50 }], cells: [{ x: 1, y: 0 }], stepCosts: [1],
       spentMovementPoints: 1, remainingMovementPoints: 3, maxMovementPoints: 4, finalFacing: "EAST",
-      finishButton: { position: { x: 150, y: 15 }, label: "Завершить маршрут", halfWidth: 75, halfHeight: 20 },
+      finishButton: { position: { x: 150, y: -15 }, label: "Завершить маршрут", halfWidth: 75, halfHeight: 12 },
+      turnChoices: [
+        { facing: "NORTH", label: "↑ С · 1 ОП", cost: 1, affordable: true, selected: false, position: { x: 100, y: 15 }, halfWidth: 22, halfHeight: 12 },
+        { facing: "SOUTH", label: "↓ Ю · 1 ОП", cost: 1, affordable: true, selected: false, position: { x: 150, y: 15 }, halfWidth: 22, halfHeight: 12 },
+        { facing: "WEST", label: "← З · 2 ОП", cost: 2, affordable: true, selected: false, position: { x: 200, y: 15 }, halfWidth: 22, halfHeight: 12 }
+      ],
       preview: {
         point: { x: 250, y: 50 }, cell: { x: 2, y: 0 }, valid: true,
         color: "#4f687a", label: "Шаг: 1 ОП", spentMovementPoints: 2, remainingMovementPoints: 2,
@@ -168,7 +227,14 @@ describe("ShipRouteToolService", () => {
       }
     });
     expect(port.localItems.filter((item) => item.type === "LABEL").map((item) => item.text))
-      .toEqual(expect.arrayContaining(["1 ОП", "✓ Завершить маршрут", "Шаг: 1 ОП"]));
+      .toEqual(expect.arrayContaining([
+        "1 ОП",
+        "✓ Завершить маршрут",
+        "↑ С · 1 ОП",
+        "↓ Ю · 1 ОП",
+        "← З · 2 ОП",
+        "Шаг: 1 ОП"
+      ]));
     await service.clearPreview();
     expect(port.localItems.map((item) => item.id)).toEqual(["keep"]);
   });

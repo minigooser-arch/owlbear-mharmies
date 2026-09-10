@@ -14,6 +14,7 @@ export function createRegisteredShip(sideId: string, classId: ShipClassId, facin
     temporaryHp: 0,
     facing,
     plannedRoute: [],
+    plannedFacing: null,
     globalMovementRemaining: definition.movement,
     movementSpentThisTurn: false,
     battleId: null,

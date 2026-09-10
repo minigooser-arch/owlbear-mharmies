@@ -14,6 +14,7 @@ function shipState(sideId: string): ShipState {
     temporaryHp: 0,
     facing: "NORTH",
     plannedRoute: [],
+    plannedFacing: null,
     globalMovementRemaining: 3,
     movementSpentThisTurn: false,
     battleId: null,

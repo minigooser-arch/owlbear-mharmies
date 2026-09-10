@@ -128,6 +128,8 @@ export interface ShipState {
   temporaryHp: number;
   facing: ShipFacing;
   plannedRoute: GridCellCoord[];
+  /** Optional terminal facing applied when the strategic movement phase resolves. */
+  plannedFacing: ShipFacing | null;
   globalMovementRemaining: number;
   movementSpentThisTurn: boolean;
   battleId: string | null;
@@ -357,7 +359,7 @@ export type ArmyCommandPayload =
     | { type: "UNREGISTER_ARMY"; armyId: string }
     | { type: "REGISTER_SHIP"; itemId: string; sideId: string; classId: ShipClassId; facing: ShipFacing }
     | { type: "UNREGISTER_SHIP"; shipId: string }
-    | { type: "SET_SHIP_ROUTE"; shipId: string; startCell: GridCellCoord; cells: GridCellCoord[] }
+    | { type: "SET_SHIP_ROUTE"; shipId: string; startCell: GridCellCoord; cells: GridCellCoord[]; finalFacing?: ShipFacing }
     | { type: "SET_SHIP_HP"; shipId: string; hp: number }
     | { type: "SET_SHIP_DETECTION_OVERRIDE"; shipId: string; detectionOverride: number | null }
     | { type: "NAVAL_MOVE_FORWARD"; shipId: string }

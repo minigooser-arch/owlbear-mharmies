@@ -3,13 +3,14 @@ import {
   planShipStrategicRoute,
   shipStrategicRouteCost
 } from "../naval/ships/shipStrategicMovement";
-import type { GridCellCoord, Vector2 } from "../shared/types";
+import type { GridCellCoord, ShipFacing, Vector2 } from "../shared/types";
 import type { CommandState } from "./commandProcessor";
 
 export interface ShipStrategicRouteCommandInput {
   shipId: string;
   startCell: GridCellCoord;
   cells: readonly GridCellCoord[];
+  finalFacing?: ShipFacing;
 }
 
 export function applyShipStrategicRouteCommand(
@@ -33,19 +34,40 @@ export function applyShipStrategicRouteCommand(
     return "SHIP_ROUTE_START_MISMATCH";
   }
 
-  const reservedCost = shipStrategicRouteCost(actualStartCell, ship.facing, ship.plannedRoute);
+  if (command.cells.length === 0 && (!command.finalFacing || command.finalFacing === ship.facing)) {
+    return "INVALID_COMMAND";
+  }
+
+  const reservedCost = shipStrategicRouteCost(
+    actualStartCell,
+    ship.facing,
+    ship.plannedRoute,
+    ship.plannedFacing
+  );
   if (reservedCost === undefined) return "INVALID_COMMAND";
   const editableShip = {
     ...ship,
     plannedRoute: [],
+    plannedFacing: null,
     globalMovementRemaining: ship.globalMovementRemaining + reservedCost
   };
-  const planned = planShipStrategicRoute(state.scene, editableShip, command.startCell, command.cells);
+  const planned = planShipStrategicRoute(
+    state.scene,
+    editableShip,
+    command.startCell,
+    command.cells,
+    command.finalFacing
+  );
   if (!planned.ok) return planned.reason;
 
   state.scene.ships = {
     ...state.scene.ships,
-    [command.shipId]: commitShipStrategicRoute(editableShip, planned.cells, planned.cost)
+    [command.shipId]: commitShipStrategicRoute(
+      editableShip,
+      planned.cells,
+      planned.cost,
+      command.finalFacing
+    )
   };
   return undefined;
 }

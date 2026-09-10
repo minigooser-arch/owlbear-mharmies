@@ -37,11 +37,26 @@ export interface ShipRoutePreview {
   reason?: ShipRouteFailure;
 }
 
-export interface ShipRouteFinishButton {
+export interface ShipRouteMapButton {
   position: Vector2;
-  label: "Завершить маршрут";
   halfWidth: number;
   halfHeight: number;
+}
+
+export interface ShipRouteFinishButton extends ShipRouteMapButton {
+  label: "Завершить маршрут";
+}
+
+export interface ShipRouteTurnButton extends ShipRouteMapButton {
+  label: "Поворот";
+}
+
+export interface ShipRouteTurnChoice extends ShipRouteMapButton {
+  facing: ShipFacing;
+  label: string;
+  cost: number;
+  affordable: boolean;
+  selected: boolean;
 }
 
 export interface ShipRouteToolSnapshot {
@@ -55,16 +70,35 @@ export interface ShipRouteToolSnapshot {
   remainingMovementPoints: number;
   maxMovementPoints: number;
   finalFacing: ShipFacing;
-  finishButton?: ShipRouteFinishButton;
+  plannedFacing?: ShipFacing;
+  finishButton: ShipRouteFinishButton;
+  turnButton?: ShipRouteTurnButton;
+  turnChoices?: readonly ShipRouteTurnChoice[];
   preview?: ShipRoutePreview;
 }
 
 export type ShipRouteClickResult = { accepted: true } | { accepted: false; reason: ShipRouteFailure };
+export type ShipRouteTurnResult = { accepted: true } | { accepted: false; reason: ShipRouteFailure | "SAME_FACING" };
 export type ShipRouteKeyResult = { action: "EDITING" } | { action: "CANCEL" } | { action: "IGNORED" };
 export type ShipRouteFinishResult =
-  | { action: "COMMIT"; shipId: string; startCell: GridCellCoord; points: Vector2[]; cells: GridCellCoord[] }
+  | {
+      action: "COMMIT";
+      shipId: string;
+      startCell: GridCellCoord;
+      points: Vector2[];
+      cells: GridCellCoord[];
+      finalFacing?: ShipFacing;
+    }
   | { action: "INVALID"; reason: ShipRouteFailure | "EMPTY_ROUTE" }
   | { action: "IGNORED" };
+
+const FACINGS: readonly ShipFacing[] = ["NORTH", "EAST", "SOUTH", "WEST"];
+const FACING_LABELS: Record<ShipFacing, string> = {
+  NORTH: "↑ С",
+  EAST: "→ В",
+  SOUTH: "↓ Ю",
+  WEST: "← З"
+};
 
 function messageFor(reason: ShipRouteFailure): string {
   switch (reason) {
@@ -107,6 +141,8 @@ export class ShipRouteToolController {
   private cells: GridCellCoord[] = [];
   private stepCosts: number[] = [];
   private facings: ShipFacing[] = [];
+  private terminalFacing: ShipFacing | undefined;
+  private turnMenuOpen = false;
   private currentPreview: ShipRoutePreview | undefined;
   private sequence = 0;
 
@@ -118,6 +154,8 @@ export class ShipRouteToolController {
     this.cells = [];
     this.stepCosts = [];
     this.facings = [];
+    this.terminalFacing = undefined;
+    this.turnMenuOpen = false;
     let previous = input.startCell;
     let facing = input.facing;
     for (const cell of input.initialCells ?? []) {
@@ -137,14 +175,47 @@ export class ShipRouteToolController {
   snapshot(): ShipRouteToolSnapshot | undefined {
     const active = this.activation;
     if (!active) return undefined;
-    const spent = this.stepCosts.reduce((sum, cost) => sum + cost, 0);
-    const lastPoint = this.points.at(-1);
-    const finishButton = lastPoint ? {
-      position: { x: lastPoint.x, y: lastPoint.y - active.gridDpi * 0.35 },
-      label: "Завершить маршрут" as const,
+    const routeSpent = this.routeSpent();
+    const movementFacing = this.movementFacing();
+    const terminalTurnCost = this.terminalFacing
+      ? quarterTurnCost(movementFacing, this.terminalFacing)
+      : 0;
+    const spent = routeSpent + terminalTurnCost;
+    const anchor = this.points.at(-1) ?? active.start;
+    const finishButton: ShipRouteFinishButton = {
+      position: { x: anchor.x, y: anchor.y - active.gridDpi * 0.65 },
+      label: "Завершить маршрут",
       halfWidth: active.gridDpi * 0.75,
-      halfHeight: active.gridDpi * 0.2
-    } : undefined;
+      halfHeight: active.gridDpi * 0.12
+    };
+    const controlY = anchor.y - active.gridDpi * 0.35;
+    const halfHeight = active.gridDpi * 0.12;
+    const remainingBeforeTerminal = Math.max(0, active.movementPoints - routeSpent);
+    const alternativeFacings = FACINGS.filter((facing) => facing !== movementFacing);
+    const turnChoices = this.turnMenuOpen
+      ? alternativeFacings.map((facing, index): ShipRouteTurnChoice => {
+          const cost = quarterTurnCost(movementFacing, facing);
+          return {
+            facing,
+            label: `${FACING_LABELS[facing]} · ${cost} ОП`,
+            cost,
+            affordable: cost <= remainingBeforeTerminal,
+            selected: this.terminalFacing === facing,
+            position: {
+              x: anchor.x + (index - 1) * active.gridDpi * 0.5,
+              y: controlY
+            },
+            halfWidth: active.gridDpi * 0.22,
+            halfHeight
+          };
+        })
+      : undefined;
+    const turnButton: ShipRouteTurnButton | undefined = this.turnMenuOpen ? undefined : {
+      position: { x: anchor.x, y: controlY },
+      label: "Поворот",
+      halfWidth: active.gridDpi * 0.75,
+      halfHeight
+    };
     return {
       shipId: active.shipId,
       start: { ...active.start },
@@ -155,21 +226,54 @@ export class ShipRouteToolController {
       spentMovementPoints: spent,
       remainingMovementPoints: Math.max(0, active.movementPoints - spent),
       maxMovementPoints: active.maxMovementPoints,
-      finalFacing: this.facings.at(-1) ?? active.facing,
-      ...(finishButton ? { finishButton } : {}),
+      finalFacing: this.terminalFacing ?? movementFacing,
+      ...(this.terminalFacing ? { plannedFacing: this.terminalFacing } : {}),
+      finishButton,
+      ...(turnButton ? { turnButton } : {}),
+      ...(turnChoices ? { turnChoices } : {}),
       ...(this.currentPreview ? { preview: structuredClone(this.currentPreview) } : {})
     };
   }
 
   cancel(): void { this.deactivate(); }
 
+  toggleTurnMenu(): ShipRouteKeyResult {
+    if (!this.activation) return { action: "IGNORED" };
+    this.sequence += 1;
+    this.turnMenuOpen = !this.turnMenuOpen;
+    this.currentPreview = undefined;
+    return { action: "EDITING" };
+  }
+
+  selectFinalFacing(facing: ShipFacing): ShipRouteTurnResult {
+    const active = this.activation;
+    if (!active) return { accepted: false, reason: "INACTIVE" };
+    const movementFacing = this.movementFacing();
+    if (facing === movementFacing) return { accepted: false, reason: "SAME_FACING" };
+    const turnCost = quarterTurnCost(movementFacing, facing);
+    const remaining = active.movementPoints - this.routeSpent();
+    if (turnCost > remaining) {
+      return { accepted: false, reason: "INSUFFICIENT_MOVEMENT_POINTS" };
+    }
+    this.sequence += 1;
+    this.terminalFacing = facing;
+    this.turnMenuOpen = false;
+    this.currentPreview = undefined;
+    return { accepted: true };
+  }
+
   undo(): ShipRouteKeyResult {
     if (!this.activation) return { action: "IGNORED" };
     this.sequence += 1;
-    this.points.pop();
-    this.cells.pop();
-    this.stepCosts.pop();
-    this.facings.pop();
+    this.turnMenuOpen = false;
+    if (this.terminalFacing) {
+      this.terminalFacing = undefined;
+    } else {
+      this.points.pop();
+      this.cells.pop();
+      this.stepCosts.pop();
+      this.facings.pop();
+    }
     this.currentPreview = undefined;
     return { action: "EDITING" };
   }
@@ -181,6 +285,8 @@ export class ShipRouteToolController {
     this.cells = [];
     this.stepCosts = [];
     this.facings = [];
+    this.terminalFacing = undefined;
+    this.turnMenuOpen = false;
     this.currentPreview = undefined;
     return { action: "EDITING" };
   }
@@ -189,6 +295,12 @@ export class ShipRouteToolController {
     if (!this.activation) return { action: "IGNORED" };
     if (key === "Backspace") return this.undo();
     if (key === "Escape") {
+      if (this.turnMenuOpen) {
+        this.sequence += 1;
+        this.turnMenuOpen = false;
+        this.currentPreview = undefined;
+        return { action: "EDITING" };
+      }
       this.deactivate();
       return { action: "CANCEL" };
     }
@@ -198,19 +310,23 @@ export class ShipRouteToolController {
   finish(): ShipRouteFinishResult {
     const active = this.activation;
     if (!active) return { action: "IGNORED" };
-    if (this.cells.length === 0) return { action: "INVALID", reason: "EMPTY_ROUTE" };
+    if (this.cells.length === 0 && !this.terminalFacing) {
+      return { action: "INVALID", reason: "EMPTY_ROUTE" };
+    }
     const result: ShipRouteFinishResult = {
       action: "COMMIT",
       shipId: active.shipId,
       startCell: { ...active.startCell },
       points: this.points.map((point) => ({ ...point })),
-      cells: this.cells.map((cell) => ({ ...cell }))
+      cells: this.cells.map((cell) => ({ ...cell })),
+      ...(this.terminalFacing ? { finalFacing: this.terminalFacing } : {})
     };
     this.deactivate();
     return result;
   }
 
   async move(point: Vector2): Promise<boolean> {
+    if (this.turnMenuOpen) return false;
     const sequence = ++this.sequence;
     const preview = await this.analyze(point);
     if (sequence !== this.sequence) return false;
@@ -236,6 +352,8 @@ export class ShipRouteToolController {
     const segmentPoints = preview.segmentPoints ?? [{ ...preview.point }];
     const segmentCosts = preview.segmentStepCosts ?? [preview.stepCost ?? 0];
     const segmentFacings = preview.segmentFacings ?? [preview.nextFacing ?? this.facings.at(-1) ?? active.facing];
+    this.terminalFacing = undefined;
+    this.turnMenuOpen = false;
     this.cells.push(...segmentCells.map((cell) => ({ ...cell })));
     this.points.push(...segmentPoints.map((segmentPoint) => ({ ...segmentPoint })));
     this.stepCosts.push(...segmentCosts);
@@ -244,12 +362,24 @@ export class ShipRouteToolController {
     return { accepted: true };
   }
 
+  private routeSpent(): number {
+    return this.stepCosts.reduce((sum, cost) => sum + cost, 0);
+  }
+
+  private movementFacing(): ShipFacing {
+    const active = this.activation;
+    if (!active) return "NORTH";
+    return this.facings.at(-1) ?? active.facing;
+  }
+
   private deactivate(): void {
     this.activation = undefined;
     this.points = [];
     this.cells = [];
     this.stepCosts = [];
     this.facings = [];
+    this.terminalFacing = undefined;
+    this.turnMenuOpen = false;
     this.currentPreview = undefined;
     this.sequence += 1;
   }
@@ -267,7 +397,7 @@ export class ShipRouteToolController {
     const cell = cellForSnappedPoint(active, snapped);
     const point = pointForCell(active, cell);
     const anchor = this.cells.at(-1) ?? active.startCell;
-    const spent = this.stepCosts.reduce((sum, cost) => sum + cost, 0);
+    const spent = this.routeSpent();
     const remaining = Math.max(0, active.movementPoints - spent);
     const segment = straightGridSegment(anchor, cell);
 
@@ -286,7 +416,7 @@ export class ShipRouteToolController {
     const segmentCosts: number[] = [];
     const segmentFacings: ShipFacing[] = [];
     let cursor = anchor;
-    let cursorFacing = this.facings.at(-1) ?? active.facing;
+    let cursorFacing = this.movementFacing();
     let cursorRemaining = remaining;
     let segmentCost = 0;
     let totalTurnCost = 0;

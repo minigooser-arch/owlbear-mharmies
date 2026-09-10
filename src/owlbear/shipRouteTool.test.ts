@@ -136,10 +136,10 @@ describe("ship route tool", () => {
     tool.activate(activation());
     await tool.click({ x: 1, y: 0 });
     expect(tool.snapshot()?.finishButton).toEqual({
-      position: { x: 1, y: -0.35 },
+      position: { x: 1, y: -0.65 },
       label: "Завершить маршрут",
       halfWidth: 0.75,
-      halfHeight: 0.2
+      halfHeight: 0.12
     });
   });
 

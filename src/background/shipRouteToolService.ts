@@ -15,6 +15,7 @@ import {
   type ArmyCommand,
   type GridCellCoord,
   type SceneItemRecord,
+  type ShipFacing,
   type Vector2
 } from "../shared/types";
 import {
@@ -64,6 +65,29 @@ function previewOverlayKey(item: SceneItemRecord): string | undefined {
     : `${metadata.shipId}/${metadata.kind}`;
 }
 
+function savedRouteOverlayShipId(item: SceneItemRecord): string | undefined {
+  const raw = item.metadata[METADATA_KEYS.shipRouteOverlay];
+  if (typeof raw !== "object" || raw === null) return undefined;
+  const metadata = raw as Record<string, unknown>;
+  return typeof metadata.shipId === "string" ? metadata.shipId : undefined;
+}
+
+function editingMarker(shipId: string, position: Vector2): DesiredLocalOverlay {
+  return {
+    key: `${shipId}/EDITING`,
+    item: {
+      type: "LABEL",
+      position: { ...position },
+      visible: false,
+      disableHit: true,
+      text: "editing",
+      metadata: {
+        [METADATA_KEYS.shipRoutePreview]: { shipId, kind: "EDITING" }
+      }
+    }
+  };
+}
+
 export class ShipRouteToolService {
   private readonly repository: MetadataRepository;
   private readonly previewOverlays: LocalOverlayReconcileSession;
@@ -87,13 +111,28 @@ export class ShipRouteToolService {
     const reservedCost = shipStrategicRouteCost(
       startCell,
       authorized.ship.state.facing,
-      authorized.ship.state.plannedRoute
+      authorized.ship.state.plannedRoute,
+      authorized.ship.state.plannedFacing
     );
     if (reservedCost === undefined) throw new ShipRouteToolAuthorizationError("INVALID_COMMAND");
     const editableMovementPoints = authorized.ship.state.globalMovementRemaining + reservedCost;
     if (editableMovementPoints <= 0) {
       throw new ShipRouteToolAuthorizationError("INSUFFICIENT_MOVEMENT_POINTS");
     }
+
+    try {
+      await this.previewOverlays.reconcile([editingMarker(shipId, start)]);
+      const savedRouteOverlayIds = (await this.port.getLocalItems())
+        .filter((item) => savedRouteOverlayShipId(item) === shipId)
+        .map((item) => item.id);
+      if (savedRouteOverlayIds.length > 0) {
+        await this.port.deleteLocalItems(savedRouteOverlayIds);
+      }
+    } catch (error) {
+      await this.clearPreview().catch(() => undefined);
+      throw error;
+    }
+
     return {
       shipId,
       start: { ...start },
@@ -102,7 +141,7 @@ export class ShipRouteToolService {
       movementPoints: editableMovementPoints,
       maxMovementPoints: SHIP_CLASSES[authorized.ship.state.classId].movement,
       facing: authorized.ship.state.facing,
-      initialCells: authorized.ship.state.plannedRoute.map((cell) => ({ ...cell })),
+      initialCells: [],
       terrain: structuredClone(authorized.scene.terrain),
       gridMap: structuredClone(authorized.scene.gridMap)
     };
@@ -111,21 +150,25 @@ export class ShipRouteToolService {
   async commitRoute(
     shipId: string,
     startCell: GridCellCoord,
-    cells: readonly GridCellCoord[]
+    cells: readonly GridCellCoord[],
+    finalFacing?: ShipFacing
   ): Promise<void> {
     const authorized = await this.loadAuthorized(shipId);
-    if (cells.length === 0) throw new ShipRouteToolAuthorizationError("INVALID_COMMAND");
-    const command: ArmyCommand = {
+    if (cells.length === 0 && !finalFacing) {
+      throw new ShipRouteToolAuthorizationError("INVALID_COMMAND");
+    }
+    const command = {
       protocolVersion: COMMAND_PROTOCOL_VERSION,
       requestId: crypto.randomUUID(),
       senderPlayerId: authorized.identity.id,
       senderConnectionId: authorized.identity.connectionId,
       expectedRevision: authorized.scene.revision,
-      type: "SET_SHIP_ROUTE",
+      type: "SET_SHIP_ROUTE" as const,
       shipId,
       startCell: { ...startCell },
-      cells: cells.map((cell) => ({ ...cell }))
-    };
+      cells: cells.map((cell) => ({ ...cell })),
+      ...(finalFacing ? { finalFacing } : {})
+    } as ArmyCommand;
     const acknowledgement = await this.gateway.send(command);
     if (acknowledgement.status === "REJECTED") {
       throw new ShipRouteToolAuthorizationError(acknowledgement.reason ?? "INVALID_COMMAND");
@@ -136,7 +179,7 @@ export class ShipRouteToolService {
   }
 
   async renderPreview(snapshot: ShipRouteToolSnapshot): Promise<void> {
-    const overlays: DesiredLocalOverlay[] = [];
+    const overlays: DesiredLocalOverlay[] = [editingMarker(snapshot.shipId, snapshot.start)];
     const polyline = [snapshot.start, ...snapshot.points, ...(snapshot.preview ? [snapshot.preview.point] : [])]
       .map((point) => ({ ...point }));
     if (polyline.length >= 2) {
@@ -159,16 +202,42 @@ export class ShipRouteToolService {
         }
       });
     });
-    if (snapshot.finishButton) {
+    overlays.push({
+      key: `${snapshot.shipId}/FINISH`,
+      item: {
+        type: "LABEL", position: { ...snapshot.finishButton.position }, visible: true, disableHit: true,
+        text: `✓ ${snapshot.finishButton.label}`, color: "#1565c0",
+        metadata: { [METADATA_KEYS.shipRoutePreview]: { shipId: snapshot.shipId, kind: "FINISH" } }
+      }
+    });
+    if (snapshot.turnButton) {
       overlays.push({
-        key: `${snapshot.shipId}/FINISH`,
+        key: `${snapshot.shipId}/TURN`,
         item: {
-          type: "LABEL", position: { ...snapshot.finishButton.position }, visible: true, disableHit: true,
-          text: `✓ ${snapshot.finishButton.label}`, color: "#1565c0",
-          metadata: { [METADATA_KEYS.shipRoutePreview]: { shipId: snapshot.shipId, kind: "FINISH" } }
+          type: "LABEL", position: { ...snapshot.turnButton.position }, visible: true, disableHit: true,
+          text: snapshot.turnButton.label, color: "#1565c0",
+          metadata: { [METADATA_KEYS.shipRoutePreview]: { shipId: snapshot.shipId, kind: "TURN" } }
         }
       });
     }
+    snapshot.turnChoices?.forEach((choice, index) => {
+      overlays.push({
+        key: `${snapshot.shipId}/TURN_CHOICE/${index}`,
+        item: {
+          type: "LABEL", position: { ...choice.position }, visible: true, disableHit: true,
+          text: choice.label,
+          color: choice.affordable ? "#1565c0" : "#9e9e9e",
+          metadata: {
+            [METADATA_KEYS.shipRoutePreview]: {
+              shipId: snapshot.shipId,
+              kind: "TURN_CHOICE",
+              index,
+              facing: choice.facing
+            }
+          }
+        }
+      });
+    });
     if (snapshot.preview) {
       overlays.push({
         key: `${snapshot.shipId}/DISTANCE`,

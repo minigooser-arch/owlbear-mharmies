@@ -29,7 +29,8 @@ type StrategicMovementScene = Pick<SceneState, "terrain" | "gridMap">;
 export function shipStrategicRouteCost(
   startCell: GridCellCoord,
   initialFacing: ShipFacing,
-  cells: readonly GridCellCoord[]
+  cells: readonly GridCellCoord[],
+  terminalFacing?: ShipFacing | null
 ): number | undefined {
   let previous = startCell;
   let facing = initialFacing;
@@ -41,6 +42,7 @@ export function shipStrategicRouteCost(
     facing = requiredFacing;
     previous = cell;
   }
+  if (terminalFacing) cost += quarterTurnCost(facing, terminalFacing);
   return cost;
 }
 
@@ -48,7 +50,8 @@ export function planShipStrategicRoute(
   scene: StrategicMovementScene,
   ship: ShipState,
   startCell: GridCellCoord,
-  cells: readonly GridCellCoord[]
+  cells: readonly GridCellCoord[],
+  terminalFacing?: ShipFacing | null
 ): ShipStrategicRoutePlan {
   let previous = startCell;
   let facing = ship.facing;
@@ -78,6 +81,13 @@ export function planShipStrategicRoute(
     previous = cell;
   }
 
+  const terminalTurnCost = terminalFacing ? quarterTurnCost(facing, terminalFacing) : 0;
+  if (cost + terminalTurnCost > ship.globalMovementRemaining) {
+    return { ok: false, reason: "INSUFFICIENT_MOVEMENT_POINTS" };
+  }
+  cost += terminalTurnCost;
+  if (terminalFacing) facing = terminalFacing;
+
   return {
     ok: true,
     cells: cells.map((cell) => ({ ...cell })),
@@ -91,13 +101,15 @@ export function planShipStrategicRoute(
 export function commitShipStrategicRoute(
   ship: ShipState,
   cells: readonly GridCellCoord[],
-  cost: number
+  cost: number,
+  terminalFacing?: ShipFacing | null
 ): ShipState {
   return {
     ...ship,
     plannedRoute: cells.map((cell) => ({ ...cell })),
+    plannedFacing: terminalFacing ?? null,
     globalMovementRemaining: ship.globalMovementRemaining - cost,
-    movementSpentThisTurn: cells.length > 0 || ship.movementSpentThisTurn,
+    movementSpentThisTurn: cells.length > 0 || cost > 0 || ship.movementSpentThisTurn,
     revision: ship.revision + 1
   };
 }

@@ -243,7 +243,7 @@ describe("ship registration command processing", () => {
     commandState.scene.ships = {
       "sea-ship": {
         version: 1, registered: true, sideId: "red", classId: "CRUISER", status: "READY", hp: 25,
-        temporaryHp: 0, facing: "NORTH", plannedRoute: [], globalMovementRemaining: 3,
+        temporaryHp: 0, facing: "NORTH", plannedRoute: [], plannedFacing: null, globalMovementRemaining: 3,
         movementSpentThisTurn: false, battleId: null, detectionOverride: null, embarkedArmyId: null,
         shoreBombardmentUsedOnTurn: null, logisticsActionUsedOnTurn: null, revision: 1
       }
