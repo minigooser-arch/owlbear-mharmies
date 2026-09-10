@@ -1,0 +1,110 @@
+name: Apply naval and menu fixes
+
+on:
+  push:
+    branches: [fix/turn-number-safety]
+    paths: [.github/workflows/apply-user-bugfix.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: fix/turn-number-safety
+      - name: Apply source fixes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f"pattern not found in {path}: {old[:80]!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          # Naval battle start: selected area is advisory; authoritative participant cells
+          # are always included before SEA validation so a near-miss cannot brick the battle.
+          replace(
+              "src/commands/commandProcessor.ts",
+              '''      case "START_NAVAL_BATTLE": {\n        if (command.areaCells.some((cell) => !cellSupportsDomain(state.scene, cell, "SEA"))) {\n          return "INVALID_NAVAL_BATTLE_AREA";\n        }\n        if (!this.cellForPosition) return "SHIP_POSITION_UNAVAILABLE";\n        const snapshots: Record<string, import("../shared/types").NavalBattleShipSnapshot> = {};\n        for (const shipId of command.participantShipIds) {''',
+              '''      case "START_NAVAL_BATTLE": {\n        if (!this.cellForPosition) return "SHIP_POSITION_UNAVAILABLE";\n        const snapshots: Record<string, import("../shared/types").NavalBattleShipSnapshot> = {};\n        const normalizedArea = new Map(\n          command.areaCells.map((cell) => [`${cell.x},${cell.y}`, { ...cell }])\n        );\n        for (const shipId of command.participantShipIds) {'''
+          )
+          replace(
+              "src/commands/commandProcessor.ts",
+              '''          snapshots[shipId] = {\n            shipId,\n            strategicCell: this.cellForPosition(position),\n            strategicPosition: { ...position },\n            strategicFacing: ship.facing\n          };\n        }\n        const sceneRevision = state.scene.revision;''',
+              '''          const strategicCell = this.cellForPosition(position);\n          snapshots[shipId] = {\n            shipId,\n            strategicCell,\n            strategicPosition: { ...position },\n            strategicFacing: ship.facing\n          };\n          normalizedArea.set(`${strategicCell.x},${strategicCell.y}`, { ...strategicCell });\n        }\n        const areaCells = [...normalizedArea.values()];\n        if (areaCells.some((cell) => !cellSupportsDomain(state.scene, cell, "SEA"))) {\n          return "INVALID_NAVAL_BATTLE_AREA";\n        }\n        const sceneRevision = state.scene.revision;'''
+          )
+          replace(
+              "src/commands/commandProcessor.ts",
+              '''            areaCells: command.areaCells,\n            snapshots,''',
+              '''            areaCells,\n            snapshots,'''
+          )
+
+          # Context-menu fallback survives temporary/legacy absence of hasRoute metadata.
+          replace(
+              "src/owlbear/routeContextMenu.ts",
+              '''function routeIcon(\n  label: string,\n  hasRoute: boolean,\n  iconUrl: string\n): RouteContextMenuEntry["icons"][number] {''',
+              '''function routeFallbackIcon(iconUrl: string): RouteContextMenuEntry["icons"][number] {\n  return {\n    icon: iconUrl,\n    label: "Маршрут Летописи",\n    filter: {\n      min: 1,\n      max: 1,\n      every: [{\n        key: ["metadata", METADATA_KEYS.localClone],\n        operator: "!=",\n        value: undefined\n      }]\n    }\n  };\n}\n\nfunction routeIcon(\n  label: string,\n  hasRoute: boolean,\n  iconUrl: string\n): RouteContextMenuEntry["icons"][number] {'''
+          )
+          replace(
+              "src/owlbear/routeContextMenu.ts",
+              '''      routeIcon("Изменить маршрут", true, iconUrl),\n      routeIcon("Задать маршрут", false, iconUrl)\n    ],''',
+              '''      routeIcon("Изменить маршрут", true, iconUrl),\n      routeIcon("Задать маршрут", false, iconUrl),\n      routeFallbackIcon(iconUrl)\n    ],'''
+          )
+
+          # Keep tools registered for programmatic activation but hide their primary icons
+          # from Owlbear's right toolbar.
+          imports = {
+              "src/owlbear/routeToolIntegration.ts": ("  ROUTE_ARMY_ID_KEY,", "  PROGRAMMATIC_ONLY_TOOL_FILTER,\n  ROUTE_ARMY_ID_KEY,"),
+              "src/owlbear/shipRouteToolIntegration.ts": ("  SHIP_ROUTE_CANCEL_ACTION_ID,", "  PROGRAMMATIC_ONLY_TOOL_FILTER,\n  SHIP_ROUTE_CANCEL_ACTION_ID,"),
+              "src/owlbear/transportLandingTool.ts": ("  TRANSPORT_LANDING_ARMY_ID_KEY,", "  PROGRAMMATIC_ONLY_TOOL_FILTER,\n  TRANSPORT_LANDING_ARMY_ID_KEY,"),
+              "src/owlbear/mapBrushTool.ts": ("  MAP_BRUSH_ERASER_TARGET_KEY,", "  PROGRAMMATIC_ONLY_TOOL_FILTER,\n  MAP_BRUSH_ERASER_TARGET_KEY,"),
+              "src/owlbear/navalBattleAreaTool.ts": ("  NAVAL_BATTLE_AREA_REQUEST_ID_KEY,", "  PROGRAMMATIC_ONLY_TOOL_FILTER,\n  NAVAL_BATTLE_AREA_REQUEST_ID_KEY,")
+          }
+          for path, (old, new) in imports.items():
+              replace(path, old, new)
+
+          replacements = {
+              "src/owlbear/routeToolIntegration.ts": (
+                  'icons: [{ icon: iconUrl, label: "Маршрут армии" }],',
+                  'icons: [{ icon: iconUrl, label: "Маршрут армии", filter: PROGRAMMATIC_ONLY_TOOL_FILTER }],'
+              ),
+              "src/owlbear/shipRouteToolIntegration.ts": (
+                  'icons: [{ icon: iconUrl, label: "Маршрут корабля" }],',
+                  'icons: [{ icon: iconUrl, label: "Маршрут корабля", filter: PROGRAMMATIC_ONLY_TOOL_FILTER }],'
+              ),
+              "src/owlbear/transportLandingTool.ts": (
+                  'icons: [{ icon: iconUrl, label: "Высадка армии" }],',
+                  'icons: [{ icon: iconUrl, label: "Высадка армии", filter: PROGRAMMATIC_ONLY_TOOL_FILTER }],'
+              ),
+              "src/owlbear/mapBrushTool.ts": (
+                  'icons: [{ icon: iconUrl, label: "Разметка карты", filter }],',
+                  'icons: [{ icon: iconUrl, label: "Разметка карты", filter: PROGRAMMATIC_ONLY_TOOL_FILTER }],'
+              ),
+              "src/owlbear/navalBattleAreaTool.ts": (
+                  'icons: [{ icon: iconUrl, label: "Область морского боя", filter }],',
+                  'icons: [{ icon: iconUrl, label: "Область морского боя", filter: PROGRAMMATIC_ONLY_TOOL_FILTER }],'
+              )
+          }
+          for path, (old, new) in replacements.items():
+              replace(path, old, new)
+
+          # The role filter is still used by each mode, so remove only dead local bindings.
+          replace("src/owlbear/mapBrushTool.ts", '  const filter = { roles: ["GM" as const] };\n  const tool: Tool = {', '  const tool: Tool = {')
+          replace("src/owlbear/navalBattleAreaTool.ts", '  const filter = { roles: ["GM" as const] };\n  const tool: Tool = {', '  const tool: Tool = {')
+          PY
+      - name: Commit patch
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm .github/workflows/apply-user-bugfix.yml
+          git add src
+          git commit -m "fix: restore naval battle and Letopis menu flows"
+          git push origin HEAD:fix/turn-number-safety
