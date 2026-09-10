@@ -11,7 +11,7 @@ import type { SceneItemRecord, SceneState } from "../shared/types";
 afterEach(cleanup);
 
 describe("built-in strategic terrain", () => {
-  it("ships cannot enter ice while land units can", () => {
+  it("treats ice as land-only terrain so ships cannot enter it", () => {
     const scene = {
       terrain: DEFAULT_TERRAIN,
       gridMap: {
