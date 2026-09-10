@@ -80,11 +80,17 @@ export const DEFAULT_SETTINGS: SceneSettings = {
 export const DEFAULT_TERRAIN: TerrainRegistryState = {
   defaultTerrainId: "plain",
   types: {
-    plain: { id: "plain", name: "Равнина", movementCostUnits: 2, enabled: true, movementDomains: ["LAND"], blocksNavalLos: true, color: "#90a4ae" },
+    plain: { id: "plain", name: "Равнины", movementCostUnits: 2, enabled: true, movementDomains: ["LAND"], blocksNavalLos: true, color: "#9ccc65" },
     road: { id: "road", name: "Дорога", movementCostUnits: 1, enabled: true, movementDomains: ["LAND"], blocksNavalLos: true, color: "#bcaaa4" },
-    forest: { id: "forest", name: "Лес", movementCostUnits: 4, enabled: true, movementDomains: ["LAND"], blocksNavalLos: true, color: "#66bb6a" },
-    mountains: { id: "mountains", name: "Горы", movementCostUnits: 6, enabled: true, movementDomains: ["LAND"], blocksNavalLos: true, color: "#8d6e63" },
-    sea: { id: "sea", name: "Море", movementCostUnits: 2, enabled: true, movementDomains: ["SEA"], blocksNavalLos: false, color: "#42a5f5" }
+    forest: { id: "forest", name: "Лес", movementCostUnits: 4, enabled: true, movementDomains: ["LAND"], blocksNavalLos: true, color: "#43a047" },
+    forested_hills: { id: "forested_hills", name: "Холмы с лесом", movementCostUnits: 6, enabled: true, movementDomains: ["LAND"], blocksNavalLos: true, color: "#2e7d32" },
+    hills: { id: "hills", name: "Холмы", movementCostUnits: 3, enabled: true, movementDomains: ["LAND"], blocksNavalLos: true, color: "#c5e1a5" },
+    mountains: { id: "mountains", name: "Горы", movementCostUnits: 6, enabled: true, movementDomains: ["LAND"], blocksNavalLos: true, color: "#9e9e9e" },
+    swamp: { id: "swamp", name: "Болота", movementCostUnits: 5, enabled: true, movementDomains: ["LAND"], blocksNavalLos: true, color: "#9e9d67" },
+    desert: { id: "desert", name: "Пустыня", movementCostUnits: 3, enabled: true, movementDomains: ["LAND"], blocksNavalLos: true, color: "#fff3b0" },
+    tundra: { id: "tundra", name: "Тундра", movementCostUnits: 4, enabled: true, movementDomains: ["LAND"], blocksNavalLos: true, color: "#f5f5f5" },
+    sea: { id: "sea", name: "Океан / озёра", movementCostUnits: 2, enabled: true, movementDomains: ["SEA"], blocksNavalLos: false, color: "#1976d2" },
+    ice: { id: "ice", name: "Льды", movementCostUnits: 4, enabled: true, movementDomains: ["LAND"], blocksNavalLos: true, color: "#81d4fa" }
   }
 };
 

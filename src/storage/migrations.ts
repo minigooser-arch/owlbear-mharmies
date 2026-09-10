@@ -41,24 +41,41 @@ function migrateLegacyTerrainToNavalSafe(value: unknown): unknown {
   return { ...value, types };
 }
 
-function ensureBuiltInSeaTerrain(value: unknown): unknown {
+function ensureBuiltInTerrainCatalog(value: unknown): unknown {
   if (!isRecord(value) || !isRecord(value.types)) return structuredClone(DEFAULT_TERRAIN);
-  const defaultSea = DEFAULT_TERRAIN.types.sea;
-  if (!defaultSea) return value;
-  const existingSea = value.types.sea;
-  return {
-    ...value,
-    types: {
-      ...value.types,
-      sea: {
-        ...structuredClone(defaultSea),
-        ...(isRecord(existingSea) ? existingSea : {}),
-        id: "sea",
-        movementDomains: ["SEA"],
-        blocksNavalLos: false
-      }
-    }
+
+  const legacyDefaults: Record<string, { name?: string; color?: string }> = {
+    plain: { name: "Равнина", color: "#90a4ae" },
+    forest: { color: "#66bb6a" },
+    mountains: { color: "#8d6e63" },
+    sea: { name: "Море", color: "#42a5f5" }
   };
+  const types: Record<string, unknown> = { ...value.types };
+
+  for (const [id, defaultTerrain] of Object.entries(DEFAULT_TERRAIN.types)) {
+    const existing = types[id];
+    if (!isRecord(existing)) {
+      types[id] = structuredClone(defaultTerrain);
+      continue;
+    }
+    const legacy = legacyDefaults[id];
+    const next: UnknownRecord = { ...existing, id };
+    if (!Array.isArray(existing.movementDomains)) {
+      next.movementDomains = structuredClone(defaultTerrain.movementDomains ?? ["LAND"]);
+    }
+    if (typeof existing.blocksNavalLos !== "boolean") {
+      next.blocksNavalLos = defaultTerrain.blocksNavalLos ?? true;
+    }
+    if (legacy?.name !== undefined && existing.name === legacy.name) next.name = defaultTerrain.name;
+    if (legacy?.color !== undefined && existing.color === legacy.color) next.color = defaultTerrain.color;
+    types[id] = next;
+  }
+
+  const sea = types.sea;
+  if (isRecord(sea)) {
+    types.sea = { ...sea, id: "sea", movementDomains: ["SEA"], blocksNavalLos: false };
+  }
+  return { ...value, types };
 }
 
 export function migrateSceneState(raw: unknown): ValidationResult<SceneState> {
@@ -140,7 +157,7 @@ export function migrateSceneState(raw: unknown): ValidationResult<SceneState> {
   if (migrated.version === 6) {
     migrated = {
       ...migrated,
-      terrain: ensureBuiltInSeaTerrain(migrated.terrain)
+      terrain: ensureBuiltInTerrainCatalog(migrated.terrain)
     };
   }
   return normalizeSceneState(migrated);
