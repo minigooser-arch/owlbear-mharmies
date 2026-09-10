@@ -8,18 +8,24 @@ import {
   SHIP_ROUTE_TOOL_MODE_ID,
   SHIP_ROUTE_UNDO_ACTION_ID
 } from "../shared/constants";
-import type { GridCellCoord, Vector2 } from "../shared/types";
+import type { GridCellCoord, ShipFacing, Vector2 } from "../shared/types";
 import { notificationMessage } from "./notifications";
 import { PointerMoveCoalescer } from "./pointerMoveCoalescer";
 import {
   ShipRouteToolController,
+  type ShipRouteMapButton,
   type ShipRouteToolActivation,
   type ShipRouteToolSnapshot
 } from "./shipRouteTool";
 
 export interface ShipRouteToolIntegrationPort {
   loadSession(shipId: string): Promise<ShipRouteToolActivation>;
-  commitRoute(shipId: string, startCell: GridCellCoord, cells: readonly GridCellCoord[]): Promise<void>;
+  commitRoute(
+    shipId: string,
+    startCell: GridCellCoord,
+    cells: readonly GridCellCoord[],
+    finalFacing?: ShipFacing
+  ): Promise<void>;
   renderPreview(snapshot: ShipRouteToolSnapshot): Promise<void>;
   clearPreview(): Promise<void>;
   notify(message: string, variant: "INFO" | "WARNING" | "ERROR"): Promise<void>;
@@ -62,8 +68,15 @@ function clickFailureMessage(reason: string): string {
     case "IMPASSABLE": return "Эта клетка непроходима";
     case "NON_NAVAL_TERRAIN": return "Корабль может идти только по морю или каналу";
     case "INSUFFICIENT_MOVEMENT_POINTS": return "Не хватает очков перемещения с учётом необходимого поворота";
+    case "SAME_FACING": return "Корабль уже смотрит в эту сторону";
     default: return "Эту клетку нельзя добавить в маршрут корабля";
   }
+}
+
+function isMapButtonHit(button: ShipRouteMapButton | undefined, point: Vector2): boolean {
+  if (!button) return false;
+  return Math.abs(point.x - button.position.x) <= button.halfWidth
+    && Math.abs(point.y - button.position.y) <= button.halfHeight;
 }
 
 export async function registerShipRouteTool(
@@ -131,25 +144,23 @@ export async function registerShipRouteTool(
   const commitCurrentRoute = async (): Promise<boolean> => {
     if (!active) return false;
     const snapshot = controller.snapshot();
-    if (!snapshot || snapshot.cells.length === 0) {
-      await safeNotify("Добавьте хотя бы одну клетку маршрута", "WARNING");
+    if (!snapshot || (snapshot.cells.length === 0 && !snapshot.plannedFacing)) {
+      await safeNotify("Добавьте хотя бы одну клетку маршрута или выберите поворот", "WARNING");
       return false;
     }
     try {
-      await port.commitRoute(snapshot.shipId, snapshot.startCell, snapshot.cells);
+      await port.commitRoute(
+        snapshot.shipId,
+        snapshot.startCell,
+        snapshot.cells,
+        snapshot.plannedFacing
+      );
     } catch (error) {
       await safeNotify(`Не удалось сохранить маршрут корабля: ${messageFrom(error)}`, "ERROR");
       return false;
     }
     await finishSession(true);
     return true;
-  };
-
-  const isFinishButtonHit = (point: Vector2): boolean => {
-    const button = controller.snapshot()?.finishButton;
-    if (!button) return false;
-    return Math.abs(point.x - button.position.x) <= button.halfWidth
-      && Math.abs(point.y - button.position.y) <= button.halfHeight;
   };
 
   const activate = (context: ToolContext): void => {
@@ -191,18 +202,44 @@ export async function registerShipRouteTool(
     moveCoalescer.clear();
     await enqueue(async () => {
       if (!active) return;
-      if (isFinishButtonHit(event.pointerPosition)) {
+      const snapshot = controller.snapshot();
+      if (!snapshot) return;
+
+      if (isMapButtonHit(snapshot.finishButton, event.pointerPosition)) {
         await commitCurrentRoute();
         return;
       }
+      if (isMapButtonHit(snapshot.turnButton, event.pointerPosition)) {
+        controller.toggleTurnMenu();
+        await renderSnapshot();
+        return;
+      }
+      const turnChoice = snapshot.turnChoices?.find((choice) =>
+        isMapButtonHit(choice, event.pointerPosition)
+      );
+      if (turnChoice) {
+        if (!turnChoice.affordable) {
+          await safeNotify(clickFailureMessage("INSUFFICIENT_MOVEMENT_POINTS"), "WARNING");
+          return;
+        }
+        const turnResult = controller.selectFinalFacing(turnChoice.facing);
+        if (!turnResult.accepted) {
+          await safeNotify(clickFailureMessage(turnResult.reason), "WARNING");
+          return;
+        }
+        await renderSnapshot();
+        return;
+      }
+      if (snapshot.turnChoices) return;
+
       const result = await controller.click(event.pointerPosition);
       if (!result.accepted) {
         await renderSnapshot();
         await safeNotify(clickFailureMessage(result.reason), "WARNING");
         return;
       }
-      const snapshot = controller.snapshot();
-      if (snapshot && snapshot.cells.length > 0 && snapshot.remainingMovementPoints === 0) {
+      const nextSnapshot = controller.snapshot();
+      if (nextSnapshot && nextSnapshot.cells.length > 0 && nextSnapshot.remainingMovementPoints === 0) {
         await commitCurrentRoute();
         return;
       }
