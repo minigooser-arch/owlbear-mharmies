@@ -64,9 +64,10 @@ function groupExistingItems(
 export async function reconcileLocalOverlays(
   port: LocalOverlayBatchPort,
   existingKey: LocalOverlayKeyReader,
-  desired: readonly DesiredLocalOverlay[]
+  desired: readonly DesiredLocalOverlay[],
+  existingItems?: readonly SceneItemRecord[]
 ): Promise<void> {
-  const existingGroups = groupExistingItems(await port.getLocalItems(), existingKey);
+  const existingGroups = groupExistingItems(existingItems ?? await port.getLocalItems(), existingKey);
   const existingByKey = new Map<string, SceneItemRecord>();
   const deletions: string[] = [];
   const desiredKeys = new Set(desired.map(({ key }) => key));
