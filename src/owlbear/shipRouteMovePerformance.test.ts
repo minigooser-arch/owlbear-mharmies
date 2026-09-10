@@ -1,4 +1,4 @@
-import type { Metadata, Tool, ToolAction, ToolContext, ToolEvent, ToolMode } from "@owlbear-rodeo/sdk";
+import type { ToolContext, ToolEvent, ToolMode } from "@owlbear-rodeo/sdk";
 import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_TERRAIN, SHIP_ROUTE_SHIP_ID_KEY, SHIP_ROUTE_TOOL_ID, SHIP_ROUTE_TOOL_MODE_ID } from "../shared/constants";
 import type { ShipRouteToolSnapshot } from "./shipRouteTool";
@@ -6,13 +6,13 @@ import { registerShipRouteTool, type ShipRouteToolApi, type ShipRouteToolIntegra
 
 class FakeApi implements ShipRouteToolApi {
   modes: ToolMode[] = [];
-  async create(_tool: Tool) {}
-  async remove(_id: string) {}
+  async create() {}
+  async remove() {}
   async createMode(mode: ToolMode) { this.modes.push(mode); }
-  async removeMode(_id: string) {}
-  async createAction(_action: ToolAction) {}
-  async removeAction(_id: string) {}
-  async setMetadata(_toolId: string, _update: Partial<Metadata>) {}
+  async removeMode() {}
+  async createAction() {}
+  async removeAction() {}
+  async setMetadata() {}
 }
 
 function context(): ToolContext {
