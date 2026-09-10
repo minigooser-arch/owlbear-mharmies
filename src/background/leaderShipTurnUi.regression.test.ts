@@ -94,6 +94,7 @@ class LeaderTurnPort {
   createId(): string { this.nextId += 1; return `overlay-${this.nextId}`; }
   async getGridDistance(): Promise<number> { return 0; }
   async getGridDpi(): Promise<number> { return 100; }
+  async getViewportScale(): Promise<number> { return 0.1; }
   async snapGridCenter(position: { x: number; y: number }) { return { ...position }; }
   onGridChange(): () => void { return () => undefined; }
   async send(): Promise<void> { return undefined; }
@@ -111,6 +112,12 @@ function shipOverlayTexts(port: LeaderTurnPort): string[] {
     .map((item) => String(item.text));
 }
 
+function shipOverlay(port: LeaderTurnPort, text: string): SceneItemRecord | undefined {
+  return port.localItems.find((item) =>
+    item.metadata[METADATA_KEYS.navalShipOverlay] !== undefined && item.text === text
+  );
+}
+
 describe("leader ship local UI survives a global turn", () => {
   it("keeps the local clone hittable and the ship overlays rendered after the turn changes", async () => {
     const port = new LeaderTurnPort();
@@ -124,6 +131,8 @@ describe("leader ship local UI survives a global turn", () => {
       metadata: { [METADATA_KEYS.localClone]: { sourceItemId: "ship", hasRoute: false } }
     });
     expect(shipOverlayTexts(port).sort()).toEqual(["Бисмарк", "♥ 30 / 30"].sort());
+    expect(shipOverlay(port, "Бисмарк")?.position).toEqual({ x: 100, y: -180 });
+    expect(shipOverlay(port, "♥ 30 / 30")?.position).toEqual({ x: 100, y: 380 });
 
     const ship = port.scene.ships?.ship;
     if (!ship) throw new Error("ship missing");
@@ -152,5 +161,7 @@ describe("leader ship local UI survives a global turn", () => {
       metadata: { [METADATA_KEYS.localClone]: { sourceItemId: "ship", hasRoute: false } }
     });
     expect(shipOverlayTexts(port).sort()).toEqual(["Бисмарк", "♥ 30 / 30"].sort());
+    expect(shipOverlay(port, "Бисмарк")?.position).toEqual({ x: 100, y: -180 });
+    expect(shipOverlay(port, "♥ 30 / 30")?.position).toEqual({ x: 100, y: 380 });
   });
 });
