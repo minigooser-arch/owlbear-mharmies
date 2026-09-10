@@ -118,8 +118,8 @@ function parseCells(value: unknown): GridCellCoord[] | undefined {
   return cells;
 }
 
-function parseOrderedCells(value: unknown): GridCellCoord[] | undefined {
-  if (!denseArray(value) || value.length === 0 || value.length > 256) return undefined;
+function parseOrderedCells(value: unknown, allowEmpty = false): GridCellCoord[] | undefined {
+  if (!denseArray(value) || (!allowEmpty && value.length === 0) || value.length > 256) return undefined;
   const cells: GridCellCoord[] = [];
   for (const entry of value) {
     const cell = parseGridCell(entry);
@@ -303,10 +303,21 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
   UNREGISTER_SHIP: (value) => boundedString(value.shipId) ? { type: "UNREGISTER_SHIP", shipId: value.shipId } : undefined,
   SET_SHIP_ROUTE: (value) => {
     const startCell = parseGridCell(value.startCell);
-    const cells = parseOrderedCells(value.cells);
-    return boundedString(value.shipId) && startCell && cells
-      ? { type: "SET_SHIP_ROUTE", shipId: value.shipId, startCell, cells }
-      : undefined;
+    const finalFacing = value.finalFacing === undefined
+      ? undefined
+      : value.finalFacing === "NORTH" || value.finalFacing === "EAST" || value.finalFacing === "SOUTH" || value.finalFacing === "WEST"
+        ? value.finalFacing
+        : null;
+    if (finalFacing === null) return undefined;
+    const cells = parseOrderedCells(value.cells, finalFacing !== undefined);
+    if (!boundedString(value.shipId) || !startCell || !cells) return undefined;
+    return {
+      type: "SET_SHIP_ROUTE",
+      shipId: value.shipId,
+      startCell,
+      cells,
+      ...(finalFacing ? { finalFacing } : {})
+    } as ArmyCommandPayload;
   },
   SET_SHIP_HP: (value) =>
     boundedString(value.shipId) && nonNegativeInteger(value.hp)
