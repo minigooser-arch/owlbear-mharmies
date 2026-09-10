@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createRegisteredShip } from "../naval/ships/shipLifecycle";
 import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE } from "../shared/constants";
-import type { ArmyCommand, SceneState, TerrainType } from "../shared/types";
+import type { SceneState, TerrainType } from "../shared/types";
 import { applyShipStrategicRouteCommand } from "./shipStrategicRouteCommand";
 import { validateArmyCommand } from "./commandValidation";
 import type { CommandState } from "./commandProcessor";
