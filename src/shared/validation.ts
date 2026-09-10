@@ -400,6 +400,9 @@ function normalizeShip(value: unknown): ShipState | undefined {
     temporaryHp: nonNegative(value.temporaryHp) ? value.temporaryHp : 0,
     facing: value.facing,
     plannedRoute: normalizeGridCells(value.plannedRoute),
+    plannedFacing: enumValue<ShipFacing>(value.plannedFacing, ["NORTH", "EAST", "SOUTH", "WEST"])
+      ? value.plannedFacing
+      : null,
     globalMovementRemaining: nonNegativeInteger(value.globalMovementRemaining) ? value.globalMovementRemaining : 0,
     movementSpentThisTurn: typeof value.movementSpentThisTurn === "boolean" ? value.movementSpentThisTurn : false,
     battleId: value.battleId === null || nonEmptyString(value.battleId) ? value.battleId as string | null : null,
