@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE } from "../shared/constants";
-import type { ArmyCommand, ArmyState, SceneState } from "../shared/types";
+import { COMMAND_PROTOCOL_VERSION, type ArmyCommand, type ArmyState, type SceneState } from "../shared/types";
 import { CommandProcessor, type CommandContext, type CommandState } from "./commandProcessor";
 
 function army(): ArmyState {
@@ -82,6 +82,7 @@ function context(commandState: CommandState): CommandContext {
 function renumber(turnNumber: number): ArmyCommand {
   return {
     type: "SET_TURN_NUMBER",
+    protocolVersion: COMMAND_PROTOCOL_VERSION,
     requestId: "renumber",
     senderPlayerId: "gm",
     senderConnectionId: "gm-connection",
