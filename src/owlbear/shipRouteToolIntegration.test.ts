@@ -129,7 +129,9 @@ describe("ship route tool SDK integration", () => {
     mode.onKeyDown?.(ctx, keyEvent("Enter"));
     await Promise.resolve();
     expect(f.commits).toEqual([]);
-    expect(await mode.onToolClick?.(ctx, toolEvent(150, 15))).toBe(false);
+    const finish = f.rendered.at(-1)?.finishButton;
+    if (!finish) throw new Error("Finish button missing");
+    expect(await mode.onToolClick?.(ctx, toolEvent(finish.position.x, finish.position.y))).toBe(false);
     await vi.waitFor(() => expect(f.commits).toEqual([["ship", { x: 0, y: 0 }, [{ x: 1, y: 0 }]]]));
     expect(f.restored).toEqual(["select-tool"]);
   });
@@ -143,8 +145,9 @@ describe("ship route tool SDK integration", () => {
     mode.onActivate?.(ctx);
     await vi.waitFor(() => expect(f.rendered.length).toBeGreaterThan(0));
 
-    // Start is (50, 50). Turn control is below Finish at y=15.
-    expect(await mode.onToolClick?.(ctx, toolEvent(50, 15))).toBe(false);
+    const turnButton = f.rendered.at(-1)?.turnButton;
+    if (!turnButton) throw new Error("Turn button missing");
+    expect(await mode.onToolClick?.(ctx, toolEvent(turnButton.position.x, turnButton.position.y))).toBe(false);
     await vi.waitFor(() => expect(f.rendered.at(-1)?.turnChoices).toHaveLength(3));
     expect(f.rendered.at(-1)?.turnChoices?.map((choice) => choice.facing)).toEqual(["NORTH", "SOUTH", "WEST"]);
 
