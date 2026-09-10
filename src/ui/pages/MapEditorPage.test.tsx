@@ -44,7 +44,7 @@ it("updates brush size metadata without requesting tool activation again", () =>
 
 it("offers a built-in sea terrain that can be painted before ship registration", () => {
   render(<MapEditorPage terrain={DEFAULT_TERRAIN} sides={sides} states={states} onAction={vi.fn()} />);
-  expect(screen.getByRole("option", { name: "Море · 1 ОП" })).toBeInTheDocument();
+  expect(screen.getByRole("option", { name: "Океан / озёра · 1 ОП" })).toBeInTheDocument();
   expect(DEFAULT_TERRAIN.types.sea).toMatchObject({
     id: "sea",
     movementDomains: ["SEA"],
