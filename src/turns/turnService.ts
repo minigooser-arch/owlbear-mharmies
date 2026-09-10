@@ -215,6 +215,11 @@ export function cancelTurnDeferral(turn: TurnState, now: Date): TurnState {
   };
 }
 
+export function setTurnNumber(turn: TurnState, turnNumber: number): TurnState {
+  if (!Number.isInteger(turnNumber) || turnNumber < 1) throw new Error("INVALID_TURN_NUMBER");
+  return { ...turn, turnNumber };
+}
+
 export function pauseAutoTurns(turn: TurnState): TurnState {
   return { ...turn, autoTurnsPaused: true, deferredUntil: null };
 }

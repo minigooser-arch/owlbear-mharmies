@@ -41,24 +41,31 @@ function migrateLegacyTerrainToNavalSafe(value: unknown): unknown {
   return { ...value, types };
 }
 
-function ensureBuiltInSeaTerrain(value: unknown): unknown {
+function ensureBuiltInTerrains(value: unknown): unknown {
   if (!isRecord(value) || !isRecord(value.types)) return structuredClone(DEFAULT_TERRAIN);
-  const defaultSea = DEFAULT_TERRAIN.types.sea;
-  if (!defaultSea) return value;
-  const existingSea = value.types.sea;
-  return {
-    ...value,
-    types: {
-      ...value.types,
-      sea: {
-        ...structuredClone(defaultSea),
-        ...(isRecord(existingSea) ? existingSea : {}),
-        id: "sea",
-        movementDomains: ["SEA"],
-        blocksNavalLos: false
-      }
-    }
-  };
+  const types: Record<string, unknown> = { ...value.types };
+  for (const [id, defaultTerrain] of Object.entries(DEFAULT_TERRAIN.types)) {
+    const existing = types[id];
+    const legacyDefaults: Record<string, { name: string; color: string }> = {
+      plain: { name: "Равнина", color: "#90a4ae" },
+      forest: { name: "Лес", color: "#66bb6a" },
+      mountains: { name: "Горы", color: "#8d6e63" },
+      sea: { name: "Море", color: "#42a5f5" }
+    };
+    const legacy = legacyDefaults[id];
+    const existingRecord = isRecord(existing) ? existing : undefined;
+    const migrateLegacyPresentation = legacy && existingRecord &&
+      existingRecord.name === legacy.name && existingRecord.color === legacy.color;
+    types[id] = {
+      ...structuredClone(defaultTerrain),
+      ...(existingRecord ?? {}),
+      ...(migrateLegacyPresentation ? { name: defaultTerrain.name, color: defaultTerrain.color } : {}),
+      id,
+      ...(id === "sea" ? { movementDomains: ["SEA"], blocksNavalLos: false } : {}),
+      ...(id === "ice" ? { movementDomains: ["LAND"], blocksNavalLos: true } : {})
+    };
+  }
+  return { ...value, types };
 }
 
 export function migrateSceneState(raw: unknown): ValidationResult<SceneState> {
@@ -140,7 +147,7 @@ export function migrateSceneState(raw: unknown): ValidationResult<SceneState> {
   if (migrated.version === 6) {
     migrated = {
       ...migrated,
-      terrain: ensureBuiltInSeaTerrain(migrated.terrain)
+      terrain: ensureBuiltInTerrains(migrated.terrain)
     };
   }
   return normalizeSceneState(migrated);

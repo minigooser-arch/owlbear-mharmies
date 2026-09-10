@@ -457,6 +457,7 @@ export type ArmyCommandPayload =
     | { type: "CANCEL_TURN_DEFERRAL" }
     | { type: "PAUSE_AUTO_TURNS" }
     | { type: "RESUME_AUTO_TURNS" }
+    | { type: "SET_TURN_NUMBER"; turnNumber: number }
     | { type: "COMPLETE_TURN_NOW" }
   );
 
