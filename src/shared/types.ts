@@ -294,15 +294,22 @@ export interface SceneState {
   coordinatorLease?: CoordinatorLease;
 }
 
+/** Boundary-compatible naval scene shape used by existing tactical code and fixtures. */
 export interface NavalSceneState extends SceneState {
-  version: 7;
-  states: NormalizedStateEntity[];
+  version: 6 | 7;
   ships: Record<string, ShipState>;
   navalBattleRequests: NavalBattleRequest[];
-  transportEmbarkRequests: TransportEmbarkRequest[];
   activeNavalBattle: NavalBattleState | null;
   navalBattleHistory: NavalBattleState[];
   navalRevealUntilTurn: Record<string, Record<string, number>>;
+  turn: TurnState & { phase: TurnPhase };
+}
+
+/** Fully normalized v7 scene. */
+export interface StrategicSceneState extends NavalSceneState {
+  version: 7;
+  states: NormalizedStateEntity[];
+  transportEmbarkRequests: TransportEmbarkRequest[];
   stateRelations: StateRelations;
   foreignPresenceViolations: ForeignPresenceViolation[];
   forcedExitStates: ForcedExitState[];
@@ -310,7 +317,6 @@ export interface NavalSceneState extends SceneState {
   territorialScores: TerritorialScore[];
   rebellions: RebellionState[];
   turnCheckpoint: TurnCheckpointState | null;
-  turn: TurnState & { phase: TurnPhase };
 }
 
 export interface ArmyOverrides {
@@ -423,7 +429,7 @@ export interface ItemUpdate {
   [key: string]: unknown;
 }
 
-export const COMMAND_PROTOCOL_VERSION = 5 as const;
+export const COMMAND_PROTOCOL_VERSION = 4 as const;
 
 export interface CommandEnvelope {
   protocolVersion: typeof COMMAND_PROTOCOL_VERSION;
