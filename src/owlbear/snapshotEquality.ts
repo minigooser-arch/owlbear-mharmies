@@ -1,9 +1,10 @@
 import type {
   ArmyView,
   PartyPlayerView,
-  RawExtensionSnapshot
+  RawExtensionSnapshot,
+  ShipView
 } from "../ui/state/useExtensionState";
-import type { BattleGroup, Side } from "../shared/types";
+import type { BattleGroup, Side, StateEntity } from "../shared/types";
 
 function unorderedValuesEqual(
   left: readonly unknown[],
@@ -72,6 +73,14 @@ function entityCollectionEqual<T>(
   return true;
 }
 
+function optionalEntityCollectionEqual<T>(
+  left: readonly T[] | undefined,
+  right: readonly T[] | undefined,
+  id: (value: T) => string
+): boolean {
+  return entityCollectionEqual(left ?? [], right ?? [], id, semanticValueEqual);
+}
+
 function playerEqual(left: PartyPlayerView, right: PartyPlayerView): boolean {
   return left.id === right.id
     && left.name === right.name
@@ -81,27 +90,24 @@ function playerEqual(left: PartyPlayerView, right: PartyPlayerView): boolean {
 }
 
 function armyEqual(left: ArmyView, right: ArmyView): boolean {
-  return left.id === right.id
-    && left.name === right.name
-    && left.sideId === right.sideId
-    && left.sideName === right.sideName
-    && left.status === right.status
-    && semanticValueEqual(left.route, right.route)
-    && left.movementMaxUnits === right.movementMaxUnits
-    && left.movementRemainingUnits === right.movementRemainingUnits
-    && left.routeCostUnits === right.routeCostUnits
-    && left.routeCellCount === right.routeCellCount
-    && left.routeRequiresReplan === right.routeRequiresReplan
-    && left.routeInvalidReason === right.routeInvalidReason
-    && left.atWar === right.atWar;
+  return semanticValueEqual(left, right);
+}
+
+function shipEqual(left: ShipView, right: ShipView): boolean {
+  return semanticValueEqual(left, right);
 }
 
 function sideEqual(left: Side, right: Side): boolean {
   return left.id === right.id
     && left.name === right.name
     && left.color === right.color
+    && left.stateId === right.stateId
     && semanticValueEqual(new Set(left.playerIds), new Set(right.playerIds))
     && semanticValueEqual(new Set(left.leaderPlayerIds), new Set(right.leaderPlayerIds));
+}
+
+function stateEqual(left: StateEntity, right: StateEntity): boolean {
+  return semanticValueEqual(left, right);
 }
 
 function battleEqual(left: BattleGroup, right: BattleGroup): boolean {
@@ -123,7 +129,15 @@ export function semanticSnapshotEqual(
     && semanticValueEqual(left.memberSideIds, right.memberSideIds)
     && semanticValueEqual(left.leaderSideIds, right.leaderSideIds)
     && entityCollectionEqual(left.armies, right.armies, (army) => army.id, armyEqual)
+    && optionalEntityCollectionEqual(left.ships, right.ships, (ship) => ship.id)
+    && optionalEntityCollectionEqual(left.navalRequestTargets, right.navalRequestTargets, (target) => target.id)
+    && optionalEntityCollectionEqual(left.pendingNavalBattleRequests, right.pendingNavalBattleRequests, (request) => request.id)
+    && optionalEntityCollectionEqual(left.transportEmbarkTargets, right.transportEmbarkTargets, (target) => target.id)
+    && optionalEntityCollectionEqual(left.pendingTransportEmbarkRequests, right.pendingTransportEmbarkRequests, (request) => request.id)
+    && semanticValueEqual(left.navalBattleAreaDraft, right.navalBattleAreaDraft)
+    && semanticValueEqual(left.activeNavalBattle, right.activeNavalBattle)
     && entityCollectionEqual(left.sides, right.sides, (side) => side.id, sideEqual)
+    && entityCollectionEqual(left.states, right.states, (state) => state.id, stateEqual)
     && semanticValueEqual(left.relations, right.relations)
     && entityCollectionEqual(
       left.battleGroups,
