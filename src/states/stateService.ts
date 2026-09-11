@@ -107,7 +107,7 @@ export function setSideState(
       : state
   );
   const nextSides = cloneSides(sides);
-  nextSides[sideIndex] = { ...nextSides[sideIndex]!, stateId };
+  nextSides[sideIndex] = { ...currentSide, stateId };
 
   for (const state of nextStates) {
     const validation = validateStateConfiguration(state, nextSides);
