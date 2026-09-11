@@ -33,7 +33,17 @@ describe("notificationMessage", () => {
     ["SHIP_DESTROYED", "Уничтоженный корабль не может выполнять это действие."],
     ["NAVAL_BATTLE_REQUEST_ALREADY_PENDING", "Заявка на эту пару кораблей уже ожидает ведущего."],
     ["INVALID_NAVAL_BATTLE_AREA", "Поле морского боя может состоять только из морских клеток."],
-    ["SHIP_ALREADY_EXITED", "Этот корабль уже вышел из морского боя."]
+    ["SHIP_ALREADY_EXITED", "Этот корабль уже вышел из морского боя."],
+    ["ACTION_ALREADY_USED", "Корабль уже выполнил активное действие в этом раунде."],
+    ["SHIP_UNARMED", "У этого корабля нет доступного бортового вооружения."],
+    ["TARGET_EXITED", "Цель уже вышла из морского боя."],
+    ["TARGET_DESTROYED", "Цель уже уничтожена."],
+    ["OUTSIDE_BROADSIDE_SECTOR", "Цель находится вне сектора бортового залпа."],
+    ["OUT_OF_RANGE", "Цель находится вне дальности бортового залпа."],
+    ["NO_NAVAL_LOS", "Линия огня к цели перекрыта."],
+    ["NAVAL_POSITION_UNAVAILABLE", "Не удалось определить позиции кораблей для морского действия."],
+    ["TARGET_NOT_IN_NAVAL_BATTLE", "Цель не участвует в текущем морском бою."],
+    ["NAVAL_BATTLE_ACTIVE", "Сначала завершите текущий морской бой."]
   ])("translates %s into Russian", (code, message) => {
     expect(notificationMessage(code)).toBe(message);
   });
