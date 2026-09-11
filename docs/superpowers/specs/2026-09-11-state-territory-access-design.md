@@ -1,363 +1,409 @@
-# State territory, faction membership, military access, and war movement design
+# Государства, территории, право прохода и война — архитектура
 
-## Goal
+## Цель
 
-Replace the legacy faction-territory movement model with a state-based political map.
+Заменить старую модель территорий фракций на государственную политическую карту.
 
-The strategic map must represent three independent concepts:
+Стратегическая карта хранит три независимых слоя:
 
-1. terrain;
-2. state territory;
-3. factions that belong to states and own armies/ships.
+1. рельеф;
+2. государственную принадлежность клетки;
+3. фракции, принадлежащие государствам и владеющие армиями/кораблями.
 
-Factions do not own map territory. States do.
+Фракции территорией не владеют.
 
-## Core concepts
+## 1. Государства и фракции
 
-### Terrain layer
+### Государство
 
-Terrain remains independent from politics. A cell can simultaneously be mountains and part of Russia, forest and part of Germany, etc.
+`StateEntity` становится полноценной сущностью страны:
 
-Painting state territory must never overwrite terrain, impassability, or other terrain properties. Painting terrain must never overwrite state ownership.
+- `id`;
+- `name`;
+- `color`;
+- `rulingFactionId`;
+- `active`.
 
-### State
+У активного государства должна быть ровно одна правящая фракция.
 
-`StateEntity` remains the political country entity and should be extended with a map color:
+Неактивное/недонастроенное государство может временно иметь `rulingFactionId = null`, но не должно участвовать в движении, войнах и праве прохода до исправления конфигурации.
 
-- `id`
-- `name`
-- `color`
-- `rulingFactionId`
-- `active`
+Правящая фракция обязана иметь `Side.stateId`, совпадающий с государством.
 
-A state may contain any number of factions, but may have at most one ruling faction.
+### Фракция
 
-The ruling faction must belong to that state.
+`Side` остаётся фракцией и владельцем армий/кораблей.
 
-### Faction
+`Side.stateId` — единственный источник истины о принадлежности фракции к государству.
 
-`Side` remains the faction entity and continues to own armies and ships.
+Фракция принадлежит максимум одному государству.
 
-`Side.stateId` is the single source of truth for faction membership in a state.
+Списки фракций внутри государства не дублируются: они вычисляются по `Side.stateId`.
 
-A faction belongs to at most one state.
+## 2. Политический и рельефный слои карты
 
-There are no faction-owned map territories.
+`CellState` продолжает хранить независимо:
 
-### Cell state
+- `terrainId`;
+- `impassable`;
+- `recognizedStateId`;
+- `deFactoStateId`.
 
-The political layer uses the already existing state ownership fields:
+`factionTerritoryIds` становится только legacy-полем для миграции старых сцен и больше никогда не участвует в разрешении движения.
 
-- `recognizedStateId`
-- `deFactoStateId`
+Для первой версии государственная граница движения определяется по `recognizedStateId`.
 
-`factionTerritoryIds` becomes legacy migration data only and must not participate in movement authorization after migration.
+`deFactoStateId` сохраняется для существующей/будущей механики оккупации и передачи территорий и этой задачей не уничтожается.
 
-For the initial implementation, state-border movement authorization uses `recognizedStateId` as the legal territory owner. `deFactoStateId` remains available for the existing/future occupation and territorial-control mechanics and must not be destroyed by this work.
+Пример допустимой клетки:
 
-## State administration UI
+- `terrainId = mountains`;
+- `recognizedStateId = russia`.
 
-Add a dedicated States administration page available to GM/admin users.
+Горы остаются горами внутри России.
 
-A state card supports:
+### Редактор карты
 
-- create state;
-- rename state;
-- choose state color;
-- activate/deactivate state;
-- see factions whose `stateId` points to the state;
-- assign the single ruling faction;
-- clear/change the ruling faction;
-- delete a state subject to validation/migration rules.
+В редакторе два независимых режима:
 
-Faction editing must include a state selector. Changing faction membership updates `Side.stateId`; there is no duplicated faction list inside the state object.
+- **Рельеф**;
+- **Государства**.
 
-## State territory editor
+Кисть государства меняет только `recognizedStateId`.
 
-The map editor gains two independent editing modes:
+Кисть рельефа меняет только рельефные поля.
 
-- Terrain
-- States
+Стирание государства делает `recognizedStateId = null`, не меняя рельеф.
 
-State mode provides:
+### Отображение
 
-- state selector;
-- brush sizes consistent with the terrain editor;
-- erase-state tool;
-- painting of `recognizedStateId` only.
+Рельеф остаётся основным fill клетки.
 
-Changing state ownership must not modify `terrainId`, `impassable`, or any terrain configuration.
+Государства отображаются отдельным политическим overlay:
 
-Changing terrain must not modify `recognizedStateId` or `deFactoStateId`.
+- цветные границы непрерывных территорий;
+- при необходимости очень слабая полупрозрачная тонировка;
+- рельеф всегда должен оставаться читаемым.
 
-## Political overlay rendering
+## 3. Отношения государств
 
-Terrain remains the dominant cell fill.
+Нужна отдельная pairwise-модель отношений государств.
 
-State ownership is rendered as an additional political overlay, preferably:
+### `StateRelation`
 
-- state-colored borders around contiguous state territory;
-- optional very-low-opacity state tint only if it does not obscure terrain;
-- optional state labels later, not required for the first implementation.
+Концептуально:
 
-The player must be able to perceive mountains, forests, swamps, etc. while also seeing which state owns the same cells.
+```text
+fromStateId
+toStateId
+militaryAccess: boolean
+atWar: boolean
+```
 
-## Interstate relations
+Хранение может быть нормализовано иначе, но API должен давать ответы по конкретной паре государств.
 
-Introduce state-level relations for movement authorization.
+### Право прохода
 
-### Military access
+Право прохода направленное.
 
-Military access is directional.
+`Россия → Германия` не означает автоматически `Германия → Россия`.
 
-Example:
+Админ может:
 
-- Russia → Germany access does not imply Germany → Russia access.
+- выдать право прохода в одном направлении;
+- отозвать его;
+- удобной кнопкой выставить оба направления.
 
-The data model should represent explicit directed access, for example a normalized relation registry keyed by `(fromStateId, toStateId)` with `militaryAccess: boolean`.
+Право прохода распространяется на все фракции государства-источника, а не только на правящую.
 
-GM/admin users can grant or revoke military access between states in the States/Diplomacy administration UI.
+### Война
 
-The UI may offer a convenience action to set both directions, but the stored relation remains directional.
+Война — симметричное отношение конкретной пары государств.
 
-Military access applies to every faction belonging to the source state, not only the ruling faction.
+Если `Russia` воюет с `Germany`, то обе стороны считаются воюющими друг с другом.
 
-### War
+Админ может вручную:
 
-War is a mutual state-level condition.
+- объявить войну между двумя государствами;
+- завершить войну между двумя государствами.
 
-`WarState.participantStateIds` becomes the authoritative basis for interstate war movement authorization.
+Автоматическое вторжение правящей фракции также может создать это отношение.
 
-A state-level war grants every faction belonging to either belligerent state the right to enter the other belligerent state's territory.
+### Почему `WarState` недостаточно
 
-War does not require a faction to be the ruling faction in order to invade.
+Текущий `WarState.participantStateIds` — плоский список и не выражает стороны конфликта. Для трёх и более государств он не может корректно ответить, кто именно воюет с кем.
 
-## Movement authorization rules
+Поэтому **movement authorization не должен использовать факт «государство участвует хоть в какой-то войне»**.
 
-Movement authorization is centralized in a state-aware movement access resolver rather than scattered through route planning and execution.
+Авторитетным источником для права входа становится pairwise `StateRelation.atWar`.
 
-The resolver receives at minimum:
+Существующий `WarState` можно сохранить как журнал/объект интерфейса/историю войны, но он не должен самостоятельно давать право движения. Если он остаётся, изменения войны обязаны синхронизировать соответствующие pairwise relations.
 
-- moving faction;
-- moving faction's state;
-- whether that faction is the ruling faction;
-- destination cell's recognized state;
-- active wars;
-- directed military-access relations;
-- movement domain/terrain information.
+Многосторонняя война в первой реализации представляется набором попарных отношений либо существующим `WarState` плюс явные hostile-пары. Коалиционная модель с отдельными лагерями в эту задачу не входит.
 
-### Destination inside own state
+## 4. Централизованная проверка движения
 
-Any faction may move inside its own state's territory.
+Вместо проверок `factionTerritoryIds` и глобального `isFactionAtWar()` создаётся единый `stateMovementAccess` resolver.
 
-### Destination in another state with military access
+Он получает:
 
-Any faction may enter if its state has directed military access into the destination state.
+- фракцию;
+- государство фракции;
+- является ли она правящей;
+- государство клетки назначения;
+- pairwise relations;
+- рельеф/домен движения.
 
-### Destination in another state while the states are at war
+Он возвращает классифицированный результат, например:
 
-Any faction may enter if its state is at war with the destination state.
+- `ALLOW_OWN_STATE`;
+- `ALLOW_MILITARY_ACCESS`;
+- `ALLOW_WAR`;
+- `DECLARE_WAR_AND_ALLOW`;
+- `DENY_FOREIGN_STATE`;
+- `DENY_STATELESS`.
 
-### Destination in another state with neither access nor war
+### Своя страна
 
-If the moving faction is not the ruling faction:
+Любая фракция государства может перемещаться по территории своего государства.
 
-- movement is denied;
-- no war is created.
+### Чужая страна + право прохода
 
-If the moving faction is the ruling faction:
+Любая фракция может войти, если её государство имеет направленное право прохода в целевое государство.
 
-- entering the foreign cell automatically declares war between the two states;
-- the same movement step is then authorized;
-- war creation and movement must be atomic from the gameplay perspective.
+### Чужая страна + война
 
-### Stateless faction
+Любая фракция может вторгаться, если её государство находится в состоянии войны именно с государством клетки назначения.
 
-A faction with `stateId = null` has no implicit right to enter state territory. Unless a future explicit rule is added, movement into a state-owned cell is denied.
+То есть война даёт право вторжения всем фракциям страны.
 
-### Neutral/unowned cell
+### Чужая страна без прохода и без войны
 
-A cell with `recognizedStateId = null` is not foreign state territory. Initial implementation allows normal terrain/domain rules to decide movement there; no war is generated merely by entering an unowned cell.
+**Неправящая фракция:**
 
-## Route planning versus route execution
+- движение запрещается;
+- война не создаётся.
 
-Route planning must not declare war.
+**Правящая фракция:**
 
-While planning, foreign cells are classified as:
+- вход в первую чужую клетку автоматически объявляет войну государству этой клетки;
+- тот же шаг после успешного создания войны разрешается.
 
-- legal because own state;
-- legal because military access;
-- legal because existing war;
-- invasion trigger for a ruling faction;
-- forbidden for a non-ruling faction.
+Автоматически объявлять войну может только правящая фракция.
 
-The route UI should visibly warn when a ruling faction's planned path would cross into a state with neither access nor war.
+### Фракция без государства
 
-Actual war declaration occurs only when movement execution attempts to enter the first such foreign cell.
+`stateId = null` не даёт права входить в государственную территорию.
 
-This rule is evaluated per movement step. A route can therefore cross multiple states, and each border crossing is evaluated independently.
+### Ничейная территория
 
-Example:
+`recognizedStateId = null` не считается чужим государством.
 
-Russia → Germany → France
+Вход регулируется обычными правилами рельефа/домена и войну не создаёт.
 
-If Russia has neither access nor war with either state and the moving faction is Russia's ruling faction:
+## 5. Планирование маршрута и фактическое движение
 
-1. entering Germany declares Russia–Germany war;
-2. later entering France declares Russia–France war.
+Планирование маршрута никогда не меняет дипломатию.
 
-## Armies and collision behavior
+Клетки маршрута классифицируются как:
 
-This state-access redesign does not change army collision mechanics.
+- своя страна;
+- доступ по проходу;
+- доступ по войне;
+- клетка, которая при фактическом входе вызовет войну правящей фракции;
+- запрещённая чужая клетка для неправящей фракции.
 
-Armies may still enter cells occupied by other armies according to the existing collision/battle rules; doing so may create/join a battle.
+Для правящей фракции маршрут через закрытую границу допускается, но UI показывает предупреждение:
 
-Political access is checked before the movement step is committed, then army collision/battle logic runs as it does today.
+> Вход на территорию Германии приведёт к объявлению войны.
 
-## Ships
+Война создаётся только при фактическом выполнении шага в эту клетку.
 
-State land borders do not automatically restrict movement through sea cells.
+Каждая граница проверяется отдельно.
 
-For the first implementation:
+Пример `Россия → Германия → Франция`:
 
-- SEA movement continues to use naval movement rules;
-- state ownership on nearby land does not block ships;
-- territorial waters, straits, canals, closed ports, and naval access are explicitly out of scope.
+- при входе в Германию может возникнуть война Россия–Германия;
+- при последующем входе во Францию отдельно проверяется отношение Россия–Франция.
 
-Ship occupied-cell rules remain separate: two live ships cannot occupy the same cell.
+## 6. Атомарность автоматического объявления войны
 
-## War creation semantics
+При фактическом шаге правящей фракции в закрытую чужую территорию система должна:
 
-Automatic war declaration is permitted only for a ruling faction crossing into foreign state territory without military access and without an existing war.
+1. определить `recognizedStateId` клетки;
+2. определить государство движущейся фракции;
+3. проверить `militaryAccess`;
+4. проверить `atWar` именно для этой пары;
+5. подтвердить, что движется правящая фракция;
+6. создать симметричное состояние войны для пары государств;
+7. только после успешного создания войны зафиксировать перемещение;
+8. затем запустить обычную collision/battle-логику армий.
 
-The command/movement transaction must:
+Если создание/сохранение войны не удалось, армия в клетку не входит.
 
-1. resolve destination state;
-2. resolve source faction and source state;
-3. check existing state war;
-4. check directed military access;
-5. if unauthorized and mover is ruling faction, create/activate the interstate war;
-6. commit the movement step;
-7. continue with ordinary collision/battle processing.
+Повторный вход при уже активной войне не создаёт дубликат войны.
 
-If war creation fails validation or persistence, movement into the foreign cell must not occur.
+## 7. Армии
 
-Repeated crossings during an already active war must not create duplicate wars.
+Политическая проверка не меняет collision-механику.
 
-## Data migration
+После успешного разрешения входа армия может зайти в клетку другой армии по существующим правилам и инициировать/присоединиться к бою.
 
-The migration must preserve existing scenes.
+Иными словами:
 
-Required behavior:
+```text
+state access → movement → army collision/battle
+```
 
-- preserve `states`, `Side.stateId`, `recognizedStateId`, and `deFactoStateId`;
-- retain legacy `factionTerritoryIds` only long enough to deserialize/migrate old data;
-- movement logic must stop reading `factionTerritoryIds`;
-- do not infer state territory from faction territory automatically unless a deterministic mapping exists;
-- scenes with incomplete political data remain loadable and produce explicit admin-visible warnings rather than corrupting ownership.
+а не запрет на совместную клетку.
 
-A schema-version bump is expected because the state entity and interstate-relation storage change.
+## 8. Корабли
 
-## Suggested modules
+Государственные сухопутные границы не ограничивают обычное движение по `SEA`.
 
-Keep responsibilities isolated.
+В первой версии не вводятся:
+
+- территориальные воды;
+- морское право прохода;
+- закрытые проливы;
+- каналы;
+- закрытые порты.
+
+Правило «два живых корабля не могут занимать одну клетку» остаётся отдельной механикой флота.
+
+## 9. Административный UI
+
+### Страница «Государства»
+
+Для каждого государства:
+
+- название;
+- цвет;
+- активность;
+- список фракций по `Side.stateId`;
+- выбор единственной правящей фракции;
+- валидация, что правящая фракция принадлежит стране.
+
+### Дипломатия
+
+Админу доступна матрица/список отношений между государствами.
+
+Для пары `A ↔ B` отображаются отдельно:
+
+- `A → B: право прохода`;
+- `B → A: право прохода`;
+- `A ↔ B: война`.
+
+Изменения отношений применяются только админом/GM, кроме автоматического объявления войны правящей фракцией при вторжении.
+
+### Фракции
+
+Редактор фракции содержит выбор государства.
+
+## 10. Миграция
+
+Нужен schema-version bump.
+
+Миграция должна:
+
+- сохранить `states`;
+- сохранить `Side.stateId`;
+- сохранить `recognizedStateId` и `deFactoStateId`;
+- уметь читать legacy `factionTerritoryIds`, но не использовать его в runtime movement;
+- не пытаться автоматически превратить территории фракций в территории государств, если соответствие неоднозначно;
+- не допускать участия активного государства в движении/дипломатии без валидной правящей фракции;
+- мигрировать существующие двусторонние войны в pairwise `atWar`, когда это однозначно;
+- для неоднозначных многосторонних старых войн показывать GM предупреждение и требовать явной настройки hostile-пар вместо угадывания.
+
+## 11. Модули
 
 ### `states/stateService`
 
-State CRUD, ruling-faction validation, faction/state consistency.
+CRUD государств, инварианты правящей фракции, согласованность `Side.stateId`.
 
 ### `states/stateRelations`
 
-Directed military-access storage/query helpers and symmetric war-state lookup helpers.
+Единый API pairwise relations:
+
+- directed military access;
+- symmetric war;
+- создание/завершение войны;
+- предотвращение дубликатов.
 
 ### `movement/stateMovementAccess`
 
-Pure authorization/classification logic returning outcomes such as:
-
-- `ALLOW_OWN_STATE`
-- `ALLOW_MILITARY_ACCESS`
-- `ALLOW_WAR`
-- `DECLARE_WAR_AND_ALLOW`
-- `DENY_FOREIGN_STATE`
-- `DENY_STATELESS`
+Чистая классификация доступа к конкретной клетке.
 
 ### `terrain/gridMap`
 
-Continue owning cell persistence, but expose state-paint operations that only mutate political ownership fields.
+Независимые операции изменения рельефа и государственной принадлежности.
 
 ### political overlay service
 
-Render state boundaries independently from terrain overlays.
+Границы государств поверх рельефа.
 
 ### UI
 
-- States administration page
-- state relation/military access controls
-- faction state selector
-- state map brush mode
-- route warning presentation
+- States page;
+- Diplomacy controls;
+- faction state selector;
+- state brush;
+- route warnings.
 
-## Error handling and user messages
+## 12. Обязательные тесты
 
-Add explicit user-facing errors/warnings rather than generic movement failures, including:
+RED→GREEN покрытие минимум для:
 
-- faction has no state;
-- foreign territory is closed to this faction;
-- state/faction political configuration is invalid;
-- ruling faction mismatch;
-- attempted state deletion while still referenced;
-- interstate relation references missing state;
-- automatic war declaration failed.
+1. гора/лес и государство существуют на одной клетке одновременно;
+2. state brush не стирает рельеф;
+3. terrain brush не стирает государство;
+4. `Side.stateId` — единственный источник членства фракции;
+5. активное государство имеет ровно одну валидную правящую фракцию;
+6. обычная фракция ходит внутри своей страны;
+7. обычная фракция не входит в закрытую чужую страну;
+8. обычная фракция входит по праву прохода;
+9. обычная фракция вторгается во вражескую страну во время войны;
+10. право прохода `A → B` не даёт `B → A`;
+11. админ выдаёт/отзывает каждый direction доступа отдельно;
+12. админ вручную объявляет/завершает войну пары государств;
+13. правящая фракция входит по проходу без объявления войны;
+14. правящая фракция входит во время войны без создания дубликата;
+15. правящая фракция пересекает закрытую границу → война создаётся атомарно → армия входит;
+16. неправящая фракция пересекает закрытую границу → отказ без объявления войны;
+17. route planning предупреждает о будущем объявлении войны, но ничего не меняет;
+18. маршрут через несколько стран создаёт войну только при фактическом входе в соответствующую страну;
+19. фракция без государства не входит на территорию государства;
+20. ничейная клетка не вызывает войну;
+21. army collision/battle остаётся рабочим после state access;
+22. морское движение не ограничивается сухопутной государственной границей;
+23. legacy `factionTerritoryIds` больше не даёт права движения;
+24. snapshot/persistence сохраняют государства, отношения и политический слой карты;
+25. UI одновременно показывает рельеф и государственные границы;
+26. текущий дефект «фракция участвует хоть в одной войне → может ходить куда угодно» невозможен;
+27. старая многосторонняя война не превращается автоматически в ложное all-vs-all отношение при неоднозначной миграции.
 
-Route planning warnings are informational and must not mutate state.
+## 13. Порядок реализации
 
-## Tests
+1. новая схема и миграции;
+2. `StateEntity` + инварианты правящей фракции;
+3. pairwise `StateRelation`;
+4. admin diplomacy commands;
+5. независимый state brush;
+6. political overlay;
+7. UI государств/дипломатии;
+8. чистый `stateMovementAccess` classifier;
+9. route planning warnings;
+10. authoritative execution + auto-war transaction;
+11. полное удаление runtime-зависимости от `factionTerritoryIds` и `isFactionAtWar()`;
+12. интеграционные тесты движения, войн, прохода, карты, persistence и naval non-regression.
 
-The implementation requires RED→GREEN coverage for at least:
+## Не входит в эту реализацию
 
-1. terrain and state ownership coexist on one cell;
-2. painting a state does not change terrain;
-3. painting terrain does not change state ownership;
-4. faction membership is derived only from `Side.stateId`;
-5. ruling faction must belong to its state;
-6. ordinary faction moves inside own state;
-7. ordinary faction is denied entry into closed foreign territory;
-8. ordinary faction enters foreign territory with military access;
-9. ordinary faction enters enemy territory during war;
-10. ruling faction enters foreign territory with access without creating war;
-11. ruling faction enters foreign territory during existing war without duplicate war;
-12. ruling faction crossing a closed foreign border creates war and enters atomically;
-13. route planning warns but never declares war;
-14. multi-state route declares wars only on actual relevant crossings;
-15. directed access does not imply reverse access;
-16. stateless faction cannot enter state-owned territory;
-17. unowned territory does not trigger war;
-18. army collision/battle behavior remains unchanged after political authorization;
-19. ship sea movement remains unaffected by land-state access;
-20. legacy `factionTerritoryIds` no longer authorizes movement;
-21. snapshot/persistence round-trip preserves states, relations, and cell political ownership;
-22. UI shows state borders and terrain simultaneously.
-
-## Implementation order
-
-1. schema/data model and migrations;
-2. state CRUD + ruling-faction invariants;
-3. directed military-access model;
-4. independent state painting operations;
-5. political overlay rendering;
-6. state/faction admin UI;
-7. centralized movement-access classifier;
-8. route-planning warnings;
-9. authoritative movement execution + automatic war creation;
-10. remove all runtime use of `factionTerritoryIds`;
-11. integration/regression coverage across armies, wars, routes, map editing, persistence, and naval non-regression.
-
-## Non-goals for this implementation
-
-- territorial waters;
-- naval military-access diplomacy;
-- automatic annexation from movement;
-- diplomatic AI;
-- alliances/guarantees/non-aggression pacts beyond existing war and the new military-access relation;
-- replacing the existing de-facto occupation/territorial-transfer mechanics;
-- changing army battle/collision rules.
+- территориальные воды;
+- морское дипломатическое право прохода;
+- автоматическая аннексия при входе армии;
+- дипломатический AI;
+- союзы/гарантии/пакты о ненападении;
+- полноценная коалиционная модель войны с лагерями;
+- изменение существующей механики столкновения армий;
+- замена механики `deFactoStateId`/оккупации.
