@@ -1,8 +1,7 @@
 import type {
   ArmyView,
   PartyPlayerView,
-  RawExtensionSnapshot,
-  ShipView
+  RawExtensionSnapshot
 } from "../ui/state/useExtensionState";
 import type { BattleGroup, Side, StateEntity } from "../shared/types";
 
@@ -90,10 +89,6 @@ function playerEqual(left: PartyPlayerView, right: PartyPlayerView): boolean {
 }
 
 function armyEqual(left: ArmyView, right: ArmyView): boolean {
-  return semanticValueEqual(left, right);
-}
-
-function shipEqual(left: ShipView, right: ShipView): boolean {
   return semanticValueEqual(left, right);
 }
 
