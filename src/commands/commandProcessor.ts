@@ -9,6 +9,7 @@ import { validatePlannedRoute } from "../movement/movementRules";
 import { unenteredRouteCells } from "../movement/strategicProgress";
 import { createRegisteredShip, destroyShip } from "../naval/ships/shipLifecycle";
 import { resolvePlannedShipRoutes } from "../naval/ships/shipMovementPhase";
+import { occupiedByOtherLiveShip } from "../naval/ships/shipCellOccupancy";
 import { SHIP_CLASSES } from "../naval/ships/shipClasses";
 import { cellSupportsDomain } from "../terrain/movementDomains";
 import { authorizeArmyCommand } from "../shared/permissions";
@@ -480,9 +481,19 @@ export class CommandProcessor {
         const position = state.positions?.[command.shipId] ?? state.items[command.shipId]?.position;
         if (!position || !this.cellForPosition || !this.positionForCell) return "SHIP_POSITION_UNAVAILABLE";
         const from = this.cellForPosition(position);
+        const destination = forwardCell(from, ship.facing);
+        const shipCells = Object.fromEntries(
+          Object.keys(state.scene.ships ?? {}).flatMap((shipId) => {
+            const candidatePosition = commandPosition(state, shipId);
+            return candidatePosition ? [[shipId, this.cellForPosition?.(candidatePosition)]] : [];
+          }).filter((entry): entry is [string, GridCellCoord] => entry[1] !== undefined)
+        );
+        if (occupiedByOtherLiveShip(state.scene.ships ?? {}, shipCells, command.shipId, destination)) {
+          return "SHIP_CELL_OCCUPIED";
+        }
         try {
           const result = applyForwardTacticalStep(
-            battle, command.shipId, ship, from, forwardCell(from, ship.facing)
+            battle, command.shipId, ship, from, destination
           );
           state.positions ??= {};
           state.positions[command.shipId] = this.positionForCell(result.destination);
