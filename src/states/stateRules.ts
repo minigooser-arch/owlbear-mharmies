@@ -3,6 +3,7 @@ import type { Side, StateEntity, WarState } from "../shared/types";
 export interface StatePoliticalContext {
   states: readonly StateEntity[];
   sides: readonly Side[];
+  /** Legacy/history objects only; exact interstate hostility lives in stateRelations. */
   wars: readonly WarState[];
 }
 
@@ -21,17 +22,4 @@ export function isRulingFaction(
 ): boolean {
   const state = stateForFaction(context, factionId);
   return state?.rulingFactionId === factionId;
-}
-
-export function areStatesAtWar(
-  wars: readonly WarState[],
-  leftStateId: string,
-  rightStateId: string
-): boolean {
-  if (leftStateId === rightStateId) return false;
-  return wars.some((war) =>
-    war.active &&
-    war.participantStateIds.includes(leftStateId) &&
-    war.participantStateIds.includes(rightStateId)
-  );
 }
