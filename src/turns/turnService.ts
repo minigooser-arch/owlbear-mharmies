@@ -19,7 +19,7 @@ export interface CompleteTurnInput {
 }
 
 export type CompleteTurnResult =
-  | { changed: false; reason: "AUTO_TURNS_PAUSED" | "ALREADY_PROCESSED" }
+  | { changed: false; reason: "AUTO_TURNS_PAUSED" | "ALREADY_PROCESSED" | "NAVAL_BATTLE_ACTIVE" }
   | { changed: true; scene: SceneState; armies: Record<string, ArmyState> };
 
 function withoutStopReason(army: ArmyState): ArmyState {
@@ -117,6 +117,9 @@ export function completeTurn(
   armies: Readonly<Record<string, ArmyState>>,
   input: CompleteTurnInput
 ): CompleteTurnResult {
+  if (scene.activeNavalBattle?.status === "ACTIVE") {
+    return { changed: false, reason: "NAVAL_BATTLE_ACTIVE" };
+  }
   if (input.source === "SCHEDULE" && scene.turn.autoTurnsPaused) {
     return { changed: false, reason: "AUTO_TURNS_PAUSED" };
   }
