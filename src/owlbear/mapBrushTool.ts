@@ -2,6 +2,7 @@ import type { Metadata, Tool, ToolContext, ToolEvent, ToolMode } from "@owlbear-
 import { StrategicGridAdapter } from "../grid/strategicGrid";
 import { getBrushCells, rasterizeBrushStroke, type BrushSize } from "../terrain/brushMath";
 import {
+  PROGRAMMATIC_ONLY_TOOL_FILTER,
   MAP_BRUSH_ERASER_TARGET_KEY,
   MAP_BRUSH_FACTION_OPERATION_KEY,
   MAP_BRUSH_IMPASSABLE_VALUE_KEY,
@@ -185,10 +186,9 @@ export async function registerMapBrushTool(
     await port.clearPreview();
   });
 
-  const filter = { roles: ["GM" as const] };
   const tool: Tool = {
     id: MAP_BRUSH_TOOL_ID,
-    icons: [{ icon: iconUrl, label: "Разметка карты", filter }],
+    icons: [{ icon: iconUrl, label: "Разметка карты", filter: PROGRAMMATIC_ONLY_TOOL_FILTER }],
     defaultMetadata: {
       [MAP_BRUSH_MODE_KEY]: "TERRAIN",
       [MAP_BRUSH_TERRAIN_ID_KEY]: "plain",

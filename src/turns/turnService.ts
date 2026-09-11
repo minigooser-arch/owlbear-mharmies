@@ -19,7 +19,7 @@ export interface CompleteTurnInput {
 }
 
 export type CompleteTurnResult =
-  | { changed: false; reason: "AUTO_TURNS_PAUSED" | "ALREADY_PROCESSED" }
+  | { changed: false; reason: "AUTO_TURNS_PAUSED" | "ALREADY_PROCESSED" | "NAVAL_BATTLE_ACTIVE" }
   | { changed: true; scene: SceneState; armies: Record<string, ArmyState> };
 
 function withoutStopReason(army: ArmyState): ArmyState {
@@ -117,6 +117,9 @@ export function completeTurn(
   armies: Readonly<Record<string, ArmyState>>,
   input: CompleteTurnInput
 ): CompleteTurnResult {
+  if (scene.activeNavalBattle?.status === "ACTIVE") {
+    return { changed: false, reason: "NAVAL_BATTLE_ACTIVE" };
+  }
   if (input.source === "SCHEDULE" && scene.turn.autoTurnsPaused) {
     return { changed: false, reason: "AUTO_TURNS_PAUSED" };
   }
@@ -218,6 +221,87 @@ export function cancelTurnDeferral(turn: TurnState, now: Date): TurnState {
 export function setTurnNumber(turn: TurnState, turnNumber: number): TurnState {
   if (!Number.isInteger(turnNumber) || turnNumber < 1) throw new Error("INVALID_TURN_NUMBER");
   return { ...turn, turnNumber };
+}
+
+function rebaseTurnIndex(value: number, delta: number): number {
+  if (value === 0) return 0;
+  return Math.max(0, value + delta);
+}
+
+export function canRenumberTurn(scene: SceneState): boolean {
+  return scene.turn.phase === "MOVEMENT" && scene.activeNavalBattle?.status !== "ACTIVE";
+}
+
+export function renumberSceneTurn(
+  scene: SceneState,
+  armies: Readonly<Record<string, ArmyState>>,
+  turnNumber: number
+): { scene: SceneState; armies: Record<string, ArmyState> } {
+  const nextTurn = setTurnNumber(scene.turn, turnNumber);
+  const delta = turnNumber - scene.turn.turnNumber;
+  const nextScene = structuredClone(scene);
+  const nextArmies = structuredClone(armies) as Record<string, ArmyState>;
+  nextScene.turn = nextTurn;
+
+  for (const [armyId, army] of Object.entries(nextArmies)) {
+    nextArmies[armyId] = {
+      ...army,
+      plannedRoute: {
+        ...army.plannedRoute,
+        executeOnTurn: rebaseTurnIndex(army.plannedRoute.executeOnTurn, delta)
+      },
+      supply: {
+        ...army.supply,
+        checkedOnTurn: rebaseTurnIndex(army.supply.checkedOnTurn, delta)
+      },
+      disband: {
+        ...army.disband,
+        requestedOnTurn: army.disband.requestedOnTurn == null
+          ? null
+          : rebaseTurnIndex(army.disband.requestedOnTurn, delta)
+      },
+      revision: army.revision + 1
+    };
+  }
+
+  if (nextScene.ships) {
+    for (const [shipId, ship] of Object.entries(nextScene.ships)) {
+      nextScene.ships[shipId] = {
+        ...ship,
+        shoreBombardmentUsedOnTurn: ship.shoreBombardmentUsedOnTurn == null
+          ? null
+          : rebaseTurnIndex(ship.shoreBombardmentUsedOnTurn, delta),
+        logisticsActionUsedOnTurn: ship.logisticsActionUsedOnTurn == null
+          ? null
+          : rebaseTurnIndex(ship.logisticsActionUsedOnTurn, delta),
+        revision: ship.revision + 1
+      };
+    }
+  }
+
+  if (nextScene.navalBattleRequests) {
+    nextScene.navalBattleRequests = nextScene.navalBattleRequests.map((request) =>
+      request.createdOnTurn === undefined
+        ? { ...request }
+        : { ...request, createdOnTurn: rebaseTurnIndex(request.createdOnTurn, delta) }
+    );
+  }
+
+  if (nextScene.navalRevealUntilTurn) {
+    nextScene.navalRevealUntilTurn = Object.fromEntries(
+      Object.entries(nextScene.navalRevealUntilTurn).map(([sideId, reveals]) => [
+        sideId,
+        Object.fromEntries(
+          Object.entries(reveals).map(([shipId, untilTurn]) => [
+            shipId,
+            rebaseTurnIndex(untilTurn, delta)
+          ])
+        )
+      ])
+    );
+  }
+
+  return { scene: nextScene, armies: nextArmies };
 }
 
 export function pauseAutoTurns(turn: TurnState): TurnState {

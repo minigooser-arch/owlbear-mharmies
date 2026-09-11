@@ -111,6 +111,19 @@ describe("naval battle lifecycle", () => {
     expect(result.ships.blue).toMatchObject({ status: "IN_NAVAL_BATTLE", battleId: "battle-1" });
   });
 
+  it("rejects a disconnected tactical area instead of trapping a participant on an isolated cell", () => {
+    expect(() => startNavalBattle(scene(), {
+      battleId: "battle-1",
+      requestId: null,
+      initiatingShipId: "red",
+      participantShipIds: ["red", "blue"],
+      areaCells: [{ x: 4, y: 5 }, { x: 5, y: 5 }, { x: 20, y: 20 }],
+      snapshots: snapshots(),
+      startedAt: 123,
+      rollD20: rolls(18, 10)
+    })).toThrow("Naval battle area must be connected");
+  });
+
   it("consumes only the matching battle request and reveals opposing participants through the next global-turn boundary", () => {
     const result = startNavalBattle(scene(), {
       battleId: "battle-1",

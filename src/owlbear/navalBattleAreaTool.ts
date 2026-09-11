@@ -2,6 +2,7 @@ import type { Tool, ToolContext, ToolEvent, ToolMode } from "@owlbear-rodeo/sdk"
 import { StrategicGridAdapter } from "../grid/strategicGrid";
 import { rasterizeBrushStroke } from "../terrain/brushMath";
 import {
+  PROGRAMMATIC_ONLY_TOOL_FILTER,
   NAVAL_BATTLE_AREA_REQUEST_ID_KEY,
   NAVAL_BATTLE_AREA_SESSION_ID_KEY,
   NAVAL_BATTLE_AREA_TOOL_ID,
@@ -170,10 +171,9 @@ export async function registerNavalBattleAreaTool(
     else await port.clearPreview();
   });
 
-  const filter = { roles: ["GM" as const] };
   const tool: Tool = {
     id: NAVAL_BATTLE_AREA_TOOL_ID,
-    icons: [{ icon: iconUrl, label: "Область морского боя", filter }],
+    icons: [{ icon: iconUrl, label: "Область морского боя", filter: PROGRAMMATIC_ONLY_TOOL_FILTER }],
     defaultMetadata: {
       [NAVAL_BATTLE_AREA_REQUEST_ID_KEY]: null,
       [NAVAL_BATTLE_AREA_SESSION_ID_KEY]: null

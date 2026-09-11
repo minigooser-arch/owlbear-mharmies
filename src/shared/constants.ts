@@ -1,6 +1,9 @@
 import type { SceneSettings, TerrainRegistryState, TurnState } from "./types";
 
 export const EXTENSION_ID = "com.letopis.army-control";
+export const PROGRAMMATIC_ONLY_TOOL_FILTER = {
+  activeTools: [`${EXTENSION_ID}/__programmatic-only__`]
+};
 export const ROUTE_TOOL_ID = `${EXTENSION_ID}/route-tool`;
 export const ROUTE_TOOL_MODE_ID = `${ROUTE_TOOL_ID}/draw`;
 export const ROUTE_ARMY_ID_KEY = `${ROUTE_TOOL_ID}/army-id`;

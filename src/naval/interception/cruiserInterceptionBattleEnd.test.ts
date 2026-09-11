@@ -36,7 +36,7 @@ describe("interception cleanup at naval battle end", () => {
       requestId: null,
       initiatingShipId: "cruiser",
       participantShipIds: ["cruiser", "target"],
-      areaCells: [{ x: 5, y: 5 }, { x: 7, y: 5 }],
+      areaCells: [{ x: 5, y: 5 }, { x: 6, y: 5 }, { x: 7, y: 5 }],
       snapshots: {
         cruiser: {
           shipId: "cruiser",

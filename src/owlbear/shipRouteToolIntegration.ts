@@ -1,5 +1,6 @@
 import type { KeyEvent, Metadata, Tool, ToolAction, ToolContext, ToolEvent, ToolMode } from "@owlbear-rodeo/sdk";
 import {
+  PROGRAMMATIC_ONLY_TOOL_FILTER,
   SHIP_ROUTE_CANCEL_ACTION_ID,
   SHIP_ROUTE_CLEAR_ACTION_ID,
   SHIP_ROUTE_RETURN_TOOL_KEY,
@@ -294,7 +295,7 @@ export async function registerShipRouteTool(
 
   const tool: Tool = {
     id: SHIP_ROUTE_TOOL_ID,
-    icons: [{ icon: iconUrl, label: "Маршрут корабля" }],
+    icons: [{ icon: iconUrl, label: "Маршрут корабля", filter: PROGRAMMATIC_ONLY_TOOL_FILTER }],
     defaultMetadata: { [SHIP_ROUTE_SHIP_ID_KEY]: null, [SHIP_ROUTE_RETURN_TOOL_KEY]: null }
   };
   const mode: ToolMode = {

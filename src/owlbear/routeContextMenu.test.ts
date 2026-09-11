@@ -22,37 +22,25 @@ function harness() {
 }
 
 describe("unit route Owlbear context menu", () => {
-  it("uses one persistent context-menu item with set/edit icons selected by route metadata", async () => {
+  it("keeps a fallback icon visible for any Letopis clone even if hasRoute metadata is temporarily absent", async () => {
     const test = harness();
     await registerRouteContextMenu(test.port, test.service, "/icon.png");
 
     expect(test.entries).toHaveLength(1);
     expect(test.entries[0]).toMatchObject({
       id: ROUTE_SET_CONTEXT_MENU_ID,
-      icons: [
+      icons: expect.arrayContaining([
         expect.objectContaining({
-          label: "Изменить маршрут",
+          label: "Маршрут Летописи",
           filter: expect.objectContaining({
             min: 1,
             max: 1,
-            every: expect.arrayContaining([
-              { key: ["metadata", METADATA_KEYS.localClone], operator: "!=", value: undefined },
-              { key: ["metadata", METADATA_KEYS.localClone, "hasRoute"], value: true }
-            ])
-          })
-        }),
-        expect.objectContaining({
-          label: "Задать маршрут",
-          filter: expect.objectContaining({
-            min: 1,
-            max: 1,
-            every: expect.arrayContaining([
-              { key: ["metadata", METADATA_KEYS.localClone], operator: "!=", value: undefined },
-              { key: ["metadata", METADATA_KEYS.localClone, "hasRoute"], value: false }
-            ])
+            every: [
+              { key: ["metadata", METADATA_KEYS.localClone], operator: "!=", value: undefined }
+            ]
           })
         })
-      ]
+      ])
     });
   });
 

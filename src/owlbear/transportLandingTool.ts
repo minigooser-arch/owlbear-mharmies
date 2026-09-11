@@ -1,6 +1,7 @@
 import type { KeyEvent, Metadata, Tool, ToolContext, ToolEvent, ToolMode } from "@owlbear-rodeo/sdk";
 import { StrategicGridAdapter } from "../grid/strategicGrid";
 import {
+  PROGRAMMATIC_ONLY_TOOL_FILTER,
   TRANSPORT_LANDING_ARMY_ID_KEY,
   TRANSPORT_LANDING_RETURN_TOOL_KEY,
   TRANSPORT_LANDING_SHIP_ID_KEY,
@@ -97,7 +98,7 @@ export async function registerTransportLandingTool(
 
   const tool: Tool = {
     id: TRANSPORT_LANDING_TOOL_ID,
-    icons: [{ icon: iconUrl, label: "Высадка армии" }],
+    icons: [{ icon: iconUrl, label: "Высадка армии", filter: PROGRAMMATIC_ONLY_TOOL_FILTER }],
     defaultMetadata: {
       [TRANSPORT_LANDING_SHIP_ID_KEY]: null,
       [TRANSPORT_LANDING_ARMY_ID_KEY]: null,

@@ -2,13 +2,14 @@ import { joinReinforcements, releaseBattleGroup } from "../battles/battleGroupSe
 import { destroyArmy } from "../armies/armyLifecycle";
 import { healArmy } from "../health/armyHealth";
 import { requestArmyDisband } from "../disband/disbandService";
-import { cancelTurnDeferral, completeTurn, deferTurn, pauseAutoTurns, resumeAutoTurns, setTurnNumber } from "../turns/turnService";
+import { canRenumberTurn, cancelTurnDeferral, completeTurn, deferTurn, pauseAutoTurns, renumberSceneTurn, resumeAutoTurns } from "../turns/turnService";
 import { parseCellKey } from "../grid/strategicGrid";
 import { applyCellPatchBatch, readCell } from "../terrain/gridMap";
 import { validatePlannedRoute } from "../movement/movementRules";
 import { unenteredRouteCells } from "../movement/strategicProgress";
 import { createRegisteredShip, destroyShip } from "../naval/ships/shipLifecycle";
 import { resolvePlannedShipRoutes } from "../naval/ships/shipMovementPhase";
+import { occupiedByOtherLiveShip } from "../naval/ships/shipCellOccupancy";
 import { SHIP_CLASSES } from "../naval/ships/shipClasses";
 import { cellSupportsDomain } from "../terrain/movementDomains";
 import { authorizeArmyCommand } from "../shared/permissions";
@@ -480,9 +481,19 @@ export class CommandProcessor {
         const position = state.positions?.[command.shipId] ?? state.items[command.shipId]?.position;
         if (!position || !this.cellForPosition || !this.positionForCell) return "SHIP_POSITION_UNAVAILABLE";
         const from = this.cellForPosition(position);
+        const destination = forwardCell(from, ship.facing);
+        const shipCells = Object.fromEntries(
+          Object.keys(state.scene.ships ?? {}).flatMap((shipId) => {
+            const candidatePosition = commandPosition(state, shipId);
+            return candidatePosition ? [[shipId, this.cellForPosition?.(candidatePosition)]] : [];
+          }).filter((entry): entry is [string, GridCellCoord] => entry[1] !== undefined)
+        );
+        if (occupiedByOtherLiveShip(state.scene.ships ?? {}, shipCells, command.shipId, destination)) {
+          return "SHIP_CELL_OCCUPIED";
+        }
         try {
           const result = applyForwardTacticalStep(
-            battle, command.shipId, ship, from, forwardCell(from, ship.facing)
+            battle, command.shipId, ship, from, destination
           );
           state.positions ??= {};
           state.positions[command.shipId] = this.positionForCell(result.destination);
@@ -858,22 +869,28 @@ export class CommandProcessor {
         return undefined;
       }
       case "START_NAVAL_BATTLE": {
-        if (command.areaCells.some((cell) => !cellSupportsDomain(state.scene, cell, "SEA"))) {
-          return "INVALID_NAVAL_BATTLE_AREA";
-        }
         if (!this.cellForPosition) return "SHIP_POSITION_UNAVAILABLE";
         const snapshots: Record<string, import("../shared/types").NavalBattleShipSnapshot> = {};
+        const normalizedArea = new Map(
+          command.areaCells.map((cell) => [`${cell.x},${cell.y}`, { ...cell }])
+        );
         for (const shipId of command.participantShipIds) {
           const ship = state.scene.ships?.[shipId];
           if (!ship) return "SHIP_NOT_FOUND";
           const position = state.positions?.[shipId] ?? state.items[shipId]?.position;
           if (!position) return "SHIP_POSITION_UNAVAILABLE";
+          const strategicCell = this.cellForPosition(position);
           snapshots[shipId] = {
             shipId,
-            strategicCell: this.cellForPosition(position),
+            strategicCell,
             strategicPosition: { ...position },
             strategicFacing: ship.facing
           };
+          normalizedArea.set(`${strategicCell.x},${strategicCell.y}`, { ...strategicCell });
+        }
+        const areaCells = [...normalizedArea.values()];
+        if (areaCells.some((cell) => !cellSupportsDomain(state.scene, cell, "SEA"))) {
+          return "INVALID_NAVAL_BATTLE_AREA";
         }
         const sceneRevision = state.scene.revision;
         try {
@@ -882,7 +899,7 @@ export class CommandProcessor {
             requestId: command.navalRequestId,
             initiatingShipId: command.initiatingShipId,
             participantShipIds: command.participantShipIds,
-            areaCells: command.areaCells,
+            areaCells,
             snapshots,
             startedAt: this.now().getTime(),
             rollD20: () => Math.floor(Math.random() * 20) + 1
@@ -1441,13 +1458,14 @@ export class CommandProcessor {
         state.scene.turn = resumeAutoTurns(state.scene.turn, this.now());
         return undefined;
       case "SET_TURN_NUMBER": {
-        state.scene.turn = setTurnNumber(state.scene.turn, command.turnNumber);
-        for (const [armyId, army] of Object.entries(state.armies)) {
-          if (army.plannedRoute.executeOnTurn === 0 || army.plannedRoute.executeOnTurn === command.turnNumber) continue;
-          state.armies[armyId] = bumpArmy(army, {
-            plannedRoute: { ...army.plannedRoute, requiresReplan: true }
-          });
+        if (!canRenumberTurn(state.scene)) {
+          return state.scene.activeNavalBattle?.status === "ACTIVE"
+            ? "NAVAL_BATTLE_ACTIVE"
+            : "NOT_MOVEMENT_PHASE";
         }
+        const renumbered = renumberSceneTurn(state.scene, state.armies, command.turnNumber);
+        state.scene = renumbered.scene;
+        state.armies = renumbered.armies;
         return undefined;
       }
       case "COMPLETE_TURN_NOW": {

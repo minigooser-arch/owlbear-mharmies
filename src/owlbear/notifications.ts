@@ -49,6 +49,7 @@ export type NotificationCode =
   | "SHIP_POSITION_UNAVAILABLE"
   | "SHIP_REQUIRES_SEA"
   | "SHIP_DESTROYED"
+  | "SHIP_CELL_OCCUPIED"
   | "OUTSIDE_NAVAL_BATTLE_AREA"
   | "INSUFFICIENT_NAVAL_MOVEMENT"
   | "NAVAL_ACTION_ALREADY_USED"
@@ -56,7 +57,17 @@ export type NotificationCode =
   | "NAVAL_BATTLE_REQUEST_ALREADY_PENDING"
   | "INVALID_NAVAL_BATTLE_AREA"
   | "INVALID_NAVAL_BATTLE"
-  | "SHIP_ALREADY_EXITED";
+  | "SHIP_ALREADY_EXITED"
+  | "ACTION_ALREADY_USED"
+  | "SHIP_UNARMED"
+  | "TARGET_EXITED"
+  | "TARGET_DESTROYED"
+  | "OUTSIDE_BROADSIDE_SECTOR"
+  | "OUT_OF_RANGE"
+  | "NO_NAVAL_LOS"
+  | "NAVAL_POSITION_UNAVAILABLE"
+  | "TARGET_NOT_IN_NAVAL_BATTLE"
+  | "NAVAL_BATTLE_ACTIVE";
 
 const RUSSIAN_MESSAGES: Readonly<Record<NotificationCode, string>> = {
   GM_ONLY: "Это действие доступно только ведущему.",
@@ -109,14 +120,25 @@ const RUSSIAN_MESSAGES: Readonly<Record<NotificationCode, string>> = {
   SHIP_POSITION_UNAVAILABLE: "Не удалось определить клетку корабля на поле боя.",
   SHIP_REQUIRES_SEA: "Корабль можно зарегистрировать только на морской клетке. В «Разметке карты» назначьте этой клетке местность «Море».",
   SHIP_DESTROYED: "Уничтоженный корабль не может выполнять это действие.",
+  SHIP_CELL_OCCUPIED: "Клетка занята другим кораблём.",
   OUTSIDE_NAVAL_BATTLE_AREA: "Корабль не может выйти за границы поля морского боя.",
   INSUFFICIENT_NAVAL_MOVEMENT: "У корабля не хватает очков перемещения для этого манёвра.",
   NAVAL_ACTION_ALREADY_USED: "После активного действия корабль больше не может двигаться в этот ход.",
   INVALID_NAVAL_TACTICAL_ACTION: "Этот морской манёвр сейчас недоступен.",
   NAVAL_BATTLE_REQUEST_ALREADY_PENDING: "Заявка на эту пару кораблей уже ожидает ведущего.",
   INVALID_NAVAL_BATTLE_AREA: "Поле морского боя может состоять только из морских клеток.",
-  INVALID_NAVAL_BATTLE: "Не удалось начать морской бой. Проверьте, что все выбранные корабли находятся внутри выбранной области боя.",
-  SHIP_ALREADY_EXITED: "Этот корабль уже вышел из морского боя."
+  INVALID_NAVAL_BATTLE: "Не удалось начать морской бой. Проверьте выбранную область и участников.",
+  SHIP_ALREADY_EXITED: "Этот корабль уже вышел из морского боя.",
+  ACTION_ALREADY_USED: "Корабль уже выполнил активное действие в этом раунде.",
+  SHIP_UNARMED: "У этого корабля нет доступного бортового вооружения.",
+  TARGET_EXITED: "Цель уже вышла из морского боя.",
+  TARGET_DESTROYED: "Цель уже уничтожена.",
+  OUTSIDE_BROADSIDE_SECTOR: "Цель находится вне сектора бортового залпа.",
+  OUT_OF_RANGE: "Цель находится вне дальности бортового залпа.",
+  NO_NAVAL_LOS: "Линия огня к цели перекрыта.",
+  NAVAL_POSITION_UNAVAILABLE: "Не удалось определить позиции кораблей для морского действия.",
+  TARGET_NOT_IN_NAVAL_BATTLE: "Цель не участвует в текущем морском бою.",
+  NAVAL_BATTLE_ACTIVE: "Сначала завершите текущий морской бой."
 };
 
 const UNKNOWN_FAILURE_MESSAGE = "Не удалось выполнить действие.";
