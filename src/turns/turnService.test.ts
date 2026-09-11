@@ -50,6 +50,46 @@ it("always starts the new turn in movement phase", () => {
   expect(result.scene.turn.phase).toBe("MOVEMENT");
 });
 
+it("refuses any global turn completion while a naval battle is active", () => {
+  const current = scene();
+  current.version = 6;
+  current.turn.phase = "POST_MOVEMENT";
+  current.activeNavalBattle = {
+    version: 1,
+    id: "naval-1",
+    requestId: null,
+    initiatorSideId: "red",
+    areaCells: [{ x: 0, y: 0 }],
+    participantShipIds: [],
+    snapshots: {},
+    initiative: [],
+    roundNumber: 1,
+    currentShipId: null,
+    completedShipIdsThisRound: [],
+    movementRemainingByShip: {},
+    actionUsedByShip: {},
+    exitedShipIds: [],
+    status: "ACTIVE",
+    events: [],
+    startedOnTurn: 1,
+    startedAt: 1,
+    revision: 1
+  };
+
+  expect(completeTurn(current, {}, {
+    source: "SCHEDULE",
+    completedAt: new Date("2026-09-11T12:00:00.000Z"),
+    boundaryId: "STANDARD:2026-09-11T15:00:00+03:00",
+    armyCells: {}
+  })).toEqual({ changed: false, reason: "NAVAL_BATTLE_ACTIVE" });
+
+  expect(completeTurn(current, {}, {
+    source: "MANUAL",
+    completedAt: new Date("2026-09-11T12:00:00.000Z"),
+    armyCells: {}
+  })).toEqual({ changed: false, reason: "NAVAL_BATTLE_ACTIVE" });
+});
+
 it("disbands pending armies before the new turn", () => {
   const pending = army(3); pending.disband = { pending:true, requestedOnTurn:1, requestedByPlayerId:"member" };
   const result = completeTurn(scene(), { a: pending }, { source:"MANUAL", completedAt:new Date("2026-09-02T10:00:00Z"), armyCells:{a:{x:0,y:0}} });
