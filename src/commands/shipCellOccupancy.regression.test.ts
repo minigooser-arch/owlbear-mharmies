@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createRegisteredShip } from "../naval/ships/shipLifecycle";
 import { resolvePlannedShipRoutes } from "../naval/ships/shipMovementPhase";
+import { notificationMessage } from "../owlbear/notifications";
 import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE } from "../shared/constants";
 import { COMMAND_PROTOCOL_VERSION, type ArmyCommand, type GridCellCoord, type NavalBattleState, type SceneState, type Vector2 } from "../shared/types";
 import { CommandProcessor, type CommandState } from "./commandProcessor";
@@ -123,5 +124,9 @@ describe("ship cell occupancy", () => {
     expect(result).toEqual({ ok: false, reason: "SHIP_CELL_OCCUPIED" });
     expect(positions.ship).toEqual(center({ x: 0, y: 0 }));
     expect(scene.ships?.ship?.plannedRoute).toEqual([{ x: 0, y: -1 }]);
+  });
+
+  it("shows a clear Russian error for an occupied ship cell", () => {
+    expect(notificationMessage("SHIP_CELL_OCCUPIED")).toBe("Клетка занята другим кораблём.");
   });
 });
