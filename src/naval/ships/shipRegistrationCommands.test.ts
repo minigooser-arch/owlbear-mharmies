@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CommandProcessor, type CommandContext, type CommandState } from "../../commands/commandProcessor";
 import { validateArmyCommand } from "../../commands/commandValidation";
+import { createRegisteredShip } from "./shipLifecycle";
 import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE, METADATA_KEYS } from "../../shared/constants";
 import { COMMAND_PROTOCOL_VERSION, type ArmyCommand, type ArmyState, type NavalSceneState, type SceneItemRecord } from "../../shared/types";
 
