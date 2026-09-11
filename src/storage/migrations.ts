@@ -111,7 +111,7 @@ function pairwiseRelationsFromLegacyWars(value: unknown, stateIds: ReadonlySet<s
     if (!isRecord(rawWar) || rawWar.active === false) continue;
     const participants = uniqueStrings(rawWar.participantStateIds).filter((id) => stateIds.has(id));
     if (participants.length !== 2 || participants[0] === participants[1]) continue;
-    const [left, right] = participants;
+    const [left, right] = participants as [string, string];
     result[left] ??= {};
     result[right] ??= {};
     result[left][right] = { militaryAccess: false, atWar: true };
