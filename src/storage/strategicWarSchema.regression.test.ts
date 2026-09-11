@@ -115,8 +115,11 @@ describe("strategic war scene schema", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    expect(result.value.stateRelations?.russia?.broken?.atWar).not.toBe(true);
-    expect(result.value.stateRelations?.germany?.broken?.atWar).not.toBe(true);
+    const migrated = result.value as unknown as {
+      stateRelations?: Record<string, Record<string, { atWar?: boolean }>>;
+    };
+    expect(migrated.stateRelations?.russia?.broken?.atWar).not.toBe(true);
+    expect(migrated.stateRelations?.germany?.broken?.atWar).not.toBe(true);
   });
 
   it("rejects schema versions newer than v7", () => {
