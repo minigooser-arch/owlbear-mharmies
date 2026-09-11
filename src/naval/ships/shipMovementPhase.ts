@@ -1,10 +1,11 @@
 import type { GridCellCoord, SceneItemRecord, SceneState, Vector2 } from "../../shared/types";
 import { SHIP_CLASSES } from "./shipClasses";
+import { hasDuplicateLiveShipCells } from "./shipCellOccupancy";
 import { planShipStrategicRoute, type ShipStrategicMovementFailure } from "./shipStrategicMovement";
 
 export type ShipMovementPhaseResult =
   | { ok: true }
-  | { ok: false; reason: ShipStrategicMovementFailure | "SHIP_POSITION_UNAVAILABLE" };
+  | { ok: false; reason: ShipStrategicMovementFailure | "SHIP_POSITION_UNAVAILABLE" | "SHIP_CELL_OCCUPIED" };
 
 interface ResolvedShipRoute {
   shipId: string;
@@ -53,6 +54,21 @@ export function resolvePlannedShipRoutes(
       ...(finalCell ? { finalCell: { ...finalCell } } : {}),
       finalFacing: planned.finalFacing
     });
+  }
+
+  if (cellForPosition) {
+    const resolvedByShipId = new Map(resolved.map((route) => [route.shipId, route]));
+    const finalCellsByShipId = Object.fromEntries(
+      Object.keys(ships).map((shipId) => {
+        const route = resolvedByShipId.get(shipId);
+        if (route?.finalCell) return [shipId, route.finalCell];
+        const position = positions[shipId] ?? items[shipId]?.position;
+        return [shipId, position ? cellForPosition(position) : undefined];
+      })
+    );
+    if (hasDuplicateLiveShipCells(ships, finalCellsByShipId)) {
+      return { ok: false, reason: "SHIP_CELL_OCCUPIED" };
+    }
   }
 
   for (const route of resolved) {
