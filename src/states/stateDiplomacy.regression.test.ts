@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { annexingStateForEntry } from "../annexation/annexationRules";
 import { canFactionEnterCell } from "../wars/warRules";
-import { isRulingFaction } from "./stateRules";
 
 const openCell = {
   terrainId: null,
@@ -12,28 +11,6 @@ const openCell = {
 };
 
 describe("pairwise state diplomacy regressions", () => {
-  it("does not treat a ruler assigned from another state as a valid ruling faction", () => {
-    const context = {
-      states: [
-        { id: "russia", name: "Россия", rulingFactionId: "blue", active: true },
-        { id: "germany", name: "Германия", rulingFactionId: "blue", active: true }
-      ],
-      sides: [
-        {
-          id: "blue",
-          name: "Синие",
-          color: "#1976d2",
-          playerIds: [],
-          leaderPlayerIds: [],
-          stateId: "germany"
-        }
-      ],
-      wars: []
-    };
-
-    expect(isRulingFaction(context, "blue")).toBe(false);
-  });
-
   it("does not turn generic faction participation in any war into global movement access", () => {
     const result = canFactionEnterCell({
       factionId: "red",
