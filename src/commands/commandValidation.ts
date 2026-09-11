@@ -147,12 +147,24 @@ function parseTerrainType(value: unknown): TerrainType | undefined {
 }
 
 function parseStateEntity(value: unknown): StateEntity | undefined {
-  if (!isRecord(value) || !sideId(value.id) || !boundedString(value.name, 80) || typeof value.active !== "boolean") return undefined;
+  if (
+    !isRecord(value) ||
+    !sideId(value.id) ||
+    !boundedString(value.name, 80) ||
+    !boundedString(value.color, 32) ||
+    typeof value.active !== "boolean"
+  ) return undefined;
   const rulingFactionId = value.rulingFactionId === null || value.rulingFactionId === undefined
     ? null
     : sideId(value.rulingFactionId) ? value.rulingFactionId : undefined;
   if (rulingFactionId === undefined) return undefined;
-  return { id: value.id, name: value.name.trim(), rulingFactionId, active: value.active };
+  return {
+    id: value.id,
+    name: value.name.trim(),
+    color: value.color,
+    rulingFactionId,
+    active: value.active
+  };
 }
 
 function parseWar(value: unknown): WarState | undefined {
@@ -499,12 +511,21 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
     if (!sideId(value.stateId) || !isRecord(value.patch)) return undefined;
     const patch: Partial<Omit<StateEntity, "id">> = {};
     if ("name" in value.patch) { if (!boundedString(value.patch.name, 80)) return undefined; patch.name = value.patch.name.trim(); }
+    if ("color" in value.patch) { if (!boundedString(value.patch.color, 32)) return undefined; patch.color = value.patch.color; }
     if ("active" in value.patch) { if (typeof value.patch.active !== "boolean") return undefined; patch.active = value.patch.active; }
     if ("rulingFactionId" in value.patch) { if (value.patch.rulingFactionId !== null && !sideId(value.patch.rulingFactionId)) return undefined; patch.rulingFactionId = value.patch.rulingFactionId as string | null; }
     return { type: "UPDATE_STATE", stateId: value.stateId, patch };
   },
   DELETE_STATE: (value) => sideId(value.stateId) ? { type: "DELETE_STATE", stateId: value.stateId } : undefined,
   SET_SIDE_STATE: (value) => sideId(value.sideId) && (value.stateId === null || sideId(value.stateId)) ? { type: "SET_SIDE_STATE", sideId: value.sideId, stateId: value.stateId as string | null } : undefined,
+  SET_STATE_MILITARY_ACCESS: (value) =>
+    sideId(value.fromStateId) && sideId(value.toStateId) && value.fromStateId !== value.toStateId && typeof value.allowed === "boolean"
+      ? { type: "SET_STATE_MILITARY_ACCESS", fromStateId: value.fromStateId, toStateId: value.toStateId, allowed: value.allowed }
+      : undefined,
+  SET_STATE_WAR: (value) =>
+    sideId(value.leftStateId) && sideId(value.rightStateId) && value.leftStateId !== value.rightStateId && typeof value.atWar === "boolean"
+      ? { type: "SET_STATE_WAR", leftStateId: value.leftStateId, rightStateId: value.rightStateId, atWar: value.atWar }
+      : undefined,
   SET_RECOGNIZED_STATE_CELLS: (value) => { const cells = parseCells(value.cells); return cells && (value.stateId === null || sideId(value.stateId)) ? { type: "SET_RECOGNIZED_STATE_CELLS", cells, stateId: value.stateId as string | null } : undefined; },
   SET_DEFACTO_STATE_CELLS: (value) => { const cells = parseCells(value.cells); return cells && (value.stateId === null || sideId(value.stateId)) ? { type: "SET_DEFACTO_STATE_CELLS", cells, stateId: value.stateId as string | null } : undefined; },
   SET_ARMY_HP: (value) => {
