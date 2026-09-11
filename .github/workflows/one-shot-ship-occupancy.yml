@@ -1,0 +1,41 @@
+name: One-shot ship occupancy patch
+on:
+  push:
+    branches: [fix/turn-number-safety]
+    paths: [.github/workflows/one-shot-ship-occupancy.yml]
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: fix/turn-number-safety
+      - name: Patch command processor and self-remove
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path('src/commands/commandProcessor.ts')
+          text = p.read_text()
+          old_import = 'import { resolvePlannedShipRoutes } from "../naval/ships/shipMovementPhase";\n'
+          new_import = old_import + 'import { occupiedByOtherLiveShip } from "../naval/ships/shipCellOccupancy";\n'
+          if new_import not in text:
+              if old_import not in text:
+                  raise SystemExit('shipMovementPhase import anchor not found')
+              text = text.replace(old_import, new_import, 1)
+          old_block = '''        const from = this.cellForPosition(position);\n        try {\n          const result = applyForwardTacticalStep(\n            battle, command.shipId, ship, from, forwardCell(from, ship.facing)\n          );\n'''
+          new_block = '''        const from = this.cellForPosition(position);\n        const destination = forwardCell(from, ship.facing);\n        const shipCells = Object.fromEntries(\n          Object.keys(state.scene.ships ?? {}).flatMap((shipId) => {\n            const candidatePosition = commandPosition(state, shipId);\n            return candidatePosition ? [[shipId, this.cellForPosition?.(candidatePosition)]] : [];\n          }).filter((entry): entry is [string, GridCellCoord] => entry[1] !== undefined)\n        );\n        if (occupiedByOtherLiveShip(state.scene.ships ?? {}, shipCells, command.shipId, destination)) {\n          return "SHIP_CELL_OCCUPIED";\n        }\n        try {\n          const result = applyForwardTacticalStep(\n            battle, command.shipId, ship, from, destination\n          );\n'''
+          if new_block not in text:
+              if old_block not in text:
+                  raise SystemExit('NAVAL_MOVE_FORWARD anchor not found')
+              text = text.replace(old_block, new_block, 1)
+          p.write_text(text)
+          Path('.github/workflows/one-shot-ship-occupancy.yml').unlink()
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/commands/commandProcessor.ts .github/workflows/one-shot-ship-occupancy.yml
+          git commit -m "fix: block tactical ship cell overlap"
+          git push origin HEAD:fix/turn-number-safety
