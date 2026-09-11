@@ -27,6 +27,32 @@ function cellKey(cell: GridCellCoord): string {
   return `${cell.x},${cell.y}`;
 }
 
+function areaIsOrthogonallyConnected(cells: readonly GridCellCoord[]): boolean {
+  if (cells.length === 0) return false;
+  const keys = new Set(cells.map(cellKey));
+  const first = cells[0];
+  if (!first) return false;
+  const visited = new Set<string>([cellKey(first)]);
+  const queue: GridCellCoord[] = [first];
+  for (let index = 0; index < queue.length; index += 1) {
+    const cell = queue[index];
+    if (!cell) continue;
+    const neighbors = [
+      { x: cell.x + 1, y: cell.y },
+      { x: cell.x - 1, y: cell.y },
+      { x: cell.x, y: cell.y + 1 },
+      { x: cell.x, y: cell.y - 1 }
+    ];
+    for (const neighbor of neighbors) {
+      const key = cellKey(neighbor);
+      if (!keys.has(key) || visited.has(key)) continue;
+      visited.add(key);
+      queue.push(neighbor);
+    }
+  }
+  return visited.size === keys.size;
+}
+
 function cloneSnapshot(snapshot: NavalBattleShipSnapshot): NavalBattleShipSnapshot {
   return {
     shipId: snapshot.shipId,
@@ -47,6 +73,9 @@ export function startNavalBattle(
     throw new Error("Initiating ship must participate");
   }
   const areaCellKeys = new Set(input.areaCells.map(cellKey));
+  if (!areaIsOrthogonallyConnected(input.areaCells)) {
+    throw new Error("Naval battle area must be connected");
+  }
 
   const snapshots: Record<string, NavalBattleShipSnapshot> = {};
   for (const shipId of participantShipIds) {
