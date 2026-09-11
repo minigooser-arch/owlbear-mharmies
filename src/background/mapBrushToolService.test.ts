@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE, METADATA_KEYS } from "../shared/constants";
-import type { ArmyCommand, SceneState } from "../shared/types";
+import { COMMAND_PROTOCOL_VERSION, type ArmyCommand, type SceneState } from "../shared/types";
 import { MapBrushToolService } from "./mapBrushToolService";
 
 function scene(): SceneState {
@@ -30,7 +30,7 @@ it("sends one terrain batch command for one brush stroke", async () => {
   const service = new MapBrushToolService(servicePort(current), {
     send: async (command) => {
       sent.push(command);
-      return { protocolVersion: 4, requestId: command.requestId, status: "ACCEPTED", coordinatorConnectionId: "coord", recipientConnectionId: "c" };
+      return { protocolVersion: COMMAND_PROTOCOL_VERSION, requestId: command.requestId, status: "ACCEPTED", coordinatorConnectionId: "coord", recipientConnectionId: "c" };
     }
   });
 
@@ -50,7 +50,7 @@ it("sends de-facto state painting as one batch command", async () => {
   const service = new MapBrushToolService(servicePort(current), {
     send: async (command) => {
       sent.push(command);
-      return { protocolVersion: 4, requestId: command.requestId, status: "ACCEPTED", coordinatorConnectionId: "coord", recipientConnectionId: "c" };
+      return { protocolVersion: COMMAND_PROTOCOL_VERSION, requestId: command.requestId, status: "ACCEPTED", coordinatorConnectionId: "coord", recipientConnectionId: "c" };
     }
   });
 
@@ -70,7 +70,7 @@ it("retries the same deterministic stroke once with the coordinator actual revis
       sent.push(command);
       if (sent.length === 1) {
         return {
-          protocolVersion: 4,
+          protocolVersion: COMMAND_PROTOCOL_VERSION,
           requestId: command.requestId,
           status: "CONFLICT",
           actualRevision: 8,
@@ -79,7 +79,7 @@ it("retries the same deterministic stroke once with the coordinator actual revis
         };
       }
       return {
-        protocolVersion: 4,
+        protocolVersion: COMMAND_PROTOCOL_VERSION,
         requestId: command.requestId,
         status: "ACCEPTED",
         coordinatorConnectionId: "coord",
@@ -111,7 +111,7 @@ it("converges across repeated revision conflicts without changing the stroke", a
       const nextRevision = [8, 9, 10][sent.length - 1];
       if (nextRevision !== undefined) {
         return {
-          protocolVersion: 4,
+          protocolVersion: COMMAND_PROTOCOL_VERSION,
           requestId: command.requestId,
           status: "CONFLICT",
           actualRevision: nextRevision,
@@ -120,7 +120,7 @@ it("converges across repeated revision conflicts without changing the stroke", a
         };
       }
       return {
-        protocolVersion: 4,
+        protocolVersion: COMMAND_PROTOCOL_VERSION,
         requestId: command.requestId,
         status: "ACCEPTED",
         coordinatorConnectionId: "coord",
