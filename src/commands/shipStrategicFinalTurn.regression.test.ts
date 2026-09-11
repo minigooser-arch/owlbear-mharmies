@@ -147,7 +147,7 @@ describe("strategic ship final turn", () => {
       () => ({ x: 0, y: 0 })
     );
 
-    expect(rejected).toBe("INSUFFICIENT_NAVAL_MOVEMENT");
+    expect(rejected).toBe("INSUFFICIENT_MOVEMENT_POINTS");
     expect(rejectedState.scene.ships?.ship?.plannedRoute).toEqual([]);
     expect(plannedFacingOf(rejectedState)).toBeNull();
   });
