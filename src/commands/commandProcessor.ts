@@ -43,6 +43,8 @@ import { embarkArmy, disembarkArmy, validateTransportInteraction } from "../nava
 import { commitHospitalSupport } from "../naval/hospital/hospitalSupport";
 import { commitShoreBombardment, type ShoreBombardmentSectorResolver } from "../naval/shore/shoreBombardment";
 import { applyShipRevealUntilNextTurn } from "../naval/detection/navalVisibility";
+import { createState, deleteState, setSideState, updateState } from "../states/stateService";
+import { removeStateRelations, setMilitaryAccess, setPairWar } from "../states/stateRelations";
 
 export interface CommandState {
   scene: SceneState;
@@ -1336,44 +1338,61 @@ export class CommandProcessor {
         revalidateAllRoutes(state);
         return undefined;
       }
-      case "CREATE_STATE":
-        if (state.scene.states.some((candidate) => candidate.id === command.state.id)) return "STATE_EXISTS";
-        if (command.state.rulingFactionId && !state.scene.sides.some((side) => side.id === command.state.rulingFactionId)) return "SIDE_NOT_FOUND";
-        state.scene.states.push(structuredClone(command.state));
+      case "CREATE_STATE": {
+        const result = createState(state.scene.states, state.scene.sides, command.state);
+        if (!result.ok) return result.reason;
+        state.scene.states = result.states;
+        state.scene.sides = result.sides;
         return undefined;
+      }
       case "UPDATE_STATE": {
-        const current = state.scene.states.find((candidate) => candidate.id === command.stateId);
-        if (!current) return "STATE_NOT_FOUND";
-        if (command.patch.rulingFactionId && !state.scene.sides.some((side) => side.id === command.patch.rulingFactionId)) return "SIDE_NOT_FOUND";
-        Object.assign(current, command.patch);
+        const result = updateState(state.scene.states, state.scene.sides, command.stateId, command.patch);
+        if (!result.ok) return result.reason;
+        state.scene.states = result.states;
+        state.scene.sides = result.sides;
         return undefined;
       }
       case "DELETE_STATE": {
-        if (!state.scene.states.some((candidate) => candidate.id === command.stateId)) return "STATE_NOT_FOUND";
-        state.scene.states = state.scene.states.filter((candidate) => candidate.id !== command.stateId);
-        for (const side of state.scene.sides) if (side.stateId === command.stateId) side.stateId = null;
-        const operations = Object.entries(state.scene.gridMap.cells).flatMap(([key, cell]) => {
-          if (cell.recognizedStateId !== command.stateId && cell.deFactoStateId !== command.stateId) return [];
-          const parsed = parseCellKey(key);
-          return [{
-            cell: parsed,
-            patch: {
-              ...(cell.recognizedStateId === command.stateId ? { recognizedStateId: null } : {}),
-              ...(cell.deFactoStateId === command.stateId ? { deFactoStateId: null } : {})
-            }
-          }];
-        });
-        state.scene.gridMap = applyCellPatchBatch(state.scene.gridMap, operations);
-        state.scene.wars = state.scene.wars
-          .map((war) => ({ ...war, participantStateIds: war.participantStateIds.filter((id) => id !== command.stateId) }))
-          .filter((war) => war.participantFactionIds.length >= 2 || war.participantStateIds.length >= 2);
+        const result = deleteState(state.scene.states, state.scene.sides, state.scene.gridMap, command.stateId);
+        if (!result.ok) return result.reason;
+        state.scene.states = result.states;
+        state.scene.sides = result.sides;
+        state.scene.stateRelations = removeStateRelations(state.scene.stateRelations ?? {}, command.stateId);
         return undefined;
       }
       case "SET_SIDE_STATE": {
-        const side = state.scene.sides.find((candidate) => candidate.id === command.sideId);
-        if (!side) return "SIDE_NOT_FOUND";
-        if (command.stateId !== null && !state.scene.states.some((candidate) => candidate.id === command.stateId)) return "STATE_NOT_FOUND";
-        side.stateId = command.stateId;
+        const result = setSideState(state.scene.states, state.scene.sides, command.sideId, command.stateId);
+        if (!result.ok) return result.reason;
+        state.scene.states = result.states;
+        state.scene.sides = result.sides;
+        return undefined;
+      }
+      case "SET_STATE_MILITARY_ACCESS": {
+        if (
+          !state.scene.states.some((candidate) => candidate.id === command.fromStateId) ||
+          !state.scene.states.some((candidate) => candidate.id === command.toStateId)
+        ) return "STATE_NOT_FOUND";
+        state.scene.stateRelations = setMilitaryAccess(
+          state.scene.stateRelations ?? {},
+          command.fromStateId,
+          command.toStateId,
+          command.allowed
+        );
+        revalidateAllRoutes(state);
+        return undefined;
+      }
+      case "SET_STATE_WAR": {
+        if (
+          !state.scene.states.some((candidate) => candidate.id === command.leftStateId) ||
+          !state.scene.states.some((candidate) => candidate.id === command.rightStateId)
+        ) return "STATE_NOT_FOUND";
+        state.scene.stateRelations = setPairWar(
+          state.scene.stateRelations ?? {},
+          command.leftStateId,
+          command.rightStateId,
+          command.atWar
+        );
+        revalidateAllRoutes(state);
         return undefined;
       }
       case "SET_RECOGNIZED_STATE_CELLS":
