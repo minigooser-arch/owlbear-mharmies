@@ -1,7 +1,37 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE } from "../shared/constants";
-import type { RawExtensionSnapshot } from "../ui/state/useExtensionState";
+import type { RawExtensionSnapshot, ShipView } from "../ui/state/useExtensionState";
 import { semanticSnapshotEqual, semanticValueEqual } from "./snapshotEquality";
+
+const ship: ShipView = {
+  id: "red-cruiser",
+  name: "Аврора",
+  sideId: "red",
+  sideName: "Red",
+  classId: "CRUISER",
+  className: "Крейсер",
+  status: "IN_NAVAL_BATTLE",
+  hp: 25,
+  maxHp: 25,
+  temporaryHp: 0,
+  armor: 1,
+  movementMax: 3,
+  movementRemaining: 3,
+  plannedRouteCellCount: 0,
+  facing: "NORTH",
+  normalDice: 2,
+  normalRangeMin: 1,
+  normalRangeMax: 2,
+  embarkedArmyId: null,
+  detectionOverride: null,
+  effectiveDetectionRange: 6,
+  navalRoundNumber: 1,
+  isCurrentNavalTurn: true,
+  navalMovementRemaining: 3,
+  navalActionUsed: false,
+  navalExited: false,
+  broadsideTargets: []
+};
 
 function snapshot(overrides: Partial<RawExtensionSnapshot> = {}): RawExtensionSnapshot {
   return {
@@ -37,6 +67,20 @@ function snapshot(overrides: Partial<RawExtensionSnapshot> = {}): RawExtensionSn
         movementMaxUnits: 10, movementRemainingUnits: 6, routeCostUnits: 3, routeCellCount: 1, routeRequiresReplan: false, atWar: true, healthHp: 45, healthMaxHp: 50, supplied: false, supplyCheckedOnTurn: 1, disbandPending: false
       }
     ],
+    ships: [ship],
+    navalRequestTargets: [],
+    pendingNavalBattleRequests: [],
+    transportEmbarkTargets: [],
+    pendingTransportEmbarkRequests: [],
+    activeNavalBattle: {
+      id: "naval-1",
+      roundNumber: 1,
+      participantCount: 2,
+      currentShipId: "red-cruiser",
+      initiative: [{ shipId: "red-cruiser", total: 18 }, { shipId: "blue-cruiser", total: 12 }],
+      completedShipIdsThisRound: [],
+      exitedShipIds: []
+    },
     sides: [
       {
         id: "red",
@@ -95,13 +139,14 @@ describe("semantic snapshot equality", () => {
         ...army,
         route: army.route.map((point) => ({ ...point }))
       })),
+      ships: [...(left.ships ?? [])].reverse().map((candidate) => ({ ...candidate })),
       sides: [...left.sides].reverse().map((side) => ({
         ...side,
         playerIds: [...side.playerIds].reverse(),
         leaderPlayerIds: [...side.leaderPlayerIds].reverse()
       })),
       states: [],
-    relations: {
+      relations: {
         blue: { blue: "ALLY", red: "ENEMY" },
         red: { red: "ALLY", blue: "ENEMY" }
       },
@@ -132,16 +177,45 @@ describe("semantic snapshot equality", () => {
     }))).toBe(false);
   });
 
+  it("treats ship hp and tactical state changes as semantically meaningful", () => {
+    const left = snapshot();
+    expect(semanticSnapshotEqual(left, snapshot({
+      ships: [{ ...ship, hp: ship.hp - 4, navalActionUsed: true }]
+    }))).toBe(false);
+  });
+
+  it("treats naval initiative, round and current ship changes as semantically meaningful", () => {
+    const left = snapshot();
+    expect(semanticSnapshotEqual(left, snapshot({
+      activeNavalBattle: {
+        ...left.activeNavalBattle!,
+        roundNumber: 2,
+        currentShipId: "blue-cruiser",
+        completedShipIdsThisRound: ["red-cruiser"]
+      }
+    }))).toBe(false);
+  });
+
+  it("treats naval requests and role-safe target changes as semantically meaningful", () => {
+    const left = snapshot();
+    expect(semanticSnapshotEqual(left, snapshot({
+      pendingNavalBattleRequests: [{ id: "request-1", initiatingShipId: "red-cruiser", targetShipId: "blue-cruiser", createdOnTurn: 1 }]
+    }))).toBe(false);
+    expect(semanticSnapshotEqual(left, snapshot({
+      navalRequestTargets: [{ id: "blue-cruiser", name: "Варяг", sideId: "blue", sideName: "Blue" }]
+    }))).toBe(false);
+  });
+
   it("ignores map-only visibility changes", () => {
     expect(semanticSnapshotEqual(
       snapshot({ mapVisibleSourceIds: new Set(["a"]) }),
       snapshot({ mapVisibleSourceIds: new Set(["b", "c"]) })
     )).toBe(true);
   });
+
   it("treats turn lifecycle changes as semantically meaningful", () => {
     const left = snapshot();
     const right = snapshot({ turn: { ...left.turn, turnNumber: left.turn.turnNumber + 1 } });
     expect(semanticSnapshotEqual(left, right)).toBe(false);
   });
-
 });
