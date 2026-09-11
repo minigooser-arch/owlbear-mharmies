@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { CommandProcessor, type CommandContext, type CommandState } from "../../commands/commandProcessor";
 import { validateArmyCommand } from "../../commands/commandValidation";
 import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE, METADATA_KEYS } from "../../shared/constants";
-import type { ArmyCommand, ArmyState, NavalSceneState, SceneItemRecord } from "../../shared/types";
+import { COMMAND_PROTOCOL_VERSION, type ArmyCommand, type ArmyState, type NavalSceneState, type SceneItemRecord } from "../../shared/types";
 
 function army(sideId = "red"): ArmyState {
   return {
@@ -95,7 +95,7 @@ function state(): CommandState {
 
 function raw(type: string, payload: Record<string, unknown> = {}): unknown {
   return {
-    protocolVersion: 4,
+    protocolVersion: COMMAND_PROTOCOL_VERSION,
     requestId: "request",
     senderPlayerId: "gm",
     senderConnectionId: "gm-connection",
@@ -107,7 +107,7 @@ function raw(type: string, payload: Record<string, unknown> = {}): unknown {
 
 function command(type: string, payload: Record<string, unknown> = {}, playerId = "gm"): ArmyCommand {
   return {
-    protocolVersion: 4,
+    protocolVersion: COMMAND_PROTOCOL_VERSION,
     requestId: "request",
     senderPlayerId: playerId,
     senderConnectionId: `${playerId}-connection`,
@@ -190,17 +190,19 @@ describe("ship registration command processing", () => {
   });
 
   it("rejects registration on a land-only cell", () => {
-    expect(processor.execute(
+    const result = processor.execute(
       context("GM", "gm"),
       command("REGISTER_SHIP", { itemId: "land-ship", sideId: "red", classId: "CRUISER", facing: "NORTH" })
-    )).toEqual({ status: "REJECTED", reason: "SHIP_REQUIRES_SEA" });
+    );
+    expect(result).toEqual({ status: "REJECTED", reason: "SHIP_REQUIRES_SEA" });
   });
 
   it("keeps ship registration GM-only", () => {
-    expect(processor.execute(
+    const result = processor.execute(
       context("PLAYER", "leader"),
       command("REGISTER_SHIP", { itemId: "sea-ship", sideId: "red", classId: "CRUISER", facing: "NORTH" }, "leader")
-    )).toEqual({ status: "REJECTED", reason: "GM_ONLY" });
+    );
+    expect(result).toEqual({ status: "REJECTED", reason: "GM_ONLY" });
   });
 
   it.each([
@@ -208,49 +210,47 @@ describe("ship registration command processing", () => {
     ["shape", "IMAGE_REQUIRED"],
     ["army-token", "ALREADY_REGISTERED"]
   ])("rejects invalid ship source %s", (itemId, reason) => {
-    expect(processor.execute(
+    const result = processor.execute(
       context("GM", "gm"),
       command("REGISTER_SHIP", { itemId, sideId: "red", classId: "CRUISER", facing: "NORTH" })
-    )).toEqual({ status: "REJECTED", reason });
+    );
+    expect(result).toEqual({ status: "REJECTED", reason });
   });
 
   it("rejects an unknown side", () => {
-    expect(processor.execute(
+    const result = processor.execute(
       context("GM", "gm"),
       command("REGISTER_SHIP", { itemId: "sea-ship", sideId: "missing", classId: "CRUISER", facing: "NORTH" })
-    )).toEqual({ status: "REJECTED", reason: "SIDE_NOT_FOUND" });
+    );
+    expect(result).toEqual({ status: "REJECTED", reason: "SIDE_NOT_FOUND" });
   });
 
   it("unregisters an existing ship for a GM", () => {
     const commandState = state();
-    const registered = processor.execute(
-      context("GM", "gm", commandState),
-      command("REGISTER_SHIP", { itemId: "sea-ship", sideId: "red", classId: "CRUISER", facing: "NORTH" })
-    );
-    expect(registered.status).toBe("ACCEPTED");
-    if (registered.status !== "ACCEPTED") return;
-
+    commandState.scene.ships = {
+      "sea-ship": {
+        ...createRegisteredShip("red", "CRUISER", "NORTH"),
+        revision: 2
+      }
+    };
     const result = processor.execute(
-      context("GM", "gm", registered.state),
-      { ...command("UNREGISTER_SHIP", { shipId: "sea-ship" }), expectedRevision: 3 } as ArmyCommand
+      context("GM", "gm", commandState),
+      command("UNREGISTER_SHIP", { shipId: "sea-ship" })
     );
     expect(result.status).toBe("ACCEPTED");
-    if (result.status === "ACCEPTED") expect(result.state.scene.ships?.["sea-ship"]).toBeUndefined();
+    if (result.status !== "ACCEPTED") return;
+    expect(result.state.scene.ships?.["sea-ship"]).toBeUndefined();
   });
 
   it("keeps ship unregister GM-only", () => {
     const commandState = state();
     commandState.scene.ships = {
-      "sea-ship": {
-        version: 1, registered: true, sideId: "red", classId: "CRUISER", status: "READY", hp: 25,
-        temporaryHp: 0, facing: "NORTH", plannedRoute: [], plannedFacing: null, globalMovementRemaining: 3,
-        movementSpentThisTurn: false, battleId: null, detectionOverride: null, embarkedArmyId: null,
-        shoreBombardmentUsedOnTurn: null, logisticsActionUsedOnTurn: null, revision: 1
-      }
+      "sea-ship": createRegisteredShip("red", "CRUISER", "NORTH")
     };
-    expect(processor.execute(
+    const result = processor.execute(
       context("PLAYER", "leader", commandState),
       command("UNREGISTER_SHIP", { shipId: "sea-ship" }, "leader")
-    )).toEqual({ status: "REJECTED", reason: "GM_ONLY" });
+    );
+    expect(result).toEqual({ status: "REJECTED", reason: "GM_ONLY" });
   });
 });
