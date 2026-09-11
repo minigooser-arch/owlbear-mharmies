@@ -429,7 +429,7 @@ export interface ItemUpdate {
   [key: string]: unknown;
 }
 
-export const COMMAND_PROTOCOL_VERSION = 4 as const;
+export const COMMAND_PROTOCOL_VERSION = 5 as const;
 
 export interface CommandEnvelope {
   protocolVersion: typeof COMMAND_PROTOCOL_VERSION;
@@ -533,6 +533,8 @@ export type ArmyCommandPayload =
     | { type: "UPDATE_STATE"; stateId: string; patch: Partial<Omit<StateEntity, "id">> }
     | { type: "DELETE_STATE"; stateId: string }
     | { type: "SET_SIDE_STATE"; sideId: string; stateId: string | null }
+    | { type: "SET_STATE_MILITARY_ACCESS"; fromStateId: string; toStateId: string; allowed: boolean }
+    | { type: "SET_STATE_WAR"; leftStateId: string; rightStateId: string; atWar: boolean }
     | { type: "SET_RECOGNIZED_STATE_CELLS"; cells: GridCellCoord[]; stateId: string | null }
     | { type: "SET_DEFACTO_STATE_CELLS"; cells: GridCellCoord[]; stateId: string | null }
     | { type: "SET_ARMY_HP"; armyId: string; hp: number; maxHp?: number }
