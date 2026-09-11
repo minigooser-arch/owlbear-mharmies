@@ -162,17 +162,50 @@ Expected: FAIL because service does not exist.
 
 - [ ] **Step 2: Implement state service as pure mutations/validation.**
 
-Expose narrow functions:
+Use concrete service types and signatures:
 ```ts
+export type StateMutationFailure =
+  | "STATE_NOT_FOUND"
+  | "SIDE_NOT_FOUND"
+  | "STATE_RULING_FACTION_REQUIRED"
+  | "RULING_FACTION_MUST_BELONG_TO_STATE"
+  | "STATE_STILL_REFERENCED";
+
+export type StateMutationResult =
+  | { ok: true; states: StateEntity[]; sides: Side[] }
+  | { ok: false; reason: StateMutationFailure };
+
 export function validateStateConfiguration(
   state: StateEntity,
   sides: readonly Side[]
 ): { ok: true } | { ok: false; reason: "STATE_RULING_FACTION_REQUIRED" | "RULING_FACTION_MUST_BELONG_TO_STATE" };
 
-export function createState(...): StateMutationResult;
-export function updateState(...): StateMutationResult;
-export function setSideState(...): StateMutationResult;
-export function deleteState(...): StateMutationResult;
+export function createState(
+  states: readonly StateEntity[],
+  sides: readonly Side[],
+  state: StateEntity
+): StateMutationResult;
+
+export function updateState(
+  states: readonly StateEntity[],
+  sides: readonly Side[],
+  stateId: string,
+  patch: Partial<Pick<StateEntity, "name" | "color" | "rulingFactionId" | "active">>
+): StateMutationResult;
+
+export function setSideState(
+  states: readonly StateEntity[],
+  sides: readonly Side[],
+  sideId: string,
+  stateId: string | null
+): StateMutationResult;
+
+export function deleteState(
+  states: readonly StateEntity[],
+  sides: readonly Side[],
+  gridMap: GridMapState,
+  stateId: string
+): StateMutationResult;
 ```
 No UI logic in this module.
 
