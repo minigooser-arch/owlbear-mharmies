@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE } from "../shared/constants";
-import type { ArmyCommand, SceneState } from "../shared/types";
+import { COMMAND_PROTOCOL_VERSION, type ArmyCommand, type SceneState } from "../shared/types";
 import { createRegisteredShip } from "../naval/ships/shipLifecycle";
 import { CommandProcessor, type CommandState } from "./commandProcessor";
 
@@ -65,7 +65,7 @@ describe("COMPLETE_MOVEMENT_PHASE ship resolution", () => {
       (cell) => ({ x: cell.x, y: cell.y })
     );
     const command: ArmyCommand = {
-      protocolVersion: 4,
+      protocolVersion: COMMAND_PROTOCOL_VERSION,
       requestId: "complete-movement",
       senderPlayerId: "gm",
       senderConnectionId: "gm-connection",
