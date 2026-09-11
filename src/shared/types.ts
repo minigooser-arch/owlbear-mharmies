@@ -44,12 +44,17 @@ export interface Side {
   stateId: string | null;
 }
 
+/** Boundary-compatible state entity; v7 scene migration always materializes color. */
 export interface StateEntity {
   id: string;
   name: string;
-  color: string;
+  color?: string;
   rulingFactionId: string | null;
   active: boolean;
+}
+
+export interface NormalizedStateEntity extends StateEntity {
+  color: string;
 }
 
 export interface StateRelationState {
@@ -291,6 +296,7 @@ export interface SceneState {
 
 export interface NavalSceneState extends SceneState {
   version: 7;
+  states: NormalizedStateEntity[];
   ships: Record<string, ShipState>;
   navalBattleRequests: NavalBattleRequest[];
   transportEmbarkRequests: TransportEmbarkRequest[];
