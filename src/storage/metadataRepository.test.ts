@@ -83,11 +83,11 @@ function scene(revision: number): SceneState {
 }
 
 describe("MetadataRepository", () => {
-  it("creates schema v6 defaults for a new scene", async () => {
+  it("creates schema v7 defaults for a new scene", async () => {
     const repository = new MetadataRepository(new MemoryPort());
 
     await expect(repository.readScene()).resolves.toMatchObject({
-      version: 6,
+      version: 7,
       sides: [],
       states: [],
       gridMap: { version: 1, revision: 0, cells: {} },
@@ -97,7 +97,14 @@ describe("MetadataRepository", () => {
       navalBattleRequests: [],
       activeNavalBattle: null,
       navalBattleHistory: [],
-      navalRevealUntilTurn: {}
+      navalRevealUntilTurn: {},
+      stateRelations: {},
+      foreignPresenceViolations: [],
+      forcedExitStates: [],
+      strategicCities: [],
+      territorialScores: [],
+      rebellions: [],
+      turnCheckpoint: null
     });
   });
 
