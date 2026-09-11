@@ -186,9 +186,12 @@ describe("semantic snapshot equality", () => {
 
   it("treats naval initiative, round and current ship changes as semantically meaningful", () => {
     const left = snapshot();
+    const battle = left.activeNavalBattle;
+    expect(battle).toBeDefined();
+    if (!battle) return;
     expect(semanticSnapshotEqual(left, snapshot({
       activeNavalBattle: {
-        ...left.activeNavalBattle!,
+        ...battle,
         roundNumber: 2,
         currentShipId: "blue-cruiser",
         completedShipIdsThisRound: ["red-cruiser"]
