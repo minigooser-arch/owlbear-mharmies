@@ -217,8 +217,6 @@ export interface TransportEmbarkRequest {
   id: string;
   shipId: string;
   armyId: string;
-  requestedByPlayerId: string;
-  requestedOnTurn: number;
 }
 
 export interface NavalBattleShipSnapshot {
@@ -424,34 +422,20 @@ export interface SceneItemRecord {
   visible?: boolean;
   locked?: boolean;
   metadata: Record<string, unknown>;
-  points?: unknown[];
-  strokeColor?: string;
-  fillColor?: string;
-  fillOpacity?: number;
-  strokeWidth?: number;
-  text?: string;
-  color?: string;
-  disableHit?: boolean;
+  [key: string]: unknown;
 }
 
 export interface ItemUpdate {
   position?: Vector2;
-  rotation?: number;
   visible?: boolean;
+  locked?: boolean;
   metadata?: Record<string, unknown>;
+  [key: string]: unknown;
 }
-
-export type ValidationIssue =
-  | { code: "FUTURE_VERSION"; version: number }
-  | { code: "INVALID_VALUE"; path: string };
-
-export type ValidationResult<T> =
-  | { ok: true; value: T }
-  | { ok: false; issue: ValidationIssue };
 
 export const COMMAND_PROTOCOL_VERSION = 5 as const;
 
-interface CommandEnvelope {
+export interface CommandEnvelope {
   protocolVersion: typeof COMMAND_PROTOCOL_VERSION;
   requestId: string;
   senderPlayerId: string;
@@ -459,78 +443,126 @@ interface CommandEnvelope {
   expectedRevision: number;
 }
 
-export type ArmyCommand = CommandEnvelope & (
-  | { type: "CREATE_SIDE"; sideId: string; name: string; color: string }
-  | { type: "UPDATE_SIDE"; sideId: string; name?: string; color?: string }
-  | { type: "DELETE_SIDE"; sideId: string }
-  | { type: "ADD_SIDE_MEMBER"; sideId: string; playerId: string }
-  | { type: "REMOVE_SIDE_MEMBER"; sideId: string; playerId: string }
-  | { type: "ADD_SIDE_LEADER"; sideId: string; playerId: string }
-  | { type: "REMOVE_SIDE_LEADER"; sideId: string; playerId: string }
-  | { type: "CREATE_STATE"; state: NormalizedStateEntity }
-  | { type: "UPDATE_STATE"; stateId: string; patch: Partial<Pick<NormalizedStateEntity, "name" | "color" | "rulingFactionId" | "active">> }
-  | { type: "DELETE_STATE"; stateId: string }
-  | { type: "SET_SIDE_STATE"; sideId: string; stateId: string | null }
-  | { type: "SET_STATE_MILITARY_ACCESS"; fromStateId: string; toStateId: string; allowed: boolean }
-  | { type: "SET_STATE_WAR"; leftStateId: string; rightStateId: string; atWar: boolean }
-  | { type: "REGISTER_ARMY"; itemId: string; sideId: string; directOwnerPlayerId?: string }
-  | { type: "UNREGISTER_ARMY"; itemId: string }
-  | { type: "SET_DIRECT_OWNER"; itemId: string; playerId?: string }
-  | { type: "SET_ARMY_HP"; armyId: string; hp: number }
-  | { type: "START_ARMY"; itemId: string }
-  | { type: "PAUSE_ARMY"; itemId: string }
-  | {
-      type: "SET_ROUTE";
-      armyId: string;
-      route: Vector2[];
-      startCell: GridCellCoord;
-      cells: GridCellCoord[];
-    }
-  | {
-      type: "CREATE_BARRIER";
-      itemId: string;
-      visibility: BarrierVisibility;
-      color: string;
-      blocksMovement: boolean;
-      blocksVision: boolean;
-    }
-  | {
-      type: "UPDATE_BARRIER";
-      itemId: string;
-      visibility?: BarrierVisibility;
-      color?: string;
-      blocksMovement?: boolean;
-      blocksVision?: boolean;
-    }
-  | { type: "DELETE_BARRIER"; itemId: string }
-  | { type: "SET_RELATION"; leftSideId: string; rightSideId: string; relation: SideRelation }
-  | { type: "CREATE_WAR"; warId: string; name: string; participantFactionIds: string[]; participantStateIds: string[] }
-  | { type: "DELETE_WAR"; warId: string }
-  | { type: "COMPLETE_TURN_NOW" }
-  | { type: "COMPLETE_MOVEMENT_PHASE" }
-  | { type: "REGISTER_SHIP"; itemId: string; sideId: string; classId: ShipClassId }
-  | { type: "UNREGISTER_SHIP"; itemId: string }
-  | { type: "SET_SHIP_HP"; shipId: string; hp: number }
-  | { type: "SET_SHIP_ROUTE"; shipId: string; cells: GridCellCoord[]; plannedFacing: ShipFacing | null }
-  | { type: "NAVAL_MOVE_FORWARD"; shipId: string; cells: number }
-  | { type: "NAVAL_TURN_LEFT"; shipId: string }
-  | { type: "NAVAL_TURN_RIGHT"; shipId: string }
-  | { type: "NAVAL_BROADSIDE"; shipId: string; targetShipId: string }
-  | { type: "NAVAL_INTERCEPT"; shipId: string; targetShipId: string }
-  | { type: "NAVAL_END_ACTIVATION"; shipId: string }
-  | { type: "REQUEST_NAVAL_BATTLE"; initiatingShipId: string; targetShipId: string }
-  | { type: "START_NAVAL_BATTLE"; initiatingShipId: string; participantShipIds: string[]; areaCells: GridCellCoord[]; navalRequestId: string | null }
-  | { type: "COMPLETE_NAVAL_BATTLE"; battleId: string }
-  | { type: "NAVAL_SHORE_BOMBARDMENT"; shipId: string; armyId: string }
-  | { type: "NAVAL_HOSPITAL_SUPPORT"; shipId: string; armyId: string }
-  | { type: "EMBARK_ARMY"; shipId: string; armyId: string }
-  | { type: "ACCEPT_EMBARK_ARMY"; requestIdToAccept: string }
-  | { type: "DISEMBARK_ARMY"; shipId: string; armyId: string; targetCell: GridCellCoord }
-  | { type: "SET_SHIP_DETECTION"; shipId: string; detectionOverride: number | null }
-  | { type: "SET_ACTIVE_SHIP"; shipId: string }
-  | { type: "SET_TERRAIN_CELLS"; cells: GridCellCoord[]; terrainId: string | null }
-  | { type: "SET_IMPASSABLE_CELLS"; cells: GridCellCoord[]; impassable: boolean }
-  | { type: "SET_RECOGNIZED_STATE_CELLS"; cells: GridCellCoord[]; stateId: string | null }
-  | { type: "SET_DEFACTO_STATE_CELLS"; cells: GridCellCoord[]; stateId: string | null }
-  | { type: "ERASE_MAP_CELLS"; cells: GridCellCoord[]; target: "TERRAIN" | "IMPASSABLE" | "RECOGNIZED_STATE" | "DEFACTO_STATE" | "ALL" }
-);
+export type CellPropertyTarget = "TERRAIN" | "IMPASSABLE" | "SELECTED_FACTION" | "RECOGNIZED_STATE" | "DEFACTO_STATE" | "ALL";
+
+export type ArmyCommandPayload =
+  (
+    | { type: "REGISTER_ARMY"; itemId: string; sideId: string }
+    | { type: "UNREGISTER_ARMY"; armyId: string }
+    | { type: "REGISTER_SHIP"; itemId: string; sideId: string; classId: ShipClassId; facing: ShipFacing }
+    | { type: "UNREGISTER_SHIP"; shipId: string }
+    | { type: "SET_SHIP_ROUTE"; shipId: string; startCell: GridCellCoord; cells: GridCellCoord[]; finalFacing?: ShipFacing }
+    | { type: "SET_SHIP_HP"; shipId: string; hp: number }
+    | { type: "SET_SHIP_DETECTION_OVERRIDE"; shipId: string; detectionOverride: number | null }
+    | { type: "NAVAL_MOVE_FORWARD"; shipId: string }
+    | { type: "NAVAL_TURN_SHIP"; shipId: string; direction: "LEFT" | "RIGHT" }
+    | { type: "NAVAL_BROADSIDE_ATTACK"; shipId: string; targetShipId: string; friendlyFireConfirmed: boolean }
+    | { type: "NAVAL_ACTIVATE_INTERCEPTION"; shipId: string }
+    | { type: "END_NAVAL_SHIP_TURN"; shipId: string }
+    | { type: "NAVAL_HOSPITAL_SUPPORT"; shipId: string; targetShipId: string }
+    | { type: "NAVAL_SHORE_BOMBARDMENT"; shipId: string; armyId: string; friendlyFireConfirmed: boolean }
+    | { type: "SET_ACTIVE_NAVAL_SHIP"; shipId: string }
+    | { type: "CONFIRM_NAVAL_SHIP_EXIT"; shipId: string }
+    | { type: "EMBARK_ARMY"; shipId: string; armyId: string }
+    | { type: "ACCEPT_EMBARK_ARMY"; embarkRequestId: string; shipId: string; armyId: string }
+    | { type: "DISEMBARK_ARMY"; shipId: string; armyId: string; targetCell: GridCellCoord }
+    | { type: "REQUEST_NAVAL_BATTLE"; initiatingShipId: string; targetShipId: string }
+    | {
+        type: "START_NAVAL_BATTLE";
+        battleId: string;
+        navalRequestId: string | null;
+        initiatingShipId: string;
+        participantShipIds: string[];
+        areaCells: GridCellCoord[];
+      }
+    | { type: "COMPLETE_NAVAL_BATTLE" }
+    | { type: "COMPLETE_MOVEMENT_PHASE" }
+    | { type: "REOPEN_MOVEMENT_PHASE" }
+    | { type: "CREATE_SIDE"; side: Side }
+    | { type: "RENAME_SIDE"; sideId: string; name: string }
+    | {
+        type: "DELETE_SIDE";
+        sideId: string;
+        strategy: "REASSIGN_ARMIES" | "UNREGISTER_ARMIES";
+        targetSideId?: string;
+      }
+    | {
+        type:
+          | "ADD_SIDE_PLAYER"
+          | "REMOVE_SIDE_PLAYER"
+          | "ADD_SIDE_LEADER"
+          | "REMOVE_SIDE_LEADER";
+        sideId: string;
+        playerId: string;
+      }
+    | { type: "SET_RELATION"; leftSideId: string; rightSideId: string; relation: SideRelation }
+    | { type: "UPDATE_SETTINGS"; settings: Partial<SceneSettings> }
+    | { type: "UPDATE_ARMY_OVERRIDES"; armyId: string; overrides: ArmyOverrides }
+    | { type: "SET_ROUTE"; armyId: string; route: Vector2[]; startCell: GridCellCoord; cells: GridCellCoord[] }
+    | { type: "CLEAR_ROUTE"; armyId: string }
+    | { type: "MOVE_ARMY"; armyId: string; position: Vector2 }
+    | {
+        type:
+          | "START_ARMY"
+          | "PAUSE_ARMY"
+          | "RESUME_ARMY"
+          | "STOP_ARMY";
+        armyId: string;
+      }
+    | { type: "START_ALL" | "PAUSE_ALL" | "RESUME_ALL" | "STOP_ALL" }
+    | { type: "CREATE_BARRIER"; itemId: string; barrier: BarrierState }
+    | { type: "UPDATE_BARRIER"; itemId: string; barrier: Partial<BarrierState> }
+    | { type: "DELETE_BARRIER"; itemId: string }
+    | { type: "RENAME_BATTLE_GROUP"; battleId: string; name: string }
+    | { type: "RELEASE_BATTLE_GROUP"; battleId: string }
+    | { type: "REMOVE_BATTLE_PARTICIPANT"; battleId: string; armyId: string }
+    | { type: "SET_TERRAIN_CELLS"; cells: GridCellCoord[]; terrainId: string | null }
+    | { type: "SET_IMPASSABLE_CELLS"; cells: GridCellCoord[]; impassable: boolean }
+    | {
+        type: "UPDATE_FACTION_TERRITORY_CELLS";
+        cells: GridCellCoord[];
+        sideId: string;
+        operation: "ADD" | "REMOVE";
+      }
+    | {
+        type: "CLEAR_CELL_PROPERTIES";
+        cells: GridCellCoord[];
+        target: CellPropertyTarget;
+        sideId?: string;
+      }
+    | { type: "CREATE_TERRAIN_TYPE"; terrain: TerrainType }
+    | { type: "UPDATE_TERRAIN_TYPE"; terrainId: string; patch: Partial<Omit<TerrainType, "id">> }
+    | { type: "DELETE_TERRAIN_TYPE"; terrainId: string; replacementTerrainId?: string }
+    | { type: "CREATE_STATE"; state: StateEntity }
+    | { type: "UPDATE_STATE"; stateId: string; patch: Partial<Omit<StateEntity, "id">> }
+    | { type: "DELETE_STATE"; stateId: string }
+    | { type: "SET_SIDE_STATE"; sideId: string; stateId: string | null }
+    | { type: "SET_STATE_MILITARY_ACCESS"; fromStateId: string; toStateId: string; allowed: boolean }
+    | { type: "SET_STATE_WAR"; leftStateId: string; rightStateId: string; atWar: boolean }
+    | { type: "SET_RECOGNIZED_STATE_CELLS"; cells: GridCellCoord[]; stateId: string | null }
+    | { type: "SET_DEFACTO_STATE_CELLS"; cells: GridCellCoord[]; stateId: string | null }
+    | { type: "SET_ARMY_HP"; armyId: string; hp: number; maxHp?: number }
+    | { type: "HEAL_ARMY"; armyId: string; amount: number }
+    | { type: "REQUEST_ARMY_DISBAND"; armyId: string }
+    | { type: "CREATE_WAR"; war: WarState }
+    | { type: "UPDATE_WAR"; warId: string; patch: Partial<Omit<WarState, "id">> }
+    | { type: "END_WAR"; warId: string }
+    | { type: "DEFER_TURN"; until: string }
+    | { type: "CANCEL_TURN_DEFERRAL" }
+    | { type: "PAUSE_AUTO_TURNS" }
+    | { type: "RESUME_AUTO_TURNS" }
+    | { type: "SET_TURN_NUMBER"; turnNumber: number }
+    | { type: "COMPLETE_TURN_NOW" }
+  );
+
+export type ArmyCommand = CommandEnvelope & ArmyCommandPayload;
+
+export interface ValidationIssue {
+  code: "INVALID_VALUE" | "FUTURE_VERSION";
+  path?: string;
+  version?: number;
+}
+
+export type ValidationResult<T> =
+  | { ok: true; value: T }
+  | { ok: false; issue: ValidationIssue };
