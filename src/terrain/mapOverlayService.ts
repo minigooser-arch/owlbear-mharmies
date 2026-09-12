@@ -12,6 +12,7 @@ import type {
   StateEntity,
   TerrainRegistryState
 } from "../shared/types";
+import { buildStateBoundarySegments } from "../states/stateBoundaryOverlay";
 
 export type MapOverlayPort = LocalOverlayBatchPort;
 
@@ -30,12 +31,22 @@ function mapOverlayKey(item: SceneItemRecord): string | undefined {
   return typeof key === "string" ? key : undefined;
 }
 
-function overlayMetadata(cellKey: string, kind: "TERRAIN" | "IMPASSABLE" | "RECOGNIZED_STATE" | "DEFACTO_STATE") {
+function overlayMetadata(cellKey: string, kind: "TERRAIN" | "IMPASSABLE" | "DEFACTO_STATE") {
   const key = `${cellKey}/${kind}`;
   return {
     key,
     metadata: {
       [METADATA_KEYS.mapOverlay]: { key, cellKey, kind }
+    }
+  };
+}
+
+function boundaryMetadata(stateId: string, fromX: number, fromY: number, toX: number, toY: number) {
+  const key = `STATE_BOUNDARY/${stateId}/${fromX},${fromY}/${toX},${toY}`;
+  return {
+    key,
+    metadata: {
+      [METADATA_KEYS.mapOverlay]: { key, kind: "STATE_BOUNDARY", stateId }
     }
   };
 }
@@ -108,14 +119,6 @@ export class MapOverlayService {
         });
       }
 
-      if (cell.recognizedStateId) {
-        const state = statesById.get(cell.recognizedStateId);
-        if (state) {
-          const marker = overlayMetadata(rawCellKey, "RECOGNIZED_STATE");
-          overlays.push({ key: marker.key, item: { type: "LABEL", position: { x: center.x, y: center.y - source.dpi * 0.32 }, visible: true, disableHit: true, text: `Призн.: ${state.name}`, color: state.color ?? "#607d8b", metadata: marker.metadata } });
-        }
-      }
-
       if (cell.deFactoStateId) {
         const state = statesById.get(cell.deFactoStateId);
         if (state) {
@@ -123,6 +126,29 @@ export class MapOverlayService {
           overlays.push({ key: marker.key, item: { type: "LABEL", position: { x: center.x, y: center.y - source.dpi * 0.18 }, visible: true, disableHit: true, text: `Де-факто: ${state.name}`, color: state.color ?? "#607d8b", metadata: marker.metadata } });
         }
       }
+    }
+
+    for (const segment of buildStateBoundarySegments(source.gridMap, source.states, source.dpi)) {
+      const marker = boundaryMetadata(
+        segment.stateId,
+        segment.from.x,
+        segment.from.y,
+        segment.to.x,
+        segment.to.y
+      );
+      overlays.push({
+        key: marker.key,
+        item: {
+          type: "CURVE",
+          position: { x: 0, y: 0 },
+          visible: true,
+          disableHit: true,
+          points: [{ ...segment.from }, { ...segment.to }],
+          strokeColor: segment.color,
+          strokeWidth: Math.max(4, source.dpi * 0.055),
+          metadata: marker.metadata
+        }
+      });
     }
 
     await reconcileLocalOverlays(this.port, mapOverlayKey, overlays);
