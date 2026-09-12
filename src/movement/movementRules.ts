@@ -118,7 +118,9 @@ export function validatePlannedRoute(context: PlannedRouteValidationContext): Pl
       remainingUnits,
       withinBounds: context.withinBounds?.(to) ?? true,
       armyStateAllowsMovement: context.armyStateAllowsMovement ?? true,
-      skipLegacyPoliticalCheck: context.skipLegacyPoliticalCheck
+      ...(context.skipLegacyPoliticalCheck !== undefined
+        ? { skipLegacyPoliticalCheck: context.skipLegacyPoliticalCheck }
+        : {})
     });
     if (!step.allowed) {
       const result: PlannedRouteValidationResult = {
