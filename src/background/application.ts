@@ -638,7 +638,7 @@ export class ProductionEngine {
         movementBarriers,
         ignoresMovementBarriers: record.state.ignoresMovementBarriers
       });
-      const reachedClosedBorder = Boolean(political.blockedReason) && result.status === "COMPLETED";
+      const reachedClosedBorder = Boolean(political.blockedReason) && result.status === "READY";
       frames.push({
         record,
         from: { ...record.item.position },
@@ -1182,7 +1182,8 @@ export class ProductionEngine {
             visible: state === undefined,
             ...(nextPosition ? { position: nextPosition } : {}),
             ...(state ? { rotation: rotationForFacing(state.facing) } : {})
-          }, previousState?.revision ?? null
+          },
+          previousState?.revision ?? null
         );
         applied.push({
           itemId: shipId,
