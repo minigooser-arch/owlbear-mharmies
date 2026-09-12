@@ -78,8 +78,9 @@ function fixture(options: { failSceneWrite?: boolean } = {}) {
       const item = items.find((candidate) => candidate.id === id);
       if (!item) throw new Error(`Missing item ${id}`);
       Object.assign(item, structuredClone(update));
-      if (value === undefined) delete item.metadata[key];
-      else item.metadata[key] = structuredClone(value);
+      item.metadata = value === undefined
+        ? Object.fromEntries(Object.entries(item.metadata).filter(([entryKey]) => entryKey !== key))
+        : { ...item.metadata, [key]: structuredClone(value) };
     },
     updateSceneItem: async () => {},
     getLocalItems: async () => [], addLocalItem: async () => {}, updateLocalItem: async () => {}, deleteLocalItems: async () => {},
