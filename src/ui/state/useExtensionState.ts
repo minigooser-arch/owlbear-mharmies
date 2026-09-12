@@ -1,4 +1,5 @@
 import { useMemo, useSyncExternalStore } from "react";
+import type { StrategicCityCommandPayload } from "../../cities/strategicCityCommands";
 import type {
   ArmyCommandPayload,
   ArmyStatus,
@@ -12,6 +13,7 @@ import type {
   Side,
   StateEntity,
   StateRelations,
+  StrategicCity,
   TerrainRegistryState,
   TurnState,
   Vector2,
@@ -104,6 +106,7 @@ export interface RawExtensionSnapshot {
   activeNavalBattle?: NavalBattleView;
   sides: readonly Side[];
   states: readonly StateEntity[];
+  strategicCities?: readonly StrategicCity[];
   relations: Readonly<Record<string, Record<string, import("../../shared/types").SideRelation>>>;
   stateRelations?: StateRelations;
   battleGroups: readonly BattleGroup[];
@@ -128,6 +131,7 @@ export interface MapBrushUiSettings {
 
 export type UiCommand =
   | ArmyCommandPayload
+  | StrategicCityCommandPayload
   | { type: "REGISTER_SELECTED_ARMY"; sideId: string }
   | { type: "REGISTER_SELECTED_SHIP"; sideId: string; classId: ShipClassId; facing: ShipFacing }
   | { type: "EDIT_ROUTE"; armyId: string }
@@ -148,6 +152,7 @@ export interface ExtensionServices {
 export interface ExtensionViewModel extends RawExtensionSnapshot {
   armies: ArmyView[];
   ships: ShipView[];
+  strategicCities: StrategicCity[];
   navalRequestTargets: NavalRequestTargetView[];
   pendingNavalBattleRequests: NavalBattleRequestView[];
   transportEmbarkTargets: TransportEmbarkTargetView[];
@@ -167,6 +172,7 @@ export function useExtensionState(services: ExtensionServices): ExtensionViewMod
       stateRelations: snapshot.stateRelations ?? {},
       armies,
       ships,
+      strategicCities: [...(snapshot.strategicCities ?? [])],
       navalRequestTargets: [...(snapshot.navalRequestTargets ?? [])],
       pendingNavalBattleRequests: [...(snapshot.pendingNavalBattleRequests ?? [])],
       transportEmbarkTargets: [...(snapshot.transportEmbarkTargets ?? [])],
