@@ -2,7 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import OBR from "@owlbear-rodeo/sdk";
 import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE } from "../shared/constants";
-import { createOwlbearExtensionServices } from "../owlbear/extensionServices";
+import { createOwlbearExtensionServices } from "../owlbear/extensionServicesV7";
 import { App } from "./App";
 import "./app.css";
 import "./wiki-light.css";
@@ -26,6 +26,7 @@ const initialSnapshot: RawExtensionSnapshot = {
   sides: [],
   states: [],
   relations: {},
+  stateRelations: {},
   battleGroups: [],
   settings: DEFAULT_SETTINGS,
   terrain: DEFAULT_TERRAIN,
