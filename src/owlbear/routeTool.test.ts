@@ -111,30 +111,48 @@ describe("route tool", () => {
     expect(tool.snapshot()?.cells).toEqual([]);
   });
 
-  it("blocks foreign territory in peace and allows it for a faction in an active war", async () => {
-    const peaceful = new RouteToolController(hundredPixelCells);
-    peaceful.activate(activation({
-      gridMap: {
-        version: 1,
-        revision: 0,
-        cells: { "1,0": { terrainId: "plain", impassable: false, factionTerritoryIds: ["blue"], recognizedStateId: null, deFactoStateId: null } }
+  it("uses state borders instead of legacy faction territory for political route access", async () => {
+    const states = [
+      { id: "russia", name: "Россия", color: "#f00", rulingFactionId: "red-ruler", active: true },
+      { id: "germany", name: "Германия", color: "#00f", rulingFactionId: "blue", active: true }
+    ];
+    const gridMap = {
+      version: 1 as const,
+      revision: 0,
+      cells: {
+        "1,0": { terrainId: "plain", impassable: false, factionTerritoryIds: ["red"], recognizedStateId: "germany", deFactoStateId: "germany" }
       }
+    };
+
+    const ordinary = new RouteToolController(hundredPixelCells);
+    ordinary.activate(activation({
+      sideId: "red-opposition",
+      gridMap,
+      sides: [
+        { id: "red-ruler", name: "Правящие", color: "#f00", playerIds: [], leaderPlayerIds: [], stateId: "russia" },
+        { id: "red-opposition", name: "Оппозиция", color: "#a00", playerIds: [], leaderPlayerIds: [], stateId: "russia" },
+        { id: "blue", name: "Синие", color: "#00f", playerIds: [], leaderPlayerIds: [], stateId: "germany" }
+      ],
+      states,
+      stateRelations: {}
     }));
-    expect(await peaceful.click({ x: 150, y: 50 })).toEqual({
+    expect(await ordinary.click({ x: 150, y: 50 })).toEqual({
       accepted: false,
-      reason: "OUTSIDE_FACTION_TERRITORY"
+      reason: "FOREIGN_STATE_CLOSED"
     });
 
-    const wartime = new RouteToolController(hundredPixelCells);
-    wartime.activate(activation({
-      gridMap: {
-        version: 1,
-        revision: 0,
-        cells: { "1,0": { terrainId: "plain", impassable: false, factionTerritoryIds: ["blue"], recognizedStateId: null, deFactoStateId: null } }
-      },
-      wars: [{ id: "war", name: "Война", participantFactionIds: ["red", "blue"], participantStateIds: [], active: true }]
+    const ruling = new RouteToolController(hundredPixelCells);
+    ruling.activate(activation({
+      sideId: "red-ruler",
+      gridMap,
+      sides: [
+        { id: "red-ruler", name: "Правящие", color: "#f00", playerIds: [], leaderPlayerIds: [], stateId: "russia" },
+        { id: "blue", name: "Синие", color: "#00f", playerIds: [], leaderPlayerIds: [], stateId: "germany" }
+      ],
+      states,
+      stateRelations: {}
     }));
-    expect(await wartime.click({ x: 150, y: 50 })).toEqual({ accepted: true });
+    expect(await ruling.click({ x: 150, y: 50 })).toEqual({ accepted: true });
   });
 
   it("ignores Enter and commits only through finish", async () => {

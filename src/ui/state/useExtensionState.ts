@@ -1,9 +1,9 @@
 import { useMemo, useSyncExternalStore } from "react";
+import type { StrategicCityCommandPayload } from "../../cities/strategicCityCommands";
 import type {
   ArmyCommandPayload,
   ArmyStatus,
   BattleGroup,
-  CellPropertyTarget,
   GridCellCoord,
   MovementDenialReason,
   SceneSettings,
@@ -12,6 +12,8 @@ import type {
   ShipStatus,
   Side,
   StateEntity,
+  StateRelations,
+  StrategicCity,
   TerrainRegistryState,
   TurnState,
   Vector2,
@@ -41,19 +43,8 @@ export interface ArmyView {
   embarkedOnShipId?: string | null;
 }
 
-export interface ShipTargetView {
-  id: string;
-  name: string;
-  sideId: string;
-  sideName: string;
-}
-
-export interface ShoreBombardmentTargetView {
-  id: string;
-  name: string;
-  sideId: string;
-  sideName: string;
-}
+export interface ShipTargetView { id: string; name: string; sideId: string; sideName: string; }
+export interface ShoreBombardmentTargetView { id: string; name: string; sideId: string; sideName: string; }
 
 export interface ShipView {
   id: string;
@@ -87,59 +78,13 @@ export interface ShipView {
   shoreBombardmentTargets?: ShoreBombardmentTargetView[];
 }
 
-export interface NavalRequestTargetView {
-  id: string;
-  name: string;
-  sideId: string;
-  sideName: string;
-}
-
-export interface TransportEmbarkTargetView {
-  id: string;
-  name: string;
-  sideId: string;
-  sideName: string;
-}
-
-export interface TransportEmbarkRequestView {
-  id: string;
-  shipId: string;
-  shipName: string;
-  shipSideId: string;
-  shipSideName: string;
-  armyId: string;
-  armyName: string;
-}
-
-export interface NavalBattleRequestView {
-  id: string;
-  initiatingShipId: string;
-  targetShipId: string;
-  createdOnTurn?: number;
-}
-
-export interface NavalBattleAreaDraftView {
-  requestId: string;
-  cells: GridCellCoord[];
-}
-
-export interface NavalBattleView {
-  id: string;
-  roundNumber: number;
-  participantCount: number;
-  currentShipId: string | null;
-  initiative?: Array<{ shipId: string; total: number }>;
-  completedShipIdsThisRound?: string[];
-  exitedShipIds?: string[];
-}
-
-export interface PartyPlayerView {
-  id: string;
-  name: string;
-  color: string;
-  role: "GM" | "PLAYER";
-  connected: boolean;
-}
+export interface NavalRequestTargetView { id: string; name: string; sideId: string; sideName: string; }
+export interface TransportEmbarkTargetView { id: string; name: string; sideId: string; sideName: string; }
+export interface TransportEmbarkRequestView { id: string; shipId: string; shipName: string; shipSideId: string; shipSideName: string; armyId: string; armyName: string; }
+export interface NavalBattleRequestView { id: string; initiatingShipId: string; targetShipId: string; createdOnTurn?: number; }
+export interface NavalBattleAreaDraftView { requestId: string; cells: GridCellCoord[]; }
+export interface NavalBattleView { id: string; roundNumber: number; participantCount: number; currentShipId: string | null; initiative?: Array<{ shipId: string; total: number }>; completedShipIdsThisRound?: string[]; exitedShipIds?: string[]; }
+export interface PartyPlayerView { id: string; name: string; color: string; role: "GM" | "PLAYER"; connected: boolean; }
 
 export interface RawExtensionSnapshot {
   ready: boolean;
@@ -161,7 +106,9 @@ export interface RawExtensionSnapshot {
   activeNavalBattle?: NavalBattleView;
   sides: readonly Side[];
   states: readonly StateEntity[];
+  strategicCities?: readonly StrategicCity[];
   relations: Readonly<Record<string, Record<string, import("../../shared/types").SideRelation>>>;
+  stateRelations?: StateRelations;
   battleGroups: readonly BattleGroup[];
   settings: SceneSettings;
   terrain: TerrainRegistryState;
@@ -170,14 +117,16 @@ export interface RawExtensionSnapshot {
 }
 
 export interface MapBrushUiSettings {
-  mode: "TERRAIN" | "IMPASSABLE" | "FACTION_TERRITORY" | "RECOGNIZED_STATE" | "DEFACTO_STATE" | "ERASER";
+  mode: "TERRAIN" | "IMPASSABLE" | "RECOGNIZED_STATE" | "DEFACTO_STATE" | "ERASER" | "FACTION_TERRITORY";
   size: 1 | 3 | 5;
   terrainId: string;
-  sideId?: string;
   stateId?: string;
-  factionOperation: "ADD" | "REMOVE";
   impassable: boolean;
-  eraserTarget: CellPropertyTarget;
+  eraserTarget: "TERRAIN" | "IMPASSABLE" | "RECOGNIZED_STATE" | "DEFACTO_STATE" | "ALL";
+  /** @deprecated Transport compatibility only. Current map UI never emits faction territory settings. */
+  sideId?: string;
+  /** @deprecated Transport compatibility only. Current map UI never emits faction territory settings. */
+  factionOperation?: "ADD" | "REMOVE";
 }
 
 export type UiCommand =
@@ -190,47 +139,41 @@ export type UiCommand =
   | { type: "OPEN_MAP_BRUSH"; settings: MapBrushUiSettings }
   | { type: "UPDATE_MAP_BRUSH_SETTINGS"; settings: MapBrushUiSettings }
   | { type: "OPEN_NAVAL_BATTLE_AREA"; requestId: string }
-  | {
-      type: "START_NAVAL_BATTLE_FROM_REQUEST";
-      requestId: string;
-      initiatingShipId: string;
-      targetShipId: string;
-      participantShipIds: string[];
-      areaCells: GridCellCoord[];
-    };
+  | { type: "START_NAVAL_BATTLE_FROM_REQUEST"; requestId: string; initiatingShipId: string; targetShipId: string; participantShipIds: string[]; areaCells: GridCellCoord[] };
 
 export interface ExtensionServices {
   getSnapshot(): RawExtensionSnapshot;
   subscribe(listener: () => void): () => void;
   send(command: UiCommand): Promise<unknown>;
+  sendStrategic?(command: StrategicCityCommandPayload): Promise<unknown>;
   runDiagnostic(testId: DiagnosticTestId): Promise<unknown>;
 }
 
 export interface ExtensionViewModel extends RawExtensionSnapshot {
   armies: ArmyView[];
   ships: ShipView[];
+  strategicCities: StrategicCity[];
   navalRequestTargets: NavalRequestTargetView[];
   pendingNavalBattleRequests: NavalBattleRequestView[];
   transportEmbarkTargets: TransportEmbarkTargetView[];
   pendingTransportEmbarkRequests: TransportEmbarkRequestView[];
   counters: { total: number; moving: number; inBattle: number };
   send(command: UiCommand): Promise<unknown>;
+  sendStrategic(command: StrategicCityCommandPayload): Promise<unknown>;
   runDiagnostic(testId: DiagnosticTestId): Promise<unknown>;
 }
 
 export function useExtensionState(services: ExtensionServices): ExtensionViewModel {
   const snapshot = useSyncExternalStore(services.subscribe, services.getSnapshot, services.getSnapshot);
   return useMemo(() => {
-    const armies = snapshot.role === "GM"
-      ? [...snapshot.armies]
-      : snapshot.armies.filter((army) => snapshot.memberSideIds.has(army.sideId));
-    const ships = snapshot.role === "GM"
-      ? [...(snapshot.ships ?? [])]
-      : (snapshot.ships ?? []).filter((ship) => snapshot.memberSideIds.has(ship.sideId));
+    const armies = snapshot.role === "GM" ? [...snapshot.armies] : snapshot.armies.filter((army) => snapshot.memberSideIds.has(army.sideId));
+    const ships = snapshot.role === "GM" ? [...(snapshot.ships ?? [])] : (snapshot.ships ?? []).filter((ship) => snapshot.memberSideIds.has(ship.sideId));
     return {
       ...snapshot,
+      stateRelations: snapshot.stateRelations ?? {},
       armies,
       ships,
+      strategicCities: [...(snapshot.strategicCities ?? [])],
       navalRequestTargets: [...(snapshot.navalRequestTargets ?? [])],
       pendingNavalBattleRequests: [...(snapshot.pendingNavalBattleRequests ?? [])],
       transportEmbarkTargets: [...(snapshot.transportEmbarkTargets ?? [])],
@@ -241,6 +184,7 @@ export function useExtensionState(services: ExtensionServices): ExtensionViewMod
         inBattle: armies.filter((army) => army.status === "IN_BATTLE").length
       },
       send: (command) => services.send(command),
+      sendStrategic: (command) => services.sendStrategic?.(command) ?? Promise.resolve(undefined),
       runDiagnostic: (testId) => services.runDiagnostic(testId)
     };
   }, [services, snapshot]);

@@ -8,19 +8,38 @@ import type {
 import { RouteToolService, type RouteToolServicePort } from "./routeToolService";
 
 const scene: SceneState = {
-  version: 5,
+  version: 7,
   revision: 4,
   settings: { ...DEFAULT_SETTINGS },
-  sides: [{ id: "red", name: "Красные", color: "#f00", playerIds: ["leader", "member"], leaderPlayerIds: ["leader"], stateId: null }],
-  states: [],
+  sides: [
+    { id: "red", name: "Красные", color: "#f00", playerIds: ["leader", "member"], leaderPlayerIds: ["leader"], stateId: "russia" },
+    { id: "blue", name: "Синие", color: "#00f", playerIds: [], leaderPlayerIds: [], stateId: "germany" }
+  ],
+  states: [
+    { id: "russia", name: "Россия", color: "#f00", rulingFactionId: "red", active: true },
+    { id: "germany", name: "Германия", color: "#00f", rulingFactionId: "blue", active: true }
+  ],
   relations: {}, battleGroups: [],
   terrain: structuredClone(DEFAULT_TERRAIN),
   gridMap: {
     version: 1, revision: 0,
-    cells: { "1,0": { terrainId: "road", impassable: false, factionTerritoryIds: ["red"], recognizedStateId: null, deFactoStateId: null } }
+    cells: { "1,0": { terrainId: "road", impassable: false, factionTerritoryIds: ["red"], recognizedStateId: "russia", deFactoStateId: null } }
   },
   wars: [],
-  turn: structuredClone(DEFAULT_TURN_STATE)
+  turn: structuredClone(DEFAULT_TURN_STATE),
+  ships: {},
+  navalBattleRequests: [],
+  transportEmbarkRequests: [],
+  activeNavalBattle: null,
+  navalBattleHistory: [],
+  navalRevealUntilTurn: {},
+  stateRelations: { russia: { germany: { militaryAccess: true, atWar: false } } },
+  foreignPresenceViolations: [],
+  forcedExitStates: [],
+  strategicCities: [],
+  territorialScores: [],
+  rebellions: [],
+  turnCheckpoint: null
 };
 
 const army: ArmyState = {
@@ -103,7 +122,7 @@ function accepted(command: ArmyCommand): CommandAck {
 }
 
 describe("RouteToolService", () => {
-  it("loads strategic movement context for the side leader", async () => {
+  it("loads strategic movement and political context for the side leader", async () => {
     const port = new MemoryPort();
     const service = new RouteToolService(port, { send: async (command) => accepted(command) });
     await expect(service.loadSession("army-a")).resolves.toMatchObject({
@@ -114,6 +133,9 @@ describe("RouteToolService", () => {
       sideId: "red",
       movementUnits: 10,
       maxUnits: 10,
+      sides: scene.sides,
+      states: scene.states,
+      stateRelations: scene.stateRelations,
       barriers: [{ barrierId: "wall" }]
     });
   });

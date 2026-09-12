@@ -44,11 +44,77 @@ export interface Side {
   stateId: string | null;
 }
 
+/** Boundary-compatible state entity; v7 scene migration always materializes color. */
 export interface StateEntity {
   id: string;
   name: string;
+  color?: string;
   rulingFactionId: string | null;
   active: boolean;
+}
+
+export interface NormalizedStateEntity extends StateEntity {
+  color: string;
+}
+
+export interface StateRelationState {
+  militaryAccess: boolean;
+  atWar: boolean;
+}
+
+export type StateRelations = Record<string, Record<string, StateRelationState>>;
+
+export interface ForeignPresenceViolation {
+  armyId: string;
+  homeStateId: string;
+  hostStateId: string;
+  enteredOnTurn: number;
+  checkOnTurn: number;
+}
+
+export type ForcedExitReason = "PASSAGE_REVOKED" | "WAR_ENDED" | "BORDER_CHANGED" | "OTHER";
+
+export interface ForcedExitState {
+  armyId: string;
+  startedOnTurn: number;
+  originReason: ForcedExitReason;
+}
+
+export interface StrategicCity {
+  id: string;
+  name: string;
+  cells: GridCellCoord[];
+  recognizedStateId: string;
+  deFactoStateId: string;
+  factionInfluenceId: string | null;
+  mayorId: string | null;
+  isCapital: boolean;
+  historicalBuildTypeCount: number;
+}
+
+export interface TerritorialScore {
+  holderStateId: string;
+  opponentStateId: string;
+  points: number;
+}
+
+export interface RebellionState {
+  id: string;
+  sourceStateId: string;
+  startedOnTurn: number;
+  recognizedTerritorySnapshot: GridCellCoord[];
+  capitalCityId: string;
+  participantFactionIds: string[];
+  active: boolean;
+}
+
+export interface TurnCheckpointState {
+  turnNumber: number;
+  illegalPresenceDone: boolean;
+  forcedExitDone: boolean;
+  supplyDone: boolean;
+  encirclementDone: boolean;
+  territorialScoreDone: boolean;
 }
 
 export interface BattleGroup {
@@ -85,7 +151,7 @@ export interface CellState {
   /** null means use the registry default terrain. */
   terrainId: string | null;
   impassable: boolean;
-  /** Peace-time movement access; independent from state ownership. */
+  /** Legacy faction-territory data retained only for migration/backward-compatible reading. */
   factionTerritoryIds: string[];
   /** Internationally recognized state owner. */
   recognizedStateId: string | null;
@@ -197,11 +263,11 @@ export interface NavalBattleState {
 }
 
 /**
- * Boundary-compatible scene shape. Legacy v5 data is accepted here so old callers and
- * migration fixtures remain representable; normalizeSceneState always returns NavalSceneState.
+ * Boundary-compatible scene shape. Legacy v5/v6 data is accepted here so old callers and
+ * migration fixtures remain representable; scene migration upgrades persisted state to v7.
  */
 export interface SceneState {
-  version: 5 | 6;
+  version: 5 | 6 | 7;
   revision: number;
   settings: SceneSettings;
   sides: Side[];
@@ -218,17 +284,39 @@ export interface SceneState {
   activeNavalBattle?: NavalBattleState | null;
   navalBattleHistory?: NavalBattleState[];
   navalRevealUntilTurn?: Record<string, Record<string, number>>;
+  stateRelations?: StateRelations;
+  foreignPresenceViolations?: ForeignPresenceViolation[];
+  forcedExitStates?: ForcedExitState[];
+  strategicCities?: StrategicCity[];
+  territorialScores?: TerritorialScore[];
+  rebellions?: RebellionState[];
+  turnCheckpoint?: TurnCheckpointState | null;
   coordinatorLease?: CoordinatorLease;
 }
 
+/** Boundary-compatible naval scene shape used by existing tactical code and fixtures. */
 export interface NavalSceneState extends SceneState {
-  version: 6;
+  version: 6 | 7;
   ships: Record<string, ShipState>;
   navalBattleRequests: NavalBattleRequest[];
   activeNavalBattle: NavalBattleState | null;
   navalBattleHistory: NavalBattleState[];
   navalRevealUntilTurn: Record<string, Record<string, number>>;
   turn: TurnState & { phase: TurnPhase };
+}
+
+/** Fully normalized v7 scene. */
+export interface StrategicSceneState extends NavalSceneState {
+  version: 7;
+  states: NormalizedStateEntity[];
+  transportEmbarkRequests: TransportEmbarkRequest[];
+  stateRelations: StateRelations;
+  foreignPresenceViolations: ForeignPresenceViolation[];
+  forcedExitStates: ForcedExitState[];
+  strategicCities: StrategicCity[];
+  territorialScores: TerritorialScore[];
+  rebellions: RebellionState[];
+  turnCheckpoint: TurnCheckpointState | null;
 }
 
 export interface ArmyOverrides {
@@ -244,6 +332,10 @@ export type MovementDenialReason =
   | "OUTSIDE_MAP"
   | "IMPASSABLE"
   | "OUTSIDE_FACTION_TERRITORY"
+  | "FOREIGN_STATE_CLOSED"
+  | "STATELESS_FACTION"
+  | "INVALID_POLITICAL_CONFIG"
+  | "WAR_DECLARATION_FAILED"
   | "INVALID_TERRAIN"
   | "INSUFFICIENT_MOVEMENT_POINTS"
   | "ARMY_STATE_BLOCKS_MOVEMENT"
@@ -341,7 +433,7 @@ export interface ItemUpdate {
   [key: string]: unknown;
 }
 
-export const COMMAND_PROTOCOL_VERSION = 4 as const;
+export const COMMAND_PROTOCOL_VERSION = 5 as const;
 
 export interface CommandEnvelope {
   protocolVersion: typeof COMMAND_PROTOCOL_VERSION;
@@ -445,6 +537,8 @@ export type ArmyCommandPayload =
     | { type: "UPDATE_STATE"; stateId: string; patch: Partial<Omit<StateEntity, "id">> }
     | { type: "DELETE_STATE"; stateId: string }
     | { type: "SET_SIDE_STATE"; sideId: string; stateId: string | null }
+    | { type: "SET_STATE_MILITARY_ACCESS"; fromStateId: string; toStateId: string; allowed: boolean }
+    | { type: "SET_STATE_WAR"; leftStateId: string; rightStateId: string; atWar: boolean }
     | { type: "SET_RECOGNIZED_STATE_CELLS"; cells: GridCellCoord[]; stateId: string | null }
     | { type: "SET_DEFACTO_STATE_CELLS"; cells: GridCellCoord[]; stateId: string | null }
     | { type: "SET_ARMY_HP"; armyId: string; hp: number; maxHp?: number }

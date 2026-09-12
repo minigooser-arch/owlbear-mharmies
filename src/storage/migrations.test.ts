@@ -43,7 +43,7 @@ describe("metadata migrations", () => {
     expect(result).toMatchObject({
       ok: true,
       value: {
-        version: 6,
+        version: 7,
         battleGroups: [
           { battleId: "a", name: "Бой 1" },
           { battleId: "z", name: "Бой 2" }
@@ -76,7 +76,7 @@ describe("metadata migrations", () => {
     });
   });
 
-  it("migrates v1 sides through the current v6 schema without losing memberships", () => {
+  it("migrates v1 sides through the current v7 schema without losing memberships", () => {
     const result = migrateSceneState({
       version: 1,
       revision: 7,
@@ -96,7 +96,7 @@ describe("metadata migrations", () => {
     expect(result).toMatchObject({
       ok: true,
       value: {
-        version: 6,
+        version: 7,
         revision: 7,
         sides: [
           {
@@ -113,7 +113,7 @@ describe("metadata migrations", () => {
     });
   });
 
-  it("migrates a v0 scene through the current v6 schema", () => {
+  it("migrates a v0 scene through the current v7 schema", () => {
     expect(migrateSceneState({
       version: 0,
       revision: 4,
@@ -121,7 +121,7 @@ describe("metadata migrations", () => {
     })).toMatchObject({
       ok: true,
       value: {
-        version: 6,
+        version: 7,
         revision: 4,
         sides: [{ id: "red", playerIds: ["p1"], leaderPlayerIds: [] }],
         turn: { phase: "MOVEMENT" },
@@ -149,7 +149,7 @@ describe("metadata migrations", () => {
   });
 });
 
-it("migrates v4 scene through state territory and naval schemas", () => {
+it("migrates v4 scene through state territory and strategic war schemas", () => {
   const result = migrateSceneState({
     version: 4,
     revision: 3,
@@ -180,7 +180,7 @@ it("migrates v4 scene through state territory and naval schemas", () => {
   expect(result).toMatchObject({
     ok: true,
     value: {
-      version: 6,
+      version: 7,
       states: [],
       sides: [{ id: "red", stateId: null }],
       terrain: {

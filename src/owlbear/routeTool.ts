@@ -1,16 +1,25 @@
 import { firstBarrierIntersection, type BarrierSegment } from "../barriers/barrierGeometry";
 import { validateMovementStep } from "../movement/movementRules";
+import { classifyStateMovementAccess } from "../movement/stateMovementAccess";
 import type { GridRoutePort } from "../routes/routeMath";
 import { readCell } from "../terrain/gridMap";
 import type {
   GridCellCoord,
   GridMapState,
   MovementDenialReason,
+  Side,
+  StateEntity,
+  StateRelations,
   TerrainRegistryState,
   Vector2,
   WarState
 } from "../shared/types";
 import { straightGridSegment } from "./straightGridSegment";
+
+export type PoliticalRouteDenialReason =
+  | "FOREIGN_STATE_CLOSED"
+  | "STATELESS_FACTION"
+  | "INVALID_POLITICAL_CONFIG";
 
 export interface RoutePreview {
   point: Vector2;
@@ -24,7 +33,7 @@ export interface RoutePreview {
   segmentCells?: readonly GridCellCoord[];
   segmentPoints?: readonly Vector2[];
   segmentStepCostUnits?: readonly number[];
-  reason?: MovementDenialReason | "BARRIER" | "INACTIVE";
+  reason?: MovementDenialReason | PoliticalRouteDenialReason | "BARRIER" | "INACTIVE";
 }
 
 export interface RouteFinishButton {
@@ -59,12 +68,16 @@ export interface RouteToolActivation {
   terrain: TerrainRegistryState;
   gridMap: GridMapState;
   wars: readonly WarState[];
+  /** Current political model. Optional only for legacy tests/sessions during migration. */
+  sides?: readonly Side[];
+  states?: readonly StateEntity[];
+  stateRelations?: StateRelations;
   barriers: readonly BarrierSegment[];
 }
 
 export type RouteClickResult =
   | { accepted: true }
-  | { accepted: false; reason: MovementDenialReason | "BARRIER" | "INACTIVE" };
+  | { accepted: false; reason: MovementDenialReason | PoliticalRouteDenialReason | "BARRIER" | "INACTIVE" };
 
 export type RouteKeyResult =
   | { action: "EDITING" }
@@ -80,7 +93,7 @@ export type RouteFinishResult =
       cells: GridCellCoord[];
       totalCostUnits: number;
     }
-  | { action: "INVALID"; reason: MovementDenialReason | "EMPTY_ROUTE" }
+  | { action: "INVALID"; reason: MovementDenialReason | PoliticalRouteDenialReason | "EMPTY_ROUTE" }
   | { action: "IGNORED" };
 
 export function formatMovementUnits(units: number): string {
@@ -94,6 +107,9 @@ function messageForPreview(reason: RoutePreview["reason"], missingUnits?: number
     case "OUTSIDE_MAP": return "За пределами игровой карты";
     case "IMPASSABLE": return "Непроходимая клетка";
     case "OUTSIDE_FACTION_TERRITORY": return "Вне территории фракции в мирное время";
+    case "FOREIGN_STATE_CLOSED": return "Закрытая государственная граница";
+    case "STATELESS_FACTION": return "Фракция без государства не может войти на государственную территорию";
+    case "INVALID_POLITICAL_CONFIG": return "Некорректная политическая конфигурация";
     case "INVALID_TERRAIN": return "Недоступный тип местности";
     case "INSUFFICIENT_MOVEMENT_POINTS": return `Не хватает ${formatMovementUnits(missingUnits ?? 0)} ОП`;
     case "ARMY_STATE_BLOCKS_MOVEMENT": return "Состояние армии запрещает движение";
@@ -101,6 +117,10 @@ function messageForPreview(reason: RoutePreview["reason"], missingUnits?: number
     case "INACTIVE": return "Инструмент маршрута не активен";
     default: return "";
   }
+}
+
+function stateName(active: RouteToolActivation, stateId: string): string {
+  return active.states?.find((state) => state.id === stateId)?.name ?? stateId;
 }
 
 function cellForSnappedPoint(active: RouteToolActivation, point: Vector2): GridCellCoord {
@@ -311,19 +331,63 @@ export class RouteToolController {
     let cursorRemaining = remaining;
     let segmentCost = 0;
     let largestStepCost = 0;
+    let warWarningStateName: string | undefined;
+    const hasPoliticalModel = active.sides !== undefined && active.states !== undefined && active.stateRelations !== undefined;
 
     for (const nextCell of segment) {
       const nextPoint = pointForCell(active, nextCell);
+      const destinationCell = readCell(active.gridMap, nextCell);
+      if (hasPoliticalModel) {
+        const political = classifyStateMovementAccess({
+          sideId: active.sideId,
+          destinationStateId: destinationCell.recognizedStateId,
+          sides: active.sides ?? [],
+          states: active.states ?? [],
+          stateRelations: active.stateRelations ?? {}
+        });
+        if (political.kind === "DENY_FOREIGN_STATE") {
+          return {
+            point, cell, valid: false, color: "#d32f2f",
+            label: `Закрытая граница: ${stateName(active, political.destinationStateId)}`,
+            totalCostUnits: spent + segmentCost,
+            remainingUnits: cursorRemaining,
+            reason: "FOREIGN_STATE_CLOSED"
+          };
+        }
+        if (political.kind === "DENY_STATELESS") {
+          return {
+            point, cell, valid: false, color: "#d32f2f",
+            label: messageForPreview("STATELESS_FACTION"),
+            totalCostUnits: spent + segmentCost,
+            remainingUnits: cursorRemaining,
+            reason: "STATELESS_FACTION"
+          };
+        }
+        if (political.kind === "DENY_INVALID_POLITICAL_CONFIG") {
+          return {
+            point, cell, valid: false, color: "#d32f2f",
+            label: messageForPreview("INVALID_POLITICAL_CONFIG"),
+            totalCostUnits: spent + segmentCost,
+            remainingUnits: cursorRemaining,
+            reason: "INVALID_POLITICAL_CONFIG"
+          };
+        }
+        if (political.kind === "DECLARE_WAR_AND_ALLOW") {
+          warWarningStateName = stateName(active, political.destinationStateId);
+        }
+      }
+
       const step = validateMovementStep({
         from: cursorCell,
         to: nextCell,
         sideId: active.sideId,
-        cell: readCell(active.gridMap, nextCell),
+        cell: destinationCell,
         terrain: active.terrain,
         wars: active.wars,
         remainingUnits: cursorRemaining,
         withinBounds: true,
-        armyStateAllowsMovement: true
+        armyStateAllowsMovement: true,
+        skipLegacyPoliticalCheck: hasPoliticalModel
       });
       if (!step.allowed) {
         return {
@@ -350,10 +414,11 @@ export class RouteToolController {
     }
 
     const total = spent + segmentCost;
+    const normalLabel = `${segment.length > 1 ? "Отрезок" : "Шаг"}: ${formatMovementUnits(segmentCost)} ОП · маршрут: ${formatMovementUnits(total)} ОП · останется ${formatMovementUnits(cursorRemaining)} ОП`;
     return {
       point, cell, valid: true,
-      color: largestStepCost <= 1 ? "#29b6f6" : largestStepCost >= 4 ? "#f9a825" : "#2e7d32",
-      label: `${segment.length > 1 ? "Отрезок" : "Шаг"}: ${formatMovementUnits(segmentCost)} ОП · маршрут: ${formatMovementUnits(total)} ОП · останется ${formatMovementUnits(cursorRemaining)} ОП`,
+      color: warWarningStateName ? "#f9a825" : largestStepCost <= 1 ? "#29b6f6" : largestStepCost >= 4 ? "#f9a825" : "#2e7d32",
+      label: warWarningStateName ? `⚠ Вход в ${warWarningStateName} объявит войну · ${normalLabel}` : normalLabel,
       totalCostUnits: total,
       remainingUnits: cursorRemaining,
       stepCostUnits: segmentCost,

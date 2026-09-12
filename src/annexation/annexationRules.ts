@@ -1,10 +1,13 @@
-import type { CellState, Side, StateEntity, WarState } from "../shared/types";
-import { areStatesAtWar, stateForFaction } from "../states/stateRules";
+import type { CellState, Side, StateEntity, StateRelations, WarState } from "../shared/types";
+import { stateForFaction } from "../states/stateRules";
+import { areStatesAtWar } from "../states/stateRelations";
 
 export interface AnnexationContext {
   states: readonly StateEntity[];
   sides: readonly Side[];
+  /** Legacy/history objects retained for callers; they do not authorize annexation. */
   wars: readonly WarState[];
+  stateRelations?: StateRelations;
 }
 
 export function annexingStateForEntry(
@@ -16,5 +19,7 @@ export function annexingStateForEntry(
   if (!state || state.rulingFactionId !== armyFactionId) return undefined;
   const targetStateId = destination.deFactoStateId ?? destination.recognizedStateId;
   if (!targetStateId || targetStateId === state.id) return undefined;
-  return areStatesAtWar(context.wars, state.id, targetStateId) ? state.id : undefined;
+  return areStatesAtWar(context.stateRelations ?? {}, state.id, targetStateId)
+    ? state.id
+    : undefined;
 }

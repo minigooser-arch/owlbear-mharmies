@@ -4,10 +4,8 @@ import { getBrushCells, rasterizeBrushStroke, type BrushSize } from "../terrain/
 import {
   PROGRAMMATIC_ONLY_TOOL_FILTER,
   MAP_BRUSH_ERASER_TARGET_KEY,
-  MAP_BRUSH_FACTION_OPERATION_KEY,
   MAP_BRUSH_IMPASSABLE_VALUE_KEY,
   MAP_BRUSH_MODE_KEY,
-  MAP_BRUSH_SIDE_ID_KEY,
   MAP_BRUSH_STATE_ID_KEY,
   MAP_BRUSH_SIZE_KEY,
   MAP_BRUSH_TERRAIN_ID_KEY,
@@ -16,17 +14,16 @@ import {
 } from "../shared/constants";
 import type { CellPropertyTarget, GridCellCoord } from "../shared/types";
 
-export type MapBrushMode = "TERRAIN" | "IMPASSABLE" | "FACTION_TERRITORY" | "RECOGNIZED_STATE" | "DEFACTO_STATE" | "ERASER";
+export type MapBrushMode = "TERRAIN" | "IMPASSABLE" | "RECOGNIZED_STATE" | "DEFACTO_STATE" | "ERASER";
+export type MapBrushEraserTarget = Exclude<CellPropertyTarget, "SELECTED_FACTION">;
 
 export interface MapBrushSettings {
   mode: MapBrushMode;
   size: BrushSize;
   terrainId: string;
-  sideId?: string;
   stateId?: string;
-  factionOperation: "ADD" | "REMOVE";
   impassable: boolean;
-  eraserTarget: CellPropertyTarget;
+  eraserTarget: MapBrushEraserTarget;
 }
 
 export interface MapBrushToolPort {
@@ -56,28 +53,25 @@ function brushSize(value: unknown): BrushSize {
 }
 
 function mode(value: unknown): MapBrushMode {
-  return value === "IMPASSABLE" || value === "FACTION_TERRITORY" || value === "RECOGNIZED_STATE" || value === "DEFACTO_STATE" || value === "ERASER"
+  return value === "IMPASSABLE" || value === "RECOGNIZED_STATE" || value === "DEFACTO_STATE" || value === "ERASER"
     ? value
     : "TERRAIN";
 }
 
-function eraserTarget(value: unknown): CellPropertyTarget {
-  return value === "IMPASSABLE" || value === "SELECTED_FACTION" || value === "RECOGNIZED_STATE" || value === "DEFACTO_STATE" || value === "ALL"
+function eraserTarget(value: unknown): MapBrushEraserTarget {
+  return value === "IMPASSABLE" || value === "RECOGNIZED_STATE" || value === "DEFACTO_STATE" || value === "ALL"
     ? value
     : "TERRAIN";
 }
 
 export function mapBrushSettingsFromMetadata(metadata: Metadata): MapBrushSettings {
-  const rawSideId = metadata[MAP_BRUSH_SIDE_ID_KEY];
   const rawTerrainId = metadata[MAP_BRUSH_TERRAIN_ID_KEY];
   const rawStateId = metadata[MAP_BRUSH_STATE_ID_KEY];
   return {
     mode: mode(metadata[MAP_BRUSH_MODE_KEY]),
     size: brushSize(metadata[MAP_BRUSH_SIZE_KEY]),
     terrainId: typeof rawTerrainId === "string" && rawTerrainId.length > 0 ? rawTerrainId : "plain",
-    ...(typeof rawSideId === "string" && rawSideId.length > 0 ? { sideId: rawSideId } : {}),
     ...(typeof rawStateId === "string" && rawStateId.length > 0 ? { stateId: rawStateId } : {}),
-    factionOperation: metadata[MAP_BRUSH_FACTION_OPERATION_KEY] === "REMOVE" ? "REMOVE" : "ADD",
     impassable: metadata[MAP_BRUSH_IMPASSABLE_VALUE_KEY] !== false,
     eraserTarget: eraserTarget(metadata[MAP_BRUSH_ERASER_TARGET_KEY])
   };
@@ -194,7 +188,6 @@ export async function registerMapBrushTool(
       [MAP_BRUSH_TERRAIN_ID_KEY]: "plain",
       [MAP_BRUSH_STATE_ID_KEY]: null,
       [MAP_BRUSH_SIZE_KEY]: 1,
-      [MAP_BRUSH_FACTION_OPERATION_KEY]: "ADD",
       [MAP_BRUSH_IMPASSABLE_VALUE_KEY]: true,
       [MAP_BRUSH_ERASER_TARGET_KEY]: "TERRAIN"
     }

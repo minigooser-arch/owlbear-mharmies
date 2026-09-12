@@ -159,7 +159,6 @@ describe("validateArmyCommand", () => {
     { type: "SET_ROUTE", armyId: "army", route: [{ x: 1, y: 0 }], startCell: { x: 0, y: 0 }, cells: [{ x: 1, y: 0 }] },
     { type: "SET_TERRAIN_CELLS", cells: [{ x: 1, y: 0 }], terrainId: "forest" },
     { type: "SET_IMPASSABLE_CELLS", cells: [{ x: 1, y: 0 }], impassable: true },
-    { type: "UPDATE_FACTION_TERRITORY_CELLS", cells: [{ x: 1, y: 0 }], sideId: "red", operation: "ADD" },
     { type: "CLEAR_CELL_PROPERTIES", cells: [{ x: 1, y: 0 }], target: "TERRAIN" },
     { type: "CREATE_TERRAIN_TYPE", terrain: { id: "swamp", name: "Болото", movementCostUnits: 5, enabled: true } },
     { type: "UPDATE_TERRAIN_TYPE", terrainId: "forest", patch: { movementCostUnits: 5 } },
