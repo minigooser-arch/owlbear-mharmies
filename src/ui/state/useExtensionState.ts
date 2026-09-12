@@ -114,14 +114,12 @@ export interface RawExtensionSnapshot {
 }
 
 export interface MapBrushUiSettings {
-  mode: "TERRAIN" | "IMPASSABLE" | "RECOGNIZED_STATE" | "DEFACTO_STATE" | "ERASER" | "FACTION_TERRITORY";
+  mode: "TERRAIN" | "IMPASSABLE" | "RECOGNIZED_STATE" | "DEFACTO_STATE" | "ERASER";
   size: 1 | 3 | 5;
   terrainId: string;
   stateId?: string;
   impassable: boolean;
   eraserTarget: "TERRAIN" | "IMPASSABLE" | "RECOGNIZED_STATE" | "DEFACTO_STATE" | "ALL";
-  sideId?: string;
-  factionOperation?: "ADD" | "REMOVE";
 }
 
 export type UiCommand =
