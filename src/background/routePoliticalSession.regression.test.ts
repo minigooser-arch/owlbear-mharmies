@@ -34,7 +34,7 @@ it("loads sides, states, and interstate relations into the live route session", 
     patchSceneMetadata: async () => {},
     getSceneItems: async () => [structuredClone(item)],
     updateSceneItem: async () => {},
-    getLocalItems: async () => [], addLocalItem: async () => {}, addLocalItems: async () => {}, updateLocalItems: async () => {}, deleteLocalItems: async () => {},
+    getLocalItems: async () => [], addLocalItems: async () => {}, updateLocalItems: async () => {}, deleteLocalItems: async () => {},
     createId: () => "preview-1", show: async () => {}, activateTool: async () => {},
     getGridDistance: async () => 0, getGridDpi: async () => 100, snapGridCenter: async (position) => ({ ...position })
   };
