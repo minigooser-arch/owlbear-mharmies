@@ -1,7 +1,11 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+// @vitest-environment jsdom
+
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { StateEntity, StrategicCity } from "../../shared/types";
 import { StrategicCityEditor } from "./StrategicCityEditor";
+
+afterEach(cleanup);
 
 const states: StateEntity[] = [
   { id: "russia", name: "Россия", color: "#b71c1c", rulingFactionId: "red", active: true }
