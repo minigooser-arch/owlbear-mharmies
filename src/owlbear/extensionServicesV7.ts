@@ -13,11 +13,29 @@ export type { RunningExtensionServices, SnapshotInput } from "./extensionService
 
 type OwlbearSdk = typeof import("@owlbear-rodeo/sdk").default;
 
-export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapshot {
+function withExactStateWarStatus(
+  snapshot: RawExtensionSnapshot,
+  stateRelations: StateRelations
+): RawExtensionSnapshot {
+  const stateBySide = new Map(snapshot.sides.map((side) => [side.id, side.stateId]));
   return {
-    ...buildCoreRoleSafeSnapshot(input),
-    stateRelations: input.scene.stateRelations ?? {}
+    ...snapshot,
+    stateRelations,
+    armies: snapshot.armies.map((army) => {
+      const stateId = stateBySide.get(army.sideId);
+      const atWar = stateId != null && Object.values(stateRelations[stateId] ?? {}).some(
+        (relation) => relation.atWar
+      );
+      return { ...army, atWar };
+    })
   };
+}
+
+export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapshot {
+  return withExactStateWarStatus(
+    buildCoreRoleSafeSnapshot(input),
+    input.scene.stateRelations ?? {}
+  );
 }
 
 async function readStateRelations(OBR: OwlbearSdk): Promise<StateRelations> {
@@ -44,7 +62,7 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
   });
 
   return {
-    getSnapshot: () => ({ ...core.getSnapshot(), stateRelations }),
+    getSnapshot: () => withExactStateWarStatus(core.getSnapshot(), stateRelations),
     subscribe: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
