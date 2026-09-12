@@ -6,6 +6,7 @@ export interface StrategicCityEditorProps {
   states: readonly StateEntity[];
   cities: readonly StrategicCity[];
   onCreate(city: StrategicCity): void | Promise<void>;
+  onUpdate(cityId: string, patch: Partial<Omit<StrategicCity, "id">>): void | Promise<void>;
   onDelete(cityId: string): void | Promise<void>;
 }
 
@@ -28,11 +29,115 @@ function parseCells(value: string): GridCellCoord[] | null {
   return cells;
 }
 
-export function StrategicCityEditor({ role, states, cities, onCreate, onDelete }: StrategicCityEditorProps) {
+function cellsText(cells: readonly GridCellCoord[]): string {
+  return cells.map((cell) => `${cell.x},${cell.y}`).join("; ");
+}
+
+function StrategicCityRow({
+  city,
+  states,
+  stateNames,
+  role,
+  onUpdate,
+  onDelete
+}: {
+  city: StrategicCity;
+  states: readonly StateEntity[];
+  stateNames: ReadonlyMap<string, string>;
+  role: "GM" | "PLAYER";
+  onUpdate(cityId: string, patch: Partial<Omit<StrategicCity, "id">>): void | Promise<void>;
+  onDelete(cityId: string): void | Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(city.name);
+  const [cells, setCells] = useState(cellsText(city.cells));
+  const [stateId, setStateId] = useState(city.recognizedStateId);
+  const [buildCount, setBuildCount] = useState(String(city.historicalBuildTypeCount));
+  const [capital, setCapital] = useState(city.isCapital);
+  const [error, setError] = useState<string | null>(null);
+
+  const save = () => {
+    const parsedCells = parseCells(cells);
+    const historicalBuildTypeCount = Number(buildCount);
+    if (!name.trim() || !stateId || !parsedCells || !Number.isInteger(historicalBuildTypeCount) || historicalBuildTypeCount < 0) {
+      setError("Проверьте название, клетки, государство и число типов построек.");
+      return;
+    }
+    setError(null);
+    void onUpdate(city.id, {
+      name: name.trim(),
+      cells: parsedCells,
+      recognizedStateId: stateId,
+      deFactoStateId: stateId,
+      factionInfluenceId: city.factionInfluenceId,
+      mayorId: city.mayorId,
+      isCapital: capital,
+      historicalBuildTypeCount
+    });
+    setEditing(false);
+  };
+
+  return (
+    <article>
+      <h3>{city.name}</h3>
+      <p>{stateNames.get(city.recognizedStateId) ?? city.recognizedStateId}</p>
+      <p>Клеток: {city.cells.length}</p>
+      <p>Исторических типов построек: {city.historicalBuildTypeCount}</p>
+      {city.isCapital ? <p>Столица</p> : null}
+      {role === "GM" ? (
+        <div>
+          <button type="button" aria-label={`Редактировать ${city.name}`} onClick={() => setEditing((value) => !value)}>
+            Редактировать
+          </button>
+          <button type="button" aria-label={`Удалить ${city.name}`} onClick={() => void onDelete(city.id)}>
+            Удалить
+          </button>
+        </div>
+      ) : null}
+      {role === "GM" && editing ? (
+        <div>
+          <label>
+            Название
+            <input aria-label={`Редактировать название ${city.name}`} value={name} onChange={(event) => setName(event.target.value)} />
+          </label>
+          <label>
+            Государство
+            <select aria-label={`Редактировать государство ${city.name}`} value={stateId} onChange={(event) => setStateId(event.target.value)}>
+              {states.map((state) => <option key={state.id} value={state.id}>{state.name}</option>)}
+            </select>
+          </label>
+          <label>
+            Клетки
+            <input aria-label={`Редактировать клетки ${city.name}`} value={cells} onChange={(event) => setCells(event.target.value)} />
+          </label>
+          <label>
+            Исторические типы построек
+            <input
+              aria-label={`Редактировать исторические типы построек ${city.name}`}
+              type="number"
+              min={0}
+              step={1}
+              value={buildCount}
+              onChange={(event) => setBuildCount(event.target.value)}
+            />
+          </label>
+          <label>
+            <input aria-label={`Редактировать столицу ${city.name}`} type="checkbox" checked={capital} onChange={(event) => setCapital(event.target.checked)} />
+            Столица
+          </label>
+          {error ? <p role="alert">{error}</p> : null}
+          <button type="button" aria-label={`Сохранить ${city.name}`} onClick={save}>Сохранить</button>
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+export function StrategicCityEditor({ role, states, cities, onCreate, onUpdate, onDelete }: StrategicCityEditorProps) {
   const defaultStateId = states[0]?.id ?? "";
   const [id, setId] = useState("");
   const [name, setName] = useState("");
-  const [cellsText, setCellsText] = useState("");
+  const [cityCellsText, setCityCellsText] = useState("");
   const [stateId, setStateId] = useState(defaultStateId);
   const [buildCount, setBuildCount] = useState("0");
   const [capital, setCapital] = useState(false);
@@ -44,7 +149,7 @@ export function StrategicCityEditor({ role, states, cities, onCreate, onDelete }
   );
 
   const submit = () => {
-    const cells = parseCells(cellsText);
+    const cells = parseCells(cityCellsText);
     const historicalBuildTypeCount = Number(buildCount);
     if (!id.trim() || !name.trim() || !stateId || !cells || !Number.isInteger(historicalBuildTypeCount) || historicalBuildTypeCount < 0) {
       setError("Проверьте ID, название, клетки, государство и число типов построек.");
@@ -69,18 +174,15 @@ export function StrategicCityEditor({ role, states, cities, onCreate, onDelete }
       <h2>Стратегические города</h2>
       {cities.length === 0 ? <p>Города не добавлены.</p> : null}
       {cities.map((city) => (
-        <article key={city.id}>
-          <h3>{city.name}</h3>
-          <p>{stateNames.get(city.recognizedStateId) ?? city.recognizedStateId}</p>
-          <p>Клеток: {city.cells.length}</p>
-          <p>Исторических типов построек: {city.historicalBuildTypeCount}</p>
-          {city.isCapital ? <p>Столица</p> : null}
-          {role === "GM" ? (
-            <button type="button" aria-label={`Удалить ${city.name}`} onClick={() => void onDelete(city.id)}>
-              Удалить
-            </button>
-          ) : null}
-        </article>
+        <StrategicCityRow
+          key={city.id}
+          city={city}
+          states={states}
+          stateNames={stateNames}
+          role={role}
+          onUpdate={onUpdate}
+          onDelete={onDelete}
+        />
       ))}
 
       {role === "GM" ? (
@@ -103,8 +205,8 @@ export function StrategicCityEditor({ role, states, cities, onCreate, onDelete }
             Клетки города
             <input
               aria-label="Клетки города"
-              value={cellsText}
-              onChange={(event) => setCellsText(event.target.value)}
+              value={cityCellsText}
+              onChange={(event) => setCityCellsText(event.target.value)}
               placeholder="1,2; 2,2"
             />
           </label>
