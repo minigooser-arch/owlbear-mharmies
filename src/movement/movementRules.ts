@@ -33,6 +33,8 @@ export interface MovementStepContext {
   remainingUnits: number;
   withinBounds: boolean;
   armyStateAllowsMovement: boolean;
+  /** Temporary compatibility switch while authoritative movement is migrated off faction territory. */
+  skipLegacyPoliticalCheck?: boolean;
 }
 
 export function validateMovementStep(context: MovementStepContext): MovementStepResult {
@@ -46,7 +48,11 @@ export function validateMovementStep(context: MovementStepContext): MovementStep
   if (context.cell.impassable) {
     return { allowed: false, reason: "IMPASSABLE", problemCell };
   }
-  if (!isFactionAtWar(context.wars, context.sideId) && !context.cell.factionTerritoryIds.includes(context.sideId)) {
+  if (
+    !context.skipLegacyPoliticalCheck &&
+    !isFactionAtWar(context.wars, context.sideId) &&
+    !context.cell.factionTerritoryIds.includes(context.sideId)
+  ) {
     return { allowed: false, reason: "OUTSIDE_FACTION_TERRITORY", problemCell };
   }
   const terrain = getTerrain(context.terrain, context.cell.terrainId);
@@ -83,6 +89,7 @@ export interface PlannedRouteValidationContext {
   readCell: (cell: GridCellCoord) => CellState;
   withinBounds?: (cell: GridCellCoord) => boolean;
   armyStateAllowsMovement?: boolean;
+  skipLegacyPoliticalCheck?: boolean;
 }
 
 export type PlannedRouteValidationResult =
@@ -110,7 +117,8 @@ export function validatePlannedRoute(context: PlannedRouteValidationContext): Pl
       wars: context.wars,
       remainingUnits,
       withinBounds: context.withinBounds?.(to) ?? true,
-      armyStateAllowsMovement: context.armyStateAllowsMovement ?? true
+      armyStateAllowsMovement: context.armyStateAllowsMovement ?? true,
+      skipLegacyPoliticalCheck: context.skipLegacyPoliticalCheck
     });
     if (!step.allowed) {
       const result: PlannedRouteValidationResult = {
