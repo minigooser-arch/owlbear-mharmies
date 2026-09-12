@@ -11,8 +11,14 @@ const scene: SceneState = {
   version: 7,
   revision: 4,
   settings: { ...DEFAULT_SETTINGS },
-  sides: [{ id: "red", name: "Красные", color: "#f00", playerIds: ["leader", "member"], leaderPlayerIds: ["leader"], stateId: "russia" }],
-  states: [{ id: "russia", name: "Россия", color: "#f00", rulingFactionId: "red", active: true }],
+  sides: [
+    { id: "red", name: "Красные", color: "#f00", playerIds: ["leader", "member"], leaderPlayerIds: ["leader"], stateId: "russia" },
+    { id: "blue", name: "Синие", color: "#00f", playerIds: [], leaderPlayerIds: [], stateId: "germany" }
+  ],
+  states: [
+    { id: "russia", name: "Россия", color: "#f00", rulingFactionId: "red", active: true },
+    { id: "germany", name: "Германия", color: "#00f", rulingFactionId: "blue", active: true }
+  ],
   relations: {}, battleGroups: [],
   terrain: structuredClone(DEFAULT_TERRAIN),
   gridMap: {
@@ -27,7 +33,7 @@ const scene: SceneState = {
   activeNavalBattle: null,
   navalBattleHistory: [],
   navalRevealUntilTurn: {},
-  stateRelations: { russia: {} },
+  stateRelations: { russia: { germany: { militaryAccess: true, atWar: false } } },
   foreignPresenceViolations: [],
   forcedExitStates: [],
   strategicCities: [],
