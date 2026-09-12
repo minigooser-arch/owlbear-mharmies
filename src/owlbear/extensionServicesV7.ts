@@ -1,3 +1,4 @@
+import type { StrategicCityCommandPayload } from "../cities/strategicCityCommands";
 import { METADATA_KEYS } from "../shared/constants";
 import type { StateRelations, StrategicCity } from "../shared/types";
 import { migrateSceneState } from "../storage/migrations";
@@ -74,6 +75,8 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
       publish();
     });
   });
+  const sendStrategic = (command: StrategicCityCommandPayload): Promise<unknown> =>
+    core.send(command as never);
 
   return {
     getSnapshot: () => withStrategicState(core.getSnapshot(), overlay),
@@ -82,6 +85,7 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
       return () => listeners.delete(listener);
     },
     send: core.send,
+    sendStrategic,
     runDiagnostic: core.runDiagnostic,
     stop: () => {
       unsubscribeCore();
