@@ -16,8 +16,14 @@ const armyState: ArmyState = {
 
 const scene: SceneState = {
   version: 7, revision: 1, settings: structuredClone(DEFAULT_SETTINGS),
-  sides: [{ id: "red", name: "Красные", color: "#f00", playerIds: ["leader"], leaderPlayerIds: ["leader"], stateId: "ru" }],
-  states: [{ id: "ru", name: "Россия", color: "#123456", rulingFactionId: "red", active: true }],
+  sides: [
+    { id: "red", name: "Красные", color: "#f00", playerIds: ["leader"], leaderPlayerIds: ["leader"], stateId: "ru" },
+    { id: "blue", name: "Синие", color: "#00f", playerIds: [], leaderPlayerIds: [], stateId: "de" }
+  ],
+  states: [
+    { id: "ru", name: "Россия", color: "#123456", rulingFactionId: "red", active: true },
+    { id: "de", name: "Германия", color: "#654321", rulingFactionId: "blue", active: true }
+  ],
   relations: {}, stateRelations: { ru: { de: { militaryAccess: true, atWar: false } } },
   battleGroups: [], terrain: structuredClone(DEFAULT_TERRAIN),
   gridMap: { version: 1, revision: 0, cells: {} }, wars: [], turn: structuredClone(DEFAULT_TURN_STATE),
