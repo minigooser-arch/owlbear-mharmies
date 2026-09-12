@@ -3,7 +3,6 @@ import type {
   ArmyCommandPayload,
   ArmyStatus,
   BattleGroup,
-  CellPropertyTarget,
   GridCellCoord,
   MovementDenialReason,
   SceneSettings,
@@ -170,14 +169,12 @@ export interface RawExtensionSnapshot {
 }
 
 export interface MapBrushUiSettings {
-  mode: "TERRAIN" | "IMPASSABLE" | "FACTION_TERRITORY" | "RECOGNIZED_STATE" | "DEFACTO_STATE" | "ERASER";
+  mode: "TERRAIN" | "IMPASSABLE" | "RECOGNIZED_STATE" | "DEFACTO_STATE" | "ERASER";
   size: 1 | 3 | 5;
   terrainId: string;
-  sideId?: string;
   stateId?: string;
-  factionOperation: "ADD" | "REMOVE";
   impassable: boolean;
-  eraserTarget: CellPropertyTarget;
+  eraserTarget: "TERRAIN" | "IMPASSABLE" | "RECOGNIZED_STATE" | "DEFACTO_STATE" | "ALL";
 }
 
 export type UiCommand =
