@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE } from "../shared/constants";
 import type { SceneState } from "../shared/types";
-import { buildRoleSafeSnapshot } from "./extensionServices";
+import { buildRoleSafeSnapshot } from "./extensionServicesV7";
 
 it("publishes interstate relations in the role-safe snapshot", () => {
   const scene: SceneState = {
