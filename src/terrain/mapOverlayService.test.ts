@@ -27,7 +27,7 @@ function harness() {
 }
 
 describe("MapOverlayService", () => {
-  it("renders only sparse configured cells for a GM", async () => {
+  it("renders only current terrain and state layers for sparse configured cells", async () => {
     const test = harness();
     await new MapOverlayService(test.port).reconcile({
       dpi: 100,
@@ -48,21 +48,26 @@ describe("MapOverlayService", () => {
         }
       },
       sides: [{ id: "red", name: "Красные", color: "#ff0000", playerIds: [], leaderPlayerIds: [], stateId: "russia" }],
-      states: [{ id: "russia", name: "Российская империя", rulingFactionId: "red", active: true }, { id: "germany", name: "Германская империя", rulingFactionId: null, active: true }]
+      states: [
+        { id: "russia", name: "Российская империя", color: "#b71c1c", rulingFactionId: "red", active: true },
+        { id: "germany", name: "Германская империя", color: "#1a237e", rulingFactionId: null, active: true }
+      ]
     });
 
     const metadata = test.items().map((item) => item.metadata[METADATA_KEYS.mapOverlay]);
-    expect(test.items()).toHaveLength(6);
+    expect(test.items()).toHaveLength(5);
     expect(metadata).toEqual(expect.arrayContaining([
       expect.objectContaining({ cellKey: "0,0", kind: "TERRAIN" }),
       expect.objectContaining({ cellKey: "0,0", kind: "IMPASSABLE" }),
-      expect.objectContaining({ cellKey: "0,0", kind: "TERRITORY" }),
       expect.objectContaining({ cellKey: "2,1", kind: "TERRAIN" }),
       expect.objectContaining({ cellKey: "0,0", kind: "RECOGNIZED_STATE" }),
       expect.objectContaining({ cellKey: "0,0", kind: "DEFACTO_STATE" })
     ]));
+    expect(metadata).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "TERRITORY" })
+    ]));
     expect(test.items().find((item) => item.type === "LABEL" && item.text === "⛔")).toBeDefined();
-    expect(test.items().find((item) => item.type === "LABEL" && item.text === "Т: Красные")).toBeDefined();
+    expect(test.items().find((item) => item.type === "LABEL" && item.text === "Т: Красные")).toBeUndefined();
     expect(test.items().find((item) => item.type === "LABEL" && item.text === "Призн.: Российская империя")).toBeDefined();
     expect(test.items().find((item) => item.type === "LABEL" && item.text === "Де-факто: Германская империя")).toBeDefined();
   });
