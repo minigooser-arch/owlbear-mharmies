@@ -175,6 +175,9 @@ export interface MapBrushUiSettings {
   stateId?: string;
   impassable: boolean;
   eraserTarget: "TERRAIN" | "IMPASSABLE" | "RECOGNIZED_STATE" | "DEFACTO_STATE" | "ALL";
+  /** Legacy transport fields retained until extensionServices metadata cleanup. */
+  sideId?: string;
+  factionOperation?: "ADD" | "REMOVE";
 }
 
 export type UiCommand =
