@@ -15,6 +15,10 @@ const sides: Side[] = [
   { id: "c-ruler", name: "C ruler", color: "#00a", playerIds: [], leaderPlayerIds: [], stateId: "c" }
 ];
 
+const bCell = { x: 1, y: 0 } as const;
+const cCell = { x: 2, y: 0 } as const;
+const cells = [bCell, cCell];
+
 const gridMap: GridMapState = {
   version: 1,
   revision: 0,
@@ -24,8 +28,6 @@ const gridMap: GridMapState = {
     "2,0": { terrainId: "road", impassable: false, factionTerritoryIds: [], recognizedStateId: "c", deFactoStateId: "c" }
   }
 };
-
-const cells = [{ x: 1, y: 0 }, { x: 2, y: 0 }];
 
 function input(sideId: string, stateRelations: StateRelations = {}) {
   return { sideId, cells, gridMap, sides, states, stateRelations };
@@ -45,7 +47,7 @@ describe("authoritative interstate movement", () => {
   });
 
   it("declares A-B first and A-C only after each corresponding cell is actually entered", () => {
-    const firstEntry = applyDiplomacyForEnteredCells({ ...input("a-ruler"), cells: [cells[0]!] });
+    const firstEntry = applyDiplomacyForEnteredCells({ ...input("a-ruler"), cells: [bCell] });
 
     expect(firstEntry.declaredPairs).toEqual([{ leftStateId: "a", rightStateId: "b" }]);
     expect(firstEntry.stateRelations.a?.b?.atWar).toBe(true);
@@ -53,7 +55,7 @@ describe("authoritative interstate movement", () => {
 
     const secondEntry = applyDiplomacyForEnteredCells({
       ...input("a-ruler", firstEntry.stateRelations),
-      cells: [cells[1]!]
+      cells: [cCell]
     });
 
     expect(secondEntry.declaredPairs).toEqual([{ leftStateId: "a", rightStateId: "c" }]);
@@ -67,7 +69,7 @@ describe("authoritative interstate movement", () => {
       b: { a: { militaryAccess: false, atWar: true } }
     };
 
-    const result = applyDiplomacyForEnteredCells({ ...input("a-ruler", relations), cells: [cells[0]!] });
+    const result = applyDiplomacyForEnteredCells({ ...input("a-ruler", relations), cells: [bCell] });
 
     expect(result.declaredPairs).toEqual([]);
     expect(result.stateRelations).toEqual(relations);
