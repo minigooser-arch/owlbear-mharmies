@@ -169,7 +169,7 @@ export interface RawExtensionSnapshot {
 }
 
 export interface MapBrushUiSettings {
-  mode: "TERRAIN" | "IMPASSABLE" | "RECOGNIZED_STATE" | "DEFACTO_STATE" | "ERASER";
+  mode: "TERRAIN" | "IMPASSABLE" | "RECOGNIZED_STATE" | "DEFACTO_STATE" | "ERASER" | "FACTION_TERRITORY";
   size: 1 | 3 | 5;
   terrainId: string;
   stateId?: string;
