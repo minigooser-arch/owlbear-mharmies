@@ -1,29 +1,20 @@
 import { cellKey } from "../grid/strategicGrid";
 import type { GridMapState, StateEntity, StrategicCity } from "../shared/types";
 
+export type StrategicCityValidationReason =
+  | "CITY_CELLS_EMPTY"
+  | "CITY_CELLS_DUPLICATE"
+  | "CITY_STATE_NOT_FOUND"
+  | "CITY_BUILD_COUNT_INVALID"
+  | "CITY_CELL_NOT_FOUND";
+
 export type StrategicCityValidationResult =
   | { ok: true }
-  | {
-      ok: false;
-      reason:
-        | "CITY_CELLS_EMPTY"
-        | "CITY_CELLS_DUPLICATE"
-        | "CITY_STATE_NOT_FOUND"
-        | "CITY_BUILD_COUNT_INVALID"
-        | "CITY_CELL_NOT_FOUND";
-    };
+  | { ok: false; reason: StrategicCityValidationReason };
 
 export type StrategicCityMutationResult =
   | { ok: true; cities: StrategicCity[] }
-  | {
-      ok: false;
-      reason:
-        | StrategicCityValidationResult extends { ok: false; reason: infer Reason }
-          ? Reason
-          : never
-        | "CITY_ID_DUPLICATE"
-        | "CITY_NOT_FOUND";
-    };
+  | { ok: false; reason: StrategicCityValidationReason | "CITY_ID_DUPLICATE" | "CITY_NOT_FOUND" };
 
 export function validateStrategicCity(
   city: StrategicCity,
