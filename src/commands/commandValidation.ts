@@ -570,6 +570,10 @@ export function validateArmyCommand(value: unknown): CommandValidationResult {
   if (!isRecord(value)) return invalid();
   const requestId = boundedString(value.requestId, 128) ? value.requestId : undefined;
   if (value.protocolVersion !== COMMAND_PROTOCOL_VERSION) return invalid(requestId, "PROTOCOL_MISMATCH");
+  if (
+    value.type === "UPDATE_FACTION_TERRITORY_CELLS" ||
+    (value.type === "CLEAR_CELL_PROPERTIES" && value.target === "SELECTED_FACTION")
+  ) return invalid(requestId);
   if (!requestId || !boundedString(value.senderPlayerId) || !boundedString(value.senderConnectionId) || !nonNegativeInteger(value.expectedRevision) || !boundedString(value.type) || !Object.hasOwn(PAYLOAD_PARSERS, value.type)) {
     return invalid(requestId);
   }
