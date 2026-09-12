@@ -60,6 +60,10 @@ describe("state boundary overlay integration", () => {
     expect(terrain).toHaveLength(2);
     expect(boundaries).toHaveLength(6);
     expect(boundaries.every((item) => item.type === "CURVE" && item.strokeColor === "#b71c1c")).toBe(true);
-    expect(test.items().some((item) => item.type === "LABEL" && item.text?.startsWith("Призн.:"))).toBe(false);
+    expect(test.items().some((item) =>
+      item.type === "LABEL" &&
+      typeof item.text === "string" &&
+      item.text.startsWith("Призн.:")
+    )).toBe(false);
   });
 });
