@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { annexingStateForEntry } from "../annexation/annexationRules";
-import { canFactionEnterCell } from "../wars/warRules";
+import { classifyStateMovementAccess } from "../movement/stateMovementAccess";
 
 const openCell = {
   terrainId: null,
@@ -10,37 +10,47 @@ const openCell = {
   deFactoStateId: "france"
 };
 
+const states = [
+  { id: "russia", name: "Россия", color: "#d32f2f", rulingFactionId: "red", active: true },
+  { id: "germany", name: "Германия", color: "#1976d2", rulingFactionId: "blue", active: true },
+  { id: "france", name: "Франция", color: "#eeeeee", rulingFactionId: "white", active: true }
+];
+
+const sides = [
+  { id: "red", name: "Красные", color: "#d32f2f", playerIds: [], leaderPlayerIds: [], stateId: "russia" },
+  { id: "blue", name: "Синие", color: "#1976d2", playerIds: [], leaderPlayerIds: [], stateId: "germany" },
+  { id: "white", name: "Белые", color: "#eeeeee", playerIds: [], leaderPlayerIds: [], stateId: "france" }
+];
+
 describe("pairwise state diplomacy regressions", () => {
-  it("does not turn generic faction participation in any war into global movement access", () => {
-    const result = canFactionEnterCell({
-      factionId: "red",
-      cellState: openCell,
-      wars: [
-        {
-          id: "some-war",
-          name: "Другая война",
-          participantFactionIds: ["red", "blue"],
-          participantStateIds: ["russia", "germany"],
-          active: true
-        }
-      ]
+  it("does not turn legacy war participation into movement access", () => {
+    const result = classifyStateMovementAccess({
+      sideId: "blue",
+      destinationStateId: "france",
+      sides,
+      states,
+      stateRelations: {}
     });
 
-    expect(result).toEqual({ allowed: false, reason: "OUTSIDE_FACTION_TERRITORY" });
+    expect(result).toEqual({ kind: "DECLARE_WAR_AND_ALLOW", sourceStateId: "germany", destinationStateId: "france" });
+
+    const nonRulingSides = [
+      ...sides,
+      { id: "blue-opposition", name: "Оппозиция", color: "#779", playerIds: [], leaderPlayerIds: [], stateId: "germany" }
+    ];
+    expect(classifyStateMovementAccess({
+      sideId: "blue-opposition",
+      destinationStateId: "france",
+      sides: nonRulingSides,
+      states,
+      stateRelations: {}
+    })).toEqual({ kind: "DENY_FOREIGN_STATE", destinationStateId: "france" });
   });
 
   it("does not infer all-vs-all annexation rights from a legacy three-state war", () => {
     const scene = {
-      states: [
-        { id: "russia", name: "Россия", rulingFactionId: "red", active: true },
-        { id: "germany", name: "Германия", rulingFactionId: "blue", active: true },
-        { id: "france", name: "Франция", rulingFactionId: "white", active: true }
-      ],
-      sides: [
-        { id: "red", name: "Красные", color: "#d32f2f", playerIds: [], leaderPlayerIds: [], stateId: "russia" },
-        { id: "blue", name: "Синие", color: "#1976d2", playerIds: [], leaderPlayerIds: [], stateId: "germany" },
-        { id: "white", name: "Белые", color: "#eeeeee", playerIds: [], leaderPlayerIds: [], stateId: "france" }
-      ],
+      states,
+      sides,
       wars: [
         {
           id: "legacy-coalition",
