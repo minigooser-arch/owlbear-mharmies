@@ -23,7 +23,7 @@ async function readStateRelations(): Promise<StateRelations> {
   if (!(await OBR.scene.isReady())) return {};
   const metadata = await OBR.scene.getMetadata();
   const migrated = migrateSceneState(metadata[METADATA_KEYS.scene] ?? { version: 3 });
-  return migrated.ok ? migrated.value.stateRelations : {};
+  return migrated.ok ? (migrated.value.stateRelations ?? {}) : {};
 }
 
 export async function createOwlbearExtensionServices(): Promise<RunningExtensionServices> {
