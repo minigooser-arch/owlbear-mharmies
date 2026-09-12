@@ -1,6 +1,5 @@
 import { isOrthogonalNeighbor } from "../grid/strategicGrid";
 import { getTerrain } from "../terrain/terrainRegistry";
-import { isFactionAtWar } from "../wars/warRules";
 import type {
   CellState,
   GridCellCoord,
@@ -26,14 +25,16 @@ export type MovementStepResult =
 export interface MovementStepContext {
   from: GridCellCoord;
   to: GridCellCoord;
+  /** Compatibility-only field. Political authorization is handled by stateMovementAccess. */
   sideId: string;
   cell: CellState;
   terrain: TerrainRegistryState;
+  /** Compatibility/history input. Legacy WarState objects do not authorize movement. */
   wars: readonly WarState[];
   remainingUnits: number;
   withinBounds: boolean;
   armyStateAllowsMovement: boolean;
-  /** Temporary compatibility switch while authoritative movement is migrated off faction territory. */
+  /** Deprecated compatibility input; faction territory is ignored regardless of this value. */
   skipLegacyPoliticalCheck?: boolean;
 }
 
@@ -47,13 +48,6 @@ export function validateMovementStep(context: MovementStepContext): MovementStep
   }
   if (context.cell.impassable) {
     return { allowed: false, reason: "IMPASSABLE", problemCell };
-  }
-  if (
-    !context.skipLegacyPoliticalCheck &&
-    !isFactionAtWar(context.wars, context.sideId) &&
-    !context.cell.factionTerritoryIds.includes(context.sideId)
-  ) {
-    return { allowed: false, reason: "OUTSIDE_FACTION_TERRITORY", problemCell };
   }
   const terrain = getTerrain(context.terrain, context.cell.terrainId);
   if (!terrain.ok) {
@@ -82,13 +76,16 @@ export function validateMovementStep(context: MovementStepContext): MovementStep
 export interface PlannedRouteValidationContext {
   start: GridCellCoord;
   cells: readonly GridCellCoord[];
+  /** Compatibility-only field. Political authorization is handled separately. */
   sideId: string;
   terrain: TerrainRegistryState;
+  /** Compatibility/history input. Legacy WarState objects do not authorize movement. */
   wars: readonly WarState[];
   remainingUnits: number;
   readCell: (cell: GridCellCoord) => CellState;
   withinBounds?: (cell: GridCellCoord) => boolean;
   armyStateAllowsMovement?: boolean;
+  /** Deprecated compatibility input; retained while old callers are migrated. */
   skipLegacyPoliticalCheck?: boolean;
 }
 
@@ -117,10 +114,7 @@ export function validatePlannedRoute(context: PlannedRouteValidationContext): Pl
       wars: context.wars,
       remainingUnits,
       withinBounds: context.withinBounds?.(to) ?? true,
-      armyStateAllowsMovement: context.armyStateAllowsMovement ?? true,
-      ...(context.skipLegacyPoliticalCheck !== undefined
-        ? { skipLegacyPoliticalCheck: context.skipLegacyPoliticalCheck }
-        : {})
+      armyStateAllowsMovement: context.armyStateAllowsMovement ?? true
     });
     if (!step.allowed) {
       const result: PlannedRouteValidationResult = {
