@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { GridMapState, StateEntity, StrategicCity } from "../shared/types";
-import { resolveCityDeFactoState, validateStrategicCity } from "./strategicCities";
+import {
+  createStrategicCity,
+  deleteStrategicCity,
+  resolveCityDeFactoState,
+  updateStrategicCity,
+  validateStrategicCity
+} from "./strategicCities";
 
 const states: StateEntity[] = [
   { id: "russia", name: "Россия", color: "#b71c1c", rulingFactionId: "red", active: true },
@@ -56,5 +62,38 @@ describe("strategic cities", () => {
     expect(resolveCityDeFactoState(baseCity, mapWithControllers("germany", "germany"))).toBe("germany");
     expect(resolveCityDeFactoState(baseCity, mapWithControllers("russia", "germany"))).toBeNull();
     expect(resolveCityDeFactoState(baseCity, mapWithControllers("russia", null))).toBeNull();
+  });
+
+  it("creates a validated city without mutating the input list", () => {
+    const existing: StrategicCity[] = [];
+    const result = createStrategicCity(existing, baseCity, mapWithControllers("russia", "russia"), states);
+    expect(result).toMatchObject({ ok: true });
+    if (!result.ok) return;
+    expect(result.cities).toEqual([baseCity]);
+    expect(existing).toEqual([]);
+  });
+
+  it("rejects duplicate city ids", () => {
+    expect(createStrategicCity([baseCity], baseCity, mapWithControllers("russia", "russia"), states)).toMatchObject({ ok: false, reason: "CITY_ID_DUPLICATE" });
+  });
+
+  it("updates a city atomically only when the resulting city remains valid", () => {
+    const valid = updateStrategicCity([baseCity], "moscow", { historicalBuildTypeCount: 5, name: "Москва-город" }, mapWithControllers("russia", "russia"), states);
+    expect(valid).toMatchObject({ ok: true });
+    if (valid.ok) expect(valid.cities[0]).toMatchObject({ name: "Москва-город", historicalBuildTypeCount: 5 });
+
+    const invalid = updateStrategicCity([baseCity], "moscow", { historicalBuildTypeCount: -1 }, mapWithControllers("russia", "russia"), states);
+    expect(invalid).toMatchObject({ ok: false, reason: "CITY_BUILD_COUNT_INVALID" });
+  });
+
+  it("rejects updates and deletes for unknown city ids", () => {
+    expect(updateStrategicCity([baseCity], "unknown", { name: "Нет" }, mapWithControllers("russia", "russia"), states)).toMatchObject({ ok: false, reason: "CITY_NOT_FOUND" });
+    expect(deleteStrategicCity([baseCity], "unknown")).toMatchObject({ ok: false, reason: "CITY_NOT_FOUND" });
+  });
+
+  it("deletes only the requested city", () => {
+    const berlin: StrategicCity = { ...baseCity, id: "berlin", name: "Берлин" };
+    const result = deleteStrategicCity([baseCity, berlin], "moscow");
+    expect(result).toEqual({ ok: true, cities: [berlin] });
   });
 });
