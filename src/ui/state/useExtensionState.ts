@@ -131,7 +131,6 @@ export interface MapBrushUiSettings {
 
 export type UiCommand =
   | ArmyCommandPayload
-  | StrategicCityCommandPayload
   | { type: "REGISTER_SELECTED_ARMY"; sideId: string }
   | { type: "REGISTER_SELECTED_SHIP"; sideId: string; classId: ShipClassId; facing: ShipFacing }
   | { type: "EDIT_ROUTE"; armyId: string }
@@ -146,6 +145,7 @@ export interface ExtensionServices {
   getSnapshot(): RawExtensionSnapshot;
   subscribe(listener: () => void): () => void;
   send(command: UiCommand): Promise<unknown>;
+  sendStrategic(command: StrategicCityCommandPayload): Promise<unknown>;
   runDiagnostic(testId: DiagnosticTestId): Promise<unknown>;
 }
 
@@ -159,6 +159,7 @@ export interface ExtensionViewModel extends RawExtensionSnapshot {
   pendingTransportEmbarkRequests: TransportEmbarkRequestView[];
   counters: { total: number; moving: number; inBattle: number };
   send(command: UiCommand): Promise<unknown>;
+  sendStrategic(command: StrategicCityCommandPayload): Promise<unknown>;
   runDiagnostic(testId: DiagnosticTestId): Promise<unknown>;
 }
 
@@ -183,6 +184,7 @@ export function useExtensionState(services: ExtensionServices): ExtensionViewMod
         inBattle: armies.filter((army) => army.status === "IN_BATTLE").length
       },
       send: (command) => services.send(command),
+      sendStrategic: (command) => services.sendStrategic(command),
       runDiagnostic: (testId) => services.runDiagnostic(testId)
     };
   }, [services, snapshot]);
