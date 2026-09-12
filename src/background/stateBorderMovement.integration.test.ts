@@ -32,7 +32,7 @@ function movingArmy(): ArmyState {
   };
 }
 
-function fixture() {
+function fixture(options: { failSceneWrite?: boolean } = {}) {
   let scene: SceneState = {
     version: 7,
     revision: 1,
@@ -70,6 +70,7 @@ function fixture() {
   const port = {
     getSceneMetadata: async () => ({ [METADATA_KEYS.scene]: structuredClone(scene) }),
     patchSceneMetadata: async (update: Record<string, unknown>) => {
+      if (options.failSceneWrite && update[METADATA_KEYS.scene]) throw new Error("scene write failed");
       if (update[METADATA_KEYS.scene]) scene = structuredClone(update[METADATA_KEYS.scene]) as SceneState;
     },
     getSceneItems: async () => structuredClone(items),
@@ -77,7 +78,8 @@ function fixture() {
       const item = items.find((candidate) => candidate.id === id);
       if (!item) throw new Error(`Missing item ${id}`);
       Object.assign(item, structuredClone(update));
-      item.metadata[key] = structuredClone(value);
+      if (value === undefined) delete item.metadata[key];
+      else item.metadata[key] = structuredClone(value);
     },
     updateSceneItem: async () => {},
     getLocalItems: async () => [], addLocalItem: async () => {}, updateLocalItem: async () => {}, deleteLocalItems: async () => {},
@@ -90,18 +92,35 @@ function fixture() {
   return { port, items, get scene() { return scene; } };
 }
 
-it("declares exact pair war and enters a closed foreign state for the ruling faction", async () => {
-  const f = fixture();
+async function runTick(f: ReturnType<typeof fixture>) {
   const now = vi.spyOn(performance, "now");
   now.mockReturnValueOnce(0);
   const engine = new ProductionEngine(f.port);
   engine.setCoordinator(true);
   now.mockReturnValue(1000);
+  try {
+    await engine.movementTick();
+  } finally {
+    now.mockRestore();
+  }
+}
 
-  await engine.movementTick();
+it("declares exact pair war and enters a closed foreign state for the ruling faction", async () => {
+  const f = fixture();
+  await runTick(f);
 
   expect(f.scene.stateRelations?.ru?.de?.atWar).toBe(true);
   expect(f.scene.stateRelations?.de?.ru?.atWar).toBe(true);
   expect(f.items[0]?.position).toEqual({ x: 150, y: 50 });
-  now.mockRestore();
+});
+
+it("rolls the army back before the border if the auto-war scene write fails", async () => {
+  const f = fixture({ failSceneWrite: true });
+
+  await expect(runTick(f)).rejects.toThrow("scene write failed");
+
+  expect(f.scene.stateRelations?.ru?.de?.atWar).not.toBe(true);
+  expect(f.scene.stateRelations?.de?.ru?.atWar).not.toBe(true);
+  expect(f.items[0]?.position).toEqual({ x: 50, y: 50 });
+  expect((f.items[0]?.metadata[METADATA_KEYS.army] as ArmyState).movement.enteredRouteCellCount).toBe(0);
 });
