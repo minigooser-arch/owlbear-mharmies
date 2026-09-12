@@ -145,7 +145,7 @@ export interface ExtensionServices {
   getSnapshot(): RawExtensionSnapshot;
   subscribe(listener: () => void): () => void;
   send(command: UiCommand): Promise<unknown>;
-  sendStrategic(command: StrategicCityCommandPayload): Promise<unknown>;
+  sendStrategic?(command: StrategicCityCommandPayload): Promise<unknown>;
   runDiagnostic(testId: DiagnosticTestId): Promise<unknown>;
 }
 
@@ -184,7 +184,7 @@ export function useExtensionState(services: ExtensionServices): ExtensionViewMod
         inBattle: armies.filter((army) => army.status === "IN_BATTLE").length
       },
       send: (command) => services.send(command),
-      sendStrategic: (command) => services.sendStrategic(command),
+      sendStrategic: (command) => services.sendStrategic?.(command) ?? Promise.resolve(undefined),
       runDiagnostic: (testId) => services.runDiagnostic(testId)
     };
   }, [services, snapshot]);
