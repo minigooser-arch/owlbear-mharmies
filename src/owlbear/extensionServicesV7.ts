@@ -1,4 +1,3 @@
-import OBR from "@owlbear-rodeo/sdk";
 import { METADATA_KEYS } from "../shared/constants";
 import type { StateRelations } from "../shared/types";
 import { migrateSceneState } from "../storage/migrations";
@@ -12,6 +11,8 @@ import {
 
 export type { RunningExtensionServices, SnapshotInput } from "./extensionServicesCore";
 
+type OwlbearSdk = typeof import("@owlbear-rodeo/sdk").default;
+
 export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapshot {
   return {
     ...buildCoreRoleSafeSnapshot(input),
@@ -19,7 +20,7 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
   };
 }
 
-async function readStateRelations(): Promise<StateRelations> {
+async function readStateRelations(OBR: OwlbearSdk): Promise<StateRelations> {
   if (!(await OBR.scene.isReady())) return {};
   const metadata = await OBR.scene.getMetadata();
   const migrated = migrateSceneState(metadata[METADATA_KEYS.scene] ?? { version: 3 });
@@ -27,13 +28,16 @@ async function readStateRelations(): Promise<StateRelations> {
 }
 
 export async function createOwlbearExtensionServices(): Promise<RunningExtensionServices> {
-  const core = await createCoreServices();
-  let stateRelations = await readStateRelations();
+  const [{ default: OBR }, core] = await Promise.all([
+    import("@owlbear-rodeo/sdk"),
+    createCoreServices()
+  ]);
+  let stateRelations = await readStateRelations(OBR);
   const listeners = new Set<() => void>();
   const publish = () => { for (const listener of listeners) listener(); };
   const unsubscribeCore = core.subscribe(publish);
   const unsubscribeMetadata = OBR.scene.onMetadataChange(() => {
-    void readStateRelations().then((next) => {
+    void readStateRelations(OBR).then((next) => {
       stateRelations = next;
       publish();
     });
