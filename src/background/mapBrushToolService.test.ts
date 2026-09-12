@@ -5,7 +5,7 @@ import { MapBrushToolService } from "./mapBrushToolService";
 
 function scene(): SceneState {
   return {
-    version: 5, revision: 7, settings: { ...DEFAULT_SETTINGS }, sides: [], states: [{ id: "russia-state", name: "Россия", rulingFactionId: null, active: true }], relations: {}, battleGroups: [],
+    version: 5, revision: 7, settings: { ...DEFAULT_SETTINGS }, sides: [], states: [{ id: "russia-state", name: "Россия", color: "#607d8b", rulingFactionId: null, active: true }], relations: {}, battleGroups: [],
     terrain: structuredClone(DEFAULT_TERRAIN), gridMap: { version: 1, revision: 0, cells: {} },
     wars: [], turn: structuredClone(DEFAULT_TURN_STATE)
   };
@@ -35,7 +35,7 @@ it("sends one terrain batch command for one brush stroke", async () => {
   });
 
   await service.commitStroke({
-    mode: "TERRAIN", size: 1, terrainId: "forest", factionOperation: "ADD", impassable: true, eraserTarget: "TERRAIN"
+    mode: "TERRAIN", size: 1, terrainId: "forest", impassable: true, eraserTarget: "TERRAIN"
   }, [{ x: 0, y: 0 }, { x: 1, y: 0 }]);
 
   expect(sent).toHaveLength(1);
@@ -56,7 +56,7 @@ it("sends de-facto state painting as one batch command", async () => {
 
   await service.commitStroke({
     mode: "DEFACTO_STATE", size: 3, terrainId: "plain", stateId: "russia-state",
-    factionOperation: "ADD", impassable: true, eraserTarget: "TERRAIN"
+    impassable: true, eraserTarget: "TERRAIN"
   }, [{ x: 4, y: 5 }]);
 
   expect(sent[0]).toMatchObject({ type: "SET_DEFACTO_STATE_CELLS", stateId: "russia-state", cells: [{ x: 4, y: 5 }] });
@@ -89,7 +89,7 @@ it("retries the same deterministic stroke once with the coordinator actual revis
   });
 
   await service.commitStroke({
-    mode: "TERRAIN", size: 1, terrainId: "sea", factionOperation: "ADD", impassable: true, eraserTarget: "TERRAIN"
+    mode: "TERRAIN", size: 1, terrainId: "sea", impassable: true, eraserTarget: "TERRAIN"
   }, [{ x: 10, y: 12 }]);
 
   expect(sent).toHaveLength(2);
@@ -130,7 +130,7 @@ it("converges across repeated revision conflicts without changing the stroke", a
   });
 
   await service.commitStroke({
-    mode: "TERRAIN", size: 5, terrainId: "sea", factionOperation: "ADD", impassable: true, eraserTarget: "TERRAIN"
+    mode: "TERRAIN", size: 5, terrainId: "sea", impassable: true, eraserTarget: "TERRAIN"
   }, [{ x: 10, y: 12 }, { x: 11, y: 12 }]);
 
   expect(sent.map((command) => command.expectedRevision)).toEqual([7, 8, 9, 10]);
