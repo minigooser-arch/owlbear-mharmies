@@ -12,6 +12,10 @@ import { validateArmyCommand } from "../commands/commandValidation";
 import { advanceArmy } from "../movement/movementEngine";
 import { validatePlannedRoute } from "../movement/movementRules";
 import {
+  applyDiplomacyForEnteredCells,
+  politicalRouteGate
+} from "../movement/authoritativeStateMovement";
+import {
   reconcileStrategicMovementProgress,
   unenteredRouteCells
 } from "../movement/strategicProgress";
@@ -67,6 +71,7 @@ import {
   type SceneItemRecord,
   type SceneState,
   type SideRelation,
+  type StateRelations,
   type Vector2
 } from "../shared/types";
 import { MetadataRepository, type ArmyRecord, type BarrierRecord } from "../storage/metadataRepository";
@@ -541,17 +546,45 @@ export class ProductionEngine {
       const remainingStart = enteredCount === 0
         ? record.state.plannedRoute.startCell
         : record.state.plannedRoute.cells[enteredCount - 1] ?? record.state.plannedRoute.startCell;
+      const political = politicalRouteGate({
+        sideId: record.state.sideId,
+        cells: remainingCells,
+        gridMap: scene.gridMap,
+        sides: scene.sides,
+        states: scene.states,
+        stateRelations: scene.stateRelations ?? {}
+      });
+      const authorizedCells = remainingCells.slice(0, political.allowedCellCount);
+      if (remainingCells.length > 0 && political.allowedCellCount === 0 && political.blockedReason && political.blockedCell) {
+        frames.push({
+          record,
+          from: { ...record.item.position },
+          to: { ...record.item.position },
+          state: cloneArmyState(record.state, {
+            status: "PAUSED",
+            stopReason: "INVALID_ROUTE",
+            plannedRoute: {
+              ...record.state.plannedRoute,
+              validatedRevision: scene.revision,
+              invalidReason: political.blockedReason,
+              invalidCell: { ...political.blockedCell }
+            }
+          })
+        });
+        continue;
+      }
       const validation = record.state.plannedRoute.requiresReplan
         ? undefined
         : validatePlannedRoute({
             start: remainingStart,
-            cells: remainingCells,
+            cells: authorizedCells,
             sideId: record.state.sideId,
             terrain: scene.terrain,
             wars: scene.wars,
             remainingUnits: record.state.movement.remainingUnits,
             readCell: (cell) => readCell(scene.gridMap, cell),
-            armyStateAllowsMovement: true
+            armyStateAllowsMovement: true,
+            skipLegacyPoliticalCheck: true
           });
       if (!validation || !validation.valid) {
         const plannedRoute: ArmyState["plannedRoute"] = validation && !validation.valid
@@ -581,11 +614,21 @@ export class ProductionEngine {
         cells: record.state.plannedRoute.cells.map((cell) => ({ ...cell })),
         totalCostUnits: record.state.plannedRoute.totalCostUnits,
         validatedRevision: scene.revision,
-        requiresReplan: false
+        requiresReplan: false,
+        ...(political.blockedReason && political.blockedCell
+          ? {
+              invalidReason: political.blockedReason,
+              invalidCell: { ...political.blockedCell }
+            }
+          : {})
       };
+      const maxWaypointExclusive = record.state.currentWaypointIndex + political.allowedCellCount;
+      const waypoints = political.blockedReason
+        ? record.state.route.slice(0, maxWaypointExclusive)
+        : record.state.route;
       const result = await advanceArmy({
         position: record.item.position,
-        waypoints: record.state.route,
+        waypoints,
         currentWaypointIndex: record.state.currentWaypointIndex,
         segmentProgressCells: record.state.segmentProgressCells,
         speedCellsPerSecond:
@@ -595,16 +638,19 @@ export class ProductionEngine {
         movementBarriers,
         ignoresMovementBarriers: record.state.ignoresMovementBarriers
       });
+      const reachedClosedBorder = Boolean(political.blockedReason) && result.status === "COMPLETED";
       frames.push({
         record,
         from: { ...record.item.position },
         to: result.position,
         state: cloneArmyState(record.state, {
-          status: result.status,
+          status: reachedClosedBorder ? "PAUSED" : result.status,
           currentWaypointIndex: result.currentWaypointIndex,
           segmentProgressCells: result.segmentProgressCells,
           plannedRoute,
-          ...(result.stopReason ? { stopReason: result.stopReason } : {})
+          ...(reachedClosedBorder
+            ? { stopReason: "INVALID_ROUTE" }
+            : result.stopReason ? { stopReason: result.stopReason } : {})
         })
       });
     }
@@ -665,6 +711,7 @@ export class ProductionEngine {
     }
 
     const annexOperations: CellPatchOperation[] = [];
+    let nextStateRelations: StateRelations = structuredClone(scene.stateRelations ?? {});
     for (const frame of frames) {
       if (!frame.state.plannedRoute.requiresReplan && frame.state.plannedRoute.cells.length > 0) {
         const progress = reconcileStrategicMovementProgress({
@@ -691,6 +738,15 @@ export class ProductionEngine {
           frame.record.state.movement.enteredRouteCellCount,
           progress.enteredRouteCellCount
         );
+        const diplomacy = applyDiplomacyForEnteredCells({
+          sideId: frame.state.sideId,
+          cells: enteredCells,
+          gridMap: scene.gridMap,
+          sides: scene.sides,
+          states: scene.states,
+          stateRelations: nextStateRelations
+        });
+        nextStateRelations = diplomacy.stateRelations;
         for (const cell of enteredCells) {
           const destination = readCell(scene.gridMap, cell);
           const annexingStateId = annexingStateForEntry(
@@ -711,14 +767,16 @@ export class ProductionEngine {
       );
     }
     const nextGridMap = applyCellPatchBatch(scene.gridMap, annexOperations);
-    if (battleGroups || nextGridMap !== scene.gridMap) {
+    const stateRelationsChanged = JSON.stringify(nextStateRelations) !== JSON.stringify(scene.stateRelations ?? {});
+    if (battleGroups || nextGridMap !== scene.gridMap || stateRelationsChanged) {
       if (!canCommit()) return;
       await this.repository.writeScene(
         {
           ...scene,
           revision: scene.revision + 1,
           battleGroups: battleGroups ?? scene.battleGroups,
-          gridMap: nextGridMap
+          gridMap: nextGridMap,
+          stateRelations: nextStateRelations
         },
         scene.revision,
         (current) =>
@@ -1124,8 +1182,7 @@ export class ProductionEngine {
             visible: state === undefined,
             ...(nextPosition ? { position: nextPosition } : {}),
             ...(state ? { rotation: rotationForFacing(state.facing) } : {})
-          },
-          previousState?.revision ?? null
+          }, previousState?.revision ?? null
         );
         applied.push({
           itemId: shipId,
@@ -1211,9 +1268,6 @@ export class ProductionEngine {
     heartbeat: NonNullable<SceneState["coordinatorLease"]>
   ): Promise<void> {
     return this.enqueueMutation(async () => {
-      // Initial lease acquisition happens before setCoordinator(true), so the normal
-      // active-coordinator guard cannot be used here. Instead, pin this claim to the
-      // current coordinator generation and refuse to overwrite a live foreign lease.
       const generation = this.coordinatorGeneration;
       const claimIsCurrent = () =>
         this.coordinatorGeneration === generation &&
@@ -1238,8 +1292,6 @@ export class ProductionEngine {
           (current) => claimIsCurrent() && leaseIsClaimable(current)
         );
       } catch (error) {
-        // Coordinator shutdown invalidates an in-flight heartbeat. Treat that as
-        // cancellation, while preserving real persistence/lease-acquisition failures.
         if (!claimIsCurrent()) return;
         throw error;
       }
