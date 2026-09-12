@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { CommandProcessor, type CommandContext, type CommandState } from "./commandProcessor";
 import { validateArmyCommand } from "./commandValidation";
 import { COMMAND_PROTOCOL_VERSION, type StrategicCity } from "../shared/types";
-import type { StrategicCityCommand } from "../cities/strategicCityCommands";
+import type { StrategicCityCommand, StrategicCityCommandPayload } from "../cities/strategicCityCommands";
 import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE } from "../shared/constants";
 
 const city: StrategicCity = {
@@ -68,7 +68,7 @@ function context(role: "GM" | "PLAYER" = "GM"): CommandContext {
   };
 }
 
-function command(payload: Omit<StrategicCityCommand, "protocolVersion" | "requestId" | "senderPlayerId" | "senderConnectionId" | "expectedRevision">): StrategicCityCommand {
+function command(payload: StrategicCityCommandPayload): StrategicCityCommand {
   return {
     protocolVersion: COMMAND_PROTOCOL_VERSION,
     requestId: crypto.randomUUID(),
