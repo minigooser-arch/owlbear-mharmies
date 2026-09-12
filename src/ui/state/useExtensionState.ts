@@ -11,6 +11,7 @@ import type {
   ShipStatus,
   Side,
   StateEntity,
+  StateRelations,
   TerrainRegistryState,
   TurnState,
   Vector2,
@@ -40,19 +41,8 @@ export interface ArmyView {
   embarkedOnShipId?: string | null;
 }
 
-export interface ShipTargetView {
-  id: string;
-  name: string;
-  sideId: string;
-  sideName: string;
-}
-
-export interface ShoreBombardmentTargetView {
-  id: string;
-  name: string;
-  sideId: string;
-  sideName: string;
-}
+export interface ShipTargetView { id: string; name: string; sideId: string; sideName: string; }
+export interface ShoreBombardmentTargetView { id: string; name: string; sideId: string; sideName: string; }
 
 export interface ShipView {
   id: string;
@@ -86,59 +76,13 @@ export interface ShipView {
   shoreBombardmentTargets?: ShoreBombardmentTargetView[];
 }
 
-export interface NavalRequestTargetView {
-  id: string;
-  name: string;
-  sideId: string;
-  sideName: string;
-}
-
-export interface TransportEmbarkTargetView {
-  id: string;
-  name: string;
-  sideId: string;
-  sideName: string;
-}
-
-export interface TransportEmbarkRequestView {
-  id: string;
-  shipId: string;
-  shipName: string;
-  shipSideId: string;
-  shipSideName: string;
-  armyId: string;
-  armyName: string;
-}
-
-export interface NavalBattleRequestView {
-  id: string;
-  initiatingShipId: string;
-  targetShipId: string;
-  createdOnTurn?: number;
-}
-
-export interface NavalBattleAreaDraftView {
-  requestId: string;
-  cells: GridCellCoord[];
-}
-
-export interface NavalBattleView {
-  id: string;
-  roundNumber: number;
-  participantCount: number;
-  currentShipId: string | null;
-  initiative?: Array<{ shipId: string; total: number }>;
-  completedShipIdsThisRound?: string[];
-  exitedShipIds?: string[];
-}
-
-export interface PartyPlayerView {
-  id: string;
-  name: string;
-  color: string;
-  role: "GM" | "PLAYER";
-  connected: boolean;
-}
+export interface NavalRequestTargetView { id: string; name: string; sideId: string; sideName: string; }
+export interface TransportEmbarkTargetView { id: string; name: string; sideId: string; sideName: string; }
+export interface TransportEmbarkRequestView { id: string; shipId: string; shipName: string; shipSideId: string; shipSideName: string; armyId: string; armyName: string; }
+export interface NavalBattleRequestView { id: string; initiatingShipId: string; targetShipId: string; createdOnTurn?: number; }
+export interface NavalBattleAreaDraftView { requestId: string; cells: GridCellCoord[]; }
+export interface NavalBattleView { id: string; roundNumber: number; participantCount: number; currentShipId: string | null; initiative?: Array<{ shipId: string; total: number }>; completedShipIdsThisRound?: string[]; exitedShipIds?: string[]; }
+export interface PartyPlayerView { id: string; name: string; color: string; role: "GM" | "PLAYER"; connected: boolean; }
 
 export interface RawExtensionSnapshot {
   ready: boolean;
@@ -161,6 +105,7 @@ export interface RawExtensionSnapshot {
   sides: readonly Side[];
   states: readonly StateEntity[];
   relations: Readonly<Record<string, Record<string, import("../../shared/types").SideRelation>>>;
+  stateRelations?: StateRelations;
   battleGroups: readonly BattleGroup[];
   settings: SceneSettings;
   terrain: TerrainRegistryState;
@@ -175,7 +120,6 @@ export interface MapBrushUiSettings {
   stateId?: string;
   impassable: boolean;
   eraserTarget: "TERRAIN" | "IMPASSABLE" | "RECOGNIZED_STATE" | "DEFACTO_STATE" | "ALL";
-  /** Legacy transport fields retained until extensionServices metadata cleanup. */
   sideId?: string;
   factionOperation?: "ADD" | "REMOVE";
 }
@@ -190,14 +134,7 @@ export type UiCommand =
   | { type: "OPEN_MAP_BRUSH"; settings: MapBrushUiSettings }
   | { type: "UPDATE_MAP_BRUSH_SETTINGS"; settings: MapBrushUiSettings }
   | { type: "OPEN_NAVAL_BATTLE_AREA"; requestId: string }
-  | {
-      type: "START_NAVAL_BATTLE_FROM_REQUEST";
-      requestId: string;
-      initiatingShipId: string;
-      targetShipId: string;
-      participantShipIds: string[];
-      areaCells: GridCellCoord[];
-    };
+  | { type: "START_NAVAL_BATTLE_FROM_REQUEST"; requestId: string; initiatingShipId: string; targetShipId: string; participantShipIds: string[]; areaCells: GridCellCoord[] };
 
 export interface ExtensionServices {
   getSnapshot(): RawExtensionSnapshot;
@@ -221,14 +158,11 @@ export interface ExtensionViewModel extends RawExtensionSnapshot {
 export function useExtensionState(services: ExtensionServices): ExtensionViewModel {
   const snapshot = useSyncExternalStore(services.subscribe, services.getSnapshot, services.getSnapshot);
   return useMemo(() => {
-    const armies = snapshot.role === "GM"
-      ? [...snapshot.armies]
-      : snapshot.armies.filter((army) => snapshot.memberSideIds.has(army.sideId));
-    const ships = snapshot.role === "GM"
-      ? [...(snapshot.ships ?? [])]
-      : (snapshot.ships ?? []).filter((ship) => snapshot.memberSideIds.has(ship.sideId));
+    const armies = snapshot.role === "GM" ? [...snapshot.armies] : snapshot.armies.filter((army) => snapshot.memberSideIds.has(army.sideId));
+    const ships = snapshot.role === "GM" ? [...(snapshot.ships ?? [])] : (snapshot.ships ?? []).filter((ship) => snapshot.memberSideIds.has(ship.sideId));
     return {
       ...snapshot,
+      stateRelations: snapshot.stateRelations ?? {},
       armies,
       ships,
       navalRequestTargets: [...(snapshot.navalRequestTargets ?? [])],
