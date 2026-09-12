@@ -32,7 +32,7 @@ function movingArmy(): ArmyState {
   };
 }
 
-function fixture(options: { failSceneWrite?: boolean } = {}) {
+function fixture(options: { failSceneWrite?: boolean; failArmyWrite?: boolean } = {}) {
   let scene: SceneState = {
     version: 7,
     revision: 1,
@@ -75,6 +75,7 @@ function fixture(options: { failSceneWrite?: boolean } = {}) {
     },
     getSceneItems: async () => structuredClone(items),
     patchSceneItemMetadata: async (id: string, key: string, value: unknown, update: Record<string, unknown> = {}) => {
+      if (options.failArmyWrite && key === METADATA_KEYS.army) throw new Error("army write failed");
       const item = items.find((candidate) => candidate.id === id);
       if (!item) throw new Error(`Missing item ${id}`);
       Object.assign(item, structuredClone(update));
@@ -119,6 +120,17 @@ it("rolls the army back before the border if the auto-war scene write fails", as
   const f = fixture({ failSceneWrite: true });
 
   await expect(runTick(f)).rejects.toThrow("scene write failed");
+
+  expect(f.scene.stateRelations?.ru?.de?.atWar).not.toBe(true);
+  expect(f.scene.stateRelations?.de?.ru?.atWar).not.toBe(true);
+  expect(f.items[0]?.position).toEqual({ x: 50, y: 50 });
+  expect((f.items[0]?.metadata[METADATA_KEYS.army] as ArmyState).movement.enteredRouteCellCount).toBe(0);
+});
+
+it("rolls the declared war back if the army write fails after crossing authorization", async () => {
+  const f = fixture({ failArmyWrite: true });
+
+  await expect(runTick(f)).rejects.toThrow("army write failed");
 
   expect(f.scene.stateRelations?.ru?.de?.atWar).not.toBe(true);
   expect(f.scene.stateRelations?.de?.ru?.atWar).not.toBe(true);
