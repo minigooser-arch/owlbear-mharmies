@@ -165,6 +165,9 @@ export class RouteToolService implements RouteToolIntegrationPort {
       terrain: structuredClone(authorized.scene.terrain),
       gridMap: structuredClone(authorized.scene.gridMap),
       wars: structuredClone(authorized.scene.wars),
+      sides: structuredClone(authorized.scene.sides),
+      states: structuredClone(authorized.scene.states),
+      stateRelations: structuredClone(authorized.scene.stateRelations ?? {}),
       barriers: authorized.army.state.ignoresMovementBarriers
         ? []
         : authorized.barriers.map((segment) => structuredClone(segment))
