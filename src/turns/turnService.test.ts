@@ -151,3 +151,62 @@ it("revalidates a due route at turn transition and does not start it when the ma
   expect(result.armies.a?.plannedRoute.invalidReason).toBe("IMPASSABLE");
   expect(result.armies.a?.movement.remainingUnits).toBe(10);
 });
+
+it("keeps a due route blocked when it crosses a closed recognized border", () => {
+  const current = scene();
+  current.version = 7;
+  current.sides.push({id:"government",name:"Government",color:"#fff",playerIds:[],leaderPlayerIds:[],stateId:"red-state"});
+  current.sides.push({id:"blue",name:"Blue",color:"#00f",playerIds:[],leaderPlayerIds:[],stateId:"blue-state"});
+  current.states = current.states.map((state) => state.id === "red-state"
+    ? { ...state, rulingFactionId: "government" }
+    : state);
+  current.states.push({id:"blue-state",name:"Blue State",color:"#00f",rulingFactionId:"blue",active:true});
+  current.stateRelations = {};
+  current.gridMap.cells["1,0"] = {
+    terrainId:null,impassable:false,factionTerritoryIds:[],recognizedStateId:"blue-state",deFactoStateId:"blue-state"
+  };
+  const result = completeTurn(current, { a: army(0, 2) }, {
+    source:"MANUAL", completedAt:new Date("2026-09-02T10:00:00Z"), armyCells:{a:{x:0,y:0}}
+  });
+  expect(result.changed).toBe(true); if (!result.changed) return;
+  expect(result.armies.a?.status).toBe("READY");
+  expect(result.armies.a?.plannedRoute.invalidReason).toBe("FOREIGN_STATE_CLOSED");
+});
+
+it("activates forced exit on the next turn for an army that lost legal presence", () => {
+  const current = scene();
+  current.version = 7;
+  current.sides.push({id:"blue",name:"Blue",color:"#00f",playerIds:[],leaderPlayerIds:[],stateId:"blue-state"});
+  current.states.push({id:"blue-state",name:"Blue State",color:"#00f",rulingFactionId:"blue",active:true});
+  current.stateRelations = {};
+  current.forcedExitStates = [];
+  current.gridMap.cells["1,0"] = {terrainId:null,impassable:false,factionTerritoryIds:[],recognizedStateId:"blue-state",deFactoStateId:"blue-state"};
+  const result = completeTurn(current, {a:army(0)}, {
+    source:"MANUAL", completedAt:new Date("2026-09-02T10:00:00Z"), armyCells:{a:{x:1,y:0}}
+  });
+  expect(result.changed).toBe(true); if (!result.changed) return;
+  expect(result.scene.forcedExitStates).toEqual([{armyId:"a",startedOnTurn:2,originReason:"OTHER"}]);
+});
+
+it("automatically continues withdrawal over multiple turns using the available budget", () => {
+  const current = scene();
+  current.sides.push({id:"blue",name:"Blue",color:"#00f",playerIds:[],leaderPlayerIds:[],stateId:"blue-state"});
+  current.states.push({id:"blue-state",name:"Blue",rulingFactionId:"blue",active:true});
+  current.gridMap.cells = Object.fromEntries(Array.from({length:8}, (_, x) => [
+    x + ",0", {terrainId:null,impassable:false,factionTerritoryIds:[],recognizedStateId:x === 7 ? "red-state" : "blue-state",deFactoStateId:x === 7 ? "red-state" : "blue-state"}
+  ]));
+  const first = completeTurn(current, {a:army(0)}, {
+    source:"MANUAL",completedAt:new Date("2026-09-02T10:00:00Z"),armyCells:{a:{x:0,y:0}},
+    positionForCell: ({x,y}) => ({x:x*100+50,y:y*100+50})
+  });
+  expect(first.changed).toBe(true); if (!first.changed) return;
+  expect(first.armies.a?.plannedRoute.cells).toHaveLength(5);
+  expect(first.armies.a?.status).toBe("MOVING");
+  const second = completeTurn(first.scene, first.armies, {
+    source:"MANUAL",completedAt:new Date("2026-09-03T10:00:00Z"),armyCells:{a:{x:5,y:0}},
+    positionForCell: ({x,y}) => ({x:x*100+50,y:y*100+50})
+  });
+  expect(second.changed).toBe(true); if (!second.changed) return;
+  expect(second.armies.a?.plannedRoute.cells).toEqual([{x:6,y:0},{x:7,y:0}]);
+  expect(second.scene.stateRelations ?? {}).toEqual({});
+});

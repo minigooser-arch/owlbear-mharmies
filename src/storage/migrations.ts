@@ -1,7 +1,6 @@
 import type {
   ArmyState,
   BarrierState,
-  ForeignPresenceViolation,
   ForcedExitReason,
   ForcedExitState,
   RebellionState,
@@ -148,26 +147,6 @@ function normalizeStateRelations(value: unknown, stateIds: ReadonlySet<string>):
   return result;
 }
 
-function normalizeForeignPresenceViolations(value: unknown, stateIds: ReadonlySet<string>): ForeignPresenceViolation[] {
-  if (!Array.isArray(value)) return [];
-  const result = new Map<string, ForeignPresenceViolation>();
-  for (const raw of value) {
-    if (!isRecord(raw) || !nonEmptyString(raw.armyId) || !nonEmptyString(raw.homeStateId) ||
-        !nonEmptyString(raw.hostStateId) || raw.homeStateId === raw.hostStateId ||
-        !stateIds.has(raw.homeStateId) || !stateIds.has(raw.hostStateId) ||
-        !nonNegativeInteger(raw.enteredOnTurn) || !nonNegativeInteger(raw.checkOnTurn)) continue;
-    const violation: ForeignPresenceViolation = {
-      armyId: raw.armyId,
-      homeStateId: raw.homeStateId,
-      hostStateId: raw.hostStateId,
-      enteredOnTurn: raw.enteredOnTurn,
-      checkOnTurn: Math.max(raw.checkOnTurn, raw.enteredOnTurn + 1)
-    };
-    result.set(`${violation.armyId}:${violation.hostStateId}`, violation);
-  }
-  return [...result.values()];
-}
-
 function normalizeForcedExitStates(value: unknown): ForcedExitState[] {
   if (!Array.isArray(value)) return [];
   const allowed = new Set<ForcedExitReason>(["PASSAGE_REVOKED", "WAR_ENDED", "BORDER_CHANGED", "OTHER"]);
@@ -255,7 +234,6 @@ function normalizeTurnCheckpoint(value: unknown): TurnCheckpointState | null {
   if (!isRecord(value) || !nonNegativeInteger(value.turnNumber)) return null;
   return {
     turnNumber: value.turnNumber,
-    illegalPresenceDone: value.illegalPresenceDone === true,
     forcedExitDone: value.forcedExitDone === true,
     supplyDone: value.supplyDone === true,
     encirclementDone: value.encirclementDone === true,
@@ -286,6 +264,14 @@ function normalizeStrategicSceneState(raw: UnknownRecord): ValidationResult<Scen
     };
   });
   const stateIds = new Set(states.map((state) => state.id));
+  const gridMap = {
+    ...core.value.gridMap,
+    cells: Object.fromEntries(Object.entries(core.value.gridMap.cells).map(([key, cell]) => [key, {
+      ...cell,
+      recognizedStateId: cell.recognizedStateId && stateIds.has(cell.recognizedStateId) ? cell.recognizedStateId : null,
+      deFactoStateId: cell.deFactoStateId && stateIds.has(cell.deFactoStateId) ? cell.deFactoStateId : null
+    }]))
+  };
 
   return {
     ok: true,
@@ -293,8 +279,8 @@ function normalizeStrategicSceneState(raw: UnknownRecord): ValidationResult<Scen
       ...core.value,
       version: 7,
       states,
+      gridMap,
       stateRelations: normalizeStateRelations(raw.stateRelations, stateIds),
-      foreignPresenceViolations: normalizeForeignPresenceViolations(raw.foreignPresenceViolations, stateIds),
       forcedExitStates: normalizeForcedExitStates(raw.forcedExitStates),
       strategicCities: normalizeStrategicCities(raw.strategicCities, stateIds),
       territorialScores: normalizeTerritorialScores(raw.territorialScores, stateIds),
@@ -391,7 +377,6 @@ export function migrateSceneState(raw: unknown): ValidationResult<SceneState> {
       version: 7,
       terrain: ensureBuiltInTerrains(migrated.terrain),
       stateRelations: pairwiseRelationsFromLegacyWars(migrated.wars, rawStateIds),
-      foreignPresenceViolations: [],
       forcedExitStates: [],
       strategicCities: [],
       territorialScores: [],

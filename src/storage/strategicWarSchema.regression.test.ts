@@ -100,8 +100,7 @@ describe("strategic war scene schema", () => {
           russia: { germany: { militaryAccess: false, atWar: true } },
           germany: { russia: { militaryAccess: false, atWar: true } }
         },
-        foreignPresenceViolations: [],
-        forcedExitStates: [],
+                forcedExitStates: [],
         strategicCities: [],
         territorialScores: [],
         rebellions: [],
@@ -126,6 +125,23 @@ describe("strategic war scene schema", () => {
     expect(migrateSceneState({ version: 8 })).toEqual({
       ok: false,
       issue: { code: "FUTURE_VERSION", version: 8 }
+    });
+  });
+
+  it("clears dangling political cell references while preserving terrain", () => {
+    const current = { ...v6Scene(), version: 7 };
+    current.gridMap.cells["1,2"] = {
+      ...current.gridMap.cells["1,2"],
+      recognizedStateId: "missing",
+      deFactoStateId: "also-missing"
+    };
+    const result = migrateSceneState(current);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.gridMap.cells["1,2"]).toMatchObject({
+      terrainId: "mountains",
+      recognizedStateId: null,
+      deFactoStateId: null
     });
   });
 });

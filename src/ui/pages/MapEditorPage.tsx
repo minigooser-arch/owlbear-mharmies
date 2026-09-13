@@ -70,7 +70,6 @@ export function MapEditorPage({ terrain, sides, states, onAction }: MapEditorPag
   const [newColor, setNewColor] = useState("#42a5f5");
   const [newStateName, setNewStateName] = useState("");
   const [newStateColor, setNewStateColor] = useState("#607d8b");
-  const [newRulingFactionId, setNewRulingFactionId] = useState("");
 
   const parsedNewCost = Number(newCost.replace(",", "."));
   const newCostUnits = Math.round(parsedNewCost * 2);
@@ -123,7 +122,7 @@ export function MapEditorPage({ terrain, sides, states, onAction }: MapEditorPag
       <summary>Справочники карты и государств</summary>
       <div className="reference-management-body">
     <div className="section-heading secondary-heading"><div><p className="eyebrow">Границы</p><h2>Государства</h2></div></div>
-    <div className="terrain-create"><input aria-label="Название нового государства" placeholder="Название государства" value={newStateName} onChange={(event) => setNewStateName(event.target.value)} /><input aria-label="Цвет нового государства" type="color" value={newStateColor} onChange={(event) => setNewStateColor(event.target.value)} /><select aria-label="Правящая фракция нового государства" value={newRulingFactionId} onChange={(event) => setNewRulingFactionId(event.target.value)}><option value="">Правящая фракция не назначена</option>{sides.map((side) => <option key={side.id} value={side.id}>{side.name}</option>)}</select><button className="button" type="button" disabled={!newStateName.trim()} onClick={() => { onAction({ type: "CREATE_STATE", state: { id: `state-${crypto.randomUUID()}`, name: newStateName.trim(), color: newStateColor, rulingFactionId: newRulingFactionId || null, active: true } }); setNewStateName(""); }}>Добавить</button></div>
+    <div className="terrain-create"><input aria-label="Название нового государства" placeholder="Название государства" value={newStateName} onChange={(event) => setNewStateName(event.target.value)} /><input aria-label="Цвет нового государства" type="color" value={newStateColor} onChange={(event) => setNewStateColor(event.target.value)} /><button className="button" type="button" disabled={!newStateName.trim()} onClick={() => { onAction({ type: "CREATE_STATE", state: { id: `state-${crypto.randomUUID()}`, name: newStateName.trim(), color: newStateColor, rulingFactionId: null, active: false } }); setNewStateName(""); }}>Добавить</button></div>
     <div className="card-list terrain-list">{states.map((item) => <StateEditor key={item.id} state={item} sides={sides} onAction={onAction} />)}</div>
     <div className="settings-card"><h3>Принадлежность фракций государствам</h3>{sides.map((side) => <label key={side.id}>{side.name}<select value={side.stateId ?? ""} onChange={(event) => onAction({ type: "SET_SIDE_STATE", sideId: side.id, stateId: event.target.value || null })}><option value="">Без государства</option>{states.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>)}</div>
 

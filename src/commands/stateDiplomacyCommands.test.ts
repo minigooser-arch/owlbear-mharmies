@@ -41,8 +41,7 @@ function scene(): SceneState {
     navalBattleHistory: [],
     navalRevealUntilTurn: {},
     stateRelations: {},
-    foreignPresenceViolations: [],
-    forcedExitStates: [],
+        forcedExitStates: [],
     strategicCities: [],
     territorialScores: [],
     rebellions: [],
@@ -65,6 +64,16 @@ function execute(payload: Record<string, unknown>, role: "GM" | "PLAYER" = "GM")
     connectedPlayerIds: new Set([senderPlayerId]),
     state: { scene: scene(), armies: {}, barriers: {}, items: {} }
   }, command);
+}
+
+function executeInScene(payload: Record<string, unknown>, currentScene: SceneState) {
+  return new CommandProcessor().execute({
+    role: "GM",
+    playerId: "gm",
+    connectionId: "gm-connection",
+    connectedPlayerIds: new Set(["gm"]),
+    state: { scene: currentScene, armies: {}, barriers: {}, items: {} }
+  }, envelope(payload) as unknown as ArmyCommand);
 }
 
 describe("state diplomacy commands", () => {
@@ -156,6 +165,40 @@ describe("state diplomacy commands", () => {
 
   it("does not delete a state that is still referenced", () => {
     expect(execute({ type: "DELETE_STATE", stateId: "russia" })).toEqual({
+      status: "REJECTED",
+      reason: "STATE_STILL_REFERENCED"
+    });
+  });
+
+  it("rejects creating a faction with an unknown state", () => {
+    expect(execute({
+      type: "CREATE_SIDE",
+      side: { id: "green", name: "Зелёные", color: "#00ff00", playerIds: [], leaderPlayerIds: [], stateId: "missing" }
+    })).toEqual({ status: "REJECTED", reason: "STATE_NOT_FOUND" });
+  });
+
+  it("deactivates a state when its ruling faction is deleted", () => {
+    const result = execute({ type: "DELETE_SIDE", sideId: "red", strategy: "UNREGISTER_ARMIES" });
+    expect(result.status).toBe("ACCEPTED");
+    if (result.status !== "ACCEPTED") return;
+    expect(result.state.scene.states.find((state) => state.id === "russia")).toMatchObject({
+      active: false,
+      rulingFactionId: null
+    });
+  });
+
+  it("does not delete a state referenced by a strategic city", () => {
+    const current = scene();
+    current.sides = current.sides.filter((side) => side.stateId !== "russia");
+    current.states = current.states.map((state) => state.id === "russia"
+      ? { ...state, active: false, rulingFactionId: null }
+      : state);
+    current.strategicCities = [{
+      id: "moscow", name: "Москва", cells: [{ x: 0, y: 0 }],
+      recognizedStateId: "russia", deFactoStateId: "russia",
+      factionInfluenceId: null, mayorId: null, isCapital: true, historicalBuildTypeCount: 0
+    }];
+    expect(executeInScene({ type: "DELETE_STATE", stateId: "russia" }, current)).toEqual({
       status: "REJECTED",
       reason: "STATE_STILL_REFERENCED"
     });

@@ -54,6 +54,7 @@ export const METADATA_KEYS = {
   barrier: `${EXTENSION_ID}/barrier`,
   localClone: `${EXTENSION_ID}/local-clone`,
   routeOverlay: `${EXTENSION_ID}/route-overlay`,
+  supplyOverlay: `${EXTENSION_ID}/supply-overlay`,
   routePreview: `${EXTENSION_ID}/route-preview`,
   shipRouteOverlay: `${EXTENSION_ID}/ship-route-overlay`,
   shipRoutePreview: `${EXTENSION_ID}/ship-route-preview`,

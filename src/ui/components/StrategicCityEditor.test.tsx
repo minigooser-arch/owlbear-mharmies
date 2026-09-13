@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { StateEntity, StrategicCity } from "../../shared/types";
 import { StrategicCityEditor } from "./StrategicCityEditor";
@@ -27,9 +27,10 @@ const city: StrategicCity = {
 describe("StrategicCityEditor", () => {
   it("shows existing cities and manual historical build count", () => {
     render(<StrategicCityEditor role="GM" states={states} cities={[city]} onCreate={vi.fn()} onUpdate={vi.fn()} onDelete={vi.fn()} />);
-    expect(screen.getByText("Москва")).toBeTruthy();
+    const cityCard = screen.getByRole("heading", { name: "Москва" }).closest("article");
+    if (!cityCard) throw new Error("Moscow city card was not rendered");
     expect(screen.getByText(/Исторических типов построек: 4/)).toBeTruthy();
-    expect(screen.getByText(/Столица/)).toBeTruthy();
+    expect(within(cityCard).getByText("Столица")).toBeTruthy();
   });
 
   it("lets a GM create a city from manually entered cells and build count", () => {

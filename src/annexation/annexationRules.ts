@@ -17,7 +17,10 @@ export function annexingStateForEntry(
 ): string | undefined {
   const state = stateForFaction(context, armyFactionId);
   if (!state || state.rulingFactionId !== armyFactionId) return undefined;
-  const targetStateId = destination.deFactoStateId ?? destination.recognizedStateId;
+  if (destination.deFactoStateId === state.id) return undefined;
+  const targetStateId = destination.recognizedStateId === state.id
+    ? destination.deFactoStateId
+    : destination.recognizedStateId;
   if (!targetStateId || targetStateId === state.id) return undefined;
   return areStatesAtWar(context.stateRelations ?? {}, state.id, targetStateId)
     ? state.id

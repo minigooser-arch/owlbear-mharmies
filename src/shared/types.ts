@@ -64,14 +64,6 @@ export interface StateRelationState {
 
 export type StateRelations = Record<string, Record<string, StateRelationState>>;
 
-export interface ForeignPresenceViolation {
-  armyId: string;
-  homeStateId: string;
-  hostStateId: string;
-  enteredOnTurn: number;
-  checkOnTurn: number;
-}
-
 export type ForcedExitReason = "PASSAGE_REVOKED" | "WAR_ENDED" | "BORDER_CHANGED" | "OTHER";
 
 export interface ForcedExitState {
@@ -110,7 +102,6 @@ export interface RebellionState {
 
 export interface TurnCheckpointState {
   turnNumber: number;
-  illegalPresenceDone: boolean;
   forcedExitDone: boolean;
   supplyDone: boolean;
   encirclementDone: boolean;
@@ -285,7 +276,6 @@ export interface SceneState {
   navalBattleHistory?: NavalBattleState[];
   navalRevealUntilTurn?: Record<string, Record<string, number>>;
   stateRelations?: StateRelations;
-  foreignPresenceViolations?: ForeignPresenceViolation[];
   forcedExitStates?: ForcedExitState[];
   strategicCities?: StrategicCity[];
   territorialScores?: TerritorialScore[];
@@ -311,7 +301,6 @@ export interface StrategicSceneState extends NavalSceneState {
   states: NormalizedStateEntity[];
   transportEmbarkRequests: TransportEmbarkRequest[];
   stateRelations: StateRelations;
-  foreignPresenceViolations: ForeignPresenceViolation[];
   forcedExitStates: ForcedExitState[];
   strategicCities: StrategicCity[];
   territorialScores: TerritorialScore[];
@@ -336,6 +325,8 @@ export type MovementDenialReason =
   | "STATELESS_FACTION"
   | "INVALID_POLITICAL_CONFIG"
   | "WAR_DECLARATION_FAILED"
+  | "NOT_SHORTEST_EXIT"
+  | "NO_EXIT_ROUTE"
   | "INVALID_TERRAIN"
   | "INSUFFICIENT_MOVEMENT_POINTS"
   | "ARMY_STATE_BLOCKS_MOVEMENT"

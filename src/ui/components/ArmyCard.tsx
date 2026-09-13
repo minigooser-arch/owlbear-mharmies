@@ -78,6 +78,9 @@ export function ArmyCard({ army, sideColor = "#687F91", isGM, canEditRoute, canR
       </div>
 
       {!army.supplied && <p className="route-warning">В начале следующего хода: −{encirclementDamage} HP. Лечение недоступно.</p>}
+      {army.forcedExitStartedOnTurn !== undefined && (
+        <p className="route-warning">⚠ Обязательный выход с хода {army.forcedExitStartedOnTurn}. Проложите кратчайший путь на разрешённую территорию.</p>
+      )}
       {army.disbandPending && <p className="route-warning">⚠ Будет распущена в начале следующего хода. Отменить роспуск нельзя.</p>}
       {army.routeRequiresReplan && <p className="route-warning">⚠ Старый маршрут нужно проложить заново по стратегической сетке.</p>}
       {invalidMessage && <p className="route-warning">⚠ {invalidMessage}</p>}

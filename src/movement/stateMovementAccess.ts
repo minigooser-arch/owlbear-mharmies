@@ -26,10 +26,10 @@ function validActiveState(state: StateEntity | undefined, sides: readonly Side[]
 }
 
 export function classifyStateMovementAccess(input: StateMovementAccessInput): StateMovementAccess {
+  if (input.destinationStateId == null) return { kind: "ALLOW_UNOWNED" };
+
   const side = input.sides.find((candidate) => candidate.id === input.sideId);
   if (!side) return { kind: "DENY_INVALID_POLITICAL_CONFIG" };
-
-  if (input.destinationStateId === null) return { kind: "ALLOW_UNOWNED" };
 
   const destination = input.states.find((state) => state.id === input.destinationStateId);
   if (!validActiveState(destination, input.sides)) {

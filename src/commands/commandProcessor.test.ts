@@ -112,6 +112,69 @@ function context(
 describe("CommandProcessor", () => {
   const processor = new CommandProcessor();
 
+  it("rejects a crafted route into closed foreign land for a non-ruling faction", () => {
+    const current = state();
+    current.scene.version = 7;
+    current.scene.sides = current.scene.sides.map((side) => ({ ...side, stateId: side.id === "red" ? "home" : "host" }));
+    current.scene.sides.push({ id: "ruler", name: "Правительство", color: "#fff", playerIds: [], leaderPlayerIds: [], stateId: "home" });
+    current.scene.states = [
+      { id: "home", name: "Дом", color: "#fff", rulingFactionId: "ruler", active: true },
+      { id: "host", name: "Чужая страна", color: "#000", rulingFactionId: "blue", active: true }
+    ];
+    current.scene.stateRelations = {};
+    current.scene.gridMap.cells["1,0"] = {
+      terrainId: null, impassable: false, factionTerritoryIds: [], recognizedStateId: "host", deFactoStateId: "host"
+    };
+    expect(processor.execute(context("PLAYER", "leader", current), command({
+      type: "SET_ROUTE", armyId: "army-red", startCell: { x: 0, y: 0 },
+      cells: [{ x: 1, y: 0 }], route: [{ x: 150, y: 50 }]
+    }, "leader"))).toEqual({ status: "REJECTED", reason: "FOREIGN_STATE_CLOSED" });
+  });
+
+  it("declares war immediately when the ruling army is moved into closed foreign land", () => {
+    const current = state();
+    current.scene.version = 7;
+    current.scene.sides = current.scene.sides.map((side) => ({ ...side, stateId: side.id === "red" ? "home" : "host" }));
+    current.scene.states = [
+      { id: "home", name: "Дом", color: "#fff", rulingFactionId: "red", active: true },
+      { id: "host", name: "Чужая страна", color: "#000", rulingFactionId: "blue", active: true }
+    ];
+    current.scene.stateRelations = {};
+    current.scene.gridMap.cells["1,0"] = {
+      terrainId: null, impassable: false, factionTerritoryIds: [], recognizedStateId: "host", deFactoStateId: "host"
+    };
+    const positioned = new CommandProcessor(() => new Date(), ({ x, y }) => ({ x: Math.floor(x / 100), y: Math.floor(y / 100) }));
+    const result = positioned.execute(context("GM", "gm", current), command({
+      type: "MOVE_ARMY", armyId: "army-red", position: { x: 150, y: 50 }
+    }));
+    expect(result.status).toBe("ACCEPTED");
+    if (result.status !== "ACCEPTED") return;
+    expect(result.state.scene.stateRelations).toMatchObject({
+      home: { host: { atWar: true } }, host: { home: { atWar: true } }
+    });
+  });
+
+  it("invalidates existing routes when recognized borders change", () => {
+    const current = state();
+    current.scene.version = 7;
+    current.scene.sides = current.scene.sides.map((side) => ({ ...side, stateId: side.id === "red" ? "home" : "host" }));
+    current.scene.sides.push({ id: "ruler", name: "Правительство", color: "#fff", playerIds: [], leaderPlayerIds: [], stateId: "home" });
+    current.scene.states = [
+      { id: "home", name: "Дом", color: "#fff", rulingFactionId: "ruler", active: true },
+      { id: "host", name: "Чужая страна", color: "#000", rulingFactionId: "blue", active: true }
+    ];
+    current.armies["army-red"] = { ...current.armies["army-red"], plannedRoute: {
+      startCell: { x: 0, y: 0 }, executeOnTurn: 0, cells: [{ x: 1, y: 0 }],
+      totalCostUnits: 1, validatedRevision: 2, requiresReplan: false
+    }} as ArmyState;
+    const result = processor.execute(context("GM", "gm", current), command({
+      type: "SET_RECOGNIZED_STATE_CELLS", stateId: "host", cells: [{ x: 1, y: 0 }]
+    }));
+    expect(result.status).toBe("ACCEPTED");
+    if (result.status !== "ACCEPTED") return;
+    expect(result.state.armies["army-red"]?.plannedRoute.invalidReason).toBe("FOREIGN_STATE_CLOSED");
+  });
+
   it("rejects a forged sender connection before changing state", () => {
     const result = processor.execute(
       { ...context("GM", "gm"), connectionId: "real-connection" },

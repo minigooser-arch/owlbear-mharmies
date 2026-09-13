@@ -282,4 +282,45 @@ describe("transport command authorization and consent", () => {
     expect(result.state.scene.ships?.transport?.embarkedArmyId).toBeNull();
     expect(result.state.armies.army?.embarkedOnShipId).toBeNull();
   });
+
+  it("immediately declares exact-pair war when ruling cargo lands across a closed border", () => {
+    const current = state();
+    current.scene.version = 7;
+    current.scene.sides = current.scene.sides.map((side) => ({ ...side, stateId: side.id === "red" ? "home" : "host" }));
+    current.scene.states = [
+      { id: "home", name: "Дом", color: "#f00", rulingFactionId: "red", active: true },
+      { id: "host", name: "Берег", color: "#00f", rulingFactionId: "blue", active: true }
+    ];
+    current.scene.stateRelations = {};
+    current.scene.gridMap.cells["1,0"] = { terrainId: null, impassable: false, factionTerritoryIds: [], recognizedStateId: "host", deFactoStateId: "host" };
+    const embarked = execute("red-leader", { type: "EMBARK_ARMY", shipId: "transport", armyId: "army" }, current);
+    expect(embarked.status).toBe("ACCEPTED");
+    if (embarked.status !== "ACCEPTED") return;
+    embarked.state.scene.revision = 4;
+    const result = execute("red-leader", { type: "DISEMBARK_ARMY", shipId: "transport", armyId: "army", targetCell: { x: 1, y: 0 } }, embarked.state);
+    expect(result.status).toBe("ACCEPTED");
+    if (result.status !== "ACCEPTED") return;
+    expect(result.state.scene.stateRelations).toMatchObject({
+      home: { host: { atWar: true } }, host: { home: { atWar: true } }
+    });
+  });
+
+  it("denies a non-ruling cargo landing across a closed border", () => {
+    const current = state();
+    current.scene.version = 7;
+    current.scene.sides = current.scene.sides.map((side) => ({ ...side, stateId: side.id === "red" ? "home" : "host" }));
+    current.scene.sides.push({ id: "government", name: "Правительство", color: "#fff", playerIds: [], leaderPlayerIds: [], stateId: "home" });
+    current.scene.states = [
+      { id: "home", name: "Дом", color: "#f00", rulingFactionId: "government", active: true },
+      { id: "host", name: "Берег", color: "#00f", rulingFactionId: "blue", active: true }
+    ];
+    current.scene.stateRelations = {};
+    current.scene.gridMap.cells["1,0"] = { terrainId: null, impassable: false, factionTerritoryIds: [], recognizedStateId: "host", deFactoStateId: "host" };
+    const embarked = execute("red-leader", { type: "EMBARK_ARMY", shipId: "transport", armyId: "army" }, current);
+    expect(embarked.status).toBe("ACCEPTED");
+    if (embarked.status !== "ACCEPTED") return;
+    embarked.state.scene.revision = 4;
+    expect(execute("red-leader", { type: "DISEMBARK_ARMY", shipId: "transport", armyId: "army", targetCell: { x: 1, y: 0 } }, embarked.state))
+      .toEqual({ status: "REJECTED", reason: "FOREIGN_STATE_CLOSED" });
+  });
 });

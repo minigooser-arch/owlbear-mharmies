@@ -184,6 +184,7 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
       }];
     });
   const armies: ArmyView[] = authorizedRecords.map(({ item, state }) => {
+    const forcedExit = input.scene.forcedExitStates?.find((entry) => entry.armyId === item.id);
     const routeVisible = input.role === "GM" || (
       state.status === "READY"
         ? leaderSideIds.has(state.sideId)
@@ -208,6 +209,7 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
       supplied: state.supply.supplied,
       supplyCheckedOnTurn: state.supply.checkedOnTurn,
       disbandPending: state.disband.pending,
+      ...(forcedExit ? { forcedExitStartedOnTurn: forcedExit.startedOnTurn } : {}),
       embarkedOnShipId: state.embarkedOnShipId ?? null
     };
   });

@@ -72,6 +72,7 @@ export interface RouteToolActivation {
   sides?: readonly Side[];
   states?: readonly StateEntity[];
   stateRelations?: StateRelations;
+  forcedExitRoutes?: readonly (readonly GridCellCoord[])[];
   barriers: readonly BarrierSegment[];
 }
 
@@ -324,6 +325,17 @@ export class RouteToolController {
       };
     }
 
+    if (active.forcedExitRoutes) {
+      const candidate = [...this.cells, ...segment];
+      const valid = active.forcedExitRoutes.some((route) => candidate.length <= route.length &&
+        candidate.every((entry, index) => entry.x === route[index]?.x && entry.y === route[index]?.y));
+      if (!valid) return {
+        point, cell, valid: false, color: "#d32f2f",
+        label: "Нужен кратчайший путь выхода на разрешённую территорию.",
+        totalCostUnits: spent, remainingUnits: remaining, reason: "NOT_SHORTEST_EXIT"
+      };
+    }
+
     const segmentPoints: Vector2[] = [];
     const segmentCosts: number[] = [];
     let cursorCell = anchorCell;
@@ -337,7 +349,7 @@ export class RouteToolController {
     for (const nextCell of segment) {
       const nextPoint = pointForCell(active, nextCell);
       const destinationCell = readCell(active.gridMap, nextCell);
-      if (hasPoliticalModel) {
+      if (hasPoliticalModel && !active.forcedExitRoutes) {
         const political = classifyStateMovementAccess({
           sideId: active.sideId,
           destinationStateId: destinationCell.recognizedStateId,

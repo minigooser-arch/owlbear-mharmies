@@ -26,8 +26,7 @@ it("publishes interstate relations in the role-safe snapshot", () => {
       russia: { germany: { militaryAccess: true, atWar: false } },
       germany: { russia: { militaryAccess: false, atWar: false } }
     },
-    foreignPresenceViolations: [],
-    forcedExitStates: [],
+        forcedExitStates: [],
     strategicCities: [],
     territorialScores: [],
     rebellions: [],

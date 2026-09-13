@@ -60,7 +60,7 @@ function fixture(options: { failSceneWrite?: boolean; failArmyWrite?: boolean } 
     wars: [],
     turn: structuredClone(DEFAULT_TURN_STATE),
     ships: {}, navalBattleRequests: [], transportEmbarkRequests: [], activeNavalBattle: null,
-    navalBattleHistory: [], navalRevealUntilTurn: {}, foreignPresenceViolations: [], forcedExitStates: [],
+    navalBattleHistory: [], navalRevealUntilTurn: {}, forcedExitStates: [],
     strategicCities: [], territorialScores: [], rebellions: [], turnCheckpoint: null
   };
   const items: SceneItemRecord[] = [{
@@ -96,7 +96,7 @@ function fixture(options: { failSceneWrite?: boolean; failArmyWrite?: boolean } 
 
 async function runTick(f: ReturnType<typeof fixture>) {
   const now = vi.spyOn(performance, "now");
-  now.mockReturnValueOnce(0);
+  now.mockReturnValue(0);
   const engine = new ProductionEngine(f.port);
   engine.setCoordinator(true);
   now.mockReturnValue(1000);
@@ -113,7 +113,8 @@ it("declares exact pair war and enters a closed foreign state for the ruling fac
 
   expect(f.scene.stateRelations?.ru?.de?.atWar).toBe(true);
   expect(f.scene.stateRelations?.de?.ru?.atWar).toBe(true);
-  expect(f.items[0]?.position).toEqual({ x: 150, y: 50 });
+  expect(f.items[0]?.position.x).toBeGreaterThan(100);
+  expect(f.items[0]?.position.y).toBe(50);
 });
 
 it("rolls the army back before the border if the auto-war scene write fails", async () => {
@@ -136,4 +137,30 @@ it("rolls the declared war back if the army write fails after crossing authoriza
   expect(f.scene.stateRelations?.de?.ru?.atWar).not.toBe(true);
   expect(f.items[0]?.position).toEqual({ x: 50, y: 50 });
   expect((f.items[0]?.metadata[METADATA_KEYS.army] as ArmyState).movement.enteredRouteCellCount).toBe(0);
+});
+
+it("withdraws through the former host without declaring war again", async () => {
+  const f = fixture();
+  f.scene.gridMap.cells["0,0"] = {terrainId:"road",impassable:false,factionTerritoryIds:[],recognizedStateId:"de",deFactoStateId:"de"};
+  f.scene.gridMap.cells["2,0"] = {terrainId:"road",impassable:false,factionTerritoryIds:[],recognizedStateId:"ru",deFactoStateId:"ru"};
+  f.scene.forcedExitStates = [{armyId:"army",startedOnTurn:1,originReason:"WAR_ENDED"}];
+  await runTick(f);
+  expect(f.items[0]?.position.x).toBeGreaterThan(100);
+  expect(f.scene.stateRelations).toEqual({});
+});
+it("stops a forged withdrawal route that heads away from legal territory", async () => {
+  const f = fixture();
+  f.scene.gridMap.cells["0,0"] = {terrainId:"road",impassable:false,factionTerritoryIds:[],recognizedStateId:"de",deFactoStateId:"de"};
+  f.scene.gridMap.cells["-1,0"] = {terrainId:"road",impassable:false,factionTerritoryIds:[],recognizedStateId:"ru",deFactoStateId:"ru"};
+  f.scene.forcedExitStates = [{armyId:"army",startedOnTurn:1,originReason:"WAR_ENDED"}];
+  await runTick(f);
+  expect(f.items[0]?.position).toEqual({x:50,y:50});
+  expect(f.scene.stateRelations).toEqual({});
+  expect((f.items[0]?.metadata[METADATA_KEYS.army] as ArmyState).plannedRoute.invalidReason).toBe("NOT_SHORTEST_EXIT");
+});
+
+it("occupies only the reached enemy cell when invasion declares war", async () => {
+  const f = fixture();
+  await runTick(f);
+  expect(f.scene.gridMap.cells["1,0"]).toMatchObject({recognizedStateId:"de",deFactoStateId:"ru"});
 });

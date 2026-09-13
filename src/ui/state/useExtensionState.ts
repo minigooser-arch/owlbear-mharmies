@@ -40,6 +40,7 @@ export interface ArmyView {
   supplied: boolean;
   supplyCheckedOnTurn: number;
   disbandPending: boolean;
+  forcedExitStartedOnTurn?: number;
   embarkedOnShipId?: string | null;
 }
 

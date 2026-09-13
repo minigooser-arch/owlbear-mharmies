@@ -1,11 +1,13 @@
 import { destroyArmy } from "../armies/armyLifecycle";
 import { applyEncirclementDamage } from "../health/armyHealth";
 import { validatePlannedRoute } from "../movement/movementRules";
+import { politicalRouteGate } from "../movement/authoritativeStateMovement";
+import { forcedExitRouteGate, forcedExitTurnRoute, reconcileForcedExitStates } from "../movement/forcedExitService";
 import { SHIP_CLASSES } from "../naval/ships/shipClasses";
 import { stateForFaction } from "../states/stateRules";
-import { hasSupplyRoute } from "../supply/supplyRules";
+import { isArmySupplied } from "../supply/supplyService";
 import { readCell } from "../terrain/gridMap";
-import type { ArmyState, GridCellCoord, SceneState, TurnState } from "../shared/types";
+import type { ArmyState, GridCellCoord, SceneState, TurnState, Vector2 } from "../shared/types";
 import { deferredBoundary, getLatestStandardTurnBoundary, getNextStandardTurnBoundary } from "./turnSchedule";
 
 export type TurnCompletionSource = "SCHEDULE" | "MANUAL";
@@ -16,6 +18,7 @@ export interface CompleteTurnInput {
   boundaryId?: string;
   /** Current strategic cells, resolved from authoritative Owlbear item positions. */
   armyCells: Readonly<Record<string, GridCellCoord>>;
+  positionForCell?: (cell: GridCellCoord) => Vector2;
 }
 
 export type CompleteTurnResult =
@@ -33,7 +36,8 @@ function prepareArmyForNewTurn(
   armyId: string,
   army: ArmyState,
   armyCell: GridCellCoord | undefined,
-  nextTurn: number
+  nextTurn: number,
+  positionForCell?: (cell: GridCellCoord) => Vector2
 ): ArmyState {
   const factionState = stateForFaction(scene, army.sideId);
   const embarkedShipId = army.embarkedOnShipId ?? null;
@@ -42,11 +46,7 @@ function prepareArmyForNewTurn(
   const supplied = genuinelyEmbarked
     ? true
     : factionState && armyCell
-      ? hasSupplyRoute({
-          start: armyCell,
-          stateId: factionState.id,
-          readCell: (cell) => readCell(scene.gridMap, cell)
-        })
+      ? isArmySupplied(scene, army, armyCell)
       : true;
 
   let next: ArmyState = {
@@ -57,8 +57,29 @@ function prepareArmyForNewTurn(
   };
   if (!supplied) next = applyEncirclementDamage(next);
 
+  if (armyCell && positionForCell && next.status !== "IN_BATTLE" &&
+      scene.forcedExitStates?.some((entry) => entry.armyId === armyId && entry.startedOnTurn <= nextTurn)) {
+    const planned = next.plannedRoute;
+    const gate = forcedExitRouteGate(scene, armyId, next, armyCell, planned.cells, nextTurn);
+    if (gate) {
+      const preferred = planned.executeOnTurn === nextTurn && !gate.blockedReason ? planned.cells : [];
+      const cells = forcedExitTurnRoute(scene, next, armyCell, 10, preferred);
+      next = {...next, route: cells.map(positionForCell), plannedRoute: {
+        startCell: {...armyCell}, executeOnTurn: nextTurn, cells, totalCostUnits: 0,
+        validatedRevision: scene.revision, requiresReplan: false
+      }};
+    }
+  }
   const routeDue = next.plannedRoute.executeOnTurn === nextTurn;
   if (routeDue && !next.plannedRoute.requiresReplan && next.plannedRoute.cells.length > 0) {
+    const political = forcedExitRouteGate(scene, armyId, next, next.plannedRoute.startCell, next.plannedRoute.cells, nextTurn) ?? politicalRouteGate({
+      sideId: next.sideId,
+      cells: next.plannedRoute.cells,
+      gridMap: scene.gridMap,
+      sides: scene.sides,
+      states: scene.states,
+      stateRelations: scene.stateRelations ?? {}
+    });
     const validation = validatePlannedRoute({
       start: next.plannedRoute.startCell,
       cells: next.plannedRoute.cells,
@@ -72,9 +93,17 @@ function prepareArmyForNewTurn(
     const cleanRoute = { ...next.plannedRoute };
     delete cleanRoute.invalidReason;
     delete cleanRoute.invalidCell;
+    const politicalBlock = political.allowedCellCount < next.plannedRoute.cells.length &&
+      political.blockedReason && political.blockedCell
+      ? { reason: political.blockedReason, problemCell: political.blockedCell }
+      : null;
+    const invalidRoute = politicalBlock ?? (validation.valid ? null : {
+      reason: validation.reason,
+      problemCell: validation.problemCell
+    });
     next = {
       ...next,
-      plannedRoute: validation.valid
+      plannedRoute: !invalidRoute
         ? {
             ...cleanRoute,
             totalCostUnits: validation.totalCostUnits,
@@ -86,8 +115,8 @@ function prepareArmyForNewTurn(
             totalCostUnits: validation.totalCostUnits,
             validatedRevision: scene.revision,
             requiresReplan: false,
-            invalidReason: validation.reason,
-            invalidCell: { ...validation.problemCell }
+            invalidReason: invalidRoute.reason,
+            invalidCell: { ...invalidRoute.problemCell }
           }
     };
   }
@@ -145,9 +174,16 @@ export function completeTurn(
   }
   nextScene.battleGroups = nextBattleGroups;
 
+  nextScene.forcedExitStates = reconcileForcedExitStates(
+    nextScene,
+    nextArmies,
+    input.armyCells,
+    nextTurn
+  );
+
   // Supply, encirclement damage, destruction, fixed 5 OP, and simultaneous route activation.
   for (const [armyId, army] of Object.entries(nextArmies)) {
-    const prepared = prepareArmyForNewTurn(nextScene, armyId, army, input.armyCells[armyId], nextTurn);
+    const prepared = prepareArmyForNewTurn(nextScene, armyId, army, input.armyCells[armyId], nextTurn, input.positionForCell);
     if (prepared.health.hp <= 0) {
       const destroyed = destroyArmy(nextArmies, nextScene.battleGroups, armyId);
       nextArmies = destroyed.armies;

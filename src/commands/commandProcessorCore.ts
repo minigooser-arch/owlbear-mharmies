@@ -6,6 +6,8 @@ import { canRenumberTurn, cancelTurnDeferral, completeTurn, deferTurn, pauseAuto
 import { parseCellKey } from "../grid/strategicGrid";
 import { applyCellPatchBatch, readCell } from "../terrain/gridMap";
 import { validatePlannedRoute } from "../movement/movementRules";
+import { applyDiplomacyForEnteredCells, politicalRouteGate } from "../movement/authoritativeStateMovement";
+import { forcedExitRouteGate, reconcileForcedExitStates, validateForcedExitRoute } from "../movement/forcedExitService";
 import { unenteredRouteCells } from "../movement/strategicProgress";
 import { createRegisteredShip, destroyShip } from "../naval/ships/shipLifecycle";
 import { resolvePlannedShipRoutes } from "../naval/ships/shipMovementPhase";
@@ -18,6 +20,7 @@ import type {
   ArmyCommand,
   ArmyState,
   BarrierState,
+  ForcedExitReason,
   SceneItemRecord,
   SceneState,
   NavalSceneState,
@@ -137,6 +140,25 @@ function revalidateArmyRoute(state: CommandState, armyId: string): void {
   const remainingStart = enteredCount === 0
     ? army.plannedRoute.startCell
     : army.plannedRoute.cells[enteredCount - 1] ?? army.plannedRoute.startCell;
+  const political = forcedExitRouteGate(state.scene, armyId, army, remainingStart, remainingCells) ?? politicalRouteGate({
+    sideId: army.sideId,
+    cells: remainingCells,
+    gridMap: state.scene.gridMap,
+    sides: state.scene.sides,
+    states: state.scene.states,
+    stateRelations: state.scene.stateRelations ?? {}
+  });
+  if (political.allowedCellCount < remainingCells.length && political.blockedReason && political.blockedCell) {
+    state.armies[armyId] = bumpArmy(army, {
+      plannedRoute: {
+        ...army.plannedRoute,
+        validatedRevision: state.scene.revision + 1,
+        invalidReason: political.blockedReason,
+        invalidCell: { ...political.blockedCell }
+      }
+    });
+    return;
+  }
   const result = validatePlannedRoute({
     start: remainingStart,
     cells: remainingCells,
@@ -171,6 +193,17 @@ function revalidateArmyRoute(state: CommandState, armyId: string): void {
 
 function revalidateAllRoutes(state: CommandState): void {
   for (const armyId of Object.keys(state.armies)) revalidateArmyRoute(state, armyId);
+}
+
+function reconcileForcedExits(state: CommandState, cellForPosition: ((position: Vector2) => GridCellCoord) | undefined, reason: ForcedExitReason): void {
+  if (!cellForPosition) return;
+  const cells = Object.fromEntries(Object.keys(state.armies).flatMap((armyId) => {
+    const position = commandPosition(state, armyId);
+    return position ? [[armyId, cellForPosition(position)]] : [];
+  }));
+  state.scene.forcedExitStates = reconcileForcedExitStates(
+    state.scene, state.armies, cells, state.scene.turn.turnNumber + 1, reason
+  );
 }
 
 export class CommandProcessor {
@@ -414,6 +447,17 @@ export class CommandProcessor {
             cellSupportsDomain(state.scene, shipCell, "SEA")
         });
         if (!geometry.ok) return geometry.reason;
+        const political = politicalRouteGate({
+          sideId: army.sideId,
+          cells: [command.targetCell],
+          gridMap: state.scene.gridMap,
+          sides: state.scene.sides,
+          states: state.scene.states,
+          stateRelations: state.scene.stateRelations ?? {}
+        });
+        if (political.allowedCellCount === 0) {
+          return political.blockedReason ?? "INVALID_POLITICAL_CONFIG";
+        }
         const disembarked = disembarkArmy(command.shipId, ship, command.armyId, army);
         if (!disembarked.ok) return disembarked.reason;
         const occupantIds = Object.entries(state.armies)
@@ -433,6 +477,14 @@ export class CommandProcessor {
         state.armies[command.armyId] = disembarked.army;
         state.positions ??= {};
         state.positions[command.armyId] = this.positionForCell(command.targetCell);
+        state.scene.stateRelations = applyDiplomacyForEnteredCells({
+          sideId: army.sideId,
+          cells: [command.targetCell],
+          gridMap: state.scene.gridMap,
+          sides: state.scene.sides,
+          states: state.scene.states,
+          stateRelations: state.scene.stateRelations ?? {}
+        }).stateRelations;
         const enemyOccupants = occupantIds.filter((armyId) => {
           const occupant = state.armies[armyId];
           return occupant ? relationForSides(state.scene, army.sideId, occupant.sideId) === "ENEMY" : false;
@@ -1003,6 +1055,7 @@ export class CommandProcessor {
       }
       case "CREATE_SIDE":
         if (state.scene.sides.some((side) => side.id === command.side.id)) return "SIDE_EXISTS";
+        if (command.side.stateId != null && !state.scene.states.some((candidate) => candidate.id === command.side.stateId)) return "STATE_NOT_FOUND";
         state.scene.sides.push({
           ...command.side,
           playerIds: [...new Set([...command.side.playerIds, ...command.side.leaderPlayerIds])],
@@ -1061,7 +1114,10 @@ export class CommandProcessor {
           );
         }
         for (const stateEntity of state.scene.states) {
-          if (stateEntity.rulingFactionId === command.sideId) stateEntity.rulingFactionId = null;
+          if (stateEntity.rulingFactionId === command.sideId) {
+            stateEntity.rulingFactionId = null;
+            stateEntity.active = false;
+          }
         }
         const relations: SceneState["relations"] = {};
         for (const [left, entries] of Object.entries(state.scene.relations)) {
@@ -1136,6 +1192,26 @@ export class CommandProcessor {
         if (!army) return "ARMY_NOT_FOUND";
         if (army.status !== "READY") return "ARMY_NOT_READY";
         if (command.route.length !== command.cells.length) return "INVALID_COMMAND";
+        const forcedExit = (state.scene.forcedExitStates ?? []).find((candidate) =>
+          candidate.armyId === command.armyId && candidate.startedOnTurn <= state.scene.turn.turnNumber + 1
+        );
+        if (forcedExit) {
+          const forcedValidation = validateForcedExitRoute(
+            state.scene, army, command.startCell, command.cells
+          );
+          if (!forcedValidation.ok) return forcedValidation.reason;
+        }
+        if (!forcedExit) {
+          const political = politicalRouteGate({
+            sideId: army.sideId,
+            cells: command.cells,
+            gridMap: state.scene.gridMap,
+            sides: state.scene.sides,
+            states: state.scene.states,
+            stateRelations: state.scene.stateRelations ?? {}
+          });
+          if (political.allowedCellCount < command.cells.length) return political.blockedReason ?? "INVALID_POLITICAL_CONFIG";
+        }
         const validation = validatePlannedRoute({
           start: command.startCell,
           cells: command.cells,
@@ -1176,11 +1252,37 @@ export class CommandProcessor {
         });
         return undefined;
       }
-      case "MOVE_ARMY":
-        if (!state.armies[command.armyId]) return "ARMY_NOT_FOUND";
+      case "MOVE_ARMY": {
+        const army = state.armies[command.armyId];
+        if (!army) return "ARMY_NOT_FOUND";
+        if (this.cellForPosition) {
+          const targetCell = this.cellForPosition(command.position);
+          const position = commandPosition(state, command.armyId);
+          const withdrawal = position ? forcedExitRouteGate(state.scene, command.armyId, army, this.cellForPosition(position), [targetCell]) : null;
+          const political = withdrawal ?? politicalRouteGate({
+            sideId: army.sideId,
+            cells: [targetCell],
+            gridMap: state.scene.gridMap,
+            sides: state.scene.sides,
+            states: state.scene.states,
+            stateRelations: state.scene.stateRelations ?? {}
+          });
+          if (political.allowedCellCount === 0) {
+            return political.blockedReason ?? "INVALID_POLITICAL_CONFIG";
+          }
+          if (!withdrawal) state.scene.stateRelations = applyDiplomacyForEnteredCells({
+            sideId: army.sideId,
+            cells: [targetCell],
+            gridMap: state.scene.gridMap,
+            sides: state.scene.sides,
+            states: state.scene.states,
+            stateRelations: state.scene.stateRelations ?? {}
+          }).stateRelations;
+        }
         state.positions ??= {};
         state.positions[command.armyId] = { ...command.position };
         return undefined;
+      }
       case "START_ARMY":
       case "RESUME_ARMY": {
         const army = state.armies[command.armyId];
@@ -1353,6 +1455,11 @@ export class CommandProcessor {
         return undefined;
       }
       case "DELETE_STATE": {
+        if (
+          (state.scene.strategicCities ?? []).some((city) => city.recognizedStateId === command.stateId || city.deFactoStateId === command.stateId) ||
+          (state.scene.territorialScores ?? []).some((score) => score.holderStateId === command.stateId || score.opponentStateId === command.stateId) ||
+          (state.scene.rebellions ?? []).some((rebellion) => rebellion.sourceStateId === command.stateId)
+        ) return "STATE_STILL_REFERENCED";
         const result = deleteState(state.scene.states, state.scene.sides, state.scene.gridMap, command.stateId);
         if (!result.ok) return result.reason;
         state.scene.states = result.states;
@@ -1379,6 +1486,7 @@ export class CommandProcessor {
           command.allowed
         );
         revalidateAllRoutes(state);
+        reconcileForcedExits(state, this.cellForPosition, "PASSAGE_REVOKED");
         return undefined;
       }
       case "SET_STATE_WAR": {
@@ -1393,11 +1501,14 @@ export class CommandProcessor {
           command.atWar
         );
         revalidateAllRoutes(state);
+        reconcileForcedExits(state, this.cellForPosition, "WAR_ENDED");
         return undefined;
       }
       case "SET_RECOGNIZED_STATE_CELLS":
         if (command.stateId !== null && !state.scene.states.some((candidate) => candidate.id === command.stateId)) return "STATE_NOT_FOUND";
         state.scene.gridMap = applyCellPatchBatch(state.scene.gridMap, command.cells.map((cell) => ({ cell, patch: { recognizedStateId: command.stateId } })));
+        revalidateAllRoutes(state);
+        reconcileForcedExits(state, this.cellForPosition, "BORDER_CHANGED");
         return undefined;
       case "SET_DEFACTO_STATE_CELLS":
         if (command.stateId !== null && !state.scene.states.some((candidate) => candidate.id === command.stateId)) return "STATE_NOT_FOUND";
@@ -1503,6 +1614,7 @@ export class CommandProcessor {
         const result = completeTurn(state.scene, state.armies, {
           source: "MANUAL",
           completedAt: this.now(),
+          ...(this.positionForCell ? {positionForCell: this.positionForCell} : {}),
           armyCells
         });
         if (!result.changed) return result.reason;

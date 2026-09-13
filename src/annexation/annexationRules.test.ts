@@ -16,4 +16,10 @@ describe("annexation", () => {
     expect(annexingStateForEntry(scene,"romanov",enemyCell)).toBe("russia");
     expect(annexingStateForEntry(scene,"opposition",enemyCell)).toBeUndefined();
   });
+  it("does not occupy neutral recognized territory controlled by an enemy", () => {
+    expect(annexingStateForEntry(scene, "romanov", {...enemyCell, recognizedStateId:"france"})).toBeUndefined();
+  });
+  it("recaptures own recognized land from the exact enemy", () => {
+    expect(annexingStateForEntry(scene, "romanov", {...enemyCell, recognizedStateId:"russia"})).toBe("russia");
+  });
 });

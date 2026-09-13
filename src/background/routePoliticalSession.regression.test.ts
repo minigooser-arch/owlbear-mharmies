@@ -28,7 +28,7 @@ const scene: SceneState = {
   battleGroups: [], terrain: structuredClone(DEFAULT_TERRAIN),
   gridMap: { version: 1, revision: 0, cells: {} }, wars: [], turn: structuredClone(DEFAULT_TURN_STATE),
   ships: {}, navalBattleRequests: [], transportEmbarkRequests: [], activeNavalBattle: null,
-  navalBattleHistory: [], navalRevealUntilTurn: {}, foreignPresenceViolations: [], forcedExitStates: [],
+  navalBattleHistory: [], navalRevealUntilTurn: {}, forcedExitStates: [],
   strategicCities: [], territorialScores: [], rebellions: [], turnCheckpoint: null
 };
 

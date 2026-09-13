@@ -7,6 +7,11 @@ export function formatMovementUnits(units: number): string {
 
 export function movementDenialMessage(reason: MovementDenialReason | undefined): string | undefined {
   switch (reason) {
+    case "NOT_SHORTEST_EXIT": return "Выберите кратчайший путь выхода на разрешённую территорию.";
+    case "NO_EXIT_ROUTE": return "Доступного пути выхода нет.";
+    case "FOREIGN_STATE_CLOSED": return "Граница государства закрыта для этой фракции.";
+    case "STATELESS_FACTION": return "Фракция без государства не может входить на эту территорию.";
+    case "INVALID_POLITICAL_CONFIG": return "Проверьте государство и его правящую фракцию.";
     case "NOT_ORTHOGONAL": return "Можно двигаться только по горизонтали или вертикали.";
     case "OUTSIDE_MAP": return "Клетка находится за пределами игровой карты.";
     case "IMPASSABLE": return "Маршрут упирается в непроходимую клетку.";

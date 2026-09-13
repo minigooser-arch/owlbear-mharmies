@@ -1,3 +1,5 @@
+import { resolveCityDeFactoState } from "../cities/strategicCities";
+import { forcedExitRouteGate, hasRightToRemain } from "../movement/forcedExitService";
 import { joinReinforcements } from "../battles/battleGroupService";
 import { findEarliestEnemyCollisions } from "../battles/collisionEngine";
 import { segmentsFromPolyline, type BarrierSegment } from "../barriers/barrierGeometry";
@@ -445,6 +447,7 @@ export class ProductionEngine {
       source: "SCHEDULE",
       completedAt: now,
       boundaryId: boundary.id,
+      positionForCell: (cell) => strategicGrid.cellToSceneCenter(cell),
       armyCells
     });
     if (!completion.changed) return;
@@ -546,7 +549,7 @@ export class ProductionEngine {
       const remainingStart = enteredCount === 0
         ? record.state.plannedRoute.startCell
         : record.state.plannedRoute.cells[enteredCount - 1] ?? record.state.plannedRoute.startCell;
-      const political = politicalRouteGate({
+      const political = forcedExitRouteGate(scene, record.item.id, record.state, remainingStart, remainingCells) ?? politicalRouteGate({
         sideId: record.state.sideId,
         cells: remainingCells,
         gridMap: scene.gridMap,
@@ -738,7 +741,9 @@ export class ProductionEngine {
           frame.record.state.movement.enteredRouteCellCount,
           progress.enteredRouteCellCount
         );
-        const diplomacy = applyDiplomacyForEnteredCells({
+        const withdrawing = forcedExitRouteGate(scene, frame.record.item.id, frame.record.state,
+          frame.record.state.plannedRoute.startCell, frame.record.state.plannedRoute.cells);
+        const diplomacy = withdrawing ? {stateRelations: nextStateRelations} : applyDiplomacyForEnteredCells({
           sideId: frame.state.sideId,
           cells: enteredCells,
           gridMap: scene.gridMap,
@@ -750,7 +755,7 @@ export class ProductionEngine {
         for (const cell of enteredCells) {
           const destination = readCell(scene.gridMap, cell);
           const annexingStateId = annexingStateForEntry(
-            { states: scene.states, sides: scene.sides, wars: scene.wars },
+            { states: scene.states, sides: scene.sides, wars: scene.wars, stateRelations: nextStateRelations },
             frame.state.sideId,
             destination
           );
@@ -766,9 +771,16 @@ export class ProductionEngine {
         frame.record.state.revision
       );
     }
+    const nextForcedExits = (scene.forcedExitStates ?? []).filter((entry) => {
+      const frame = frames.find((candidate) => candidate.record.item.id === entry.armyId);
+      if (!frame) return true;
+      const reached = frame.state.plannedRoute.cells[frame.state.movement.enteredRouteCellCount - 1];
+      return !reached || !hasRightToRemain(scene, frame.state, reached);
+    });
+    const forcedExitsChanged = nextForcedExits.length !== (scene.forcedExitStates ?? []).length;
     const nextGridMap = applyCellPatchBatch(scene.gridMap, annexOperations);
     const stateRelationsChanged = JSON.stringify(nextStateRelations) !== JSON.stringify(scene.stateRelations ?? {});
-    if (battleGroups || nextGridMap !== scene.gridMap || stateRelationsChanged) {
+    if (battleGroups || nextGridMap !== scene.gridMap || stateRelationsChanged || forcedExitsChanged) {
       if (!canCommit()) return;
       await this.repository.writeScene(
         {
@@ -776,7 +788,12 @@ export class ProductionEngine {
           revision: scene.revision + 1,
           battleGroups: battleGroups ?? scene.battleGroups,
           gridMap: nextGridMap,
-          stateRelations: nextStateRelations
+          ...(scene.strategicCities ? {strategicCities: scene.strategicCities.map((city) => {
+            const controller = resolveCityDeFactoState(city, nextGridMap);
+            return controller ? {...city, deFactoStateId: controller} : city;
+          })} : {}),
+          stateRelations: nextStateRelations,
+          forcedExitStates: nextForcedExits
         },
         scene.revision,
         (current) =>
