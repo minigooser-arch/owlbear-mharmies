@@ -1131,15 +1131,6 @@ export class CommandProcessor {
           );
         }
         state.scene.relations = relations;
-        state.scene.wars = state.scene.wars
-          .map((war) => ({ ...war, participantFactionIds: war.participantFactionIds.filter((id) => id !== command.sideId) }))
-          .filter((war) => war.participantFactionIds.length >= 2 || war.participantStateIds.length >= 2);
-        const gridOperations = Object.entries(state.scene.gridMap.cells).flatMap(([key, cell]) => {
-          if (!cell.factionTerritoryIds.includes(command.sideId)) return [];
-          const parsed = parseCellKey(key);
-          return [{ cell: parsed, patch: { factionTerritoryIds: cell.factionTerritoryIds.filter((id) => id !== command.sideId) } }];
-        });
-        state.scene.gridMap = applyCellPatchBatch(state.scene.gridMap, gridOperations);
         revalidateAllRoutes(state);
         return undefined;
       }
@@ -1392,28 +1383,14 @@ export class CommandProcessor {
         state.scene.gridMap = applyCellPatchBatch(state.scene.gridMap, command.cells.map((cell) => ({ cell, patch: { impassable: command.impassable } })));
         revalidateAllRoutes(state);
         return undefined;
-      case "UPDATE_FACTION_TERRITORY_CELLS": {
-        if (!state.scene.sides.some((side) => side.id === command.sideId)) return "SIDE_NOT_FOUND";
-        state.scene.gridMap = applyCellPatchBatch(state.scene.gridMap, command.cells.map((cell) => {
-          const current = readCell(state.scene.gridMap, cell).factionTerritoryIds;
-          const next = command.operation === "ADD"
-            ? [...new Set([...current, command.sideId])]
-            : current.filter((id) => id !== command.sideId);
-          return { cell, patch: { factionTerritoryIds: next } };
-        }));
-        revalidateAllRoutes(state);
-        return undefined;
-      }
       case "CLEAR_CELL_PROPERTIES": {
-        if (command.target === "SELECTED_FACTION" && (!command.sideId || !state.scene.sides.some((side) => side.id === command.sideId))) return "SIDE_NOT_FOUND";
         state.scene.gridMap = applyCellPatchBatch(state.scene.gridMap, command.cells.map((cell) => {
           const current = readCell(state.scene.gridMap, cell);
           if (command.target === "TERRAIN") return { cell, patch: { terrainId: null } };
           if (command.target === "IMPASSABLE") return { cell, patch: { impassable: false } };
-          if (command.target === "SELECTED_FACTION") return { cell, patch: { factionTerritoryIds: current.factionTerritoryIds.filter((id) => id !== command.sideId) } };
           if (command.target === "RECOGNIZED_STATE") return { cell, patch: { recognizedStateId: null } };
           if (command.target === "DEFACTO_STATE") return { cell, patch: { deFactoStateId: null } };
-          return { cell, patch: { terrainId: null, impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null } };
+          return { cell, patch: { terrainId: null, impassable: false, recognizedStateId: null, deFactoStateId: null } };
         }));
         revalidateAllRoutes(state);
         return undefined;
@@ -1586,32 +1563,6 @@ export class CommandProcessor {
         const requested = requestArmyDisband(army, state.scene.turn.turnNumber, command.senderPlayerId);
         if (!requested) return "DISBAND_ALREADY_REQUESTED";
         state.armies[command.armyId] = requested;
-        return undefined;
-      }
-      case "CREATE_WAR":
-        if (state.scene.wars.some((war) => war.id === command.war.id)) return "WAR_EXISTS";
-        if (command.war.participantFactionIds.some((id) => !state.scene.sides.some((side) => side.id === id))) return "SIDE_NOT_FOUND";
-        if (command.war.participantStateIds.some((id) => !state.scene.states.some((stateEntity) => stateEntity.id === id))) return "STATE_NOT_FOUND";
-        state.scene.wars.push(structuredClone(command.war));
-        revalidateAllRoutes(state);
-        return undefined;
-      case "UPDATE_WAR": {
-        const index = state.scene.wars.findIndex((war) => war.id === command.warId);
-        if (index < 0) return "WAR_NOT_FOUND";
-        const current = state.scene.wars[index];
-        if (!current) return "WAR_NOT_FOUND";
-        const next = { ...current, ...command.patch, id: current.id };
-        if (next.participantFactionIds.some((id) => !state.scene.sides.some((side) => side.id === id))) return "SIDE_NOT_FOUND";
-        if (next.participantStateIds.some((id) => !state.scene.states.some((stateEntity) => stateEntity.id === id))) return "STATE_NOT_FOUND";
-        state.scene.wars[index] = next;
-        revalidateAllRoutes(state);
-        return undefined;
-      }
-      case "END_WAR": {
-        const war = state.scene.wars.find((candidate) => candidate.id === command.warId);
-        if (!war) return "WAR_NOT_FOUND";
-        war.active = false;
-        revalidateAllRoutes(state);
         return undefined;
       }
       case "DEFER_TURN": {
