@@ -1385,7 +1385,6 @@ export class CommandProcessor {
         return undefined;
       case "CLEAR_CELL_PROPERTIES": {
         state.scene.gridMap = applyCellPatchBatch(state.scene.gridMap, command.cells.map((cell) => {
-          const current = readCell(state.scene.gridMap, cell);
           if (command.target === "TERRAIN") return { cell, patch: { terrainId: null } };
           if (command.target === "IMPASSABLE") return { cell, patch: { impassable: false } };
           if (command.target === "RECOGNIZED_STATE") return { cell, patch: { recognizedStateId: null } };
