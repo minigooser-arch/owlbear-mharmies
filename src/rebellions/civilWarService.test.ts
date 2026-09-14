@@ -120,11 +120,11 @@ describe("startCivilWar", () => {
 
     expect(result.scene.gridMap.cells["1,0"]).toMatchObject({
       recognizedStateId: "rebel-state",
-      deFactoStateId: "rebel-state"
+      deFactoStateId: "empire"
     });
     expect(result.scene.gridMap.cells["2,0"]).toMatchObject({
       recognizedStateId: "rebel-state",
-      deFactoStateId: "rebel-state"
+      deFactoStateId: "empire"
     });
     expect(result.scene.gridMap.cells["0,0"]).toMatchObject({
       recognizedStateId: "empire",
@@ -141,7 +141,7 @@ describe("startCivilWar", () => {
 
     expect(result.scene.strategicCities?.find((city) => city.id === "rebel-city")).toMatchObject({
       recognizedStateId: "rebel-state",
-      deFactoStateId: "rebel-state",
+      deFactoStateId: "empire",
       factionInfluenceId: "rebels",
       mayorId: "mayor-a",
       historicalBuildTypeCount: 3
@@ -168,17 +168,16 @@ describe("startCivilWar", () => {
     });
   });
 
-  it("does not transfer a city that only partly lies inside the source state's recognized territory", () => {
+  it("rejects a city that only partly lies inside the source state's recognized territory", () => {
     const current = scene();
     current.gridMap.cells["2,0"] = cell("foreign-state");
+    const before = structuredClone(current);
 
-    const result = startCivilWar(current, input);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-
-    expect(result.scene.gridMap.cells["1,0"]).toMatchObject({ recognizedStateId: "empire" });
-    expect(result.scene.gridMap.cells["2,0"]).toMatchObject({ recognizedStateId: "foreign-state" });
-    expect(result.scene.strategicCities?.find((city) => city.id === "rebel-city")?.recognizedStateId).toBe("empire");
+    expect(startCivilWar(current, input)).toEqual({
+      ok: false,
+      reason: "CITY_TERRITORY_INCONSISTENT"
+    });
+    expect(current).toEqual(before);
   });
 
   it("returns validation failures without mutating the input scene", () => {
@@ -193,7 +192,7 @@ describe("startCivilWar", () => {
 
     expect(startCivilWar(current, { ...input, rebelFactionId: "foreign" })).toEqual({
       ok: false,
-      reason: "REBEL_FACTION_OUTSIDE_SOURCE_STATE"
+      reason: "REBEL_FACTION_OUTSIDE_STATE"
     });
     expect(current).toEqual(before);
   });
@@ -202,7 +201,7 @@ describe("startCivilWar", () => {
     const result = startCivilWar(scene(), { ...input, rebelFactionId: "gov" });
     expect(result).toEqual({
       ok: false,
-      reason: "SOURCE_RULER_CANNOT_SPLIT"
+      reason: "RULING_FACTION_MOVE_FORBIDDEN"
     });
   });
 });
