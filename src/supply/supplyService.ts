@@ -16,10 +16,14 @@ export function findSupplyPath(
   stateId: string,
   maxVisitedCells = 100_000
 ): GridCellCoord[] | null {
-  const isControlled = (cell: GridCellCoord) => readCell(scene.gridMap, cell).deFactoStateId === stateId;
+  const effectiveController = (cell: GridCellCoord) => {
+    const state = readCell(scene.gridMap, cell);
+    return state.deFactoStateId ?? state.recognizedStateId;
+  };
+  const isControlled = (cell: GridCellCoord) => effectiveController(cell) === stateId;
   const isAnchor = (cell: GridCellCoord) => {
     const state = readCell(scene.gridMap, cell);
-    return state.deFactoStateId === stateId && state.recognizedStateId === stateId;
+    return effectiveController(cell) === stateId && state.recognizedStateId === stateId;
   };
   if (!isControlled(start)) return null;
   const queue: GridCellCoord[] = [{ ...start }];
