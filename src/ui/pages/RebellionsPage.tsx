@@ -19,6 +19,10 @@ export function RebellionsPage({
   const [sourceStateId, setSourceStateId] = useState(activeStates[0]?.id ?? "");
   const [capitalCityId, setCapitalCityId] = useState("");
   const [participantFactionIds, setParticipantFactionIds] = useState<Set<string>>(() => new Set());
+  const [civilSourceStateId, setCivilSourceStateId] = useState(activeStates[0]?.id ?? "");
+  const [civilRebelFactionId, setCivilRebelFactionId] = useState("");
+  const [civilStateName, setCivilStateName] = useState("");
+  const [civilStateColor, setCivilStateColor] = useState("#aa3344");
 
   const capitals = cities.filter((city) => city.isCapital && city.recognizedStateId === sourceStateId);
   const selectedCapitalCityId = capitals.some((city) => city.id === capitalCityId)
@@ -27,6 +31,19 @@ export function RebellionsPage({
   const participantCandidates = sides.filter((side) => side.stateId === sourceStateId);
   const selectedParticipants = participantCandidates.filter((side) => participantFactionIds.has(side.id));
   const canStart = Boolean(sourceStateId && selectedCapitalCityId && selectedParticipants.length > 0);
+
+  const civilSourceState = states.find((state) => state.id === civilSourceStateId);
+  const civilFactionCandidates = sides.filter(
+    (side) => side.stateId === civilSourceStateId && side.id !== civilSourceState?.rulingFactionId
+  );
+  const selectedCivilFactionId = civilFactionCandidates.some((side) => side.id === civilRebelFactionId)
+    ? civilRebelFactionId
+    : (civilFactionCandidates[0]?.id ?? "");
+  const canStartCivilWar = Boolean(
+    civilSourceStateId &&
+    selectedCivilFactionId &&
+    civilStateName.trim()
+  );
 
   return (
     <section aria-labelledby="rebellions-title">
@@ -107,6 +124,77 @@ export function RebellionsPage({
           }}
         >
           Запустить восстание
+        </button>
+      </div>
+
+      <div className="settings-card" aria-label="Гражданский раскол">
+        <h3>Оформить гражданский раскол</h3>
+        <p className="helper-text">
+          Новому государству переходят только целые города под влиянием выбранной фракции.
+          Фактический военный контроль клеток не переписывается.
+        </p>
+        <div className="form-grid">
+          <label>
+            Государство-источник
+            <select
+              aria-label="Государство-источник раскола"
+              value={civilSourceStateId}
+              onChange={(event) => {
+                setCivilSourceStateId(event.target.value);
+                setCivilRebelFactionId("");
+              }}
+            >
+              {activeStates.map((state) => <option key={state.id} value={state.id}>{state.name}</option>)}
+            </select>
+          </label>
+          <label>
+            Повстанческая фракция
+            <select
+              aria-label="Повстанческая фракция"
+              value={selectedCivilFactionId}
+              onChange={(event) => setCivilRebelFactionId(event.target.value)}
+            >
+              {civilFactionCandidates.map((side) => <option key={side.id} value={side.id}>{side.name}</option>)}
+            </select>
+          </label>
+          <label>
+            Название нового государства
+            <input
+              aria-label="Название нового государства после раскола"
+              value={civilStateName}
+              onChange={(event) => setCivilStateName(event.target.value)}
+            />
+          </label>
+          <label>
+            Цвет нового государства
+            <input
+              aria-label="Цвет нового государства после раскола"
+              type="color"
+              value={civilStateColor}
+              onChange={(event) => setCivilStateColor(event.target.value)}
+            />
+          </label>
+        </div>
+        {civilFactionCandidates.length === 0 && (
+          <small className="muted">Нет фракции, которую можно отделить от действующей правящей фракции.</small>
+        )}
+        <button
+          className="button danger subtle"
+          type="button"
+          disabled={!canStartCivilWar}
+          onClick={() => {
+            if (!canStartCivilWar) return;
+            onAction({
+              type: "START_CIVIL_WAR",
+              sourceStateId: civilSourceStateId,
+              rebelFactionId: selectedCivilFactionId,
+              newStateId: "state-" + crypto.randomUUID(),
+              newStateName: civilStateName.trim(),
+              newStateColor: civilStateColor
+            });
+          }}
+        >
+          Начать гражданскую войну
         </button>
       </div>
 
