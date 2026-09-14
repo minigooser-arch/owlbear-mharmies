@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE } from "../shared/constants";
-import type { ArmyCommand, CommandState, SceneState } from "../shared/types";
-import { CommandProcessor, type CommandContext } from "./commandProcessor";
+import type { ArmyCommand, SceneState } from "../shared/types";
+import { CommandProcessor, type CommandContext, type CommandState } from "./commandProcessor";
 
 function scene(): SceneState {
   return {
