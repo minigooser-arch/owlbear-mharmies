@@ -37,6 +37,18 @@ describe("supplyService", () => {
     ]);
   });
 
+  it("treats recognized home territory with no de-facto override as supplied", () => {
+    const current = scene({
+      "0,0": cell("red-state", null),
+      "1,0": cell("red-state", null),
+      "2,0": cell("blue-state", "red-state")
+    });
+    expect(findSupplyPath(current, { x: 2, y: 0 }, "red-state")).toEqual([
+      { x: 2, y: 0 }, { x: 1, y: 0 }
+    ]);
+    expect(isArmySupplied(current, army("red"), { x: 1, y: 0 })).toBe(true);
+  });
+
   it("does not bridge diagonals or passage territory", () => {
     const current = scene({
       "0,0": cell("red-state", "red-state"),
