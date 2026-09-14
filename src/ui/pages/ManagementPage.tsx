@@ -1,32 +1,36 @@
 import { useState } from "react";
-import type { SceneSettings, Side, SideRelation, StateEntity, StateRelations, WarState } from "../../shared/types";
+import type { SceneSettings, Side, SideRelation, StateEntity, StateRelations, StrategicCity, WarState } from "../../shared/types";
 import type { DiagnosticTestId } from "../../owlbear/diagnostics";
-import type { PartyPlayerView, UiCommand } from "../state/useExtensionState";
+import type { PartyPlayerView, RebellionStatusView, UiCommand } from "../state/useExtensionState";
 import { DiagnosticsPage } from "./DiagnosticsPage";
 import { RelationsPage } from "./RelationsPage";
+import { RebellionsPage } from "./RebellionsPage";
 import { SettingsPage } from "./SettingsPage";
 import { SidesPage } from "./SidesPage";
 import { StateDiplomacyPage } from "./StateDiplomacyPage";
 import { StatesPage } from "./StatesPage";
 import { WarsPage } from "./WarsPage";
 
-type ManagementSection = "SIDES" | "STATES" | "STATE_DIPLOMACY" | "RELATIONS" | "WARS" | "SETTINGS" | "DIAGNOSTICS";
+type ManagementSection = "SIDES" | "STATES" | "STATE_DIPLOMACY" | "RELATIONS" | "WARS" | "REBELLIONS" | "SETTINGS" | "DIAGNOSTICS";
 const LABELS: Record<ManagementSection, string> = {
   SIDES: "Фракции",
   STATES: "Государства",
   STATE_DIPLOMACY: "Межгосударственные отношения",
   RELATIONS: "Отношения фракций",
   WARS: "Войны",
+  REBELLIONS: "Восстания",
   SETTINGS: "Настройки",
   DIAGNOSTICS: "Диагностика"
 };
 
 export function ManagementPage({
-  playerId, sides, states, players, relations, stateRelations, wars, settings, leaderSideIds, onAction, runDiagnostic
+  playerId, sides, states, strategicCities, rebellionStatuses, players, relations, stateRelations, wars, settings, leaderSideIds, onAction, runDiagnostic
 }: {
   playerId: string;
   sides: readonly Side[];
   states: readonly StateEntity[];
+  strategicCities: readonly StrategicCity[];
+  rebellionStatuses: readonly RebellionStatusView[];
   players: readonly PartyPlayerView[];
   relations: Readonly<Record<string, Record<string, SideRelation>>>;
   stateRelations: StateRelations;
@@ -49,6 +53,7 @@ export function ManagementPage({
         {section === "STATE_DIPLOMACY" && <StateDiplomacyPage states={states} stateRelations={stateRelations} onAction={onAction} />}
         {section === "RELATIONS" && <RelationsPage sides={sides} relations={relations} onAction={onAction} />}
         {section === "WARS" && <WarsPage wars={wars} sides={sides} states={states} onAction={onAction} />}
+        {section === "REBELLIONS" && <RebellionsPage states={states} sides={sides} cities={strategicCities} statuses={rebellionStatuses} onAction={onAction} />}
         {section === "SETTINGS" && <SettingsPage settings={settings} onAction={onAction} />}
         {section === "DIAGNOSTICS" && <DiagnosticsPage run={runDiagnostic} />}
       </div>
