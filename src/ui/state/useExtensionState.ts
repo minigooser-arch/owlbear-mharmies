@@ -149,7 +149,9 @@ export type UiCommand =
   | { type: "OPEN_MAP_BRUSH"; settings: MapBrushUiSettings }
   | { type: "UPDATE_MAP_BRUSH_SETTINGS"; settings: MapBrushUiSettings }
   | { type: "OPEN_NAVAL_BATTLE_AREA"; requestId: string }
-  | { type: "START_NAVAL_BATTLE_FROM_REQUEST"; requestId: string; initiatingShipId: string; targetShipId: string; participantShipIds: string[]; areaCells: GridCellCoord[] };
+  | { type: "START_NAVAL_BATTLE_FROM_REQUEST"; requestId: string; initiatingShipId: string; targetShipId: string; participantShipIds: string[]; areaCells: GridCellCoord[] }
+  | { type: "PREVIEW_PEACE_TRANSFER"; recipientStateId: string; cells: GridCellCoord[] }
+  | { type: "CLEAR_PEACE_TRANSFER_PREVIEW" };
 
 export interface ExtensionServices {
   getSnapshot(): RawExtensionSnapshot;
