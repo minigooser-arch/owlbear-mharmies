@@ -8,8 +8,7 @@ import type {
   Side,
   StateEntity,
   TerrainType,
-  Vector2,
-  WarState
+  Vector2
 } from "../shared/types";
 import { COMMAND_PROTOCOL_VERSION } from "../shared/types";
 
@@ -165,17 +164,6 @@ function parseStateEntity(value: unknown): StateEntity | undefined {
     rulingFactionId,
     active: value.active
   };
-}
-
-function parseWar(value: unknown): WarState | undefined {
-  if (!isRecord(value) || !sideId(value.id) || !boundedString(value.name, 80) || typeof value.active !== "boolean") return undefined;
-  const participantFactionIds = parseStringArray(value.participantFactionIds);
-  const participantStateIds = value.participantStateIds === undefined
-    ? []
-    : parseStringArray(value.participantStateIds);
-  if (!participantFactionIds || !participantStateIds) return undefined;
-  if (participantFactionIds.length < 2 && participantStateIds.length < 2) return undefined;
-  return { id: value.id, name: value.name.trim(), participantFactionIds, participantStateIds, active: value.active };
 }
 
 function parseSide(value: unknown): Side | undefined {
@@ -482,17 +470,10 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
     ? { type: "REMOVE_BATTLE_PARTICIPANT", battleId: value.battleId, armyId: value.armyId } : undefined,
   SET_TERRAIN_CELLS: (value) => { const cells = parseCells(value.cells); return cells && (value.terrainId === null || sideId(value.terrainId)) ? { type: "SET_TERRAIN_CELLS", cells, terrainId: value.terrainId as string | null } : undefined; },
   SET_IMPASSABLE_CELLS: (value) => { const cells = parseCells(value.cells); return cells && typeof value.impassable === "boolean" ? { type: "SET_IMPASSABLE_CELLS", cells, impassable: value.impassable } : undefined; },
-  UPDATE_FACTION_TERRITORY_CELLS: (value) => {
-    const cells = parseCells(value.cells);
-    return cells && sideId(value.sideId) && (value.operation === "ADD" || value.operation === "REMOVE")
-      ? { type: "UPDATE_FACTION_TERRITORY_CELLS", cells, sideId: value.sideId, operation: value.operation } : undefined;
-  },
   CLEAR_CELL_PROPERTIES: (value) => {
     const cells = parseCells(value.cells);
-    const target = value.target === "TERRAIN" || value.target === "IMPASSABLE" || value.target === "SELECTED_FACTION" || value.target === "RECOGNIZED_STATE" || value.target === "DEFACTO_STATE" || value.target === "ALL" ? value.target : undefined;
-    if (!cells || !target) return undefined;
-    if (target === "SELECTED_FACTION") return sideId(value.sideId) ? { type: "CLEAR_CELL_PROPERTIES", cells, target, sideId: value.sideId } : undefined;
-    return { type: "CLEAR_CELL_PROPERTIES", cells, target };
+    const target = value.target === "TERRAIN" || value.target === "IMPASSABLE" || value.target === "RECOGNIZED_STATE" || value.target === "DEFACTO_STATE" || value.target === "ALL" ? value.target : undefined;
+    return cells && target ? { type: "CLEAR_CELL_PROPERTIES", cells, target } : undefined;
   },
   CREATE_TERRAIN_TYPE: (value) => { const terrain = parseTerrainType(value.terrain); return terrain ? { type: "CREATE_TERRAIN_TYPE", terrain } : undefined; },
   UPDATE_TERRAIN_TYPE: (value) => {
@@ -570,20 +551,6 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
   },
   HEAL_ARMY: (value) => boundedString(value.armyId) && nonNegativeInteger(value.amount) && value.amount > 0 ? { type: "HEAL_ARMY", armyId: value.armyId, amount: value.amount } : undefined,
   REQUEST_ARMY_DISBAND: (value) => { const armyId = armyIdOnly(value); return armyId ? { type: "REQUEST_ARMY_DISBAND", armyId } : undefined; },
-  CREATE_WAR: (value) => { const war = parseWar(value.war); return war ? { type: "CREATE_WAR", war } : undefined; },
-  UPDATE_WAR: (value) => {
-    if (!sideId(value.warId) || !isRecord(value.patch)) return undefined;
-    const patch: Partial<Omit<WarState, "id">> = {};
-    if ("name" in value.patch) { if (!boundedString(value.patch.name, 80)) return undefined; patch.name = value.patch.name.trim(); }
-    if ("active" in value.patch) { if (typeof value.patch.active !== "boolean") return undefined; patch.active = value.patch.active; }
-    if ("participantFactionIds" in value.patch) { const ids = parseStringArray(value.patch.participantFactionIds); if (!ids) return undefined; patch.participantFactionIds = ids; }
-    if ("participantStateIds" in value.patch) { const ids = parseStringArray(value.patch.participantStateIds); if (!ids) return undefined; patch.participantStateIds = ids; }
-    const nextFactionCount = patch.participantFactionIds?.length;
-    const nextStateCount = patch.participantStateIds?.length;
-    if (nextFactionCount !== undefined && nextStateCount !== undefined && nextFactionCount < 2 && nextStateCount < 2) return undefined;
-    return { type: "UPDATE_WAR", warId: value.warId, patch };
-  },
-  END_WAR: (value) => sideId(value.warId) ? { type: "END_WAR", warId: value.warId } : undefined,
   DEFER_TURN: (value) => {
     if (!boundedString(value.until, 64) || !Number.isFinite(Date.parse(value.until))) return undefined;
     return { type: "DEFER_TURN", until: new Date(value.until).toISOString() };
@@ -605,10 +572,6 @@ export function validateArmyCommand(value: unknown): CommandValidationResult {
   if (!isRecord(value)) return invalid();
   const requestId = boundedString(value.requestId, 128) ? value.requestId : undefined;
   if (value.protocolVersion !== COMMAND_PROTOCOL_VERSION) return invalid(requestId, "PROTOCOL_MISMATCH");
-  if (
-    value.type === "UPDATE_FACTION_TERRITORY_CELLS" ||
-    (value.type === "CLEAR_CELL_PROPERTIES" && value.target === "SELECTED_FACTION")
-  ) return invalid(requestId);
   if (!requestId || !boundedString(value.senderPlayerId) || !boundedString(value.senderConnectionId) || !nonNegativeInteger(value.expectedRevision) || !boundedString(value.type) || !Object.hasOwn(PAYLOAD_PARSERS, value.type)) {
     return invalid(requestId);
   }
