@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { Side, StateEntity, TerrainRegistryState, TerrainType } from "../../shared/types";
+import type { GridCellCoord, Side, StateEntity, TerrainRegistryState, TerrainType } from "../../shared/types";
 import type { MapBrushUiSettings, UiCommand } from "../state/useExtensionState";
 import { formatMovementUnits } from "../presentation/movement";
 
@@ -11,6 +11,20 @@ interface MapEditorPageProps {
 }
 
 const BRUSH_SIZES = [1, 3, 5] as const;
+
+function parseTransferCells(raw: string): GridCellCoord[] | null {
+  const parts = raw.split(/[;\n]+/).map((part) => part.trim()).filter(Boolean);
+  if (parts.length === 0) return [];
+  const cells = new Map<string, GridCellCoord>();
+  for (const part of parts) {
+    const match = /^(-?\d+)\s*,\s*(-?\d+)$/.exec(part);
+    if (!match) return null;
+    const x = Number(match[1]);
+    const y = Number(match[2]);
+    cells.set(`${x},${y}`, { x, y });
+  }
+  return [...cells.values()];
+}
 
 function TerrainEditor({ terrain, defaultTerrainId, onAction }: {
   terrain: TerrainType;
@@ -70,10 +84,19 @@ export function MapEditorPage({ terrain, sides, states, onAction }: MapEditorPag
   const [newColor, setNewColor] = useState("#42a5f5");
   const [newStateName, setNewStateName] = useState("");
   const [newStateColor, setNewStateColor] = useState("#607d8b");
+  const [transferRecipientId, setTransferRecipientId] = useState(states[0]?.id ?? "");
+  const [transferCellsText, setTransferCellsText] = useState("");
+  const [transferPreviewed, setTransferPreviewed] = useState(false);
 
   const parsedNewCost = Number(newCost.replace(",", "."));
   const newCostUnits = Math.round(parsedNewCost * 2);
   const canCreateTerrain = newName.trim().length > 0 && parsedNewCost >= 0.5 && Number.isInteger(parsedNewCost * 2);
+  const transferCells = parseTransferCells(transferCellsText);
+  const canPreviewTransfer = Boolean(transferRecipientId) && transferCells !== null && transferCells.length > 0;
+  const clearTransferPreview = () => {
+    if (transferPreviewed) onAction({ type: "CLEAR_PEACE_TRANSFER_PREVIEW" });
+    setTransferPreviewed(false);
+  };
   const needsState = mode === "RECOGNIZED_STATE" || mode === "DEFACTO_STATE";
   const canApply = !needsState || Boolean(stateId);
   const description = mode === "TERRAIN" ? `Следующий мазок назначит местность «${terrain.types[terrainId]?.name ?? terrainId}».`
@@ -116,6 +139,66 @@ export function MapEditorPage({ terrain, sides, states, onAction }: MapEditorPag
       </div>
       <div className="brush-size" aria-label="Размер кисти"><span>Размер</span>{BRUSH_SIZES.map((brushSize) => <button key={brushSize} type="button" className={size === brushSize ? "active" : ""} onClick={() => selectBrushSize(brushSize)}>{brushSize}×{brushSize}</button>)}</div>
       <p className="helper-text">{description}</p><button className="button primary wide" type="button" disabled={!canApply} onClick={applyBrush}>Начать рисовать</button>
+    </div>
+
+    <div className="settings-card map-editor-card" aria-label="Официальная передача территории">
+      <div className="section-heading secondary-heading">
+        <div><p className="eyebrow">Мирный договор</p><h2>Официальная передача территории</h2></div>
+      </div>
+      <p className="helper-text">Выберите государство-получатель и перечислите клетки в формате x,y через точку с запятой или с новой строки. Предпросмотр ничего не меняет в общей сцене.</p>
+      <div className="form-grid">
+        <label>Государство-получатель
+          <select
+            aria-label="Государство-получатель"
+            value={transferRecipientId}
+            onChange={(event) => {
+              clearTransferPreview();
+              setTransferRecipientId(event.target.value);
+            }}
+          >
+            {states.map((state) => <option key={state.id} value={state.id}>{state.name}</option>)}
+          </select>
+        </label>
+        <label>Клетки передачи
+          <textarea
+            aria-label="Клетки передачи"
+            placeholder={"12,5; 13,5\n14,5"}
+            value={transferCellsText}
+            onChange={(event) => {
+              clearTransferPreview();
+              setTransferCellsText(event.target.value);
+            }}
+          />
+        </label>
+      </div>
+      {transferCells === null && <p className="route-warning">Формат клетки: целые координаты x,y.</p>}
+      <div className="card-actions">
+        <button
+          className="button ghost"
+          type="button"
+          disabled={!canPreviewTransfer}
+          onClick={() => {
+            if (!transferCells || transferCells.length === 0) return;
+            onAction({ type: "PREVIEW_PEACE_TRANSFER", recipientStateId: transferRecipientId, cells: transferCells });
+            setTransferPreviewed(true);
+          }}
+        >
+          Предпросмотр передачи
+        </button>
+        <button
+          className="button primary"
+          type="button"
+          disabled={!transferPreviewed || !canPreviewTransfer}
+          onClick={() => {
+            if (!transferCells || transferCells.length === 0) return;
+            onAction({ type: "APPLY_PEACE_TRANSFER", recipientStateId: transferRecipientId, cells: transferCells });
+            setTransferPreviewed(false);
+          }}
+        >
+          Подтвердить официальную передачу
+        </button>
+        {transferPreviewed && <button className="button ghost" type="button" onClick={clearTransferPreview}>Снять предпросмотр</button>}
+      </div>
     </div>
 
     <details className="reference-management">
