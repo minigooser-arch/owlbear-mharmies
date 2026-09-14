@@ -13,7 +13,7 @@ function scene(): SceneState {
       "0,0":{terrainId:null,impassable:false,factionTerritoryIds:["red"],recognizedStateId:"red-state",deFactoStateId:"red-state"},
       "1,0":{terrainId:null,impassable:false,factionTerritoryIds:["red"],recognizedStateId:"red-state",deFactoStateId:"red-state"}
     }},
-    wars:[], turn:structuredClone(DEFAULT_TURN_STATE)
+    wars:[], turn:{...structuredClone(DEFAULT_TURN_STATE),phase:"POST_MOVEMENT"}
   };
 }
 function army(remaining: number, executeOnTurn = 0): ArmyState {
@@ -81,13 +81,21 @@ it("refuses any global turn completion while a naval battle is active", () => {
     completedAt: new Date("2026-09-11T12:00:00.000Z"),
     boundaryId: "STANDARD:2026-09-11T15:00:00+03:00",
     armyCells: {}
-  })).toEqual({ changed: false, reason: "NAVAL_BATTLE_ACTIVE" });
+  })).toEqual({
+    changed: false,
+    reason: "NAVAL_BATTLE_ACTIVE",
+    blockers: ["NAVAL_BATTLE_ACTIVE"]
+  });
 
   expect(completeTurn(current, {}, {
     source: "MANUAL",
     completedAt: new Date("2026-09-11T12:00:00.000Z"),
     armyCells: {}
-  })).toEqual({ changed: false, reason: "NAVAL_BATTLE_ACTIVE" });
+  })).toEqual({
+    changed: false,
+    reason: "NAVAL_BATTLE_ACTIVE",
+    blockers: ["NAVAL_BATTLE_ACTIVE"]
+  });
 });
 
 it("disbands pending armies before the new turn", () => {
@@ -209,4 +217,31 @@ it("automatically continues withdrawal over multiple turns using the available b
   expect(second.changed).toBe(true); if (!second.changed) return;
   expect(second.armies.a?.plannedRoute.cells).toEqual([{x:6,y:0},{x:7,y:0}]);
   expect(second.scene.stateRelations ?? {}).toEqual({});
+});
+
+
+it("exposes land battle and movement blockers before running a checkpoint", () => {
+  const moving = scene();
+  moving.turn.phase = "MOVEMENT";
+  expect(completeTurn(moving, {}, {
+    source: "MANUAL",
+    completedAt: new Date("2026-09-14T10:00:00Z"),
+    armyCells: {}
+  })).toEqual({
+    changed: false,
+    reason: "MOVEMENT_RESOLUTION_PENDING",
+    blockers: ["MOVEMENT_RESOLUTION_PENDING"]
+  });
+
+  const battle = scene();
+  battle.battleGroups = [{ battleId: "land", name: "Land", participantIds: [], revision: 1 }];
+  expect(completeTurn(battle, {}, {
+    source: "MANUAL",
+    completedAt: new Date("2026-09-14T10:00:00Z"),
+    armyCells: {}
+  })).toEqual({
+    changed: false,
+    reason: "LAND_BATTLE_ACTIVE",
+    blockers: ["LAND_BATTLE_ACTIVE"]
+  });
 });
