@@ -5,10 +5,8 @@ import {
   DEFAULT_TURN_STATE,
   METADATA_KEYS,
   MAP_BRUSH_ERASER_TARGET_KEY,
-  MAP_BRUSH_FACTION_OPERATION_KEY,
   MAP_BRUSH_IMPASSABLE_VALUE_KEY,
   MAP_BRUSH_MODE_KEY,
-  MAP_BRUSH_SIDE_ID_KEY,
   MAP_BRUSH_SIZE_KEY,
   MAP_BRUSH_STATE_ID_KEY,
   MAP_BRUSH_TERRAIN_ID_KEY,
@@ -654,24 +652,22 @@ describe("extension command feedback", () => {
     );
   });
 
-  it("configures and activates the GM map brush without broadcasting a command", async () => {
+  it("configures and activates the GM state map brush without broadcasting a command", async () => {
     const running = await startServices();
 
     await running.send({
       type: "OPEN_MAP_BRUSH",
       settings: {
-        mode: "FACTION_TERRITORY", size: 3, terrainId: "plain", sideId: "red",
-        factionOperation: "ADD", impassable: true, eraserTarget: "TERRAIN"
+        mode: "RECOGNIZED_STATE", size: 3, terrainId: "plain", stateId: "ru",
+        impassable: true, eraserTarget: "TERRAIN"
       }
     });
 
     expect(serviceHarness.sdk.tool.setMetadata).toHaveBeenCalledWith(MAP_BRUSH_TOOL_ID, {
-      [MAP_BRUSH_MODE_KEY]: "FACTION_TERRITORY",
+      [MAP_BRUSH_MODE_KEY]: "RECOGNIZED_STATE",
       [MAP_BRUSH_SIZE_KEY]: 3,
       [MAP_BRUSH_TERRAIN_ID_KEY]: "plain",
-      [MAP_BRUSH_SIDE_ID_KEY]: "red",
-      [MAP_BRUSH_STATE_ID_KEY]: null,
-      [MAP_BRUSH_FACTION_OPERATION_KEY]: "ADD",
+      [MAP_BRUSH_STATE_ID_KEY]: "ru",
       [MAP_BRUSH_IMPASSABLE_VALUE_KEY]: true,
       [MAP_BRUSH_ERASER_TARGET_KEY]: "TERRAIN"
     });
@@ -679,7 +675,6 @@ describe("extension command feedback", () => {
     expect(serviceHarness.sdk.tool.activateMode).toHaveBeenCalledWith(MAP_BRUSH_TOOL_ID, MAP_BRUSH_TOOL_MODE_ID);
     expect(serviceHarness.adapter.send).not.toHaveBeenCalled();
   });
-
 
   it("updates map brush metadata without activating the tool", async () => {
     const running = await startServices();
@@ -691,7 +686,7 @@ describe("extension command feedback", () => {
       type: "UPDATE_MAP_BRUSH_SETTINGS",
       settings: {
         mode: "TERRAIN", size: 5, terrainId: "sea",
-        factionOperation: "ADD", impassable: true, eraserTarget: "TERRAIN"
+        impassable: true, eraserTarget: "TERRAIN"
       }
     });
 
