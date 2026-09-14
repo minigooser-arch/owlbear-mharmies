@@ -1,4 +1,5 @@
 import { resolveCoordinatorConnectionId } from "../background/coordinator";
+import { StrategicGridAdapter } from "../grid/strategicGrid";
 import {
   CommandGateway,
   CommandTimeoutError,
@@ -49,6 +50,7 @@ import {
   type SceneState
 } from "../shared/types";
 import { migrateSceneState } from "../storage/migrations";
+import { getRebellionCapitalController, getRebellionFactionStrength } from "../rebellions/rebellionService";
 import { territorialCityContributions } from "../wars/territorialScore";
 import { isFactionAtWar } from "../wars/warRules";
 import { MetadataRepository, type ArmyRecord, type ShipRecord } from "../storage/metadataRepository";
@@ -59,6 +61,7 @@ import type {
   NavalRequestTargetView,
   PartyPlayerView,
   RawExtensionSnapshot,
+  RebellionStatusView,
   ShipView,
   TransportEmbarkRequestView,
   TransportEmbarkTargetView,
@@ -83,6 +86,7 @@ export interface SnapshotInput {
   armies: readonly ArmyRecord[];
   ships?: readonly ShipRecord[];
   mapVisibleSourceIds: ReadonlySet<string>;
+  gridDpi?: number;
 }
 
 export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapshot {
@@ -127,6 +131,42 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
     }
   }
   const sideNames = new Map(input.scene.sides.map((side) => [side.id, side.name]));
+  const rebellionRuntime = {
+    armies: Object.fromEntries(input.armies.map(({ item, state }) => [item.id, state])),
+    armyCells: input.gridDpi
+      ? (() => {
+          const grid = new StrategicGridAdapter({ dpi: input.gridDpi, offset: { x: 0, y: 0 } });
+          return Object.fromEntries(input.armies.map(({ item }) => [item.id, grid.sceneToCell(item.position)]));
+        })()
+      : {}
+  };
+  const stateNames = new Map(input.scene.states.map((state) => [state.id, state.name]));
+  const cityNames = new Map((input.scene.strategicCities ?? []).map((city) => [city.id, city.name]));
+  const rebellionStatuses: RebellionStatusView[] = input.role === "GM"
+    ? (input.scene.rebellions ?? []).map((rebellion) => {
+        const controllerFactionId = getRebellionCapitalController(input.scene, rebellion.id, rebellionRuntime);
+        return {
+          id: rebellion.id,
+          sourceStateId: rebellion.sourceStateId,
+          sourceStateName: stateNames.get(rebellion.sourceStateId) ?? rebellion.sourceStateId,
+          startedOnTurn: rebellion.startedOnTurn,
+          capitalCityId: rebellion.capitalCityId,
+          capitalCityName: cityNames.get(rebellion.capitalCityId) ?? rebellion.capitalCityId,
+          territoryCellCount: rebellion.recognizedTerritorySnapshot.length,
+          active: rebellion.active,
+          capitalControllerFactionId: controllerFactionId,
+          capitalControllerFactionName: controllerFactionId ? sideNames.get(controllerFactionId) ?? controllerFactionId : null,
+          participants: rebellion.participantFactionIds.map((factionId) => {
+            const strength = getRebellionFactionStrength(input.scene, rebellion.id, factionId, rebellionRuntime);
+            return {
+              factionId,
+              factionName: sideNames.get(factionId) ?? factionId,
+              ...strength
+            };
+          })
+        };
+      })
+    : [];
   const navalRequestTargets: NavalRequestTargetView[] = input.role === "PLAYER" && leaderSideIds.size > 0
     ? shipRecords
         .filter(({ item, state }) =>
@@ -396,6 +436,7 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
     transportEmbarkTargets,
     pendingTransportEmbarkRequests,
     territorialScores,
+    rebellionStatuses,
     ...(activeNavalBattle ? { activeNavalBattle } : {}),
     sides: input.scene.sides,
     states: input.scene.states,
@@ -556,10 +597,11 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
         players
       };
     }
-    const [armies, ships, localItems] = await Promise.all([
+    const [armies, ships, localItems, gridDpi] = await Promise.all([
       repository.readArmies(),
       repository.readShips(),
-      adapter.getLocalItems()
+      adapter.getLocalItems(),
+      adapter.getGridDpi().catch(() => undefined)
     ]);
     observedLocalCloneSourceIds = localCloneSourceIds(localItems);
     const nextSnapshot = buildRoleSafeSnapshot({
@@ -569,7 +611,8 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
       players,
       armies,
       ships,
-      mapVisibleSourceIds: observedLocalCloneSourceIds
+      mapVisibleSourceIds: observedLocalCloneSourceIds,
+      ...(gridDpi !== undefined ? { gridDpi } : {})
     });
     const currentDraft = snapshot.navalBattleAreaDraft;
     const keepDraft = role === "GM" && currentDraft !== undefined &&
