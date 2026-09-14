@@ -6,6 +6,7 @@ import {
 } from "../commands/commandGateway";
 import { SHIP_CLASSES } from "../naval/ships/shipClasses";
 import { buildRequestBackedNavalBattleStart, parseNavalBattleAreaDraft } from "./navalBattleAreaBridge";
+import { PeaceTransferOverlayService } from "./peaceTransferOverlayService";
 import {
   DEFAULT_SETTINGS,
   DEFAULT_TERRAIN,
@@ -455,6 +456,7 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
   ]);
   const adapter = createOwlbearAdapter();
   const repository = new MetadataRepository(adapter);
+  const peaceTransferOverlay = new PeaceTransferOverlayService(adapter);
   const diagnosticsPort: DiagnosticsPort = {
     getSelectedSource: async () => {
       const selected = await OBR.player.getSelection();
@@ -610,6 +612,24 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
 
   const send = async (command: UiCommand): Promise<unknown> => {
     try {
+      if (command.type === "PREVIEW_PEACE_TRANSFER") {
+        if (snapshot.role !== "GM") {
+          await notifyRussian(adapter, "GM_ONLY");
+          return undefined;
+        }
+        const recipient = snapshot.states.find((state) => state.id === command.recipientStateId);
+        if (!recipient) {
+          await notifyRussian(adapter, "STATE_NOT_FOUND");
+          return undefined;
+        }
+        const dpi = await adapter.getGridDpi();
+        await peaceTransferOverlay.reconcile(command.cells, recipient.color ?? "#607d8b", dpi);
+        return undefined;
+      }
+      if (command.type === "CLEAR_PEACE_TRANSFER_PREVIEW") {
+        await peaceTransferOverlay.clear();
+        return undefined;
+      }
       if (command.type === "OPEN_NAVAL_BATTLE_AREA") {
         if (snapshot.role !== "GM") {
           await notifyRussian(adapter, "GM_ONLY");
@@ -765,6 +785,9 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
         if (command.type === "START_NAVAL_BATTLE_FROM_REQUEST" && navalBattleAreaReturnToolId) {
           await OBR.tool.activateTool(navalBattleAreaReturnToolId);
           navalBattleAreaReturnToolId = undefined;
+        }
+        if (command.type === "APPLY_PEACE_TRANSFER") {
+          await peaceTransferOverlay.clear();
         }
         refreshCoordinator.request();
         await refreshCoordinator.whenIdle();
