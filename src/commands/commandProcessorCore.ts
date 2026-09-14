@@ -48,6 +48,7 @@ import { commitShoreBombardment, type ShoreBombardmentSectorResolver } from "../
 import { applyShipRevealUntilNextTurn } from "../naval/detection/navalVisibility";
 import { createState, deleteState, setSideState, updateState } from "../states/stateService";
 import { removeStateRelations, setMilitaryAccess, setPairWar } from "../states/stateRelations";
+import { applyPeaceTransfer, validatePeaceTransfer } from "../territory/peaceTransfer";
 
 export interface CommandState {
   scene: SceneState;
@@ -1510,6 +1511,14 @@ export class CommandProcessor {
         revalidateAllRoutes(state);
         reconcileForcedExits(state, this.cellForPosition, "BORDER_CHANGED");
         return undefined;
+      case "APPLY_PEACE_TRANSFER": {
+        const transferValidation = validatePeaceTransfer(state.scene, command.recipientStateId, command.cells);
+        if (!transferValidation.ok) return transferValidation.reason;
+        state.scene = applyPeaceTransfer(state.scene, command.recipientStateId, command.cells);
+        revalidateAllRoutes(state);
+        reconcileForcedExits(state, this.cellForPosition, "BORDER_CHANGED");
+        return undefined;
+      }
       case "SET_DEFACTO_STATE_CELLS":
         if (command.stateId !== null && !state.scene.states.some((candidate) => candidate.id === command.stateId)) return "STATE_NOT_FOUND";
         state.scene.gridMap = applyCellPatchBatch(state.scene.gridMap, command.cells.map((cell) => ({ cell, patch: { deFactoStateId: command.stateId } })));
