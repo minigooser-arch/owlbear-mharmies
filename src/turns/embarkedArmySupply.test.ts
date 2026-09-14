@@ -39,7 +39,7 @@ function sceneWithTransport(linkArmy = true): SceneState {
       }
     },
     wars: [],
-    turn: { ...structuredClone(DEFAULT_TURN_STATE), phase: "MOVEMENT" },
+    turn: { ...structuredClone(DEFAULT_TURN_STATE), phase: "POST_MOVEMENT" },
     ships: { transport },
     navalBattleRequests: [],
     activeNavalBattle: null,
