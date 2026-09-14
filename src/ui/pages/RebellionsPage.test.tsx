@@ -69,7 +69,7 @@ it("shows current capital control and participant force accounting without a win
   expect(screen.getByText(/Контроль столицы:/)).toHaveTextContent("Повстанцы");
   expect(screen.getByLabelText("Силы восстания reb-1")).toHaveTextContent("Армий в снимке: 2");
   expect(screen.getByLabelText("Силы восстания reb-1")).toHaveTextContent("♥ 45 / 50");
-  expect(screen.queryByText(/победител/i)).not.toBeInTheDocument();
+  expect(screen.queryByText(/победа:|победил/i)).not.toBeInTheDocument();
 });
 
 it("closes an active rebellion", () => {
