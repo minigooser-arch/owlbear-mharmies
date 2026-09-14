@@ -73,3 +73,30 @@ it("creates a new state inactive before a faction is assigned", () => {
     state: expect.objectContaining({ name: "Франция", rulingFactionId: null, active: false })
   });
 });
+
+
+it("previews and explicitly confirms an official peace transfer", () => {
+  const onAction = vi.fn();
+  render(<MapEditorPage terrain={DEFAULT_TERRAIN} sides={sides} states={states} onAction={onAction} />);
+
+  fireEvent.change(screen.getByLabelText("Клетки передачи"), { target: { value: "1,2; 2,2" } });
+  fireEvent.click(screen.getByRole("button", { name: "Предпросмотр передачи" }));
+  expect(onAction).toHaveBeenLastCalledWith({
+    type: "PREVIEW_PEACE_TRANSFER",
+    recipientStateId: "russia",
+    cells: [{ x: 1, y: 2 }, { x: 2, y: 2 }]
+  });
+
+  fireEvent.click(screen.getByRole("button", { name: "Подтвердить официальную передачу" }));
+  expect(onAction).toHaveBeenLastCalledWith({
+    type: "APPLY_PEACE_TRANSFER",
+    recipientStateId: "russia",
+    cells: [{ x: 1, y: 2 }, { x: 2, y: 2 }]
+  });
+});
+
+it("does not allow peace transfer confirmation before a preview", () => {
+  render(<MapEditorPage terrain={DEFAULT_TERRAIN} sides={sides} states={states} onAction={vi.fn()} />);
+  fireEvent.change(screen.getByLabelText("Клетки передачи"), { target: { value: "1,2" } });
+  expect(screen.getByRole("button", { name: "Подтвердить официальную передачу" })).toBeDisabled();
+});
