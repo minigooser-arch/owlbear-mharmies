@@ -3,6 +3,7 @@ import { destroyArmy } from "../armies/armyLifecycle";
 import { healArmy } from "../health/armyHealth";
 import { requestArmyDisband } from "../disband/disbandService";
 import { canRenumberTurn, cancelTurnDeferral, completeTurn, deferTurn, pauseAutoTurns, renumberSceneTurn, resumeAutoTurns } from "../turns/turnService";
+import { preCheckpointTurnBlockers } from "../turns/turnCompletionGuard";
 import { parseCellKey } from "../grid/strategicGrid";
 import { applyCellPatchBatch, readCell } from "../terrain/gridMap";
 import { validatePlannedRoute } from "../movement/movementRules";
@@ -1641,8 +1642,8 @@ export class CommandProcessor {
         return undefined;
       }
       case "COMPLETE_TURN_NOW": {
-        if (state.scene.activeNavalBattle?.status === "ACTIVE") return "NAVAL_BATTLE_ACTIVE";
-        if (state.scene.turn.phase !== "POST_MOVEMENT") return "NOT_POST_MOVEMENT_PHASE";
+        const blockers = preCheckpointTurnBlockers(state.scene);
+        if (blockers.length > 0) return `TURN_BLOCKED:${blockers.join(",")}`;
         const armyCells = Object.fromEntries(Object.entries(state.armies).flatMap(([armyId]) => {
           const position = state.positions?.[armyId];
           if (!position || !this.cellForPosition) return [];
@@ -1659,7 +1660,7 @@ export class CommandProcessor {
           ...(this.positionForCell ? {positionForCell: this.positionForCell} : {}),
           armyCells
         });
-        if (!result.changed) return result.reason;
+        if (!result.changed) return "blockers" in result ? `TURN_BLOCKED:${result.blockers.join(",")}` : result.reason;
         state.scene = result.scene;
         state.armies = result.armies;
         return undefined;
