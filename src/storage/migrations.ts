@@ -358,7 +358,7 @@ export function migrateSceneState(raw: unknown): ValidationResult<SceneState> {
       ...migrated,
       version: 6,
       terrain: migrateLegacyTerrainToNavalSafe(migrated.terrain),
-      turn: { ...turn, phase: "MOVEMENT" },
+      turn: { ...turn, phase: turn.phase === "POST_MOVEMENT" ? "POST_MOVEMENT" : "MOVEMENT" },
       ships: {},
       navalBattleRequests: [],
       activeNavalBattle: null,
