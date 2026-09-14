@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { DEFAULT_TERRAIN } from "../../shared/constants";
 import type { Side, StateEntity } from "../../shared/types";
@@ -52,28 +52,19 @@ it("offers a built-in sea terrain that can be painted before ship registration",
   });
 });
 
-it("offers recognized and de-facto state map layers", () => {
+it("offers recognized and de-facto state map layers without faction-territory painting", () => {
   render(<MapEditorPage terrain={DEFAULT_TERRAIN} sides={sides} states={states} onAction={vi.fn()} />);
   const select = screen.getByLabelText("Режим кисти");
   expect(select).toContainHTML("Признанная территория государства");
   expect(select).toContainHTML("Де-факто контроль государства");
-  expect(screen.getByText("Государства")).toBeInTheDocument();
+  expect(select).not.toContainHTML("Территория фракции");
 });
 
-it("creates a new state inactive before a faction is assigned", () => {
-  const onAction = vi.fn();
-  render(<MapEditorPage terrain={DEFAULT_TERRAIN} sides={sides} states={states} onAction={onAction} />);
-  const input = screen.getByLabelText("Название нового государства");
-  fireEvent.change(input, { target: { value: "Франция" } });
-  const form = input.closest(".terrain-create");
-  expect(form).not.toBeNull();
-  fireEvent.click(within(form as HTMLElement).getByRole("button", { name: "Добавить" }));
-  expect(onAction).toHaveBeenCalledWith({
-    type: "CREATE_STATE",
-    state: expect.objectContaining({ name: "Франция", rulingFactionId: null, active: false })
-  });
+it("keeps state CRUD out of the map editor", () => {
+  render(<MapEditorPage terrain={DEFAULT_TERRAIN} sides={sides} states={states} onAction={vi.fn()} />);
+  expect(screen.queryByLabelText("Название нового государства")).not.toBeInTheDocument();
+  expect(screen.queryByText("Государства")).not.toBeInTheDocument();
 });
-
 
 it("previews and explicitly confirms an official peace transfer", () => {
   const onAction = vi.fn();
