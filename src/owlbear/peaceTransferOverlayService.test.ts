@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { METADATA_KEYS } from "../shared/constants";
 import { buildPeaceTransferOverlays, peaceTransferOverlayKey } from "./peaceTransferOverlayService";
 
 describe("peace transfer overlay", () => {
@@ -18,7 +19,7 @@ describe("peace transfer overlay", () => {
       id: "preview",
       type: "CURVE",
       position: { x: 0, y: 0 },
-      metadata: { "letopis-armies/peace-transfer-overlay": { cellKey: "1,2" } }
+      metadata: { [METADATA_KEYS.peaceTransferOverlay]: { cellKey: "1,2" } }
     })).toBe("1,2");
   });
 });
