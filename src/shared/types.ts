@@ -320,7 +320,6 @@ export type MovementDenialReason =
   | "NOT_ORTHOGONAL"
   | "OUTSIDE_MAP"
   | "IMPASSABLE"
-  | "OUTSIDE_FACTION_TERRITORY"
   | "FOREIGN_STATE_CLOSED"
   | "STATELESS_FACTION"
   | "INVALID_POLITICAL_CONFIG"
@@ -434,7 +433,7 @@ export interface CommandEnvelope {
   expectedRevision: number;
 }
 
-export type CellPropertyTarget = "TERRAIN" | "IMPASSABLE" | "SELECTED_FACTION" | "RECOGNIZED_STATE" | "DEFACTO_STATE" | "ALL";
+export type CellPropertyTarget = "TERRAIN" | "IMPASSABLE" | "RECOGNIZED_STATE" | "DEFACTO_STATE" | "ALL";
 
 export type ArmyCommandPayload =
   (
@@ -510,12 +509,6 @@ export type ArmyCommandPayload =
     | { type: "SET_TERRAIN_CELLS"; cells: GridCellCoord[]; terrainId: string | null }
     | { type: "SET_IMPASSABLE_CELLS"; cells: GridCellCoord[]; impassable: boolean }
     | {
-        type: "UPDATE_FACTION_TERRITORY_CELLS";
-        cells: GridCellCoord[];
-        sideId: string;
-        operation: "ADD" | "REMOVE";
-      }
-    | {
         type: "CLEAR_CELL_PROPERTIES";
         cells: GridCellCoord[];
         target: CellPropertyTarget;
@@ -546,9 +539,6 @@ export type ArmyCommandPayload =
     | { type: "SET_ARMY_HP"; armyId: string; hp: number; maxHp?: number }
     | { type: "HEAL_ARMY"; armyId: string; amount: number }
     | { type: "REQUEST_ARMY_DISBAND"; armyId: string }
-    | { type: "CREATE_WAR"; war: WarState }
-    | { type: "UPDATE_WAR"; warId: string; patch: Partial<Omit<WarState, "id">> }
-    | { type: "END_WAR"; warId: string }
     | { type: "DEFER_TURN"; until: string }
     | { type: "CANCEL_TURN_DEFERRAL" }
     | { type: "PAUSE_AUTO_TURNS" }
