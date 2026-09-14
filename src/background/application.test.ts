@@ -404,6 +404,13 @@ describe("ProductionEngine command boundary", () => {
       id: "army", type: "IMAGE", position: { x: 0, y: 0 },
       metadata: { [METADATA_KEYS.army]: scheduledArmy }
     }]);
+    fixture.scene.version = 6;
+    fixture.scene.turn.phase = "POST_MOVEMENT";
+    fixture.scene.ships = {};
+    fixture.scene.navalBattleRequests = [];
+    fixture.scene.activeNavalBattle = null;
+    fixture.scene.navalBattleHistory = [];
+    fixture.scene.navalRevealUntilTurn = {};
     const engine = new ProductionEngine(
       fixture.port,
       () => new Date("2026-09-02T12:00:01.000Z")

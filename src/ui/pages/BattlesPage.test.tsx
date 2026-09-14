@@ -81,3 +81,27 @@ it("shows participant armies and HP to a player", () => {
   expect(screen.getByText("2-я армия")).toBeInTheDocument();
   expect(screen.getByText("♥ 31 / 50")).toBeInTheDocument();
 });
+
+
+it("shows accumulated territorial score and current city income without purchase controls", () => {
+  render(
+    <BattlesPage
+      battles={[]}
+      territorialScores={[{
+        holderStateId: "germany",
+        holderStateName: "Германия",
+        opponentStateId: "france",
+        opponentStateName: "Франция",
+        points: 12,
+        contributingCities: [{ id: "paris", name: "Париж", income: 3 }]
+      }]}
+      isGM
+      onAction={vi.fn()}
+    />
+  );
+
+  expect(screen.getByLabelText("Территориальные очки войны")).toHaveTextContent("Германия → Франция");
+  expect(screen.getByLabelText("Территориальные очки войны")).toHaveTextContent("12 очк.");
+  expect(screen.getByText("Париж: +3/ход")).toBeInTheDocument();
+  expect(screen.queryByText(/купить/i)).not.toBeInTheDocument();
+});

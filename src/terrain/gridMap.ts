@@ -30,6 +30,13 @@ function isDefaultCell(cell: CellState): boolean {
   return cell.terrainId === null && !cell.impassable && cell.factionTerritoryIds.length === 0 && cell.recognizedStateId === null && cell.deFactoStateId === null;
 }
 
+function touchesCurrentLayer(patch: CellPatch): boolean {
+  return patch.terrainId !== undefined ||
+    patch.impassable !== undefined ||
+    patch.recognizedStateId !== undefined ||
+    patch.deFactoStateId !== undefined;
+}
+
 export function readCell(gridMap: GridMapState, cell: GridCellCoord): CellState {
   const stored = gridMap.cells[cellKey(cell)];
   return stored
@@ -57,10 +64,13 @@ export function applyCellPatchBatch(
   let changed = false;
   for (const [key, patch] of byKey) {
     const existing = cells[key] ?? DEFAULT_CELL_STATE;
+    const currentLayerEdit = touchesCurrentLayer(patch);
     const next: CellState = {
       terrainId: patch.terrainId !== undefined ? patch.terrainId : existing.terrainId,
       impassable: patch.impassable !== undefined ? patch.impassable : existing.impassable,
-      factionTerritoryIds: patch.factionTerritoryIds !== undefined
+      // factionTerritoryIds is a migration-only legacy field. Current terrain/state
+      // edits must never alter it, even if an old ALL patch still carries [].
+      factionTerritoryIds: !currentLayerEdit && patch.factionTerritoryIds !== undefined
         ? normalizeIds(patch.factionTerritoryIds)
         : [...existing.factionTerritoryIds],
       recognizedStateId: patch.recognizedStateId !== undefined ? patch.recognizedStateId : existing.recognizedStateId,

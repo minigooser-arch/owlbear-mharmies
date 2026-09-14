@@ -231,11 +231,9 @@ export async function registerRouteTool(
             ? "Можно двигаться только по горизонтали или вертикали"
             : result.reason === "IMPASSABLE"
               ? "Эта клетка непроходима"
-              : result.reason === "OUTSIDE_FACTION_TERRITORY"
-                ? "В мирное время эта армия не может покидать территорию своей фракции"
-                : result.reason === "INSUFFICIENT_MOVEMENT_POINTS"
-                  ? "Не хватает очков перемещения"
-                  : "Эту клетку нельзя добавить в маршрут";
+              : result.reason === "INSUFFICIENT_MOVEMENT_POINTS"
+                ? "Не хватает очков перемещения"
+                : "Эту клетку нельзя добавить в маршрут";
         await safeNotify(message, "WARNING");
         return;
       }

@@ -1,3 +1,4 @@
+import { forcedExitRoutes } from "../movement/forcedExitService";
 import {
   firstBarrierIntersection,
   segmentsFromPolyline,
@@ -154,6 +155,9 @@ export class RouteToolService implements RouteToolIntegrationPort {
     ]);
     const adapter = new StrategicGridAdapter({ dpi: gridDpi, offset: { x: 0, y: 0 } });
     return {
+      ...(authorized.scene.forcedExitStates?.some((entry) => entry.armyId === armyId)
+        ? {forcedExitRoutes: forcedExitRoutes(authorized.scene, authorized.army.state, adapter.sceneToCell(start))}
+        : {}),
       armyId,
       start: { ...start },
       startCell: adapter.sceneToCell(start),
@@ -165,6 +169,9 @@ export class RouteToolService implements RouteToolIntegrationPort {
       terrain: structuredClone(authorized.scene.terrain),
       gridMap: structuredClone(authorized.scene.gridMap),
       wars: structuredClone(authorized.scene.wars),
+      sides: structuredClone(authorized.scene.sides),
+      states: structuredClone(authorized.scene.states),
+      stateRelations: structuredClone(authorized.scene.stateRelations ?? {}),
       barriers: authorized.army.state.ignoresMovementBarriers
         ? []
         : authorized.barriers.map((segment) => structuredClone(segment))

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createRegisteredShip } from "../naval/ships/shipLifecycle";
 import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE } from "../shared/constants";
-import type { SceneState, TerrainType } from "../shared/types";
+import { COMMAND_PROTOCOL_VERSION, type SceneState, type TerrainType } from "../shared/types";
 import { applyShipStrategicRouteCommand } from "./shipStrategicRouteCommand";
 import { validateArmyCommand } from "./commandValidation";
 import type { CommandState } from "./commandProcessor";
@@ -66,7 +66,7 @@ function plannedFacingOf(commandState: CommandState): string | null | undefined 
 describe("strategic ship final turn", () => {
   it("accepts a rotation-only SET_SHIP_ROUTE payload", () => {
     const raw = {
-      protocolVersion: 4,
+      protocolVersion: COMMAND_PROTOCOL_VERSION,
       requestId: "turn-only",
       senderPlayerId: "leader",
       senderConnectionId: "leader-connection",
@@ -131,12 +131,13 @@ describe("strategic ship final turn", () => {
     expect(plannedFacingOf(commandState)).toBe("NORTH");
     expect(commandState.scene.ships?.ship?.globalMovementRemaining).toBe(0);
 
-    const insufficient = state();
-    const insufficientShip = insufficient.scene.ships?.ship;
-    if (!insufficientShip) throw new Error("Missing ship fixture");
-    insufficientShip.globalMovementRemaining = 1;
+    const rejectedState = state();
+    const rejectedShip = rejectedState.scene.ships?.ship;
+    if (!rejectedShip) throw new Error("Missing rejected ship fixture");
+    rejectedShip.globalMovementRemaining = 1;
+
     const rejected = applyShipStrategicRouteCommand(
-      insufficient,
+      rejectedState,
       {
         shipId: "ship",
         startCell: { x: 0, y: 0 },
@@ -147,5 +148,7 @@ describe("strategic ship final turn", () => {
     );
 
     expect(rejected).toBe("INSUFFICIENT_MOVEMENT_POINTS");
+    expect(rejectedState.scene.ships?.ship?.plannedRoute).toEqual([]);
+    expect(plannedFacingOf(rejectedState)).toBeNull();
   });
 });

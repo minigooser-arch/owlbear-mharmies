@@ -1,11 +1,12 @@
-import type { WarState } from "../../shared/types";
+import type { StateEntity, StateRelations, TurnState } from "../../shared/types";
+import { areStatesAtWar } from "../../states/stateRelations";
 import { TurnStatusCard } from "../components/TurnStatusCard";
 import type { ArmyView, UiCommand } from "../state/useExtensionState";
-import type { TurnState } from "../../shared/types";
 
-export function OverviewPage({ armies, wars, turn, onAction }: {
+export function OverviewPage({ armies, states, stateRelations, turn, onAction }: {
   armies: readonly ArmyView[];
-  wars: readonly WarState[];
+  states: readonly StateEntity[];
+  stateRelations: StateRelations;
   turn: TurnState;
   onAction(command: UiCommand): void;
 }) {
@@ -16,7 +17,12 @@ export function OverviewPage({ armies, wars, turn, onAction }: {
   const invalidRoutes = armies.filter((army) => army.routeRequiresReplan || army.routeInvalidReason).length;
   const withoutRoute = armies.filter((army) => army.status !== "IN_BATTLE" && army.routeCellCount === 0).length;
   const attention = armies.filter((army) => !army.supplied || army.disbandPending || army.routeRequiresReplan || army.routeInvalidReason);
-  const activeWars = wars.filter((war) => war.active);
+  const activeStates = states.filter((state) => state.active);
+  const activeWars = activeStates.flatMap((left, index) =>
+    activeStates.slice(index + 1)
+      .filter((right) => areStatesAtWar(stateRelations, left.id, right.id))
+      .map((right) => ({ left, right }))
+  );
 
   return (
     <section aria-labelledby="overview-title">
@@ -41,7 +47,7 @@ export function OverviewPage({ armies, wars, turn, onAction }: {
         </article>
         <article className="overview-panel overview-panel-wide">
           <div className="overview-panel-heading"><h3>Активные войны</h3><span>{activeWars.length}</span></div>
-          {activeWars.length === 0 ? <p className="muted">Активных войн нет.</p> : <div className="war-summary-list">{activeWars.map((war) => <div key={war.id}><strong>{war.name}</strong><span>{war.participantFactionIds.length} фракц. · {war.participantStateIds.length} гос.</span></div>)}</div>}
+          {activeWars.length === 0 ? <p className="muted">Активных войн нет.</p> : <div className="war-summary-list">{activeWars.map(({ left, right }) => <div key={`${left.id}/${right.id}`}><strong>{left.name} — {right.name}</strong><span>Межгосударственная война</span></div>)}</div>}
         </article>
       </div>
     </section>

@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Implement the approved state-owned strategic map and war rules: directional passage, pairwise wars, delayed border-war escalation, forced withdrawal, occupation, supply/encirclement, strategic cities and territorial score, manual peace transfers, rebellions/civil wars, and an idempotent global-turn lifecycle.
+**Goal:** Implement the approved state-owned strategic map and war rules: directional passage, pairwise wars, immediate war on an actual ruling-army invasion, forced withdrawal, occupation, supply/encirclement, strategic cities and territorial score, manual peace transfers, rebellions/civil wars, and an idempotent global-turn lifecycle.
 
-**Architecture:** Keep terrain, recognized ownership, and de-facto control as independent map layers. Centralize interstate authorization in exact state-pair relations, run strategic movement step-by-step so collision and occupation observe only actually reached cells, and run turn-boundary effects through an idempotent checkpoint pipeline. Keep cities, rebellion snapshots, scores, violations, and forced exits as explicit persisted domain state rather than deriving historical facts from UI.
+**Architecture:** Keep terrain, recognized ownership, and de-facto control as independent map layers. Centralize interstate authorization in exact state-pair relations, run strategic movement step-by-step so collision, immediate war and occupation observe only actually reached cells, and run turn-boundary effects through an idempotent checkpoint pipeline. Keep cities, rebellion snapshots, scores and forced exits as explicit persisted domain state rather than deriving historical facts from UI.
 
 **Tech Stack:** TypeScript, React, Vitest, Owlbear Rodeo SDK, scene/item metadata persistence, Vite.
 
@@ -19,8 +19,7 @@
 - Military access is directional; war is symmetric and pairwise.
 - Generic “participates in any war” must never authorize movement.
 - Non-ruling factions may enter foreign land only through passage or an existing war and never create a new war by movement.
-- Ruling factions may enter closed foreign territory, but that creates a persisted violation, not an immediate war.
-- Automatic war is evaluated at the next global-turn checkpoint and is cancelled if access/war is restored or the army leaves first.
+- Planning never changes diplomacy. When a ruling-faction army actually enters closed foreign territory, exact-pair war starts immediately.
 - Only ruling-faction armies change `deFactoStateId` during an active war.
 - Occupation applies only to cells actually reached before a collision stops movement.
 - Passage never carries supply.
@@ -37,18 +36,17 @@
 
 **Files:** `src/shared/types.ts`, `src/shared/validation.ts`, `src/storage/migrations.ts`, `src/storage/metadataRepository.ts` and their tests.
 
-**Produces:** `StateRelations`, `ForeignPresenceViolation`, `ForcedExitState`, `StrategicCity`, `TerritorialScore`, `RebellionState`, `TurnCheckpointState` in the latest scene.
+**Produces:** `StateRelations`, `ForcedExitState`, `StrategicCity`, `TerritorialScore`, `RebellionState`, `TurnCheckpointState` in the latest scene.
 
 - [ ] Write failing migration/validation tests proving old scenes preserve armies, ships, terrain, states, recognized/deFacto ownership and wars; new collections default empty; legacy `factionTerritoryIds` remains readable; future schema is rejected.
 - [ ] Run `npx vitest run src/storage/migrations.test.ts src/shared/validation.test.ts src/storage/metadataRepository.test.ts` and confirm RED.
 - [ ] Add exact persisted types:
 ```ts
-interface ForeignPresenceViolation { armyId:string; homeStateId:string; hostStateId:string; enteredOnTurn:number; checkOnTurn:number; }
 interface ForcedExitState { armyId:string; startedOnTurn:number; originReason:"PASSAGE_REVOKED"|"WAR_ENDED"|"BORDER_CHANGED"|"OTHER"; }
 interface StrategicCity { id:string; name:string; cells:GridCellCoord[]; recognizedStateId:string; deFactoStateId:string; factionInfluenceId:string|null; mayorId:string|null; isCapital:boolean; historicalBuildTypeCount:number; }
 interface TerritorialScore { holderStateId:string; opponentStateId:string; points:number; }
 interface RebellionState { id:string; sourceStateId:string; startedOnTurn:number; recognizedTerritorySnapshot:GridCellCoord[]; capitalCityId:string; participantFactionIds:string[]; active:boolean; }
-interface TurnCheckpointState { turnNumber:number; illegalPresenceDone:boolean; forcedExitDone:boolean; supplyDone:boolean; encirclementDone:boolean; territorialScoreDone:boolean; }
+interface TurnCheckpointState { turnNumber:number; forcedExitDone:boolean; supplyDone:boolean; encirclementDone:boolean; territorialScoreDone:boolean; }
 ```
 - [ ] Bump schema/protocol consistently; normalize all new collections; migrate only unambiguous two-state wars into pairwise relations; never infer state territory from faction territory.
 - [ ] Run focused tests plus `npm run typecheck`; confirm GREEN.
@@ -97,22 +95,20 @@ resolveCityDeFactoState(city, gridMap): string | null
 - [ ] Add minimal city editor: cells, capital flag, build-type count.
 - [ ] Run GREEN/typecheck and commit `feat: add strategic city objects`.
 
-### Task 5: State movement and delayed foreign-presence violations
+### Task 5: State movement and immediate war on actual invasion
 
-**Files:** create `src/movement/stateMovementAccess.ts`, `src/wars/foreignPresence.ts` + tests; modify movement rules/engine and route planning.
+**Files:** `src/movement/stateMovementAccess.ts`, `src/movement/authoritativeStateMovement.ts` + tests; modify movement rules/engine and route planning.
 
 **Interfaces:**
 ```ts
-type StateAccessDecision = "ALLOW_OWN"|"ALLOW_PASSAGE"|"ALLOW_WAR"|"ALLOW_RULER_VIOLATION"|"DENY_FOREIGN"|"DENY_STATELESS";
+type StateAccessDecision = "ALLOW_OWN"|"ALLOW_PASSAGE"|"ALLOW_WAR"|"DECLARE_WAR_AND_ALLOW"|"DENY_FOREIGN"|"DENY_STATELESS";
 classifyStateAccess(input): StateAccessDecision
-recordForeignPresenceViolation(scene, armyId, hostStateId, currentTurn): SceneState
-reconcileForeignPresenceViolations(scene): SceneState
 ```
-- [ ] RED: non-ruler own/pass/war allowed, closed foreign denied; ruler closed foreign enters with violation but no immediate war; null recognized state creates no violation.
-- [ ] RED: turn N entry sets `checkOnTurn=N+1`; passage/manual war/leaving before checkpoint clears violation; no duplicates.
+- [ ] RED: non-ruler own/pass/war allowed, closed foreign denied; ruler closed foreign route is allowed with a war warning; null recognized state is allowed.
+- [ ] RED: planning does not mutate diplomacy; only actually entered cells start exact-pair war; repeated entry is idempotent.
 - [ ] Run RED.
-- [ ] Implement classifier and route warnings without diplomacy mutation; remove runtime faction-territory/generic-war access.
-- [ ] Run GREEN/typecheck and commit `feat: add delayed foreign presence violations`.
+- [ ] Implement classifier and route warnings; apply diplomacy only after authoritative entry; remove runtime faction-territory/generic-war access.
+- [ ] Run GREEN/typecheck and commit `feat: enforce immediate war on invasion`.
 
 ### Task 6: Forced withdrawal and nearest-valid-territory search
 
@@ -136,7 +132,7 @@ validateForcedExitRoute(scene, armyId, route): {ok:true}|{ok:false;reason:"NOT_S
 
 **Interface:** `applyOccupationForReachedCell(scene, armyId, cell): SceneState`.
 
-- [ ] RED: ruling army captures every actually reached recognized-enemy cell only during exact-pair war; non-ruler/pass/peacetime violation captures none; recognized owner never changes; recapture works repeatedly.
+- [ ] RED: ruling army captures every actually reached recognized-enemy cell only during exact-pair war; non-ruler/pass/peacetime movement captures none; recognized owner never changes; recapture works repeatedly.
 - [ ] RED: collision at C after A/B means D/E never occupied and remaining movement is lost.
 - [ ] Integrate occupation after each successful authoritative step, never by bulk planned route.
 - [ ] Run GREEN/typecheck and commit `feat: apply stepwise wartime occupation`.
@@ -228,13 +224,13 @@ startCivilWar(scene,{sourceStateId,rebelFactionId,newStateId,newStateName,newSta
 
 **Interfaces:**
 ```ts
-type TurnBlocker = "LAND_BATTLE_ACTIVE"|"NAVAL_BATTLE_ACTIVE"|"MOVEMENT_RESOLUTION_PENDING"|"FORCED_EXIT_PENDING"|"ILLEGAL_PRESENCE_CHECK_PENDING"|"SUPPLY_CHECK_PENDING"|"ENCIRCLEMENT_PENDING"|"TERRITORIAL_SCORE_PENDING";
+type TurnBlocker = "LAND_BATTLE_ACTIVE"|"NAVAL_BATTLE_ACTIVE"|"MOVEMENT_RESOLUTION_PENDING"|"FORCED_EXIT_PENDING"|"SUPPLY_CHECK_PENDING"|"ENCIRCLEMENT_PENDING"|"TERRITORIAL_SCORE_PENDING";
 getTurnCompletionBlockers(scene): TurnBlocker[]
 runTurnCheckpoint(scene,nextTurnNumber): SceneState
 ```
 - [ ] RED each blocker independently, including existing naval battle guard.
-- [ ] RED pipeline: overdue illegal presence creates one war; restored access cancels; forced exit activates; supply→encirclement→score happen once; retry after partial failure cannot duplicate HP loss/score.
-- [ ] Implement fixed order: close movement → illegal presence → forced exit → supply → encirclement → territorial score → open movement.
+- [ ] RED pipeline: forced exit activates; supply→encirclement→score happen once; retry after partial failure cannot duplicate HP loss/score.
+- [ ] Implement fixed order: close movement → forced exit → supply → encirclement → territorial score → open movement.
 - [ ] Integrate turn commands; expose reason list rather than opaque boolean.
 - [ ] Run GREEN/typecheck and commit `feat: orchestrate strategic war turn checkpoints`.
 
@@ -242,7 +238,7 @@ runTurnCheckpoint(scene,nextTurnNumber): SceneState
 
 **Files:** create `src/ui/pages/StatesPage.tsx` + tests; modify App/state hook, Armies/Battles/MapEditor pages and existing CSS only as needed.
 
-- [ ] RED UI: GM CRUD states/ruler; A→B and B→A passage separately; exact-pair war start/end; violation deadline; forced exit; supply/encirclement; city scores; rebellion; peace transfer. Non-GM cannot mutate admin diplomacy. No faction-territory editor.
+- [ ] RED UI: GM CRUD states/ruler; A→B and B→A passage separately; exact-pair war start/end; forced exit; supply/encirclement; city scores; rebellion; peace transfer. Non-GM cannot mutate admin diplomacy. No faction-territory editor.
 - [ ] Implement with existing Wiki-light visual patterns and authoritative command dispatch only.
 - [ ] Run `npx vitest run src/ui` + typecheck and commit `feat: add state war administration UI`.
 
@@ -251,7 +247,7 @@ runTurnCheckpoint(scene,nextTurnNumber): SceneState
 **Files:** modify remaining obsolete runtime consumers; add `src/movement/stateWarIntegration.regression.test.ts` and `src/storage/strategicWarPersistence.regression.test.ts`.
 
 - [ ] Search runtime for `factionTerritoryIds`, `OUTSIDE_FACTION_TERRITORY`, `isFactionAtWar`, and direct `WarState.participantStateIds` authorization. Only migration/legacy parsing fixtures may remain.
-- [ ] Add integration RED scenarios: delayed auto-war/cancellation; non-ruler denial; war access; stepwise occupation/recapture; supply cut→encirclement; forced exit after peace; city score; manual peace transfer; civil-war split; checkpoint retry.
+- [ ] Add integration RED scenarios: immediate invasion war/withdrawal without renewed war; non-ruler denial; war access; stepwise occupation/recapture; supply cut→encirclement; forced exit after peace; city score; manual peace transfer; civil-war split; checkpoint retry.
 - [ ] Run focused integration tests and fix integration-only defects.
 - [ ] Run fresh full verification:
 ```bash

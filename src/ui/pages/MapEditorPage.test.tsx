@@ -52,10 +52,42 @@ it("offers a built-in sea terrain that can be painted before ship registration",
   });
 });
 
-it("offers recognized and de-facto state map layers", () => {
+it("offers recognized and de-facto state map layers without faction-territory painting", () => {
   render(<MapEditorPage terrain={DEFAULT_TERRAIN} sides={sides} states={states} onAction={vi.fn()} />);
   const select = screen.getByLabelText("Режим кисти");
   expect(select).toContainHTML("Признанная территория государства");
   expect(select).toContainHTML("Де-факто контроль государства");
-  expect(screen.getByText("Государства")).toBeInTheDocument();
+  expect(select).not.toContainHTML("Территория фракции");
+});
+
+it("keeps state CRUD out of the map editor", () => {
+  render(<MapEditorPage terrain={DEFAULT_TERRAIN} sides={sides} states={states} onAction={vi.fn()} />);
+  expect(screen.queryByLabelText("Название нового государства")).not.toBeInTheDocument();
+  expect(screen.queryByText("Государства")).not.toBeInTheDocument();
+});
+
+it("previews and explicitly confirms an official peace transfer", () => {
+  const onAction = vi.fn();
+  render(<MapEditorPage terrain={DEFAULT_TERRAIN} sides={sides} states={states} onAction={onAction} />);
+
+  fireEvent.change(screen.getByLabelText("Клетки передачи"), { target: { value: "1,2; 2,2" } });
+  fireEvent.click(screen.getByRole("button", { name: "Предпросмотр передачи" }));
+  expect(onAction).toHaveBeenLastCalledWith({
+    type: "PREVIEW_PEACE_TRANSFER",
+    recipientStateId: "russia",
+    cells: [{ x: 1, y: 2 }, { x: 2, y: 2 }]
+  });
+
+  fireEvent.click(screen.getByRole("button", { name: "Подтвердить официальную передачу" }));
+  expect(onAction).toHaveBeenLastCalledWith({
+    type: "APPLY_PEACE_TRANSFER",
+    recipientStateId: "russia",
+    cells: [{ x: 1, y: 2 }, { x: 2, y: 2 }]
+  });
+});
+
+it("does not allow peace transfer confirmation before a preview", () => {
+  render(<MapEditorPage terrain={DEFAULT_TERRAIN} sides={sides} states={states} onAction={vi.fn()} />);
+  fireEvent.change(screen.getByLabelText("Клетки передачи"), { target: { value: "1,2" } });
+  expect(screen.getByRole("button", { name: "Подтвердить официальную передачу" })).toBeDisabled();
 });

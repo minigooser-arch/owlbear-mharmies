@@ -27,7 +27,7 @@ function harness() {
 }
 
 describe("MapOverlayService", () => {
-  it("renders only sparse configured cells for a GM", async () => {
+  it("renders terrain, de-facto control and recognized state perimeter without legacy faction territory", async () => {
     const test = harness();
     await new MapOverlayService(test.port).reconcile({
       dpi: 100,
@@ -48,22 +48,32 @@ describe("MapOverlayService", () => {
         }
       },
       sides: [{ id: "red", name: "Красные", color: "#ff0000", playerIds: [], leaderPlayerIds: [], stateId: "russia" }],
-      states: [{ id: "russia", name: "Российская империя", rulingFactionId: "red", active: true }, { id: "germany", name: "Германская империя", rulingFactionId: null, active: true }]
+      states: [
+        { id: "russia", name: "Российская империя", color: "#b71c1c", rulingFactionId: "red", active: true },
+        { id: "germany", name: "Германская империя", color: "#1a237e", rulingFactionId: null, active: true }
+      ]
     });
 
     const metadata = test.items().map((item) => item.metadata[METADATA_KEYS.mapOverlay]);
-    expect(test.items()).toHaveLength(6);
+    expect(test.items()).toHaveLength(8);
     expect(metadata).toEqual(expect.arrayContaining([
       expect.objectContaining({ cellKey: "0,0", kind: "TERRAIN" }),
       expect.objectContaining({ cellKey: "0,0", kind: "IMPASSABLE" }),
-      expect.objectContaining({ cellKey: "0,0", kind: "TERRITORY" }),
       expect.objectContaining({ cellKey: "2,1", kind: "TERRAIN" }),
-      expect.objectContaining({ cellKey: "0,0", kind: "RECOGNIZED_STATE" }),
-      expect.objectContaining({ cellKey: "0,0", kind: "DEFACTO_STATE" })
+      expect.objectContaining({ cellKey: "0,0", kind: "DEFACTO_STATE" }),
+      expect.objectContaining({ kind: "STATE_BOUNDARY", stateId: "russia" })
     ]));
+    expect(metadata).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "TERRITORY" }),
+      expect.objectContaining({ kind: "RECOGNIZED_STATE" })
+    ]));
+    expect(test.items().filter((item) => {
+      const value = item.metadata[METADATA_KEYS.mapOverlay] as { kind?: string } | undefined;
+      return value?.kind === "STATE_BOUNDARY";
+    })).toHaveLength(4);
     expect(test.items().find((item) => item.type === "LABEL" && item.text === "⛔")).toBeDefined();
-    expect(test.items().find((item) => item.type === "LABEL" && item.text === "Т: Красные")).toBeDefined();
-    expect(test.items().find((item) => item.type === "LABEL" && item.text === "Призн.: Российская империя")).toBeDefined();
+    expect(test.items().find((item) => item.type === "LABEL" && item.text === "Т: Красные")).toBeUndefined();
+    expect(test.items().find((item) => item.type === "LABEL" && item.text === "Призн.: Российская империя")).toBeUndefined();
     expect(test.items().find((item) => item.type === "LABEL" && item.text === "Де-факто: Германская империя")).toBeDefined();
   });
 

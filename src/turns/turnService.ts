@@ -1,11 +1,12 @@
 import { destroyArmy } from "../armies/armyLifecycle";
-import { applyEncirclementDamage } from "../health/armyHealth";
 import { validatePlannedRoute } from "../movement/movementRules";
+import { politicalRouteGate } from "../movement/authoritativeStateMovement";
+import { forcedExitRouteGate, forcedExitTurnRoute } from "../movement/forcedExitService";
 import { SHIP_CLASSES } from "../naval/ships/shipClasses";
-import { stateForFaction } from "../states/stateRules";
-import { hasSupplyRoute } from "../supply/supplyRules";
 import { readCell } from "../terrain/gridMap";
-import type { ArmyState, GridCellCoord, SceneState, TurnState } from "../shared/types";
+import type { ArmyState, GridCellCoord, SceneState, TurnState, Vector2 } from "../shared/types";
+import { runTurnCheckpoint } from "./turnCheckpointPipeline";
+import { preCheckpointTurnBlockers, type TurnBlocker } from "./turnCompletionGuard";
 import { deferredBoundary, getLatestStandardTurnBoundary, getNextStandardTurnBoundary } from "./turnSchedule";
 
 export type TurnCompletionSource = "SCHEDULE" | "MANUAL";
@@ -16,10 +17,12 @@ export interface CompleteTurnInput {
   boundaryId?: string;
   /** Current strategic cells, resolved from authoritative Owlbear item positions. */
   armyCells: Readonly<Record<string, GridCellCoord>>;
+  positionForCell?: (cell: GridCellCoord) => Vector2;
 }
 
 export type CompleteTurnResult =
-  | { changed: false; reason: "AUTO_TURNS_PAUSED" | "ALREADY_PROCESSED" | "NAVAL_BATTLE_ACTIVE" }
+  | { changed: false; reason: "AUTO_TURNS_PAUSED" | "ALREADY_PROCESSED" }
+  | { changed: false; reason: TurnBlocker; blockers: TurnBlocker[] }
   | { changed: true; scene: SceneState; armies: Record<string, ArmyState> };
 
 function withoutStopReason(army: ArmyState): ArmyState {
@@ -33,32 +36,38 @@ function prepareArmyForNewTurn(
   armyId: string,
   army: ArmyState,
   armyCell: GridCellCoord | undefined,
-  nextTurn: number
+  nextTurn: number,
+  positionForCell?: (cell: GridCellCoord) => Vector2
 ): ArmyState {
-  const factionState = stateForFaction(scene, army.sideId);
-  const embarkedShipId = army.embarkedOnShipId ?? null;
-  const genuinelyEmbarked = embarkedShipId !== null &&
-    scene.ships?.[embarkedShipId]?.embarkedArmyId === armyId;
-  const supplied = genuinelyEmbarked
-    ? true
-    : factionState && armyCell
-      ? hasSupplyRoute({
-          start: armyCell,
-          stateId: factionState.id,
-          readCell: (cell) => readCell(scene.gridMap, cell)
-        })
-      : true;
-
   let next: ArmyState = {
     ...army,
-    supply: { supplied, checkedOnTurn: nextTurn },
     movement: { maxUnits: 10, remainingUnits: 10, enteredRouteCellCount: 0 },
     revision: army.revision + 1
   };
-  if (!supplied) next = applyEncirclementDamage(next);
 
+  if (armyCell && positionForCell && next.status !== "IN_BATTLE" &&
+      scene.forcedExitStates?.some((entry) => entry.armyId === armyId && entry.startedOnTurn <= nextTurn)) {
+    const planned = next.plannedRoute;
+    const gate = forcedExitRouteGate(scene, armyId, next, armyCell, planned.cells, nextTurn);
+    if (gate) {
+      const preferred = planned.executeOnTurn === nextTurn && !gate.blockedReason ? planned.cells : [];
+      const cells = forcedExitTurnRoute(scene, next, armyCell, 10, preferred);
+      next = {...next, route: cells.map(positionForCell), plannedRoute: {
+        startCell: {...armyCell}, executeOnTurn: nextTurn, cells, totalCostUnits: 0,
+        validatedRevision: scene.revision, requiresReplan: false
+      }};
+    }
+  }
   const routeDue = next.plannedRoute.executeOnTurn === nextTurn;
   if (routeDue && !next.plannedRoute.requiresReplan && next.plannedRoute.cells.length > 0) {
+    const political = forcedExitRouteGate(scene, armyId, next, next.plannedRoute.startCell, next.plannedRoute.cells, nextTurn) ?? politicalRouteGate({
+      sideId: next.sideId,
+      cells: next.plannedRoute.cells,
+      gridMap: scene.gridMap,
+      sides: scene.sides,
+      states: scene.states,
+      stateRelations: scene.stateRelations ?? {}
+    });
     const validation = validatePlannedRoute({
       start: next.plannedRoute.startCell,
       cells: next.plannedRoute.cells,
@@ -72,9 +81,17 @@ function prepareArmyForNewTurn(
     const cleanRoute = { ...next.plannedRoute };
     delete cleanRoute.invalidReason;
     delete cleanRoute.invalidCell;
+    const politicalBlock = political.allowedCellCount < next.plannedRoute.cells.length &&
+      political.blockedReason && political.blockedCell
+      ? { reason: political.blockedReason, problemCell: political.blockedCell }
+      : null;
+    const invalidRoute = politicalBlock ?? (validation.valid ? null : {
+      reason: validation.reason,
+      problemCell: validation.problemCell
+    });
     next = {
       ...next,
-      plannedRoute: validation.valid
+      plannedRoute: !invalidRoute
         ? {
             ...cleanRoute,
             totalCostUnits: validation.totalCostUnits,
@@ -86,8 +103,8 @@ function prepareArmyForNewTurn(
             totalCostUnits: validation.totalCostUnits,
             validatedRevision: scene.revision,
             requiresReplan: false,
-            invalidReason: validation.reason,
-            invalidCell: { ...validation.problemCell }
+            invalidReason: invalidRoute.reason,
+            invalidCell: { ...invalidRoute.problemCell }
           }
     };
   }
@@ -117,9 +134,6 @@ export function completeTurn(
   armies: Readonly<Record<string, ArmyState>>,
   input: CompleteTurnInput
 ): CompleteTurnResult {
-  if (scene.activeNavalBattle?.status === "ACTIVE") {
-    return { changed: false, reason: "NAVAL_BATTLE_ACTIVE" };
-  }
   if (input.source === "SCHEDULE" && scene.turn.autoTurnsPaused) {
     return { changed: false, reason: "AUTO_TURNS_PAUSED" };
   }
@@ -130,7 +144,12 @@ export function completeTurn(
     }
   }
 
-  const nextScene = structuredClone(scene);
+  const blockers = preCheckpointTurnBlockers(scene);
+  if (blockers.length > 0) {
+    return { changed: false, reason: blockers[0] ?? "MOVEMENT_RESOLUTION_PENDING", blockers };
+  }
+
+  let nextScene = structuredClone(scene);
   let nextArmies = structuredClone(armies) as Record<string, ArmyState>;
   let nextBattleGroups = structuredClone(scene.battleGroups);
   const nextTurn = scene.turn.turnNumber + 1;
@@ -145,16 +164,24 @@ export function completeTurn(
   }
   nextScene.battleGroups = nextBattleGroups;
 
-  // Supply, encirclement damage, destruction, fixed 5 OP, and simultaneous route activation.
+  const checkpoint = runTurnCheckpoint({
+    scene: nextScene,
+    armies: nextArmies,
+    armyCells: input.armyCells
+  }, nextTurn);
+  nextScene = checkpoint.scene;
+  nextArmies = checkpoint.armies;
+
+  // Open the new movement phase only after every strategic checkpoint effect completed.
   for (const [armyId, army] of Object.entries(nextArmies)) {
-    const prepared = prepareArmyForNewTurn(nextScene, armyId, army, input.armyCells[armyId], nextTurn);
-    if (prepared.health.hp <= 0) {
-      const destroyed = destroyArmy(nextArmies, nextScene.battleGroups, armyId);
-      nextArmies = destroyed.armies;
-      nextScene.battleGroups = destroyed.battleGroups;
-      continue;
-    }
-    nextArmies[armyId] = prepared;
+    nextArmies[armyId] = prepareArmyForNewTurn(
+      nextScene,
+      armyId,
+      army,
+      input.armyCells[armyId],
+      nextTurn,
+      input.positionForCell
+    );
   }
 
   // Restore each ship's class strategic movement budget without changing its order or combat state.

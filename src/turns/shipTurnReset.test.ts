@@ -23,7 +23,7 @@ it("restores each ship's class movement budget at the global turn boundary witho
     terrain: structuredClone(DEFAULT_TERRAIN),
     gridMap: { version: 1, revision: 0, cells: {} },
     wars: [],
-    turn: structuredClone(DEFAULT_TURN_STATE),
+    turn: { ...structuredClone(DEFAULT_TURN_STATE), phase: "POST_MOVEMENT" },
     ships: { ship },
     navalBattleRequests: [],
     activeNavalBattle: null,

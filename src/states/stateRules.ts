@@ -1,8 +1,9 @@
-import type { Side, StateEntity, WarState } from "../shared/types";
+import type { Side, StateEntity, StateRelations, WarState } from "../shared/types";
 
 export interface StatePoliticalContext {
   states: readonly StateEntity[];
   sides: readonly Side[];
+  /** Legacy/history objects only; exact interstate hostility lives in stateRelations. */
   wars: readonly WarState[];
 }
 
@@ -23,15 +24,19 @@ export function isRulingFaction(
   return state?.rulingFactionId === factionId;
 }
 
-export function areStatesAtWar(
-  wars: readonly WarState[],
-  leftStateId: string,
-  rightStateId: string
+export function isFactionStateAtWar(
+  context: Pick<StatePoliticalContext, "states" | "sides"> & { stateRelations?: StateRelations },
+  factionId: string
 ): boolean {
-  if (leftStateId === rightStateId) return false;
-  return wars.some((war) =>
-    war.active &&
-    war.participantStateIds.includes(leftStateId) &&
-    war.participantStateIds.includes(rightStateId)
+  const state = stateForFaction(context, factionId);
+  if (!state) return false;
+
+  const relations = context.stateRelations ?? {};
+  if (Object.entries(relations[state.id] ?? {}).some(([otherStateId, relation]) =>
+    otherStateId !== state.id && relation.atWar
+  )) return true;
+
+  return Object.entries(relations).some(([otherStateId, targets]) =>
+    otherStateId !== state.id && targets[state.id]?.atWar === true
   );
 }

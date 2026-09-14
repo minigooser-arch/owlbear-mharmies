@@ -33,7 +33,6 @@ const MAX_REVISION_CONFLICT_RETRIES = 5;
 
 function previewColor(settings: MapBrushSettings): string {
   if (settings.mode === "IMPASSABLE") return settings.impassable ? "#ef5350" : "#66bb6a";
-  if (settings.mode === "FACTION_TERRITORY") return settings.factionOperation === "ADD" ? "#ab47bc" : "#78909c";
   if (settings.mode === "RECOGNIZED_STATE") return "#26a69a";
   if (settings.mode === "DEFACTO_STATE") return "#ffb300";
   if (settings.mode === "ERASER") return "#bdbdbd";
@@ -49,7 +48,7 @@ function previewKey(item: SceneItemRecord): string | undefined {
 
 type MapBrushCommandPayload = Extract<
   ArmyCommandPayload,
-  { type: "SET_TERRAIN_CELLS" | "SET_IMPASSABLE_CELLS" | "UPDATE_FACTION_TERRITORY_CELLS" | "SET_RECOGNIZED_STATE_CELLS" | "SET_DEFACTO_STATE_CELLS" | "CLEAR_CELL_PROPERTIES" }
+  { type: "SET_TERRAIN_CELLS" | "SET_IMPASSABLE_CELLS" | "SET_RECOGNIZED_STATE_CELLS" | "SET_DEFACTO_STATE_CELLS" | "CLEAR_CELL_PROPERTIES" }
 >;
 
 function commandPayload(settings: MapBrushSettings, cells: GridCellCoord[]): MapBrushCommandPayload {
@@ -59,29 +58,16 @@ function commandPayload(settings: MapBrushSettings, cells: GridCellCoord[]): Map
   if (settings.mode === "IMPASSABLE") {
     return { type: "SET_IMPASSABLE_CELLS", cells, impassable: settings.impassable };
   }
-  if (settings.mode === "FACTION_TERRITORY") {
-    if (!settings.sideId) throw new MapBrushAuthorizationError("SIDE_NOT_FOUND");
-    return {
-      type: "UPDATE_FACTION_TERRITORY_CELLS",
-      cells,
-      sideId: settings.sideId,
-      operation: settings.factionOperation
-    };
-  }
   if (settings.mode === "RECOGNIZED_STATE" || settings.mode === "DEFACTO_STATE") {
     if (!settings.stateId) throw new MapBrushAuthorizationError("STATE_NOT_FOUND");
     return settings.mode === "RECOGNIZED_STATE"
       ? { type: "SET_RECOGNIZED_STATE_CELLS", cells, stateId: settings.stateId }
       : { type: "SET_DEFACTO_STATE_CELLS", cells, stateId: settings.stateId };
   }
-  if (settings.eraserTarget === "SELECTED_FACTION" && !settings.sideId) {
-    throw new MapBrushAuthorizationError("SIDE_NOT_FOUND");
-  }
   return {
     type: "CLEAR_CELL_PROPERTIES",
     cells,
-    target: settings.eraserTarget,
-    ...(settings.sideId ? { sideId: settings.sideId } : {})
+    target: settings.eraserTarget
   };
 }
 

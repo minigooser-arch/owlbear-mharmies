@@ -6,16 +6,15 @@ import {
 } from "../commands/commandGateway";
 import { SHIP_CLASSES } from "../naval/ships/shipClasses";
 import { buildRequestBackedNavalBattleStart, parseNavalBattleAreaDraft } from "./navalBattleAreaBridge";
+import { PeaceTransferOverlayService } from "./peaceTransferOverlayService";
 import {
   DEFAULT_SETTINGS,
   DEFAULT_TERRAIN,
   DEFAULT_TURN_STATE,
   METADATA_KEYS,
   MAP_BRUSH_ERASER_TARGET_KEY,
-  MAP_BRUSH_FACTION_OPERATION_KEY,
   MAP_BRUSH_IMPASSABLE_VALUE_KEY,
   MAP_BRUSH_MODE_KEY,
-  MAP_BRUSH_SIDE_ID_KEY,
   MAP_BRUSH_STATE_ID_KEY,
   MAP_BRUSH_SIZE_KEY,
   MAP_BRUSH_TERRAIN_ID_KEY,
@@ -48,7 +47,7 @@ import {
   type SceneState
 } from "../shared/types";
 import { migrateSceneState } from "../storage/migrations";
-import { isFactionAtWar } from "../wars/warRules";
+import { isFactionStateAtWar } from "../states/stateRules";
 import { MetadataRepository, type ArmyRecord, type ShipRecord } from "../storage/metadataRepository";
 import type {
   ArmyView,
@@ -184,6 +183,7 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
       }];
     });
   const armies: ArmyView[] = authorizedRecords.map(({ item, state }) => {
+    const forcedExit = input.scene.forcedExitStates?.find((entry) => entry.armyId === item.id);
     const routeVisible = input.role === "GM" || (
       state.status === "READY"
         ? leaderSideIds.has(state.sideId)
@@ -202,12 +202,13 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
       routeCellCount: state.plannedRoute.cells.length,
       routeRequiresReplan: state.plannedRoute.requiresReplan,
       ...(state.plannedRoute.invalidReason ? { routeInvalidReason: state.plannedRoute.invalidReason } : {}),
-      atWar: isFactionAtWar(input.scene.wars, state.sideId),
+      atWar: isFactionStateAtWar(input.scene, state.sideId),
       healthHp: state.health.hp,
       healthMaxHp: state.health.maxHp,
       supplied: state.supply.supplied,
       supplyCheckedOnTurn: state.supply.checkedOnTurn,
       disbandPending: state.disband.pending,
+      ...(forcedExit ? { forcedExitStartedOnTurn: forcedExit.startedOnTurn } : {}),
       embarkedOnShipId: state.embarkedOnShipId ?? null
     };
   });
@@ -417,6 +418,13 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
   ]);
   const adapter = createOwlbearAdapter();
   const repository = new MetadataRepository(adapter);
+  const peaceTransferOverlay = new PeaceTransferOverlayService({
+    getLocalItems: () => adapter.getLocalItems(),
+    addLocalItems: (items) => adapter.addLocalItems(items),
+    updateLocalItems: (items) => adapter.updateLocalItems(items),
+    deleteLocalItems: (ids) => adapter.deleteLocalItems(ids),
+    createId: () => crypto.randomUUID()
+  });
   const diagnosticsPort: DiagnosticsPort = {
     getSelectedSource: async () => {
       const selected = await OBR.player.getSelection();
@@ -572,6 +580,24 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
 
   const send = async (command: UiCommand): Promise<unknown> => {
     try {
+      if (command.type === "PREVIEW_PEACE_TRANSFER") {
+        if (snapshot.role !== "GM") {
+          await notifyRussian(adapter, "GM_ONLY");
+          return undefined;
+        }
+        const recipient = snapshot.states.find((state) => state.id === command.recipientStateId);
+        if (!recipient) {
+          await notifyRussian(adapter, "STATE_NOT_FOUND");
+          return undefined;
+        }
+        const dpi = await adapter.getGridDpi();
+        await peaceTransferOverlay.reconcile(command.cells, recipient.color ?? "#607d8b", dpi);
+        return undefined;
+      }
+      if (command.type === "CLEAR_PEACE_TRANSFER_PREVIEW") {
+        await peaceTransferOverlay.clear();
+        return undefined;
+      }
       if (command.type === "OPEN_NAVAL_BATTLE_AREA") {
         if (snapshot.role !== "GM") {
           await notifyRussian(adapter, "GM_ONLY");
@@ -599,9 +625,7 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
           [MAP_BRUSH_MODE_KEY]: settings.mode,
           [MAP_BRUSH_SIZE_KEY]: settings.size,
           [MAP_BRUSH_TERRAIN_ID_KEY]: settings.terrainId,
-          [MAP_BRUSH_SIDE_ID_KEY]: settings.sideId ?? null,
           [MAP_BRUSH_STATE_ID_KEY]: settings.stateId ?? null,
-          [MAP_BRUSH_FACTION_OPERATION_KEY]: settings.factionOperation,
           [MAP_BRUSH_IMPASSABLE_VALUE_KEY]: settings.impassable,
           [MAP_BRUSH_ERASER_TARGET_KEY]: settings.eraserTarget
         });
@@ -727,6 +751,9 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
         if (command.type === "START_NAVAL_BATTLE_FROM_REQUEST" && navalBattleAreaReturnToolId) {
           await OBR.tool.activateTool(navalBattleAreaReturnToolId);
           navalBattleAreaReturnToolId = undefined;
+        }
+        if (command.type === "APPLY_PEACE_TRANSFER") {
+          await peaceTransferOverlay.clear();
         }
         refreshCoordinator.request();
         await refreshCoordinator.whenIdle();

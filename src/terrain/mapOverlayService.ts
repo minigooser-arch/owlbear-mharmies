@@ -12,6 +12,7 @@ import type {
   StateEntity,
   TerrainRegistryState
 } from "../shared/types";
+import { buildStateBoundarySegments } from "../states/stateBoundaryOverlay";
 
 export type MapOverlayPort = LocalOverlayBatchPort;
 
@@ -30,12 +31,22 @@ function mapOverlayKey(item: SceneItemRecord): string | undefined {
   return typeof key === "string" ? key : undefined;
 }
 
-function overlayMetadata(cellKey: string, kind: "TERRAIN" | "IMPASSABLE" | "TERRITORY" | "RECOGNIZED_STATE" | "DEFACTO_STATE") {
+function overlayMetadata(cellKey: string, kind: "TERRAIN" | "IMPASSABLE" | "DEFACTO_STATE") {
   const key = `${cellKey}/${kind}`;
   return {
     key,
     metadata: {
       [METADATA_KEYS.mapOverlay]: { key, cellKey, kind }
+    }
+  };
+}
+
+function boundaryMetadata(stateId: string, fromX: number, fromY: number, toX: number, toY: number) {
+  const key = `STATE_BOUNDARY/${stateId}/${fromX},${fromY}/${toX},${toY}`;
+  return {
+    key,
+    metadata: {
+      [METADATA_KEYS.mapOverlay]: { key, kind: "STATE_BOUNDARY", stateId }
     }
   };
 }
@@ -51,7 +62,6 @@ export class MapOverlayService {
 
     const grid = new StrategicGridAdapter({ dpi: source.dpi, offset: { x: 0, y: 0 } });
     const half = source.dpi / 2;
-    const sidesById = new Map(source.sides.map((side) => [side.id, side]));
     const statesById = new Map(source.states.map((state) => [state.id, state]));
     const overlays: DesiredLocalOverlay[] = [];
 
@@ -109,43 +119,36 @@ export class MapOverlayService {
         });
       }
 
-      if (cell.recognizedStateId) {
-        const state = statesById.get(cell.recognizedStateId);
-        if (state) {
-          const marker = overlayMetadata(rawCellKey, "RECOGNIZED_STATE");
-          overlays.push({ key: marker.key, item: { type: "LABEL", position: { x: center.x, y: center.y - source.dpi * 0.32 }, visible: true, disableHit: true, text: `Призн.: ${state.name}`, color: "#26a69a", metadata: marker.metadata } });
-        }
-      }
-
       if (cell.deFactoStateId) {
         const state = statesById.get(cell.deFactoStateId);
         if (state) {
           const marker = overlayMetadata(rawCellKey, "DEFACTO_STATE");
-          overlays.push({ key: marker.key, item: { type: "LABEL", position: { x: center.x, y: center.y - source.dpi * 0.18 }, visible: true, disableHit: true, text: `Де-факто: ${state.name}`, color: "#ffb300", metadata: marker.metadata } });
+          overlays.push({ key: marker.key, item: { type: "LABEL", position: { x: center.x, y: center.y - source.dpi * 0.18 }, visible: true, disableHit: true, text: `Де-факто: ${state.name}`, color: state.color ?? "#607d8b", metadata: marker.metadata } });
         }
       }
+    }
 
-      if (cell.factionTerritoryIds.length > 0) {
-        const territorySides = cell.factionTerritoryIds
-          .map((sideId) => sidesById.get(sideId))
-          .filter((side): side is Side => side !== undefined);
-        const names = territorySides.map((side) => side.name);
-        if (names.length > 0) {
-          const marker = overlayMetadata(rawCellKey, "TERRITORY");
-          overlays.push({
-            key: marker.key,
-            item: {
-              type: "LABEL",
-              position: { x: center.x, y: center.y + source.dpi * 0.3 },
-              visible: true,
-              disableHit: true,
-              text: `Т: ${names.join(", ")}`,
-              color: territorySides[0]?.color ?? "#ab47bc",
-              metadata: marker.metadata
-            }
-          });
+    for (const segment of buildStateBoundarySegments(source.gridMap, source.states, source.dpi)) {
+      const marker = boundaryMetadata(
+        segment.stateId,
+        segment.from.x,
+        segment.from.y,
+        segment.to.x,
+        segment.to.y
+      );
+      overlays.push({
+        key: marker.key,
+        item: {
+          type: "CURVE",
+          position: { x: 0, y: 0 },
+          visible: true,
+          disableHit: true,
+          points: [{ ...segment.from }, { ...segment.to }],
+          strokeColor: segment.color,
+          strokeWidth: Math.max(4, source.dpi * 0.055),
+          metadata: marker.metadata
         }
-      }
+      });
     }
 
     await reconcileLocalOverlays(this.port, mapOverlayKey, overlays);

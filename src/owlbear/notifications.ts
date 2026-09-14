@@ -24,7 +24,6 @@ export type NotificationCode =
   | "NOT_ORTHOGONAL"
   | "OUTSIDE_MAP"
   | "IMPASSABLE"
-  | "OUTSIDE_FACTION_TERRITORY"
   | "INVALID_TERRAIN"
   | "BUILT_IN_TERRAIN_REQUIRED"
   | "INSUFFICIENT_MOVEMENT_POINTS"
@@ -95,7 +94,6 @@ const RUSSIAN_MESSAGES: Readonly<Record<NotificationCode, string>> = {
   NOT_ORTHOGONAL: "Можно двигаться только по горизонтали или вертикали.",
   OUTSIDE_MAP: "Эта клетка находится за пределами игровой карты.",
   IMPASSABLE: "Эта клетка непроходима.",
-  OUTSIDE_FACTION_TERRITORY: "В мирное время армия не может покидать территорию своей фракции.",
   INVALID_TERRAIN: "Для этой клетки задан недоступный тип местности.",
   BUILT_IN_TERRAIN_REQUIRED: "Встроенную местность «Море» нельзя отключить или удалить: она необходима для морской механики.",
   INSUFFICIENT_MOVEMENT_POINTS: "Для этого маршрута не хватает очков перемещения.",

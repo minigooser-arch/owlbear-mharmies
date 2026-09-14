@@ -153,7 +153,7 @@ describe("global naval phase commands", () => {
       "gm",
       state("POST_MOVEMENT", activeBattle()),
       command("gm", "COMPLETE_TURN_NOW")
-    )).toEqual({ status: "REJECTED", reason: "NAVAL_BATTLE_ACTIVE" });
+    )).toEqual({ status: "REJECTED", reason: "TURN_BLOCKED:NAVAL_BATTLE_ACTIVE" });
   });
 
   it("allows naval battle requests only in POST_MOVEMENT", () => {

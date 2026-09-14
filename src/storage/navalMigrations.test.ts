@@ -23,16 +23,17 @@ function v3ArmyFixture() {
   };
 }
 
-it("migrates v5 scenes into naval-safe v6 defaults", () => {
+it("migrates v5 scenes through naval defaults into strategic v7", () => {
   const migrated = migrateSceneState(v5SceneFixture());
   expect(migrated.ok).toBe(true); if (!migrated.ok) return;
-  expect(migrated.value.version).toBe(6);
+  expect(migrated.value.version).toBe(7);
   expect(migrated.value.turn.phase).toBe("MOVEMENT");
   expect(migrated.value.ships).toEqual({});
   expect(migrated.value.navalBattleRequests).toEqual([]);
   expect(migrated.value.activeNavalBattle).toBeNull();
   expect(migrated.value.navalBattleHistory).toEqual([]);
   expect(migrated.value.navalRevealUntilTurn).toEqual({});
+  expect(migrated.value.stateRelations).toEqual({});
 });
 
 it("migrates legacy terrain to land domain without changing movement cost", () => {

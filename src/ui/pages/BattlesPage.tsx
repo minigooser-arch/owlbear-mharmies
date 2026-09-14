@@ -6,6 +6,7 @@ import type {
   NavalBattleRequestView,
   NavalBattleView,
   ShipView,
+  TerritorialScoreView,
   UiCommand
 } from "../state/useExtensionState";
 
@@ -380,6 +381,7 @@ export function BattlesPage({
   armies = [],
   ships = [],
   pendingNavalBattleRequests = [],
+  territorialScores = [],
   navalBattleAreaDraft,
   activeNavalBattle,
   isGM,
@@ -389,6 +391,7 @@ export function BattlesPage({
   armies?: readonly ArmyView[];
   ships?: readonly ShipView[];
   pendingNavalBattleRequests?: readonly NavalBattleRequestView[];
+  territorialScores?: readonly TerritorialScoreView[];
   navalBattleAreaDraft?: NavalBattleAreaDraftView;
   activeNavalBattle?: NavalBattleView;
   isGM: boolean;
@@ -408,12 +411,32 @@ export function BattlesPage({
       : undefined)
     : undefined;
   const visibleNavalRequests = isGM ? pendingNavalBattleRequests : [];
-  const hasVisibleBattle = battles.length > 0 || navalBattle !== undefined || visibleNavalRequests.length > 0;
+  const hasVisibleBattle = battles.length > 0 || navalBattle !== undefined || visibleNavalRequests.length > 0 || territorialScores.length > 0;
 
   return (
     <section aria-labelledby="battles-title">
       <div className="section-heading wiki-page-heading"><div><p className="eyebrow">Контакты</p><h2 id="battles-title">Бои</h2><p className="page-description">Активные столкновения, участвующие армии и быстрые действия ведущего.</p></div></div>
       <div className="card-list">
+        {territorialScores.length > 0 && (
+          <article className="army-card wiki-card battle-card" aria-label="Территориальные очки войны">
+            <h3>Территориальные очки</h3>
+            <div className="battle-participants">
+              {territorialScores.map((score) => (
+                <div className="battle-participant-row" key={`${score.holderStateId}:${score.opponentStateId}`}>
+                  <div>
+                    <strong>{score.holderStateName} → {score.opponentStateName}</strong>
+                    <span>
+                      {score.contributingCities.length > 0
+                        ? score.contributingCities.map((city) => `${city.name}: +${city.income}/ход`).join(" · ")
+                        : "Сейчас удерживаемых городов, приносящих очки, нет"}
+                    </span>
+                  </div>
+                  <strong>{score.points} очк.</strong>
+                </div>
+              ))}
+            </div>
+          </article>
+        )}
         {visibleNavalRequests.length > 0 && (
           <NavalBattleRequestQueue
             requests={visibleNavalRequests}

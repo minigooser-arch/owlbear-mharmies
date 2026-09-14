@@ -54,6 +54,7 @@ export const METADATA_KEYS = {
   barrier: `${EXTENSION_ID}/barrier`,
   localClone: `${EXTENSION_ID}/local-clone`,
   routeOverlay: `${EXTENSION_ID}/route-overlay`,
+  supplyOverlay: `${EXTENSION_ID}/supply-overlay`,
   routePreview: `${EXTENSION_ID}/route-preview`,
   shipRouteOverlay: `${EXTENSION_ID}/ship-route-overlay`,
   shipRoutePreview: `${EXTENSION_ID}/ship-route-preview`,
@@ -63,7 +64,8 @@ export const METADATA_KEYS = {
   navalShipOverlay: `${EXTENSION_ID}/naval-ship-overlay`,
   interceptionOverlay: `${EXTENSION_ID}/interception-overlay`,
   mapBrushPreview: `${EXTENSION_ID}/map-brush-preview`,
-  navalBattleAreaPreview: `${EXTENSION_ID}/naval-battle-area-preview`
+  navalBattleAreaPreview: `${EXTENSION_ID}/naval-battle-area-preview`,
+  peaceTransferOverlay: `${EXTENSION_ID}/peace-transfer-overlay`
 } as const;
 
 export const DEFAULT_SETTINGS: SceneSettings = {
