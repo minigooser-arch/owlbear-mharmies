@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { buildRoleSafeSnapshot as buildCoreSnapshot } from "../owlbear/extensionServicesCore";
 import { buildRoleSafeSnapshot as buildLegacySnapshot } from "../owlbear/extensionServices";
+import { validateArmyCommand } from "../commands/commandValidation";
 import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE } from "../shared/constants";
-import type { ArmyState, SceneItemRecord, SceneState } from "../shared/types";
+import { COMMAND_PROTOCOL_VERSION, type ArmyState, type SceneItemRecord, type SceneState } from "../shared/types";
 
 function armyState(sideId: string): ArmyState {
   return {
@@ -94,5 +95,48 @@ describe("state-war integration regressions", () => {
 
     expect(buildCoreSnapshot(input).armies[0]?.atWar).toBe(true);
     expect(buildLegacySnapshot(input).armies[0]?.atWar).toBe(true);
+  });
+
+  it("rejects obsolete legacy war and faction-territory commands at the protocol boundary", () => {
+    const envelope = {
+      protocolVersion: COMMAND_PROTOCOL_VERSION,
+      requestId: "legacy-command",
+      senderPlayerId: "gm",
+      senderConnectionId: "gm-connection",
+      expectedRevision: 1
+    };
+    const legacyPayloads = [
+      {
+        type: "CREATE_WAR",
+        war: {
+          id: "legacy-war",
+          name: "Legacy war",
+          participantFactionIds: ["red", "blue"],
+          participantStateIds: ["ru", "de"],
+          active: true
+        }
+      },
+      { type: "UPDATE_WAR", warId: "legacy-war", patch: { participantStateIds: ["ru", "de"] } },
+      { type: "END_WAR", warId: "legacy-war" },
+      {
+        type: "UPDATE_FACTION_TERRITORY_CELLS",
+        cells: [{ x: 0, y: 0 }],
+        sideId: "red",
+        operation: "ADD"
+      },
+      {
+        type: "CLEAR_CELL_PROPERTIES",
+        cells: [{ x: 0, y: 0 }],
+        target: "SELECTED_FACTION",
+        sideId: "red"
+      }
+    ];
+
+    for (const payload of legacyPayloads) {
+      expect(validateArmyCommand({ ...envelope, ...payload })).toMatchObject({
+        ok: false,
+        reason: "INVALID_COMMAND"
+      });
+    }
   });
 });
