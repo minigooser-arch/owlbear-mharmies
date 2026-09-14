@@ -547,6 +547,21 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
   CLOSE_REBELLION: (value) => sideId(value.rebellionId)
     ? { type: "CLOSE_REBELLION", rebellionId: value.rebellionId }
     : undefined,
+  START_CIVIL_WAR: (value) =>
+    sideId(value.sourceStateId) &&
+    sideId(value.rebelFactionId) &&
+    sideId(value.newStateId) &&
+    boundedString(value.newStateName, 80) &&
+    boundedString(value.newStateColor, 32)
+      ? {
+          type: "START_CIVIL_WAR",
+          sourceStateId: value.sourceStateId,
+          rebelFactionId: value.rebelFactionId,
+          newStateId: value.newStateId,
+          newStateName: value.newStateName.trim(),
+          newStateColor: value.newStateColor.trim()
+        }
+      : undefined,
   SET_DEFACTO_STATE_CELLS: (value) => { const cells = parseCells(value.cells); return cells && (value.stateId === null || sideId(value.stateId)) ? { type: "SET_DEFACTO_STATE_CELLS", cells, stateId: value.stateId as string | null } : undefined; },
   SET_ARMY_HP: (value) => {
     if (!boundedString(value.armyId) || !nonNegativeInteger(value.hp)) return undefined;
