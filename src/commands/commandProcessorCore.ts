@@ -50,6 +50,7 @@ import { createState, deleteState, setSideState, updateState } from "../states/s
 import { removeStateRelations, setMilitaryAccess, setPairWar } from "../states/stateRelations";
 import { applyPeaceTransfer, validatePeaceTransfer } from "../territory/peaceTransfer";
 import { closeRebellion, startRebellion } from "../rebellions/rebellionService";
+import { startCivilWar } from "../rebellions/civilWarService";
 
 export interface CommandState {
   scene: SceneState;
@@ -1539,6 +1540,20 @@ export class CommandProcessor {
         } catch (error) {
           return error instanceof Error ? error.message : "INVALID_REBELLION";
         }
+      case "START_CIVIL_WAR": {
+        const split = startCivilWar(state.scene, {
+          sourceStateId: command.sourceStateId,
+          rebelFactionId: command.rebelFactionId,
+          newStateId: command.newStateId,
+          newStateName: command.newStateName,
+          newStateColor: command.newStateColor
+        });
+        if (!split.ok) return split.reason;
+        state.scene = split.scene;
+        revalidateAllRoutes(state);
+        reconcileForcedExits(state, this.cellForPosition, "BORDER_CHANGED");
+        return undefined;
+      }
       case "SET_DEFACTO_STATE_CELLS":
         if (command.stateId !== null && !state.scene.states.some((candidate) => candidate.id === command.stateId)) return "STATE_NOT_FOUND";
         state.scene.gridMap = applyCellPatchBatch(state.scene.gridMap, command.cells.map((cell) => ({ cell, patch: { deFactoStateId: command.stateId } })));
