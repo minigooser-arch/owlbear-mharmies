@@ -55,7 +55,6 @@ function prepareArmyForNewTurn(
     movement: { maxUnits: 10, remainingUnits: 10, enteredRouteCellCount: 0 },
     revision: army.revision + 1
   };
-  if (!supplied) next = applyEncirclementDamage(next);
 
   if (armyCell && positionForCell && next.status !== "IN_BATTLE" &&
       scene.forcedExitStates?.some((entry) => entry.armyId === armyId && entry.startedOnTurn <= nextTurn)) {
