@@ -1,14 +1,12 @@
 import { destroyArmy } from "../armies/armyLifecycle";
-import { applyEncirclementCheckpoint } from "../supply/encirclementService";
 import { validatePlannedRoute } from "../movement/movementRules";
 import { politicalRouteGate } from "../movement/authoritativeStateMovement";
-import { forcedExitRouteGate, forcedExitTurnRoute, reconcileForcedExitStates } from "../movement/forcedExitService";
+import { forcedExitRouteGate, forcedExitTurnRoute } from "../movement/forcedExitService";
 import { SHIP_CLASSES } from "../naval/ships/shipClasses";
-import { stateForFaction } from "../states/stateRules";
-import { isArmySupplied } from "../supply/supplyService";
 import { readCell } from "../terrain/gridMap";
-import { applyTerritorialScoreCheckpoint } from "../wars/territorialScore";
 import type { ArmyState, GridCellCoord, SceneState, TurnState, Vector2 } from "../shared/types";
+import { runTurnCheckpoint } from "./turnCheckpointPipeline";
+import { preCheckpointTurnBlockers, type TurnBlocker } from "./turnCompletionGuard";
 import { deferredBoundary, getLatestStandardTurnBoundary, getNextStandardTurnBoundary } from "./turnSchedule";
 
 export type TurnCompletionSource = "SCHEDULE" | "MANUAL";
@@ -23,7 +21,8 @@ export interface CompleteTurnInput {
 }
 
 export type CompleteTurnResult =
-  | { changed: false; reason: "AUTO_TURNS_PAUSED" | "ALREADY_PROCESSED" | "NAVAL_BATTLE_ACTIVE" }
+  | { changed: false; reason: "AUTO_TURNS_PAUSED" | "ALREADY_PROCESSED" }
+  | { changed: false; reason: TurnBlocker; blockers: TurnBlocker[] }
   | { changed: true; scene: SceneState; armies: Record<string, ArmyState> };
 
 function withoutStopReason(army: ArmyState): ArmyState {
@@ -40,19 +39,8 @@ function prepareArmyForNewTurn(
   nextTurn: number,
   positionForCell?: (cell: GridCellCoord) => Vector2
 ): ArmyState {
-  const factionState = stateForFaction(scene, army.sideId);
-  const embarkedShipId = army.embarkedOnShipId ?? null;
-  const genuinelyEmbarked = embarkedShipId !== null &&
-    scene.ships?.[embarkedShipId]?.embarkedArmyId === armyId;
-  const supplied = genuinelyEmbarked
-    ? true
-    : factionState && armyCell
-      ? isArmySupplied(scene, army, armyCell)
-      : true;
-
   let next: ArmyState = {
     ...army,
-    supply: { supplied, checkedOnTurn: nextTurn },
     movement: { maxUnits: 10, remainingUnits: 10, enteredRouteCellCount: 0 },
     revision: army.revision + 1
   };
@@ -146,9 +134,6 @@ export function completeTurn(
   armies: Readonly<Record<string, ArmyState>>,
   input: CompleteTurnInput
 ): CompleteTurnResult {
-  if (scene.activeNavalBattle?.status === "ACTIVE") {
-    return { changed: false, reason: "NAVAL_BATTLE_ACTIVE" };
-  }
   if (input.source === "SCHEDULE" && scene.turn.autoTurnsPaused) {
     return { changed: false, reason: "AUTO_TURNS_PAUSED" };
   }
@@ -157,6 +142,11 @@ export function completeTurn(
     if (scene.turn.lastProcessedBoundaryId === input.boundaryId) {
       return { changed: false, reason: "ALREADY_PROCESSED" };
     }
+  }
+
+  const blockers = preCheckpointTurnBlockers(scene);
+  if (blockers.length > 0) {
+    return { changed: false, reason: blockers[0] ?? "MOVEMENT_RESOLUTION_PENDING", blockers };
   }
 
   let nextScene = structuredClone(scene);
@@ -174,14 +164,15 @@ export function completeTurn(
   }
   nextScene.battleGroups = nextBattleGroups;
 
-  nextScene.forcedExitStates = reconcileForcedExitStates(
-    nextScene,
-    nextArmies,
-    input.armyCells,
-    nextTurn
-  );
+  const checkpoint = runTurnCheckpoint({
+    scene: nextScene,
+    armies: nextArmies,
+    armyCells: input.armyCells
+  }, nextTurn);
+  nextScene = checkpoint.scene;
+  nextArmies = checkpoint.armies;
 
-  // Supply, fixed 5 OP, and simultaneous route activation.
+  // Open the new movement phase only after every strategic checkpoint effect completed.
   for (const [armyId, army] of Object.entries(nextArmies)) {
     nextArmies[armyId] = prepareArmyForNewTurn(
       nextScene,
@@ -192,22 +183,6 @@ export function completeTurn(
       input.positionForCell
     );
   }
-
-  // Encirclement is an explicit idempotent checkpoint after the authoritative supply pass.
-  nextScene.turnCheckpoint = {
-    turnNumber: nextTurn,
-    forcedExitDone: true,
-    supplyDone: true,
-    encirclementDone: false,
-    territorialScoreDone: false
-  };
-  const encirclement = applyEncirclementCheckpoint({
-    scene: nextScene,
-    armies: nextArmies
-  }, nextTurn);
-  nextScene = encirclement.scene;
-  nextArmies = encirclement.armies;
-  nextScene = applyTerritorialScoreCheckpoint(nextScene, nextTurn);
 
   // Restore each ship's class strategic movement budget without changing its order or combat state.
   if (nextScene.ships) {
