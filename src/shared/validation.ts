@@ -360,7 +360,6 @@ function normalizePlannedRoute(value: unknown): PlannedRoute {
     "NOT_ORTHOGONAL",
     "OUTSIDE_MAP",
     "IMPASSABLE",
-    "OUTSIDE_FACTION_TERRITORY",
     "INVALID_TERRAIN",
     "INSUFFICIENT_MOVEMENT_POINTS",
     "ARMY_STATE_BLOCKS_MOVEMENT",
