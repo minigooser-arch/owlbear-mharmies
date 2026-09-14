@@ -49,6 +49,7 @@ import { applyShipRevealUntilNextTurn } from "../naval/detection/navalVisibility
 import { createState, deleteState, setSideState, updateState } from "../states/stateService";
 import { removeStateRelations, setMilitaryAccess, setPairWar } from "../states/stateRelations";
 import { applyPeaceTransfer, validatePeaceTransfer } from "../territory/peaceTransfer";
+import { closeRebellion, startRebellion } from "../rebellions/rebellionService";
 
 export interface CommandState {
   scene: SceneState;
@@ -1519,6 +1520,25 @@ export class CommandProcessor {
         reconcileForcedExits(state, this.cellForPosition, "BORDER_CHANGED");
         return undefined;
       }
+      case "START_REBELLION":
+        try {
+          state.scene = startRebellion(state.scene, {
+            id: command.rebellionId,
+            sourceStateId: command.sourceStateId,
+            capitalCityId: command.capitalCityId,
+            participantFactionIds: command.participantFactionIds
+          });
+          return undefined;
+        } catch (error) {
+          return error instanceof Error ? error.message : "INVALID_REBELLION";
+        }
+      case "CLOSE_REBELLION":
+        try {
+          state.scene = closeRebellion(state.scene, command.rebellionId);
+          return undefined;
+        } catch (error) {
+          return error instanceof Error ? error.message : "INVALID_REBELLION";
+        }
       case "SET_DEFACTO_STATE_CELLS":
         if (command.stateId !== null && !state.scene.states.some((candidate) => candidate.id === command.stateId)) return "STATE_NOT_FOUND";
         state.scene.gridMap = applyCellPatchBatch(state.scene.gridMap, command.cells.map((cell) => ({ cell, patch: { deFactoStateId: command.stateId } })));
