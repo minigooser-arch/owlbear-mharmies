@@ -527,6 +527,7 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
       ? { type: "SET_STATE_WAR", leftStateId: value.leftStateId, rightStateId: value.rightStateId, atWar: value.atWar }
       : undefined,
   SET_RECOGNIZED_STATE_CELLS: (value) => { const cells = parseCells(value.cells); return cells && (value.stateId === null || sideId(value.stateId)) ? { type: "SET_RECOGNIZED_STATE_CELLS", cells, stateId: value.stateId as string | null } : undefined; },
+  APPLY_PEACE_TRANSFER: (value) => { const cells = parseCells(value.cells); return cells && cells.length > 0 && sideId(value.recipientStateId) ? { type: "APPLY_PEACE_TRANSFER", recipientStateId: value.recipientStateId, cells } : undefined; },
   SET_DEFACTO_STATE_CELLS: (value) => { const cells = parseCells(value.cells); return cells && (value.stateId === null || sideId(value.stateId)) ? { type: "SET_DEFACTO_STATE_CELLS", cells, stateId: value.stateId as string | null } : undefined; },
   SET_ARMY_HP: (value) => {
     if (!boundedString(value.armyId) || !nonNegativeInteger(value.hp)) return undefined;
