@@ -45,3 +45,26 @@ it("assigns a faction to a state and can set an eligible ruling faction", () => 
   fireEvent.change(screen.getByLabelText("Правящая фракция Россия"), { target: { value: "red" } });
   expect(onAction).toHaveBeenLastCalledWith({ type: "UPDATE_STATE", stateId: "russia", patch: { rulingFactionId: "red" } });
 });
+
+it("edits state name and color from the state administration page", () => {
+  const onAction = vi.fn();
+  render(<StatesPage states={states} sides={sides} onAction={onAction} />);
+
+  fireEvent.change(screen.getByLabelText("Название государства Россия"), { target: { value: "Российская империя" } });
+  fireEvent.change(screen.getByLabelText("Цвет государства Россия"), { target: { value: "#aa0000" } });
+  fireEvent.click(screen.getByRole("button", { name: "Сохранить государство Россия" }));
+
+  expect(onAction).toHaveBeenCalledWith({
+    type: "UPDATE_STATE",
+    stateId: "russia",
+    patch: { name: "Российская империя", color: "#aa0000" }
+  });
+});
+
+it("deletes a state from the state administration page", () => {
+  const onAction = vi.fn();
+  render(<StatesPage states={states} sides={sides} onAction={onAction} />);
+
+  fireEvent.click(screen.getByRole("button", { name: "Удалить государство Россия" }));
+  expect(onAction).toHaveBeenCalledWith({ type: "DELETE_STATE", stateId: "russia" });
+});
