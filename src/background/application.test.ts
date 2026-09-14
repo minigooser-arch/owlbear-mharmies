@@ -404,6 +404,7 @@ describe("ProductionEngine command boundary", () => {
       id: "army", type: "IMAGE", position: { x: 0, y: 0 },
       metadata: { [METADATA_KEYS.army]: scheduledArmy }
     }]);
+    fixture.scene.turn.phase = "POST_MOVEMENT";
     const engine = new ProductionEngine(
       fixture.port,
       () => new Date("2026-09-02T12:00:01.000Z")
