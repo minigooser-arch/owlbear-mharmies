@@ -1,5 +1,5 @@
 import { destroyArmy } from "../armies/armyLifecycle";
-import { applyEncirclementDamage } from "../health/armyHealth";
+import { applyEncirclementCheckpoint } from "../supply/encirclementService";
 import { validatePlannedRoute } from "../movement/movementRules";
 import { politicalRouteGate } from "../movement/authoritativeStateMovement";
 import { forcedExitRouteGate, forcedExitTurnRoute, reconcileForcedExitStates } from "../movement/forcedExitService";
@@ -159,7 +159,7 @@ export function completeTurn(
     }
   }
 
-  const nextScene = structuredClone(scene);
+  let nextScene = structuredClone(scene);
   let nextArmies = structuredClone(armies) as Record<string, ArmyState>;
   let nextBattleGroups = structuredClone(scene.battleGroups);
   const nextTurn = scene.turn.turnNumber + 1;
@@ -181,17 +181,32 @@ export function completeTurn(
     nextTurn
   );
 
-  // Supply, encirclement damage, destruction, fixed 5 OP, and simultaneous route activation.
+  // Supply, fixed 5 OP, and simultaneous route activation.
   for (const [armyId, army] of Object.entries(nextArmies)) {
-    const prepared = prepareArmyForNewTurn(nextScene, armyId, army, input.armyCells[armyId], nextTurn, input.positionForCell);
-    if (prepared.health.hp <= 0) {
-      const destroyed = destroyArmy(nextArmies, nextScene.battleGroups, armyId);
-      nextArmies = destroyed.armies;
-      nextScene.battleGroups = destroyed.battleGroups;
-      continue;
-    }
-    nextArmies[armyId] = prepared;
+    nextArmies[armyId] = prepareArmyForNewTurn(
+      nextScene,
+      armyId,
+      army,
+      input.armyCells[armyId],
+      nextTurn,
+      input.positionForCell
+    );
   }
+
+  // Encirclement is an explicit idempotent checkpoint after the authoritative supply pass.
+  nextScene.turnCheckpoint = {
+    turnNumber: nextTurn,
+    forcedExitDone: true,
+    supplyDone: true,
+    encirclementDone: false,
+    territorialScoreDone: false
+  };
+  const encirclement = applyEncirclementCheckpoint({
+    scene: nextScene,
+    armies: nextArmies
+  }, nextTurn);
+  nextScene = encirclement.scene;
+  nextArmies = encirclement.armies;
 
   // Restore each ship's class strategic movement budget without changing its order or combat state.
   if (nextScene.ships) {
