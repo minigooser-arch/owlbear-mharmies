@@ -39,7 +39,7 @@ export function App({ services }: { services: ExtensionServices }) {
   const selectTab = (next: Tab) => isGM ? setGmTab(next as GmTab) : setPlayerTab(next as PlayerTab);
 
   const send = (command: UiCommand) => {
-    if (["DELETE_SIDE", "DELETE_STATE", "STOP_ALL", "RELEASE_BATTLE_GROUP", "COMPLETE_TURN_NOW", "REQUEST_ARMY_DISBAND", "UNREGISTER_SHIP", "COMPLETE_NAVAL_BATTLE"].includes(command.type) || (command.type === "SET_ARMY_HP" && command.hp === 0)) setDangerous(command);
+    if (["DELETE_SIDE", "DELETE_STATE", "STOP_ALL", "RELEASE_BATTLE_GROUP", "COMPLETE_TURN_NOW", "REQUEST_ARMY_DISBAND", "UNREGISTER_SHIP", "COMPLETE_NAVAL_BATTLE", "START_CIVIL_WAR"].includes(command.type) || (command.type === "SET_ARMY_HP" && command.hp === 0)) setDangerous(command);
     else void state.send(command);
   };
 
