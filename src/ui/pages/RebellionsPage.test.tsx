@@ -97,3 +97,23 @@ it("closes an active rebellion", () => {
   fireEvent.click(screen.getByRole("button", { name: "Завершить восстание" }));
   expect(onAction).toHaveBeenCalledWith({ type: "CLOSE_REBELLION", rebellionId: "reb-1" });
 });
+
+
+it("builds a civil war split command for a non-ruling faction", () => {
+  const onAction = vi.fn();
+  render(<RebellionsPage states={states} sides={sides} cities={cities} statuses={[]} onAction={onAction} />);
+
+  fireEvent.change(screen.getByLabelText("Название нового государства после раскола"), {
+    target: { value: "Республика" }
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Начать гражданскую войну" }));
+
+  expect(onAction).toHaveBeenCalledWith(expect.objectContaining({
+    type: "START_CIVIL_WAR",
+    sourceStateId: "state",
+    rebelFactionId: "rebels",
+    newStateId: expect.stringMatching(/^state-/),
+    newStateName: "Республика",
+    newStateColor: "#aa3344"
+  }));
+});
