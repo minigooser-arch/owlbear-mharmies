@@ -31,7 +31,7 @@ it("persists the scheduled ship movement reset to scene state and source token m
     terrain: structuredClone(DEFAULT_TERRAIN),
     gridMap: { version: 1, revision: 0, cells: {} },
     wars: [],
-    turn: { ...structuredClone(DEFAULT_TURN_STATE), phase: "MOVEMENT" },
+    turn: { ...structuredClone(DEFAULT_TURN_STATE), phase: "POST_MOVEMENT" },
     ships: { ship: spentShip },
     navalBattleRequests: [],
     activeNavalBattle: null,
