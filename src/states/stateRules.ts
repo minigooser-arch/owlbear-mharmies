@@ -1,4 +1,4 @@
-import type { Side, StateEntity, WarState } from "../shared/types";
+import type { Side, StateEntity, StateRelations, WarState } from "../shared/types";
 
 export interface StatePoliticalContext {
   states: readonly StateEntity[];
@@ -22,4 +22,21 @@ export function isRulingFaction(
 ): boolean {
   const state = stateForFaction(context, factionId);
   return state?.rulingFactionId === factionId;
+}
+
+export function isFactionStateAtWar(
+  context: Pick<StatePoliticalContext, "states" | "sides"> & { stateRelations?: StateRelations },
+  factionId: string
+): boolean {
+  const state = stateForFaction(context, factionId);
+  if (!state) return false;
+
+  const relations = context.stateRelations ?? {};
+  if (Object.entries(relations[state.id] ?? {}).some(([otherStateId, relation]) =>
+    otherStateId !== state.id && relation.atWar
+  )) return true;
+
+  return Object.entries(relations).some(([otherStateId, targets]) =>
+    otherStateId !== state.id && targets[state.id]?.atWar === true
+  );
 }
