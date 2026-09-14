@@ -14,10 +14,8 @@ import {
   DEFAULT_TURN_STATE,
   METADATA_KEYS,
   MAP_BRUSH_ERASER_TARGET_KEY,
-  MAP_BRUSH_FACTION_OPERATION_KEY,
   MAP_BRUSH_IMPASSABLE_VALUE_KEY,
   MAP_BRUSH_MODE_KEY,
-  MAP_BRUSH_SIDE_ID_KEY,
   MAP_BRUSH_STATE_ID_KEY,
   MAP_BRUSH_SIZE_KEY,
   MAP_BRUSH_TERRAIN_ID_KEY,
@@ -706,9 +704,7 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
           [MAP_BRUSH_MODE_KEY]: settings.mode,
           [MAP_BRUSH_SIZE_KEY]: settings.size,
           [MAP_BRUSH_TERRAIN_ID_KEY]: settings.terrainId,
-          [MAP_BRUSH_SIDE_ID_KEY]: settings.sideId ?? null,
           [MAP_BRUSH_STATE_ID_KEY]: settings.stateId ?? null,
-          [MAP_BRUSH_FACTION_OPERATION_KEY]: settings.factionOperation,
           [MAP_BRUSH_IMPASSABLE_VALUE_KEY]: settings.impassable,
           [MAP_BRUSH_ERASER_TARGET_KEY]: settings.eraserTarget
         });
