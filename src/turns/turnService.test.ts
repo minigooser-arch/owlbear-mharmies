@@ -210,6 +210,7 @@ it("automatically continues withdrawal over multiple turns using the available b
   expect(first.changed).toBe(true); if (!first.changed) return;
   expect(first.armies.a?.plannedRoute.cells).toHaveLength(5);
   expect(first.armies.a?.status).toBe("MOVING");
+  first.scene.turn.phase = "POST_MOVEMENT";
   const second = completeTurn(first.scene, first.armies, {
     source:"MANUAL",completedAt:new Date("2026-09-03T10:00:00Z"),armyCells:{a:{x:5,y:0}},
     positionForCell: ({x,y}) => ({x:x*100+50,y:y*100+50})
