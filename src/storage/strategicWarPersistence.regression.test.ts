@@ -144,8 +144,16 @@ describe("strategic war persistence regressions", () => {
     expect(reloaded.rebellions).toEqual(initial.rebellions);
     expect(reloaded.turnCheckpoint).toEqual(initial.turnCheckpoint);
 
-    // Legacy wars remain readable history, but they must not rewrite exact-pair diplomacy.
-    expect(reloaded.wars).toEqual(initial.wars);
+    // Legacy wars remain readable history. Repository normalization may reorder participant ids,
+    // but it must not rewrite exact-pair diplomacy.
+    expect(reloaded.wars).toHaveLength(1);
+    expect(reloaded.wars[0]).toMatchObject({
+      id: "legacy-history",
+      name: "Историческая запись",
+      active: false
+    });
+    expect(new Set(reloaded.wars[0]?.participantFactionIds)).toEqual(new Set(["red", "blue"]));
+    expect(new Set(reloaded.wars[0]?.participantStateIds)).toEqual(new Set(["ru", "de"]));
     expect(reloaded.stateRelations?.ru?.de).toEqual({ militaryAccess: false, atWar: true });
     expect(reloaded.stateRelations?.de?.ru).toEqual({ militaryAccess: true, atWar: true });
   });
