@@ -48,6 +48,7 @@ import {
   type SceneState
 } from "../shared/types";
 import { migrateSceneState } from "../storage/migrations";
+import { territorialCityContributions } from "../wars/territorialScore";
 import { isFactionAtWar } from "../wars/warRules";
 import { MetadataRepository, type ArmyRecord, type ShipRecord } from "../storage/metadataRepository";
 import type {
@@ -60,6 +61,7 @@ import type {
   ShipView,
   TransportEmbarkRequestView,
   TransportEmbarkTargetView,
+  TerritorialScoreView,
   UiCommand
 } from "../ui/state/useExtensionState";
 import { DiagnosticsService, type DiagnosticsPort } from "./diagnostics";
@@ -332,6 +334,39 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
       ...tactical
     };
   });
+  const contributions = territorialCityContributions(input.scene);
+  const stateNames = new Map(input.scene.states.map((state) => [state.id, state.name]));
+  const scoreByPair = new Map(
+    (input.scene.territorialScores ?? []).map((score) => [
+      `${score.holderStateId}\u0000${score.opponentStateId}`,
+      score
+    ])
+  );
+  const pairKeys = new Set([
+    ...scoreByPair.keys(),
+    ...contributions.map((entry) => `${entry.holderStateId}\u0000${entry.opponentStateId}`)
+  ]);
+  const territorialScores: TerritorialScoreView[] = [...pairKeys]
+    .sort()
+    .map((key) => {
+      const separator = key.indexOf("\u0000");
+      const holderStateId = key.slice(0, separator);
+      const opponentStateId = key.slice(separator + 1);
+      const score = scoreByPair.get(key);
+      return {
+        holderStateId,
+        holderStateName: stateNames.get(holderStateId) ?? holderStateId,
+        opponentStateId,
+        opponentStateName: stateNames.get(opponentStateId) ?? opponentStateId,
+        points: score?.points ?? 0,
+        contributingCities: contributions
+          .filter((entry) =>
+            entry.holderStateId === holderStateId &&
+            entry.opponentStateId === opponentStateId
+          )
+          .map((entry) => ({ id: entry.cityId, name: entry.cityName, income: entry.income }))
+      };
+    });
   const activeNavalBattle = input.role === "GM" && input.scene.activeNavalBattle?.status === "ACTIVE"
     ? {
         id: input.scene.activeNavalBattle.id,
@@ -359,6 +394,7 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
     pendingNavalBattleRequests,
     transportEmbarkTargets,
     pendingTransportEmbarkRequests,
+    territorialScores,
     ...(activeNavalBattle ? { activeNavalBattle } : {}),
     sides: input.scene.sides,
     states: input.scene.states,

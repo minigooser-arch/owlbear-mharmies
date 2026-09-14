@@ -86,6 +86,14 @@ export interface NavalBattleRequestView { id: string; initiatingShipId: string; 
 export interface NavalBattleAreaDraftView { requestId: string; cells: GridCellCoord[]; }
 export interface NavalBattleView { id: string; roundNumber: number; participantCount: number; currentShipId: string | null; initiative?: Array<{ shipId: string; total: number }>; completedShipIdsThisRound?: string[]; exitedShipIds?: string[]; }
 export interface PartyPlayerView { id: string; name: string; color: string; role: "GM" | "PLAYER"; connected: boolean; }
+export interface TerritorialScoreView {
+  holderStateId: string;
+  holderStateName: string;
+  opponentStateId: string;
+  opponentStateName: string;
+  points: number;
+  contributingCities: Array<{ id: string; name: string; income: number }>;
+}
 
 export interface RawExtensionSnapshot {
   ready: boolean;
@@ -108,6 +116,7 @@ export interface RawExtensionSnapshot {
   sides: readonly Side[];
   states: readonly StateEntity[];
   strategicCities?: readonly StrategicCity[];
+  territorialScores?: readonly TerritorialScoreView[];
   relations: Readonly<Record<string, Record<string, import("../../shared/types").SideRelation>>>;
   stateRelations?: StateRelations;
   battleGroups: readonly BattleGroup[];
@@ -154,6 +163,7 @@ export interface ExtensionViewModel extends RawExtensionSnapshot {
   armies: ArmyView[];
   ships: ShipView[];
   strategicCities: StrategicCity[];
+  territorialScores: TerritorialScoreView[];
   navalRequestTargets: NavalRequestTargetView[];
   pendingNavalBattleRequests: NavalBattleRequestView[];
   transportEmbarkTargets: TransportEmbarkTargetView[];
@@ -175,6 +185,7 @@ export function useExtensionState(services: ExtensionServices): ExtensionViewMod
       armies,
       ships,
       strategicCities: [...(snapshot.strategicCities ?? [])],
+      territorialScores: [...(snapshot.territorialScores ?? [])],
       navalRequestTargets: [...(snapshot.navalRequestTargets ?? [])],
       pendingNavalBattleRequests: [...(snapshot.pendingNavalBattleRequests ?? [])],
       transportEmbarkTargets: [...(snapshot.transportEmbarkTargets ?? [])],

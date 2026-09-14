@@ -7,6 +7,7 @@ import { SHIP_CLASSES } from "../naval/ships/shipClasses";
 import { stateForFaction } from "../states/stateRules";
 import { isArmySupplied } from "../supply/supplyService";
 import { readCell } from "../terrain/gridMap";
+import { applyTerritorialScoreCheckpoint } from "../wars/territorialScore";
 import type { ArmyState, GridCellCoord, SceneState, TurnState, Vector2 } from "../shared/types";
 import { deferredBoundary, getLatestStandardTurnBoundary, getNextStandardTurnBoundary } from "./turnSchedule";
 
@@ -206,6 +207,7 @@ export function completeTurn(
   }, nextTurn);
   nextScene = encirclement.scene;
   nextArmies = encirclement.armies;
+  nextScene = applyTerritorialScoreCheckpoint(nextScene, nextTurn);
 
   // Restore each ship's class strategic movement budget without changing its order or combat state.
   if (nextScene.ships) {
