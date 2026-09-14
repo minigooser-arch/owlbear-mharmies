@@ -532,6 +532,8 @@ export type ArmyCommandPayload =
     | { type: "SET_STATE_WAR"; leftStateId: string; rightStateId: string; atWar: boolean }
     | { type: "SET_RECOGNIZED_STATE_CELLS"; cells: GridCellCoord[]; stateId: string | null }
     | { type: "APPLY_PEACE_TRANSFER"; recipientStateId: string; cells: GridCellCoord[] }
+    | { type: "START_REBELLION"; rebellionId: string; sourceStateId: string; capitalCityId: string; participantFactionIds: string[] }
+    | { type: "CLOSE_REBELLION"; rebellionId: string }
     | { type: "SET_DEFACTO_STATE_CELLS"; cells: GridCellCoord[]; stateId: string | null }
     | { type: "SET_ARMY_HP"; armyId: string; hp: number; maxHp?: number }
     | { type: "HEAL_ARMY"; armyId: string; amount: number }
