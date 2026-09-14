@@ -456,7 +456,13 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
   ]);
   const adapter = createOwlbearAdapter();
   const repository = new MetadataRepository(adapter);
-  const peaceTransferOverlay = new PeaceTransferOverlayService(adapter);
+  const peaceTransferOverlay = new PeaceTransferOverlayService({
+    getLocalItems: () => adapter.getLocalItems(),
+    addLocalItems: (items) => adapter.addLocalItems(items),
+    updateLocalItems: (items) => adapter.updateLocalItems(items),
+    deleteLocalItems: (ids) => adapter.deleteLocalItems(ids),
+    createId: () => crypto.randomUUID()
+  });
   const diagnosticsPort: DiagnosticsPort = {
     getSelectedSource: async () => {
       const selected = await OBR.player.getSelection();
