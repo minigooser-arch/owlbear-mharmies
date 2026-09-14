@@ -64,7 +64,8 @@ export const METADATA_KEYS = {
   navalShipOverlay: `${EXTENSION_ID}/naval-ship-overlay`,
   interceptionOverlay: `${EXTENSION_ID}/interception-overlay`,
   mapBrushPreview: `${EXTENSION_ID}/map-brush-preview`,
-  navalBattleAreaPreview: `${EXTENSION_ID}/naval-battle-area-preview`
+  navalBattleAreaPreview: `${EXTENSION_ID}/naval-battle-area-preview`,
+  peaceTransferOverlay: `${EXTENSION_ID}/peace-transfer-overlay`
 } as const;
 
 export const DEFAULT_SETTINGS: SceneSettings = {
