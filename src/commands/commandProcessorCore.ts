@@ -1550,8 +1550,6 @@ export class CommandProcessor {
         });
         if (!split.ok) return split.reason;
         state.scene = split.scene;
-        revalidateAllRoutes(state);
-        reconcileForcedExits(state, this.cellForPosition, "BORDER_CHANGED");
         return undefined;
       }
       case "SET_DEFACTO_STATE_CELLS":
