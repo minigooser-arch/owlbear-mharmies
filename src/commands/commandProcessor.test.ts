@@ -595,7 +595,7 @@ it("revalidates only the unentered route cells when resuming an army", () => {
   expect(result.state.armies["army-red"]?.status).toBe("MOVING");
 });
 
-it("cleans battle and state references when a faction is deleted", () => {
+it("cleans battle and state references while preserving legacy war history when a faction is deleted", () => {
   const commandState = state();
   commandState.armies["army-blue"] = army("blue");
   commandState.armies["army-blue-2"] = army("blue");
@@ -629,7 +629,7 @@ it("cleans battle and state references when a faction is deleted", () => {
   expect(result.status).toBe("ACCEPTED");
   if (result.status !== "ACCEPTED") return;
   expect(result.state.scene.wars).toHaveLength(1);
-  expect(result.state.scene.wars[0]?.participantFactionIds).toEqual(["blue"]);
+  expect(result.state.scene.wars[0]?.participantFactionIds).toEqual(["red", "blue"]);
   expect(result.state.scene.states.find((item) => item.id === "russia")?.rulingFactionId).toBeNull();
 });
 
