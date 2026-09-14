@@ -140,7 +140,7 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
         })()
       : {}
   };
-  const stateNames = new Map(input.scene.states.map((state) => [state.id, state.name]));
+  const rebellionStateNames = new Map(input.scene.states.map((state) => [state.id, state.name]));
   const cityNames = new Map((input.scene.strategicCities ?? []).map((city) => [city.id, city.name]));
   const rebellionStatuses: RebellionStatusView[] = input.role === "GM"
     ? (input.scene.rebellions ?? []).map((rebellion) => {
@@ -148,7 +148,7 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
         return {
           id: rebellion.id,
           sourceStateId: rebellion.sourceStateId,
-          sourceStateName: stateNames.get(rebellion.sourceStateId) ?? rebellion.sourceStateId,
+          sourceStateName: rebellionStateNames.get(rebellion.sourceStateId) ?? rebellion.sourceStateId,
           startedOnTurn: rebellion.startedOnTurn,
           capitalCityId: rebellion.capitalCityId,
           capitalCityName: cityNames.get(rebellion.capitalCityId) ?? rebellion.capitalCityId,
