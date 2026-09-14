@@ -49,7 +49,7 @@ import {
   type SceneState
 } from "../shared/types";
 import { migrateSceneState } from "../storage/migrations";
-import { isFactionAtWar } from "../wars/warRules";
+import { isFactionStateAtWar } from "../states/stateRules";
 import { MetadataRepository, type ArmyRecord, type ShipRecord } from "../storage/metadataRepository";
 import type {
   ArmyView,
@@ -204,7 +204,7 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
       routeCellCount: state.plannedRoute.cells.length,
       routeRequiresReplan: state.plannedRoute.requiresReplan,
       ...(state.plannedRoute.invalidReason ? { routeInvalidReason: state.plannedRoute.invalidReason } : {}),
-      atWar: isFactionAtWar(input.scene.wars, state.sideId),
+      atWar: isFactionStateAtWar(input.scene, state.sideId),
       healthHp: state.health.hp,
       healthMaxHp: state.health.maxHp,
       supplied: state.supply.supplied,
