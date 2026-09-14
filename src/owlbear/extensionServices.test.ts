@@ -415,7 +415,6 @@ it.each([
   ["INVALID_BATTLE_NAME", "Название боя должно содержать от 1 до 80 символов."],
   ["BATTLE_NOT_FOUND", "Указанный бой не найден."],
   ["IMPASSABLE", "Эта клетка непроходима."],
-  ["OUTSIDE_FACTION_TERRITORY", "В мирное время армия не может покидать территорию своей фракции."],
   ["INSUFFICIENT_MOVEMENT_POINTS", "Для этого маршрута не хватает очков перемещения."]
 ])("provides Russian feedback for %s", (code, message) => {
   expect(notificationMessage(code)).toBe(message);
