@@ -528,6 +528,25 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
       : undefined,
   SET_RECOGNIZED_STATE_CELLS: (value) => { const cells = parseCells(value.cells); return cells && (value.stateId === null || sideId(value.stateId)) ? { type: "SET_RECOGNIZED_STATE_CELLS", cells, stateId: value.stateId as string | null } : undefined; },
   APPLY_PEACE_TRANSFER: (value) => { const cells = parseCells(value.cells); return cells && cells.length > 0 && sideId(value.recipientStateId) ? { type: "APPLY_PEACE_TRANSFER", recipientStateId: value.recipientStateId, cells } : undefined; },
+  START_REBELLION: (value) => {
+    const participantFactionIds = parseStringArray(value.participantFactionIds);
+    return sideId(value.rebellionId) &&
+      sideId(value.sourceStateId) &&
+      sideId(value.capitalCityId) &&
+      participantFactionIds &&
+      participantFactionIds.length > 0
+      ? {
+          type: "START_REBELLION",
+          rebellionId: value.rebellionId,
+          sourceStateId: value.sourceStateId,
+          capitalCityId: value.capitalCityId,
+          participantFactionIds: [...new Set(participantFactionIds)]
+        }
+      : undefined;
+  },
+  CLOSE_REBELLION: (value) => sideId(value.rebellionId)
+    ? { type: "CLOSE_REBELLION", rebellionId: value.rebellionId }
+    : undefined,
   SET_DEFACTO_STATE_CELLS: (value) => { const cells = parseCells(value.cells); return cells && (value.stateId === null || sideId(value.stateId)) ? { type: "SET_DEFACTO_STATE_CELLS", cells, stateId: value.stateId as string | null } : undefined; },
   SET_ARMY_HP: (value) => {
     if (!boundedString(value.armyId) || !nonNegativeInteger(value.hp)) return undefined;
