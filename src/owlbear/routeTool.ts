@@ -107,7 +107,6 @@ function messageForPreview(reason: RoutePreview["reason"], missingUnits?: number
     case "NOT_ORTHOGONAL": return "Только по горизонтали или вертикали";
     case "OUTSIDE_MAP": return "За пределами игровой карты";
     case "IMPASSABLE": return "Непроходимая клетка";
-    case "OUTSIDE_FACTION_TERRITORY": return "Вне территории фракции в мирное время";
     case "FOREIGN_STATE_CLOSED": return "Закрытая государственная граница";
     case "STATELESS_FACTION": return "Фракция без государства не может войти на государственную территорию";
     case "INVALID_POLITICAL_CONFIG": return "Некорректная политическая конфигурация";
