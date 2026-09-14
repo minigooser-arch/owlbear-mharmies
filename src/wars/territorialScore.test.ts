@@ -125,11 +125,9 @@ describe("territorial war score", () => {
     }];
     current.gridMap.cells["0,0"] = cell("france", "france");
     current.gridMap.cells["1,0"] = cell("france", "france");
-    current.stateRelations.germany = {
-      france: { militaryAccess: false, atWar: true }
-    };
-    current.stateRelations.france = {
-      germany: { militaryAccess: false, atWar: true }
+    current.stateRelations = {
+      germany: { france: { militaryAccess: false, atWar: true } },
+      france: { germany: { militaryAccess: false, atWar: true } }
     };
     current.strategicCities = [paris];
 
@@ -146,11 +144,9 @@ describe("territorial war score", () => {
       opponentStateId: "france",
       points: 9
     }];
-    current.stateRelations.germany = {
-      france: { militaryAccess: false, atWar: false }
-    };
-    current.stateRelations.france = {
-      germany: { militaryAccess: false, atWar: false }
+    current.stateRelations = {
+      germany: { france: { militaryAccess: false, atWar: false } },
+      france: { germany: { militaryAccess: false, atWar: false } }
     };
     current.strategicCities = [paris];
 
