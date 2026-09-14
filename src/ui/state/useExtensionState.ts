@@ -94,6 +94,25 @@ export interface TerritorialScoreView {
   points: number;
   contributingCities: Array<{ id: string; name: string; income: number }>;
 }
+export interface RebellionStatusView {
+  id: string;
+  sourceStateId: string;
+  sourceStateName: string;
+  startedOnTurn: number;
+  capitalCityId: string;
+  capitalCityName: string;
+  territoryCellCount: number;
+  active: boolean;
+  capitalControllerFactionId: string | null;
+  capitalControllerFactionName: string | null;
+  participants: Array<{
+    factionId: string;
+    factionName: string;
+    armyCount: number;
+    currentHp: number;
+    maxHp: number;
+  }>;
+}
 
 export interface RawExtensionSnapshot {
   ready: boolean;
@@ -117,6 +136,7 @@ export interface RawExtensionSnapshot {
   states: readonly StateEntity[];
   strategicCities?: readonly StrategicCity[];
   territorialScores?: readonly TerritorialScoreView[];
+  rebellionStatuses?: readonly RebellionStatusView[];
   relations: Readonly<Record<string, Record<string, import("../../shared/types").SideRelation>>>;
   stateRelations?: StateRelations;
   battleGroups: readonly BattleGroup[];
@@ -166,6 +186,7 @@ export interface ExtensionViewModel extends RawExtensionSnapshot {
   ships: ShipView[];
   strategicCities: StrategicCity[];
   territorialScores: TerritorialScoreView[];
+  rebellionStatuses: RebellionStatusView[];
   navalRequestTargets: NavalRequestTargetView[];
   pendingNavalBattleRequests: NavalBattleRequestView[];
   transportEmbarkTargets: TransportEmbarkTargetView[];
@@ -188,6 +209,7 @@ export function useExtensionState(services: ExtensionServices): ExtensionViewMod
       ships,
       strategicCities: [...(snapshot.strategicCities ?? [])],
       territorialScores: [...(snapshot.territorialScores ?? [])],
+      rebellionStatuses: [...(snapshot.rebellionStatuses ?? [])],
       navalRequestTargets: [...(snapshot.navalRequestTargets ?? [])],
       pendingNavalBattleRequests: [...(snapshot.pendingNavalBattleRequests ?? [])],
       transportEmbarkTargets: [...(snapshot.transportEmbarkTargets ?? [])],
