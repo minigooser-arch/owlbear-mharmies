@@ -58,6 +58,19 @@ describe("BattleGroup lifecycle", () => {
     ]);
   });
 
+  it("assigns the old battle id to only one component when an existing group splits", () => {
+    let nextId = 1;
+    expect(rebuildBattleGroups(
+      ["a", "b", "c", "d"],
+      [["a", "b"], ["c", "d"]],
+      [{ battleId: "battle-old", name: "Бой 1", participantIds: ["a", "b", "c", "d"], revision: 4 }],
+      () => `battle-new-${nextId++}`
+    )).toEqual([
+      { battleId: "battle-new-1", name: "Бой 2", participantIds: ["c", "d"], revision: 5 },
+      { battleId: "battle-old", name: "Бой 1", participantIds: ["a", "b"], revision: 5 }
+    ]);
+  });
+
   it("preserves the lexically surviving battle name on merge", () => {
     expect(mergeBattleGroups([
       { battleId: "b", name: "Юг", participantIds: ["b1", "b2"], revision: 1 },
