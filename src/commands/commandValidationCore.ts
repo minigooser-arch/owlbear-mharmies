@@ -436,6 +436,7 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
   ADD_SIDE_LEADER: (value) => { const parsed = sidePlayer(value); return parsed ? { type: "ADD_SIDE_LEADER", ...parsed } : undefined; },
   REMOVE_SIDE_LEADER: (value) => { const parsed = sidePlayer(value); return parsed ? { type: "REMOVE_SIDE_LEADER", ...parsed } : undefined; },
   SET_RELATION: (value) => sideId(value.leftSideId) && sideId(value.rightSideId) &&
+    value.leftSideId !== value.rightSideId &&
     (value.relation === "ALLY" || value.relation === "NEUTRAL" || value.relation === "ENEMY")
       ? { type: "SET_RELATION", leftSideId: value.leftSideId, rightSideId: value.rightSideId, relation: value.relation }
       : undefined,
