@@ -1089,6 +1089,9 @@ export class CommandProcessor {
           state.armies = Object.fromEntries(
             Object.entries(state.armies).filter(([, army]) => army.sideId !== command.sideId)
           );
+          for (const armyId of removedArmyIds) {
+            clearDestroyedArmySceneReferences(state.scene, armyId);
+          }
           state.scene.battleGroups = state.scene.battleGroups
             .map((group) => {
               const participantIds = group.participantIds.filter(
