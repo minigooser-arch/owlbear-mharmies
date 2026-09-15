@@ -27,6 +27,20 @@ describe("ship lifecycle", () => {
       version: 1, sideId: "red", classId: "BATTLESHIP", hp: 30, temporaryHp: 0, facing: "NORTH", globalMovementRemaining: 2
     });
   });
+  it("removes pending transport consent requests that reference a destroyed ship", () => {
+    const current = scene();
+    current.transportEmbarkRequests = [
+      { id: "embark-request", shipId: "cruiser", armyId: "army" },
+      { id: "other-request", shipId: "other-ship", armyId: "other-army" }
+    ];
+
+    const result = destroyShip(current, "cruiser");
+
+    expect(result.scene.transportEmbarkRequests).toEqual([
+      { id: "other-request", shipId: "other-ship", armyId: "other-army" }
+    ]);
+  });
+
   it("destroys without leaving a wreck and removes active battle references", () => {
     const result = destroyShip(scene(), "cruiser");
     expect(result.destroyed).toBe(true);
