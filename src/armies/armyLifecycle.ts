@@ -1,4 +1,4 @@
-import type { ArmyState, BattleGroup } from "../shared/types";
+import type { ArmyState, BattleGroup, SceneState } from "../shared/types";
 
 export interface DestroyArmyResult {
   armies: Record<string, ArmyState>;
@@ -41,4 +41,26 @@ export function destroyArmy(
   }
 
   return { armies: nextArmies, battleGroups: nextGroups };
+}
+
+
+/**
+ * Removes persisted scene references that become invalid once an army no longer exists.
+ * The caller owns/cloned the scene; this helper intentionally mutates that scene in place.
+ */
+export function clearDestroyedArmySceneReferences(scene: SceneState, armyId: string): void {
+  scene.forcedExitStates = (scene.forcedExitStates ?? []).filter((entry) => entry.armyId !== armyId);
+  scene.transportEmbarkRequests = (scene.transportEmbarkRequests ?? []).filter(
+    (request) => request.armyId !== armyId
+  );
+
+  for (const [shipId, ship] of Object.entries(scene.ships ?? {})) {
+    if (ship.embarkedArmyId !== armyId) continue;
+    if (!scene.ships) break;
+    scene.ships[shipId] = {
+      ...ship,
+      embarkedArmyId: null,
+      revision: ship.revision + 1
+    };
+  }
 }
