@@ -52,14 +52,16 @@ export function rebuildBattleGroups(
   existingGroups: readonly BattleGroup[],
   createId: () => string
 ): BattleGroup[] {
+  const claimedSurvivorIds = new Set<string>();
   const components = connectedComponents(armyIds, directEnemyContacts).map((participantIds) => {
     const participantSet = new Set(participantIds);
     const overlapping = existingGroups.filter((group) =>
       group.participantIds.some((participantId) => participantSet.has(participantId))
     );
-    const surviving = [...overlapping].sort((left, right) =>
-      compareOrdinal(left.battleId, right.battleId)
-    )[0];
+    const surviving = [...overlapping]
+      .sort((left, right) => compareOrdinal(left.battleId, right.battleId))
+      .find((group) => !claimedSurvivorIds.has(group.battleId));
+    if (surviving) claimedSurvivorIds.add(surviving.battleId);
     return { participantIds, overlapping, surviving };
   });
   const survivingGroups = components.flatMap(({ surviving }) =>
