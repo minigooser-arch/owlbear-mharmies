@@ -1,4 +1,4 @@
-import { destroyArmy } from "../armies/armyLifecycle";
+import { clearDestroyedArmySceneReferences, destroyArmy } from "../armies/armyLifecycle";
 import { applyEncirclementDamage } from "../health/armyHealth";
 import type { ArmyState, SceneState } from "../shared/types";
 
@@ -55,6 +55,7 @@ export function applyEncirclementCheckpoint(
     const destroyed = destroyArmy(armies, scene.battleGroups, armyId);
     armies = destroyed.armies;
     scene.battleGroups = destroyed.battleGroups;
+    clearDestroyedArmySceneReferences(scene, armyId);
   }
 
   scene.turnCheckpoint = {
