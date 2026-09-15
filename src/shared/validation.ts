@@ -255,11 +255,20 @@ function normalizeCellState(value: unknown): CellState | undefined {
   };
 }
 
+function isCanonicalGridCellKey(key: string): boolean {
+  const parts = key.split(",");
+  if (parts.length !== 2) return false;
+  const x = Number(parts[0]);
+  const y = Number(parts[1]);
+  return Number.isInteger(x) && Number.isInteger(y) && `${x},${y}` === key;
+}
+
 function normalizeGridMap(value: unknown): GridMapState {
   if (!isRecord(value)) return { version: 1, cells: {}, revision: 0 };
   const cells: Record<string, CellState> = {};
   if (isRecord(value.cells)) {
     for (const [key, rawCell] of Object.entries(value.cells)) {
+      if (!isCanonicalGridCellKey(key)) continue;
       const cell = normalizeCellState(rawCell);
       if (cell) cells[key] = cell;
     }
