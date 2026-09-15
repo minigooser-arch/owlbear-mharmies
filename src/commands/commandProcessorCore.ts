@@ -1,4 +1,4 @@
-import { joinReinforcements, releaseBattleGroup } from "../battles/battleGroupService";
+import { joinReinforcements, rebuildBattleGroups, releaseBattleGroup } from "../battles/battleGroupService";
 import { clearDestroyedArmySceneReferences, destroyArmy } from "../armies/armyLifecycle";
 import { healArmy } from "../health/armyHealth";
 import { requestArmyDisband } from "../disband/disbandService";
@@ -104,6 +104,80 @@ function sameCell(left: GridCellCoord, right: GridCellCoord): boolean {
 function relationForSides(scene: SceneState, leftSideId: string, rightSideId: string): "ALLY" | "NEUTRAL" | "ENEMY" {
   if (leftSideId === rightSideId) return "ALLY";
   return scene.relations[leftSideId]?.[rightSideId] ?? scene.relations[rightSideId]?.[leftSideId] ?? "NEUTRAL";
+}
+
+function reconcileBattleGroupsAfterRelationChange(
+  state: CommandState,
+  createId: () => string
+): void {
+  const existingGroups = state.scene.battleGroups;
+  if (existingGroups.length === 0) return;
+
+  const affectedArmyIds = new Set(existingGroups.flatMap((group) => group.participantIds));
+  const enemyEdges: Array<readonly [string, string]> = [];
+
+  for (const group of existingGroups) {
+    const participants = group.participantIds.filter((armyId) => state.armies[armyId] !== undefined);
+    for (let leftIndex = 0; leftIndex < participants.length; leftIndex += 1) {
+      for (let rightIndex = leftIndex + 1; rightIndex < participants.length; rightIndex += 1) {
+        const leftId = participants[leftIndex];
+        const rightId = participants[rightIndex];
+        if (!leftId || !rightId) continue;
+        const left = state.armies[leftId];
+        const right = state.armies[rightId];
+        if (!left || !right) continue;
+        if (relationForSides(state.scene, left.sideId, right.sideId) === "ENEMY") {
+          enemyEdges.push([leftId, rightId]);
+        }
+      }
+    }
+  }
+
+  const rebuilt = rebuildBattleGroups(
+    [...affectedArmyIds].filter((armyId) => state.armies[armyId] !== undefined),
+    enemyEdges,
+    existingGroups,
+    createId
+  );
+  state.scene.battleGroups = rebuilt;
+
+  const groupByArmy = new Map<string, string>();
+  for (const group of rebuilt) {
+    for (const armyId of group.participantIds) groupByArmy.set(armyId, group.battleId);
+  }
+
+  for (const armyId of affectedArmyIds) {
+    const army = state.armies[armyId];
+    if (!army) continue;
+    const battleGroupId = groupByArmy.get(armyId);
+    if (battleGroupId) {
+      if (
+        army.status === "IN_BATTLE" &&
+        army.battleGroupId === battleGroupId &&
+        army.stopReason === "BATTLE"
+      ) continue;
+      state.armies[armyId] = bumpArmy(army, {
+        status: "IN_BATTLE",
+        battleGroupId,
+        stopReason: "BATTLE",
+        movement: { ...army.movement, remainingUnits: 0 }
+      });
+      continue;
+    }
+
+    const {
+      battleGroupId: _battleGroupId,
+      stopReason: _stopReason,
+      ...released
+    } = army;
+    void _battleGroupId;
+    void _stopReason;
+    state.armies[armyId] = {
+      ...released,
+      status: "PAUSED",
+      revision: army.revision + 1
+    };
+  }
 }
 
 function destroyReciprocalTransportCargo(
@@ -1180,6 +1254,11 @@ export class CommandProcessor {
         rightRelations[command.leftSideId] = command.relation;
         state.scene.relations[command.leftSideId] = leftRelations;
         state.scene.relations[command.rightSideId] = rightRelations;
+        let splitIndex = 0;
+        reconcileBattleGroupsAfterRelationChange(
+          state,
+          () => `${command.requestId}-split-${++splitIndex}`
+        );
         return undefined;
       }
       case "UPDATE_SETTINGS":
