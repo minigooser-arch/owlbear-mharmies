@@ -1,4 +1,4 @@
-import { destroyArmy } from "../armies/armyLifecycle";
+import { clearDestroyedArmySceneReferences, destroyArmy } from "../armies/armyLifecycle";
 import { validatePlannedRoute } from "../movement/movementRules";
 import { politicalRouteGate } from "../movement/authoritativeStateMovement";
 import { forcedExitRouteGate, forcedExitTurnRoute } from "../movement/forcedExitService";
@@ -161,6 +161,7 @@ export function completeTurn(
     const destroyed = destroyArmy(nextArmies, nextBattleGroups, armyId);
     nextArmies = destroyed.armies;
     nextBattleGroups = destroyed.battleGroups;
+    clearDestroyedArmySceneReferences(nextScene, armyId);
   }
   nextScene.battleGroups = nextBattleGroups;
 
