@@ -1,5 +1,5 @@
 import { joinReinforcements, releaseBattleGroup } from "../battles/battleGroupService";
-import { destroyArmy } from "../armies/armyLifecycle";
+import { clearDestroyedArmySceneReferences, destroyArmy } from "../armies/armyLifecycle";
 import { healArmy } from "../health/armyHealth";
 import { requestArmyDisband } from "../disband/disbandService";
 import { canRenumberTurn, cancelTurnDeferral, completeTurn, deferTurn, pauseAutoTurns, renumberSceneTurn, resumeAutoTurns } from "../turns/turnService";
@@ -118,6 +118,7 @@ function destroyReciprocalTransportCargo(
   const destroyed = destroyArmy(state.armies, state.scene.battleGroups, cargoId);
   state.armies = destroyed.armies;
   state.scene.battleGroups = destroyed.battleGroups;
+  clearDestroyedArmySceneReferences(state.scene, cargoId);
   state.scene.transportEmbarkRequests = (state.scene.transportEmbarkRequests ?? [])
     .filter((request) => request.shipId !== shipId && request.armyId !== cargoId);
 }
@@ -311,6 +312,7 @@ export class CommandProcessor {
         const destroyed = destroyArmy(state.armies, state.scene.battleGroups, command.armyId);
         state.armies = destroyed.armies;
         state.scene.battleGroups = destroyed.battleGroups;
+        clearDestroyedArmySceneReferences(state.scene, command.armyId);
         return undefined;
       }
       case "REGISTER_SHIP": {
@@ -825,6 +827,7 @@ export class CommandProcessor {
           const destroyed = destroyArmy(state.armies, state.scene.battleGroups, command.armyId);
           state.armies = destroyed.armies;
           state.scene.battleGroups = destroyed.battleGroups;
+          clearDestroyedArmySceneReferences(state.scene, command.armyId);
         } else {
           state.armies[command.armyId] = result.target;
         }
@@ -1548,6 +1551,7 @@ export class CommandProcessor {
           const destroyed = destroyArmy(state.armies, state.scene.battleGroups, command.armyId);
           state.armies = destroyed.armies;
           state.scene.battleGroups = destroyed.battleGroups;
+          clearDestroyedArmySceneReferences(state.scene, command.armyId);
           return undefined;
         }
         state.armies[command.armyId] = bumpArmy(army, { health: { hp, maxHp } });
