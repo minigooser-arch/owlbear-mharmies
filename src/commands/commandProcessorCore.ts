@@ -1163,6 +1163,11 @@ export class CommandProcessor {
         return undefined;
       }
       case "SET_RELATION": {
+        if (command.leftSideId === command.rightSideId) return "INVALID_COMMAND";
+        if (
+          !state.scene.sides.some((side) => side.id === command.leftSideId) ||
+          !state.scene.sides.some((side) => side.id === command.rightSideId)
+        ) return "SIDE_NOT_FOUND";
         const leftRelations = state.scene.relations[command.leftSideId] ?? {};
         const rightRelations = state.scene.relations[command.rightSideId] ?? {};
         leftRelations[command.rightSideId] = command.relation;
