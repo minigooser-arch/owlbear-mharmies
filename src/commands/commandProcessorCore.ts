@@ -1185,6 +1185,8 @@ export class CommandProcessor {
             .filter(([, ship]) => ship.sideId === command.sideId)
             .map(([shipId]) => shipId);
           for (const shipId of removedShipIds) {
+            const ship = state.scene.ships?.[shipId];
+            if (ship) destroyReciprocalTransportCargo(state, shipId, ship);
             const destroyed = destroyShip(state.scene as NavalSceneState, shipId);
             state.scene = destroyed.scene;
             state.scene.revision = sceneRevision;
