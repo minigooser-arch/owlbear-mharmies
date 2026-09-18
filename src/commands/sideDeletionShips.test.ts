@@ -124,7 +124,9 @@ describe("DELETE_SIDE naval cleanup", () => {
     const current = state();
     const transport = createRegisteredShip("red", "TRANSPORT", "EAST");
     transport.embarkedArmyId = "blue-army";
-    current.scene.ships = { "red-ship": transport, "blue-ship": current.scene.ships?.["blue-ship"]! };
+    const blueShip = current.scene.ships?.["blue-ship"];
+    if (!blueShip) throw new Error("Expected blue ship fixture");
+    current.scene.ships = { "red-ship": transport, "blue-ship": blueShip };
     current.scene.activeNavalBattle = null;
     current.scene.navalBattleRequests = [];
     current.scene.turn.phase = "MOVEMENT";
