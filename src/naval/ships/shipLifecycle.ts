@@ -39,6 +39,9 @@ export function destroyShip(scene: NavalSceneState, shipId: string): DestroyShip
   next.navalBattleRequests = next.navalBattleRequests.filter(
     (request) => request.initiatingShipId !== shipId && request.targetShipId !== shipId
   );
+  next.transportEmbarkRequests = (next.transportEmbarkRequests ?? []).filter(
+    (request) => request.shipId !== shipId
+  );
   let battle = next.activeNavalBattle;
   if (battle) {
     const activeShipRemoved = battle.status === "ACTIVE" && battle.currentShipId === shipId;
