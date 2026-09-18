@@ -4,6 +4,7 @@ import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE } from "../shared
 import {
   COMMAND_PROTOCOL_VERSION,
   type ArmyCommand,
+  type ArmyState,
   type NavalBattleState,
   type SceneState
 } from "../shared/types";
@@ -119,6 +120,52 @@ function context(): CommandContext {
 }
 
 describe("DELETE_SIDE naval cleanup", () => {
+  it("destroys foreign cargo when deleting the side that owns its transport", () => {
+    const current = state();
+    const transport = createRegisteredShip("red", "TRANSPORT", "EAST");
+    transport.embarkedArmyId = "blue-army";
+    current.scene.ships = { "red-ship": transport, "blue-ship": current.scene.ships?.["blue-ship"]! };
+    current.scene.activeNavalBattle = null;
+    current.scene.navalBattleRequests = [];
+    current.scene.turn.phase = "MOVEMENT";
+    current.armies["blue-army"] = {
+      version: 4,
+      registered: true,
+      sideId: "blue",
+      status: "READY",
+      overrides: {},
+      route: [],
+      plannedRoute: {
+        startCell: { x: 0, y: 0 },
+        executeOnTurn: 4,
+        cells: [],
+        totalCostUnits: 0,
+        validatedRevision: 5,
+        requiresReplan: false
+      },
+      movement: { maxUnits: 10, remainingUnits: 10, enteredRouteCellCount: 0 },
+      health: { hp: 50, maxHp: 50 },
+      supply: { supplied: true, checkedOnTurn: 4 },
+      disband: { pending: false, requestedOnTurn: null, requestedByPlayerId: null },
+      embarkedOnShipId: "red-ship",
+      currentWaypointIndex: 0,
+      segmentProgressCells: 0,
+      ignoresMovementBarriers: false,
+      ignoresVisionBarriers: false,
+      revision: 1
+    } satisfies ArmyState;
+
+    const result = new CommandProcessor().execute(
+      { ...context(), state: current },
+      command()
+    );
+
+    expect(result.status).toBe("ACCEPTED");
+    if (result.status !== "ACCEPTED") return;
+    expect(result.state.scene.ships?.["red-ship"]).toBeUndefined();
+    expect(result.state.armies["blue-army"]).toBeUndefined();
+  });
+
   it("unregisters ships of the deleted side and cleans active naval references", () => {
     const result = new CommandProcessor().execute(context(), command());
     expect(result.status).toBe("ACCEPTED");
