@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { GridCellCoord, Side, StateEntity, TerrainRegistryState, TerrainType } from "../../shared/types";
 import type { MapBrushUiSettings, UiCommand } from "../state/useExtensionState";
 import { formatMovementUnits } from "../presentation/movement";
@@ -54,6 +54,10 @@ function TerrainEditor({ terrain, defaultTerrainId, onAction }: {
 
 export function MapEditorPage({ terrain, states, onAction }: MapEditorPageProps) {
   const terrainTypes = useMemo(() => Object.values(terrain.types).sort((a, b) => a.name.localeCompare(b.name, "ru")), [terrain]);
+  const selectableStates = useMemo(
+    () => [...states].sort((a, b) => a.name.localeCompare(b.name, "ru")),
+    [states]
+  );
   const [mode, setMode] = useState<MapBrushUiSettings["mode"]>("TERRAIN");
   const [size, setSize] = useState<MapBrushUiSettings["size"]>(1);
   const [terrainId, setTerrainId] = useState(terrain.defaultTerrainId);
@@ -66,6 +70,19 @@ export function MapEditorPage({ terrain, states, onAction }: MapEditorPageProps)
   const [transferRecipientId, setTransferRecipientId] = useState(states[0]?.id ?? "");
   const [transferCellsText, setTransferCellsText] = useState("");
   const [transferPreviewed, setTransferPreviewed] = useState(false);
+
+  useEffect(() => {
+    if (!selectableStates.some((state) => state.id === stateId)) {
+      setStateId(selectableStates[0]?.id ?? "");
+    }
+  }, [selectableStates, stateId]);
+
+  useEffect(() => {
+    if (!selectableStates.some((state) => state.id === transferRecipientId)) {
+      setTransferRecipientId(selectableStates[0]?.id ?? "");
+      setTransferPreviewed(false);
+    }
+  }, [selectableStates, transferRecipientId]);
 
   const parsedNewCost = Number(newCost.replace(",", "."));
   const newCostUnits = Math.round(parsedNewCost * 2);
@@ -113,11 +130,17 @@ export function MapEditorPage({ terrain, states, onAction }: MapEditorPageProps)
         </select></label>
         {mode === "TERRAIN" && <label>Тип местности<select value={terrainId} onChange={(event) => setTerrainId(event.target.value)}>{terrainTypes.filter((item) => item.enabled).map((item) => <option key={item.id} value={item.id}>{item.name} · {formatMovementUnits(item.movementCostUnits)} ОП</option>)}</select></label>}
         {mode === "IMPASSABLE" && <label>Действие<select value={impassable ? "BLOCK" : "ALLOW"} onChange={(event) => setImpassable(event.target.value === "BLOCK")}><option value="BLOCK">Сделать непроходимой</option><option value="ALLOW">Сделать проходимой</option></select></label>}
-        {(mode === "RECOGNIZED_STATE" || mode === "DEFACTO_STATE") && <label>Государство<select value={stateId} onChange={(event) => setStateId(event.target.value)}>{states.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
+        {(mode === "RECOGNIZED_STATE" || mode === "DEFACTO_STATE") && <label>Государство<select aria-label="Государство для разметки" value={stateId} onChange={(event) => setStateId(event.target.value)}>
+          {selectableStates.length === 0
+            ? <option value="">Государства не созданы</option>
+            : selectableStates.map((item) => <option key={item.id} value={item.id}>{item.name}{item.active ? "" : " · неактивно"}</option>)}
+        </select></label>}
         {mode === "ERASER" && <label>Что стирать<select value={eraserTarget} onChange={(event) => setEraserTarget(event.target.value as MapBrushUiSettings["eraserTarget"])}><option value="TERRAIN">Только местность</option><option value="IMPASSABLE">Только непроходимость</option><option value="RECOGNIZED_STATE">Признанную государственную принадлежность</option><option value="DEFACTO_STATE">Де-факто контроль</option><option value="ALL">Все текущие свойства клетки</option></select></label>}
       </div>
       <div className="brush-size" aria-label="Размер кисти"><span>Размер</span>{BRUSH_SIZES.map((brushSize) => <button key={brushSize} type="button" className={size === brushSize ? "active" : ""} onClick={() => selectBrushSize(brushSize)}>{brushSize}×{brushSize}</button>)}</div>
-      <p className="helper-text">{description}</p><button className="button primary wide" type="button" disabled={!canApply} onClick={applyBrush}>Начать рисовать</button>
+      <p className="helper-text">{description}</p>
+      {needsState && selectableStates.length === 0 && <p className="route-warning" role="status">Сначала создайте государство в разделе «Управление → Государства».</p>}
+      <button className="button primary wide" type="button" disabled={!canApply} onClick={applyBrush}>Начать рисовать</button>
     </div>
 
     <div className="settings-card map-editor-card" aria-label="Официальная передача территории">
@@ -135,7 +158,9 @@ export function MapEditorPage({ terrain, states, onAction }: MapEditorPageProps)
               setTransferRecipientId(event.target.value);
             }}
           >
-            {states.map((state) => <option key={state.id} value={state.id}>{state.name}</option>)}
+            {selectableStates.length === 0
+              ? <option value="">Государства не созданы</option>
+              : selectableStates.map((state) => <option key={state.id} value={state.id}>{state.name}{state.active ? "" : " · неактивно"}</option>)}
           </select>
         </label>
         <label>Клетки передачи
