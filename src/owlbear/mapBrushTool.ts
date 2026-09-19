@@ -31,6 +31,7 @@ export interface MapBrushToolPort {
   getGridDpi(): Promise<number>;
   commitStroke(settings: MapBrushSettings, cells: readonly GridCellCoord[]): Promise<void>;
   renderPreview(settings: MapBrushSettings, cells: readonly GridCellCoord[]): Promise<void>;
+  appendPreview(settings: MapBrushSettings, cells: readonly GridCellCoord[]): Promise<void>;
   clearPreview(): Promise<void>;
   notify(message: string, variant: "INFO" | "WARNING" | "ERROR"): Promise<void>;
 }
@@ -78,8 +79,19 @@ export function mapBrushSettingsFromMetadata(metadata: Metadata): MapBrushSettin
   };
 }
 
-function mergeCells(target: Map<string, GridCellCoord>, cells: readonly GridCellCoord[]): void {
-  for (const cell of cells) target.set(`${cell.x},${cell.y}`, { ...cell });
+function mergeCells(
+  target: Map<string, GridCellCoord>,
+  cells: readonly GridCellCoord[]
+): GridCellCoord[] {
+  const additions: GridCellCoord[] = [];
+  for (const cell of cells) {
+    const key = `${cell.x},${cell.y}`;
+    if (target.has(key)) continue;
+    const copy = { ...cell };
+    target.set(key, copy);
+    additions.push(copy);
+  }
+  return additions;
 }
 
 export async function registerMapBrushTool(
@@ -117,15 +129,18 @@ export async function registerMapBrushTool(
     await port.renderPreview(settings, cells);
   };
 
-  const moveCoalescer = new PointerMoveCoalescer(1_000 / 12, (point) =>
+  const moveCoalescer = new PointerMoveCoalescer(1_000 / 30, (point) =>
     enqueue(async () => {
       if (closed) return;
       const adapter = await ensureGrid();
       if (activeSettings && lastCenter) {
         const nextCenter = adapter.sceneToCell(point);
-        mergeCells(stroke, rasterizeBrushStroke(lastCenter, nextCenter, activeSettings.size));
+        const additions = mergeCells(
+          stroke,
+          rasterizeBrushStroke(lastCenter, nextCenter, activeSettings.size)
+        );
         lastCenter = nextCenter;
-        await previewCells(activeSettings, [...stroke.values()]);
+        if (additions.length > 0) await port.appendPreview(activeSettings, additions);
         return;
       }
       if (hoverSettings) {

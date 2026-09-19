@@ -45,6 +45,8 @@ function apiHarness() {
 
 function portHarness(role: "GM" | "PLAYER") {
   const commits: Array<{ settings: MapBrushSettings; cells: GridCellCoord[] }> = [];
+  const previews: GridCellCoord[][] = [];
+  const appendedPreviews: GridCellCoord[][] = [];
   return {
     port: {
       getRole: async () => role,
@@ -52,11 +54,18 @@ function portHarness(role: "GM" | "PLAYER") {
       commitStroke: async (settings: MapBrushSettings, cells: readonly GridCellCoord[]) => {
         commits.push({ settings, cells: cells.map((cell) => ({ ...cell })) });
       },
-      renderPreview: async () => undefined,
+      renderPreview: async (_settings: MapBrushSettings, cells: readonly GridCellCoord[]) => {
+        previews.push(cells.map((cell) => ({ ...cell })));
+      },
+      appendPreview: async (_settings: MapBrushSettings, cells: readonly GridCellCoord[]) => {
+        appendedPreviews.push(cells.map((cell) => ({ ...cell })));
+      },
       clearPreview: async () => undefined,
       notify: async () => undefined
     },
-    commits
+    commits,
+    previews,
+    appendedPreviews
   };
 }
 
@@ -113,4 +122,35 @@ it("parses a state ownership brush", () => {
     [MAP_BRUSH_STATE_ID_KEY]: "russia-state",
     [MAP_BRUSH_SIZE_KEY]: 5
   })).toMatchObject({ mode: "RECOGNIZED_STATE", stateId: "russia-state", size: 5 });
+});
+
+
+it("appends only newly reached cells during a drag instead of rebuilding the full stroke preview", async () => {
+  const api = apiHarness();
+  const harness = portHarness("GM");
+  await registerMapBrushTool(api.api as never, harness.port, "/icon.png");
+  const context = {
+    metadata: {
+      [MAP_BRUSH_MODE_KEY]: "TERRAIN",
+      [MAP_BRUSH_SIZE_KEY]: 1,
+      [MAP_BRUSH_TERRAIN_ID_KEY]: "forest"
+    }
+  } as never;
+
+  api.mode.onToolDragStart?.(context, event(50, 50));
+  await new Promise((resolve) => setTimeout(resolve, 5));
+
+  api.mode.onToolDragMove?.(context, event(150, 50));
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  api.mode.onToolDragMove?.(context, event(250, 50));
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  api.mode.onToolDragMove?.(context, event(350, 50));
+  await new Promise((resolve) => setTimeout(resolve, 40));
+
+  expect(harness.previews).toHaveLength(1);
+  expect(harness.previews[0]).toEqual([{ x: 0, y: 0 }]);
+  expect(harness.appendedPreviews.flat().map((cell) => cell.x)).toEqual([1, 2, 3]);
+  expect(harness.appendedPreviews.flat()).toHaveLength(3);
+
+  api.mode.onToolDragCancel?.(context, event(350, 50));
 });

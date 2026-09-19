@@ -74,6 +74,8 @@ function commandPayload(settings: MapBrushSettings, cells: GridCellCoord[]): Map
 export class MapBrushToolService implements MapBrushToolPort {
   private readonly repository: MetadataRepository;
   private readonly previewSession: LocalOverlayReconcileSession;
+  private previewGrid: StrategicGridAdapter | undefined;
+  private previewDpi: number | undefined;
 
   constructor(
     private readonly port: MapBrushServicePort,
@@ -126,41 +128,61 @@ export class MapBrushToolService implements MapBrushToolPort {
     }
   }
 
-  async renderPreview(settings: MapBrushSettings, cells: readonly GridCellCoord[]): Promise<void> {
-    const dpi = await this.port.getGridDpi();
-    const grid = new StrategicGridAdapter({ dpi, offset: { x: 0, y: 0 } });
+  private async previewGeometry(): Promise<{ dpi: number; grid: StrategicGridAdapter }> {
+    if (!this.previewGrid || this.previewDpi === undefined) {
+      const dpi = await this.port.getGridDpi();
+      this.previewDpi = dpi;
+      this.previewGrid = new StrategicGridAdapter({ dpi, offset: { x: 0, y: 0 } });
+    }
+    return { dpi: this.previewDpi, grid: this.previewGrid };
+  }
+
+  private async previewOverlays(
+    settings: MapBrushSettings,
+    cells: readonly GridCellCoord[]
+  ) {
+    const { dpi, grid } = await this.previewGeometry();
     const half = dpi / 2;
     const color = previewColor(settings);
-    await this.previewSession.reconcile(
-      cells.map((cell) => {
-        const center = grid.cellToSceneCenter(cell);
-        const key = cellKey(cell);
-        return {
-          key,
-          item: {
-            type: "CURVE",
-            position: { x: 0, y: 0 },
-            visible: true,
-            disableHit: true,
-            points: [
-              { x: center.x - half, y: center.y - half },
-              { x: center.x + half, y: center.y - half },
-              { x: center.x + half, y: center.y + half },
-              { x: center.x - half, y: center.y + half },
-              { x: center.x - half, y: center.y - half }
-            ],
-            strokeColor: color,
-            metadata: {
-              [METADATA_KEYS.mapBrushPreview]: { cellKey: key }
-            }
+    return cells.map((cell) => {
+      const center = grid.cellToSceneCenter(cell);
+      const key = cellKey(cell);
+      return {
+        key,
+        item: {
+          type: "CURVE",
+          position: { x: 0, y: 0 },
+          visible: true,
+          disableHit: true,
+          points: [
+            { x: center.x - half, y: center.y - half },
+            { x: center.x + half, y: center.y - half },
+            { x: center.x + half, y: center.y + half },
+            { x: center.x - half, y: center.y + half },
+            { x: center.x - half, y: center.y - half }
+          ],
+          strokeColor: color,
+          metadata: {
+            [METADATA_KEYS.mapBrushPreview]: { cellKey: key }
           }
-        };
-      })
-    );
+        }
+      };
+    });
+  }
+
+  async renderPreview(settings: MapBrushSettings, cells: readonly GridCellCoord[]): Promise<void> {
+    await this.previewSession.reconcile(await this.previewOverlays(settings, cells));
+  }
+
+  async appendPreview(settings: MapBrushSettings, cells: readonly GridCellCoord[]): Promise<void> {
+    if (cells.length === 0) return;
+    await this.previewSession.upsert(await this.previewOverlays(settings, cells));
   }
 
   async clearPreview(): Promise<void> {
     await this.previewSession.reconcile([]);
+    this.previewGrid = undefined;
+    this.previewDpi = undefined;
   }
 
   notify(message: string, variant: "INFO" | "WARNING" | "ERROR"): Promise<void> {

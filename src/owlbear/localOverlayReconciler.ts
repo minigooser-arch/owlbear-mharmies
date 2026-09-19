@@ -115,6 +115,52 @@ export class LocalOverlayReconcileSession {
     this.existingByKey.clear();
   }
 
+
+  async upsert(desired: readonly DesiredLocalOverlay[]): Promise<void> {
+    if (desired.length === 0) return;
+
+    if (!this.initialized) {
+      const groups = groupExistingItems(await this.port.getLocalItems(), this.existingKey);
+      this.existingByKey.clear();
+      const duplicateIds: string[] = [];
+      for (const [key, group] of groups) {
+        group.sort((left, right) => left.id < right.id ? -1 : left.id > right.id ? 1 : 0);
+        const [survivor, ...duplicates] = group;
+        if (survivor) this.existingByKey.set(key, survivor);
+        duplicateIds.push(...duplicates.map((item) => item.id));
+      }
+      if (duplicateIds.length > 0) await this.port.deleteLocalItems(duplicateIds);
+      this.initialized = true;
+    }
+
+    const additions: SceneItemRecord[] = [];
+    const updates: SceneItemRecord[] = [];
+    const nextEntries: Array<[string, SceneItemRecord]> = [];
+
+    for (const { key, item } of desired) {
+      const existing = this.existingByKey.get(key);
+      if (!existing) {
+        const addition = { ...structuredClone(item), id: this.port.createId() } as SceneItemRecord;
+        additions.push(addition);
+        nextEntries.push([key, addition]);
+        continue;
+      }
+      if (sameRenderedItem(existing, item)) continue;
+      const update = { ...structuredClone(item), id: existing.id } as SceneItemRecord;
+      updates.push(update);
+      nextEntries.push([key, update]);
+    }
+
+    try {
+      if (additions.length > 0) await this.port.addLocalItems(additions);
+      if (updates.length > 0) await this.port.updateLocalItems(updates);
+      for (const [key, item] of nextEntries) this.existingByKey.set(key, item);
+    } catch (error) {
+      this.invalidate();
+      throw error;
+    }
+  }
+
   async reconcile(desired: readonly DesiredLocalOverlay[]): Promise<void> {
     const desiredKeys = new Set(desired.map(({ key }) => key));
     const deletions: string[] = [];

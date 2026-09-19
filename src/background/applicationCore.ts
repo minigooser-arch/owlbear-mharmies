@@ -293,6 +293,7 @@ export class ProductionEngine {
   private activeCoordinatorConnectionId: string | undefined;
   private lastMovementAt = performance.now();
   private mutationTail: Promise<void> = Promise.resolve();
+  private lastMapOverlaySignature: string | undefined;
 
   constructor(
     private readonly port: OwlbearPort,
@@ -313,6 +314,10 @@ export class ProductionEngine {
 
   isCoordinator(): boolean {
     return this.coordinator;
+  }
+
+  invalidateOverlayCaches(): void {
+    this.lastMapOverlaySignature = undefined;
   }
 
   async readCoordinatorLease(): Promise<HeartbeatLease | undefined> {
@@ -1340,8 +1345,15 @@ export class ProductionEngine {
     sceneItems: readonly SceneItemRecord[],
     visibleShipIds: ReadonlySet<string>
   ): Promise<void> {
+    let localItemsSnapshot: Promise<SceneItemRecord[]> | undefined;
     const overlayPort = {
-      getLocalItems: () => this.port.getLocalItems(),
+      // Overlay types use disjoint metadata keys. A single immutable snapshot is enough
+      // for all reconciliation passes in this visibility frame and avoids repeatedly
+      // transferring a potentially huge scene.local collection through the SDK.
+      getLocalItems: () => {
+        localItemsSnapshot ??= this.port.getLocalItems();
+        return localItemsSnapshot;
+      },
       addLocalItems: (items: readonly SceneItemRecord[]) => this.port.addLocalItems(items),
       updateLocalItems: (items: readonly SceneItemRecord[]) => this.port.updateLocalItems(items),
       deleteLocalItems: (ids: readonly string[]) => this.port.deleteLocalItems(ids),
@@ -1465,17 +1477,34 @@ export class ProductionEngine {
 
     const mapOverlayService = new MapOverlayService(overlayPort);
     if (role !== "GM") {
+      const signature = "PLAYER";
+      if (this.lastMapOverlaySignature === signature) return;
       await mapOverlayService.reconcile(undefined);
+      this.lastMapOverlaySignature = signature;
       return;
     }
     try {
+      const dpi = await this.grid.getDpi();
+      const signature = JSON.stringify([
+        "GM",
+        dpi,
+        scene.gridMap.revision,
+        Object.values(scene.terrain.types)
+          .map((terrain) => [terrain.id, terrain.enabled, terrain.color ?? null])
+          .sort(([left], [right]) => String(left).localeCompare(String(right))),
+        scene.states
+          .map((state) => [state.id, state.name, state.color ?? null])
+          .sort(([left], [right]) => String(left).localeCompare(String(right)))
+      ]);
+      if (this.lastMapOverlaySignature === signature) return;
       await mapOverlayService.reconcile({
-        dpi: await this.grid.getDpi(),
+        dpi,
         gridMap: scene.gridMap,
         terrain: scene.terrain,
         sides: scene.sides,
         states: scene.states
       });
+      this.lastMapOverlaySignature = signature;
     } catch {
       // Keep the last valid GM map overlay if grid geometry is temporarily unavailable.
     }
@@ -1623,6 +1652,7 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
     isSceneReady: () => OBR.scene.isReady(),
     onSceneReady: (callback) => OBR.scene.onReadyChange(callback),
     onSceneOpen: async () => {
+      engine.invalidateOverlayCaches();
       lease.start();
       try {
         await Promise.all([
@@ -1638,6 +1668,7 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
     },
     onSceneClose: async () => {
       commandReady = false;
+      engine.invalidateOverlayCaches();
       await lease.stop();
       await sceneWork.drain();
       await engine.whenIdle();
