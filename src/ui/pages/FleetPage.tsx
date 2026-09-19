@@ -55,11 +55,14 @@ export function FleetPage({
   const selectedRegistrationSideId = sides.some((side) => side.id === registrationSideId)
     ? registrationSideId
     : (sides[0]?.id ?? "");
+  const selectedFilterSideId = filterSideId === "ALL" || sides.some((side) => side.id === filterSideId)
+    ? filterSideId
+    : "ALL";
   const filtered = useMemo(() => ships.filter((ship) =>
-    (filterSideId === "ALL" || ship.sideId === filterSideId) &&
+    (selectedFilterSideId === "ALL" || ship.sideId === selectedFilterSideId) &&
     (classFilter === "ALL" || ship.classId === classFilter) &&
     ship.name.toLocaleLowerCase("ru").includes(query.toLocaleLowerCase("ru"))
-  ), [classFilter, filterSideId, query, ships]);
+  ), [classFilter, query, selectedFilterSideId, ships]);
   const armyNames = new Map(armies.map((army) => [army.id, army.name]));
   const requestInitiators = ships.filter((ship) =>
     leaderSideIds.has(ship.sideId) && ship.status === "READY" && ship.hp > 0
@@ -137,7 +140,7 @@ export function FleetPage({
       <div className="army-toolbar fleet-toolbar" role="search" aria-label="Поиск и фильтры флота">
         <div className="filters fleet-filters">
           <input aria-label="Поиск кораблей" placeholder="Найти корабль" value={query} onChange={(event) => setQuery(event.target.value)} />
-          <select aria-label="Фильтр флота по стороне" value={filterSideId} onChange={(event) => setFilterSideId(event.target.value)}>
+          <select aria-label="Фильтр флота по стороне" value={selectedFilterSideId} onChange={(event) => setFilterSideId(event.target.value)}>
             <option value="ALL">Все стороны</option>
             {sides.map((side) => <option key={side.id} value={side.id}>{side.name}</option>)}
           </select>
