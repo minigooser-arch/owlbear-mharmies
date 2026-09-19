@@ -83,7 +83,7 @@ if (failures.length > 0) {
   throw new Error(`Production artifact verification failed:\n- ${failures.join("\n- ")}`);
 }
 
-console.log(
+process.stdout.write(
   `Verified production artifact: ${assetNames.size} assets, all HTML/module references resolve, ` +
-  `${Object.values(HISTORICAL_PAGE_ASSETS).flat().length} historical aliases present.`
+  `${Object.values(HISTORICAL_PAGE_ASSETS).flat().length} historical aliases present.\\n`
 );
