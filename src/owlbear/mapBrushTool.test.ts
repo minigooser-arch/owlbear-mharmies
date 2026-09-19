@@ -53,6 +53,7 @@ function portHarness(role: "GM" | "PLAYER") {
         commits.push({ settings, cells: cells.map((cell) => ({ ...cell })) });
       },
       renderPreview: async () => undefined,
+      appendPreview: async () => undefined,
       clearPreview: async () => undefined,
       notify: async () => undefined
     },
