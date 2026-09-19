@@ -483,8 +483,9 @@ button:disabled { opacity: .48; cursor: not-allowed; }
 /* Management and nested navigation */
 .subtabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 3px;
-  overflow-x: auto;
+  overflow: visible;
   margin: 0 0 13px;
   padding: 4px;
   border: 1px solid var(--wiki-line);
