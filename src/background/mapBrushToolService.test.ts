@@ -143,3 +143,65 @@ it("converges across repeated revision conflicts without changing the stroke", a
     });
   }
 });
+
+
+it("reuses a stateful preview session instead of rescanning every local overlay on pointer moves", async () => {
+  const current = scene();
+  let localReads = 0;
+  const basePort = servicePort(current);
+  const port = {
+    ...basePort,
+    getLocalItems: async () => {
+      localReads += 1;
+      return [];
+    }
+  };
+  const service = new MapBrushToolService(port, {
+    send: async (command) => ({
+      protocolVersion: COMMAND_PROTOCOL_VERSION,
+      requestId: command.requestId,
+      status: "ACCEPTED",
+      coordinatorConnectionId: "coord",
+      recipientConnectionId: "c"
+    })
+  });
+  const settings = {
+    mode: "TERRAIN" as const,
+    size: 1 as const,
+    terrainId: "forest",
+    impassable: true,
+    eraserTarget: "TERRAIN" as const
+  };
+
+  await service.renderPreview(settings, [{ x: 1, y: 1 }]);
+  await service.renderPreview(settings, [{ x: 2, y: 1 }]);
+  await service.renderPreview(settings, [{ x: 3, y: 1 }]);
+  await service.clearPreview();
+
+  expect(localReads).toBe(1);
+});
+
+it("keeps brush writes GM-only even though the tool is registered for role changes", async () => {
+  const current = scene();
+  const base = servicePort(current);
+  const service = new MapBrushToolService({
+    ...base,
+    getPlayerIdentity: async () => ({ id: "player", role: "PLAYER" as const, connectionId: "p" })
+  }, {
+    send: async (command) => ({
+      protocolVersion: COMMAND_PROTOCOL_VERSION,
+      requestId: command.requestId,
+      status: "ACCEPTED",
+      coordinatorConnectionId: "coord",
+      recipientConnectionId: "p"
+    })
+  });
+
+  await expect(service.commitStroke({
+    mode: "TERRAIN",
+    size: 1,
+    terrainId: "forest",
+    impassable: true,
+    eraserTarget: "TERRAIN"
+  }, [{ x: 0, y: 0 }])).rejects.toMatchObject({ code: "GM_ONLY" });
+});

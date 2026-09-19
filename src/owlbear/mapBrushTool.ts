@@ -1,6 +1,7 @@
 import type { Metadata, Tool, ToolContext, ToolEvent, ToolMode } from "@owlbear-rodeo/sdk";
 import { StrategicGridAdapter } from "../grid/strategicGrid";
 import { getBrushCells, rasterizeBrushStroke, type BrushSize } from "../terrain/brushMath";
+import { PointerMoveCoalescer } from "./pointerMoveCoalescer";
 import {
   PROGRAMMATIC_ONLY_TOOL_FILTER,
   MAP_BRUSH_ERASER_TARGET_KEY,
@@ -46,6 +47,7 @@ export interface MapBrushToolApi {
 export interface MapBrushToolRegistration {
   (): Promise<void>;
   registered: boolean;
+  cancelSession(): Promise<void>;
 }
 
 function brushSize(value: unknown): BrushSize {
@@ -86,16 +88,11 @@ export async function registerMapBrushTool(
   port: MapBrushToolPort,
   iconUrl: string
 ): Promise<MapBrushToolRegistration> {
-  if (await port.getRole() !== "GM") {
-    const noop = (async () => undefined) as MapBrushToolRegistration;
-    noop.registered = false;
-    return noop;
-  }
-
   let grid: StrategicGridAdapter | undefined;
   let activeSettings: MapBrushSettings | undefined;
   let lastCenter: GridCellCoord | undefined;
   let stroke = new Map<string, GridCellCoord>();
+  let hoverSettings: MapBrushSettings | undefined;
   let closed = false;
   let tail: Promise<void> = Promise.resolve();
 
@@ -121,14 +118,34 @@ export async function registerMapBrushTool(
     await port.renderPreview(settings, cells);
   };
 
-  const hover = (context: ToolContext, event: ToolEvent) => enqueue(async () => {
+  const moveCoalescer = new PointerMoveCoalescer(1_000 / 12, (point) =>
+    enqueue(async () => {
+      if (closed) return;
+      const adapter = await ensureGrid();
+      if (activeSettings && lastCenter) {
+        const nextCenter = adapter.sceneToCell(point);
+        mergeCells(stroke, rasterizeBrushStroke(lastCenter, nextCenter, activeSettings.size));
+        lastCenter = nextCenter;
+        await previewCells(activeSettings, [...stroke.values()]);
+        return;
+      }
+      if (hoverSettings) {
+        await previewCells(
+          hoverSettings,
+          getBrushCells(adapter.sceneToCell(point), hoverSettings.size)
+        );
+      }
+    })
+  );
+
+  const hover = (context: ToolContext, event: ToolEvent) => {
     if (closed || lastCenter) return;
-    const adapter = await ensureGrid();
-    const settings = mapBrushSettingsFromMetadata(context.metadata);
-    await previewCells(settings, getBrushCells(adapter.sceneToCell(event.pointerPosition), settings.size));
-  });
+    hoverSettings = mapBrushSettingsFromMetadata(context.metadata);
+    moveCoalescer.push(event.pointerPosition);
+  };
 
   const click = (context: ToolContext, event: ToolEvent) => enqueue(async () => {
+    moveCoalescer.clear();
     if (closed) return;
     const adapter = await ensureGrid();
     const settings = mapBrushSettingsFromMetadata(context.metadata);
@@ -139,6 +156,8 @@ export async function registerMapBrushTool(
 
   const dragStart = (context: ToolContext, event: ToolEvent) => enqueue(async () => {
     if (closed) return;
+    moveCoalescer.clear();
+    hoverSettings = undefined;
     const adapter = await ensureGrid();
     activeSettings = mapBrushSettingsFromMetadata(context.metadata);
     lastCenter = adapter.sceneToCell(event.pointerPosition);
@@ -147,16 +166,14 @@ export async function registerMapBrushTool(
     await previewCells(activeSettings, [...stroke.values()]);
   });
 
-  const dragMove = (_context: ToolContext, event: ToolEvent) => enqueue(async () => {
+  const dragMove = (_context: ToolContext, event: ToolEvent) => {
     if (closed || !activeSettings || !lastCenter) return;
-    const adapter = await ensureGrid();
-    const nextCenter = adapter.sceneToCell(event.pointerPosition);
-    mergeCells(stroke, rasterizeBrushStroke(lastCenter, nextCenter, activeSettings.size));
-    lastCenter = nextCenter;
-    await previewCells(activeSettings, [...stroke.values()]);
-  });
+    moveCoalescer.push(event.pointerPosition);
+  };
 
-  const finishDrag = (event?: ToolEvent) => enqueue(async () => {
+  const finishDrag = (event?: ToolEvent) => {
+    moveCoalescer.clear();
+    return enqueue(async () => {
     if (closed || !activeSettings || !lastCenter) return;
     if (event) {
       const adapter = await ensureGrid();
@@ -171,14 +188,19 @@ export async function registerMapBrushTool(
     stroke = new Map();
     if (cells.length > 0) await port.commitStroke(settings, cells);
     await port.clearPreview();
-  });
+    });
+  };
 
-  const cancelDrag = () => enqueue(async () => {
-    activeSettings = undefined;
-    lastCenter = undefined;
-    stroke = new Map();
-    await port.clearPreview();
-  });
+  const cancelDrag = () => {
+    moveCoalescer.clear();
+    hoverSettings = undefined;
+    return enqueue(async () => {
+      activeSettings = undefined;
+      lastCenter = undefined;
+      stroke = new Map();
+      await port.clearPreview();
+    });
+  };
 
   const tool: Tool = {
     id: MAP_BRUSH_TOOL_ID,
@@ -196,7 +218,12 @@ export async function registerMapBrushTool(
     id: MAP_BRUSH_TOOL_MODE_ID,
     icons: [{ icon: iconUrl, label: "Красить клетки", filter: { activeTools: [MAP_BRUSH_TOOL_ID], roles: ["GM"] } }],
     cursors: [{ cursor: "crosshair" }],
-    onToolMove: (context, event) => { void hover(context, event); },
+    onActivate: () => {
+      grid = undefined;
+      moveCoalescer.clear();
+      hoverSettings = undefined;
+    },
+    onToolMove: (context, event) => { hover(context, event); },
     onToolClick: (context, event) => { void click(context, event); return false; },
     onToolDragStart: (context, event) => { void dragStart(context, event); },
     onToolDragMove: (context, event) => { void dragMove(context, event); },
@@ -216,6 +243,7 @@ export async function registerMapBrushTool(
   const remove = (async () => {
     if (closed) return;
     closed = true;
+    moveCoalescer.stop();
     await tail;
     try {
       await port.clearPreview();
@@ -225,5 +253,10 @@ export async function registerMapBrushTool(
     try { await api.removeMode(MAP_BRUSH_TOOL_MODE_ID); } finally { await api.remove(MAP_BRUSH_TOOL_ID); }
   }) as MapBrushToolRegistration;
   remove.registered = true;
+  remove.cancelSession = async () => {
+    if (closed) return;
+    grid = undefined;
+    await cancelDrag();
+  };
   return remove;
 }
