@@ -1629,7 +1629,7 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
           removeRouteTool.cancelSession(),
           removeShipRouteTool.cancelSession(),
           removeTransportLandingTool.cancelSession(),
-          removeTransportLandingTool.cancelSession()
+          removeMapBrushTool.cancelSession()
         ]);
       } catch {
         // A stale preview must not disable command delivery or coordinator heartbeats.
@@ -1644,7 +1644,9 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
       try {
         await Promise.all([
           removeRouteTool.cancelSession(),
-          removeShipRouteTool.cancelSession()
+          removeShipRouteTool.cancelSession(),
+          removeTransportLandingTool.cancelSession(),
+          removeMapBrushTool.cancelSession()
         ]);
       } catch {
         // Scene teardown continues so subscriptions and overlays can still be cleaned up.
