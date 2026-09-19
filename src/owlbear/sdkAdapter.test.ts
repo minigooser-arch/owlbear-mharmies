@@ -22,6 +22,7 @@ function fakeBuilder(type: "CURVE" | "LABEL"): unknown {
               ...values,
               type,
               style: {
+                fillColor: values.fillColor,
                 fillOpacity: values.fillOpacity,
                 strokeColor: values.strokeColor,
                 strokeOpacity: values.strokeOpacity,
@@ -214,6 +215,9 @@ it("builds valid Owlbear curve and label items for local overlays", () => {
     disableHit: true,
     points: [{ x: 0, y: 0 }, { x: 2, y: 1 }],
     strokeColor: "#f00",
+    fillColor: "#0af",
+    fillOpacity: 0.25,
+    strokeWidth: 7,
     metadata: { [METADATA_KEYS.routePreview]: { kind: "LINE" } }
   }, builders);
   const label = createSdkLocalItem({
@@ -233,7 +237,7 @@ it("builds valid Owlbear curve and label items for local overlays", () => {
     layer: "POINTER",
     disableHit: true,
     points: [{ x: 0, y: 0 }, { x: 2, y: 1 }],
-    style: { fillOpacity: 0, strokeColor: "#f00" }
+    style: { fillColor: "#0af", fillOpacity: 0.25, strokeColor: "#f00", strokeWidth: 7 }
   });
   expect(label).toMatchObject({
     id: "route-label",
@@ -276,4 +280,92 @@ it("snaps grid positions to cell centres with full sensitivity", async () => {
   });
   await adapter.snapGridCenter({ x: 12, y: 34 });
   expect(calls).toEqual([[{ x: 12, y: 34 }, 1, false, true]]);
+});
+
+
+it("updates normalized local curve fill and stroke styles without losing them", async () => {
+  let localItem: SceneItemRecord = {
+    id: "map-cell",
+    type: "CURVE",
+    position: { x: 0, y: 0 },
+    metadata: { [METADATA_KEYS.mapOverlay]: { key: "0,0/TERRAIN" } },
+    points: [{ x: 0, y: 0 }, { x: 100, y: 0 }],
+    style: {
+      fillColor: "#111111",
+      fillOpacity: 0.1,
+      strokeColor: "#222222",
+      strokeOpacity: 1,
+      strokeWidth: 2,
+      strokeDash: [],
+      tension: 0
+    }
+  };
+  const local = {
+    getItems: async () => [structuredClone(localItem)],
+    updateItems: async (_ids: unknown[], update: (drafts: SceneItemRecord[]) => void) => {
+      const drafts = [structuredClone(localItem)];
+      update(drafts);
+      localItem = drafts[0] as SceneItemRecord;
+    },
+    addItems: async () => undefined,
+    deleteItems: async () => undefined
+  };
+  const empty = {
+    getItems: async () => [],
+    updateItems: async () => undefined,
+    addItems: async () => undefined,
+    deleteItems: async () => undefined
+  };
+  const adapter = createOwlbearAdapter({
+    scene: {
+      getMetadata: async () => ({}),
+      setMetadata: async () => undefined,
+      items: empty,
+      local,
+      grid: {
+        getDistance: async () => 0,
+        getDpi: async () => 100,
+        snapPosition: async (position) => position,
+        onChange: () => () => undefined
+      }
+    },
+    broadcast: {
+      sendMessage: async () => undefined,
+      onMessage: () => () => undefined
+    },
+    notification: { show: async () => undefined }
+  });
+
+  const normalized = await adapter.getLocalItems();
+  expect(normalized[0]).toMatchObject({
+    fillColor: "#111111",
+    fillOpacity: 0.1,
+    strokeColor: "#222222",
+    strokeWidth: 2
+  });
+
+  await adapter.updateLocalItems([{
+    id: "map-cell",
+    type: "CURVE",
+    position: { x: 0, y: 0 },
+    metadata: { [METADATA_KEYS.mapOverlay]: { key: "0,0/TERRAIN" } },
+    points: [{ x: 0, y: 0 }, { x: 100, y: 0 }],
+    fillColor: "#33aa55",
+    fillOpacity: 0.22,
+    strokeColor: "#33aa55",
+    strokeOpacity: 0.9,
+    strokeWidth: 5,
+    strokeDash: [4, 2],
+    tension: 0
+  }]);
+
+  expect(localItem.style).toMatchObject({
+    fillColor: "#33aa55",
+    fillOpacity: 0.22,
+    strokeColor: "#33aa55",
+    strokeOpacity: 0.9,
+    strokeWidth: 5,
+    strokeDash: [4, 2],
+    tension: 0
+  });
 });
