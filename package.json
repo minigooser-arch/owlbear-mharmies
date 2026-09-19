@@ -8,13 +8,14 @@
   },
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "tsc -b && vite build && node scripts/preserve-legacy-assets.mjs && node scripts/stamp-manifest.mjs && npm run verify:dist",
+    "build": "tsc -b && vite build && node scripts/preserve-legacy-assets.mjs && node scripts/stamp-manifest.mjs && npm run verify:dist && npm run smoke:dist",
     "typecheck": "tsc -b --pretty false",
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
     "check": "npm run typecheck && npm run lint && npm test && npm run build",
-    "verify:dist": "node scripts/verify-dist.mjs"
+    "verify:dist": "node scripts/verify-dist.mjs",
+    "smoke:dist": "node scripts/smoke-built-popover.mjs"
   },
   "dependencies": {
     "@owlbear-rodeo/sdk": "3.1.0",
