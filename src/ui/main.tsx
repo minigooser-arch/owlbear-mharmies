@@ -49,12 +49,21 @@ if (container) {
     </StrictMode>
   );
   OBR.onReady(() => {
-    void createOwlbearExtensionServices().then((runningServices) => {
-      root.render(
-        <StrictMode>
-          <App services={runningServices} />
-        </StrictMode>
-      );
-    });
+    void createOwlbearExtensionServices()
+      .then((runningServices) => {
+        root.render(
+          <StrictMode>
+            <App services={runningServices} />
+          </StrictMode>
+        );
+      })
+      .catch((error: unknown) => {
+        console.error("[Letopis Armies] Failed to initialize popover services", error);
+        root.render(
+          <main className="state-screen warning" role="alert">
+            Не удалось запустить интерфейс расширения. Закройте и снова откройте панель. Если ошибка повторится, проверьте консоль браузера.
+          </main>
+        );
+      });
   });
 }
