@@ -64,8 +64,6 @@ async function readStrategicOverlay(OBR: OwlbearSdk): Promise<StrategicSnapshotO
         }
       : emptyStrategicOverlay();
   } catch {
-    // Strategic metadata is an enhancement over the core snapshot. A transient SDK read
-    // failure must not prevent the entire Owlbear popover from starting.
     return emptyStrategicOverlay();
   }
 }
@@ -75,21 +73,41 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
     import("@owlbear-rodeo/sdk"),
     createCoreServices()
   ]);
+
   let overlay = await readStrategicOverlay(OBR);
+  let coreSnapshot = core.getSnapshot();
+  let snapshot = withStrategicState(coreSnapshot, overlay);
+
   const listeners = new Set<() => void>();
-  const publish = () => { for (const listener of listeners) listener(); };
-  const unsubscribeCore = core.subscribe(publish);
+  const publish = () => {
+    for (const listener of listeners) listener();
+  };
+  const rebuildSnapshot = () => {
+    snapshot = withStrategicState(coreSnapshot, overlay);
+  };
+
+  const unsubscribeCore = core.subscribe(() => {
+    const nextCoreSnapshot = core.getSnapshot();
+    if (nextCoreSnapshot !== coreSnapshot) {
+      coreSnapshot = nextCoreSnapshot;
+      rebuildSnapshot();
+    }
+    publish();
+  });
+
   const unsubscribeMetadata = OBR.scene.onMetadataChange(() => {
     void readStrategicOverlay(OBR).then((next) => {
       overlay = next;
+      rebuildSnapshot();
       publish();
     });
   });
+
   const sendStrategic = (command: StrategicCityCommandPayload): Promise<unknown> =>
     core.send(command as never);
 
   return {
-    getSnapshot: () => withStrategicState(core.getSnapshot(), overlay),
+    getSnapshot: () => snapshot,
     subscribe: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
