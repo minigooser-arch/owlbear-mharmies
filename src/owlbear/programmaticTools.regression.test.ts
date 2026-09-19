@@ -7,7 +7,6 @@ const sources = [
   "routeToolIntegration.ts",
   "shipRouteToolIntegration.ts",
   "transportLandingTool.ts",
-  "mapBrushTool.ts",
   "navalBattleAreaTool.ts"
 ];
 
@@ -22,4 +21,11 @@ describe("programmatic Letopis tools", () => {
       "com.letopis.army-control/__programmatic-only__"
     ]);
   });
+});
+
+it("keeps the map brush as a real GM-visible Owlbear tool with a default mode", () => {
+  const source = readFileSync(fileURLToPath(new URL("./mapBrushTool.ts", import.meta.url)), "utf8");
+  expect(source).not.toContain("PROGRAMMATIC_ONLY_TOOL_FILTER");
+  expect(source).toContain('filter: { roles: ["GM"] }');
+  expect(source).toContain("defaultMode: MAP_BRUSH_TOOL_MODE_ID");
 });
