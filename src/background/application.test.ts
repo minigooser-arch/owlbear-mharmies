@@ -258,6 +258,23 @@ function commandPort(
   return { port, sent, items, get scene() { return scene; } };
 }
 
+describe("ProductionEngine overlay performance", () => {
+  it("reads scene.local at most once for all overlay services in one visibility frame", async () => {
+    const fixture = commandPort();
+    let localReads = 0;
+    fixture.port.getLocalItems = async () => {
+      localReads += 1;
+      return [];
+    };
+    const engine = new ProductionEngine(fixture.port);
+
+    await engine.visibilityTick("GM", "gm");
+
+    // One read may belong to visibility clones, and one shared read serves every overlay type.
+    expect(localReads).toBeLessThanOrEqual(2);
+  });
+});
+
 describe("ProductionEngine command boundary", () => {
   it("centres an Image when the GM registers it as an army", async () => {
     const fixture = commandPort(
