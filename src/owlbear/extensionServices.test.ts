@@ -684,7 +684,7 @@ describe("extension command feedback", () => {
 
   it("reports a live Owlbear activation mismatch instead of silently claiming the brush opened", async () => {
     const running = await startServices();
-    serviceHarness.sdk.tool.activateMode.mockImplementationOnce(async () => undefined);
+    serviceHarness.sdk.tool.getActiveToolMode.mockResolvedValueOnce("wrong-mode");
 
     await running.send({
       type: "OPEN_MAP_BRUSH",
