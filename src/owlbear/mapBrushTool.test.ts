@@ -1,4 +1,4 @@
-import type { ToolMode } from "@owlbear-rodeo/sdk";
+import type { Tool, ToolMode } from "@owlbear-rodeo/sdk";
 import { describe, expect, it } from "vitest";
 import {
   mapBrushSettingsFromMetadata,
@@ -20,9 +20,10 @@ function event(x: number, y: number) {
 
 function apiHarness() {
   let registeredMode: ToolMode | undefined;
+  let registeredTool: Tool | undefined;
   const created: string[] = [];
   const api: MapBrushToolApi = {
-    create: async (tool) => { created.push(tool.id); },
+    create: async (tool) => { registeredTool = tool; created.push(tool.id); },
     remove: async () => undefined,
     createMode: async (value) => { registeredMode = value; },
     removeMode: async () => undefined,
@@ -31,6 +32,10 @@ function apiHarness() {
   return {
     api,
     created,
+    get tool(): Tool {
+      if (!registeredTool) throw new Error("Expected map brush tool to be registered");
+      return registeredTool;
+    },
     get mode(): ToolMode {
       if (!registeredMode) throw new Error("Expected map brush tool mode to be registered");
       return registeredMode;
@@ -56,12 +61,14 @@ function portHarness(role: "GM" | "PLAYER") {
 }
 
 describe("map brush tool", () => {
-  it("registers the hidden tool even if the client starts as a player", async () => {
+  it("registers the GM-visible tool even if the client starts as a player", async () => {
     const api = apiHarness();
     const port = portHarness("PLAYER");
     const registration = await registerMapBrushTool(api.api as never, port.port, "/icon.png");
     expect(registration.registered).toBe(true);
     expect(api.created).toEqual(["com.letopis.army-control/map-brush-tool"]);
+    expect(api.tool.defaultMode).toBe("com.letopis.army-control/map-brush-tool/paint");
+    expect(api.tool.icons[0]?.filter).toEqual({ roles: ["GM"] });
     await registration();
   });
 
