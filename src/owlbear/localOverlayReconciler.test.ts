@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import type { SceneItemRecord } from "../shared/types";
 import {
+  LocalOverlayReconcileSession,
   reconcileLocalOverlays,
   type DesiredLocalOverlay,
   type LocalOverlayBatchPort
@@ -129,4 +130,24 @@ it("ignores unrelated SDK fields and metadata when comparing rendered fields", a
 
   expect(port.operations).toEqual([]);
   expect(port.items[0]?.metadata.unrelated).toEqual({ keep: true });
+});
+
+
+it("incrementally upserts overlays without deleting prior preview cells", async () => {
+  const port = new MemoryOverlayPort();
+  const session = new LocalOverlayReconcileSession(port, overlayKey);
+
+  await session.reconcile([desired("a")]);
+  port.operations = [];
+  await session.upsert([desired("b")]);
+
+  expect(port.operations).toEqual(["add:local-2"]);
+  expect(port.items.map((item) => overlayKey(item))).toEqual(["a", "b"]);
+
+  port.operations = [];
+  await session.upsert([desired("b")]);
+  expect(port.operations).toEqual([]);
+
+  await session.reconcile([]);
+  expect(port.items).toEqual([]);
 });
