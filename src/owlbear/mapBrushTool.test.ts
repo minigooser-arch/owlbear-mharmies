@@ -56,12 +56,13 @@ function portHarness(role: "GM" | "PLAYER") {
 }
 
 describe("map brush tool", () => {
-  it("does not register an editable tool for players", async () => {
+  it("registers the hidden tool even if the client starts as a player", async () => {
     const api = apiHarness();
     const port = portHarness("PLAYER");
     const registration = await registerMapBrushTool(api.api as never, port.port, "/icon.png");
-    expect(registration.registered).toBe(false);
-    expect(api.created).toEqual([]);
+    expect(registration.registered).toBe(true);
+    expect(api.created).toEqual(["com.letopis.army-control/map-brush-tool"]);
+    await registration();
   });
 
   it("submits one batch for a drag stroke across many cells", async () => {
@@ -77,9 +78,12 @@ describe("map brush tool", () => {
     } as never;
 
     api.mode.onToolDragStart?.(context, event(50, 50));
+    api.mode.onToolDragMove?.(context, event(150, 50));
+    api.mode.onToolDragMove?.(context, event(250, 50));
+    api.mode.onToolDragMove?.(context, event(350, 50));
     api.mode.onToolDragMove?.(context, event(450, 50));
     api.mode.onToolDragEnd?.(context, event(450, 50));
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 20));
 
     expect(port.commits).toHaveLength(1);
     expect(port.commits[0]?.settings.mode).toBe("TERRAIN");
