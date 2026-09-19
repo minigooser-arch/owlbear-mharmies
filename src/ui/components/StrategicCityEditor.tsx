@@ -55,11 +55,32 @@ function StrategicCityRow({
   const [buildCount, setBuildCount] = useState(String(city.historicalBuildTypeCount));
   const [capital, setCapital] = useState(city.isCapital);
   const [error, setError] = useState<string | null>(null);
+  const selectedStateId = states.some((state) => state.id === stateId)
+    ? stateId
+    : (states[0]?.id ?? "");
+
+  const beginEditing = () => {
+    if (editing) {
+      setEditing(false);
+      return;
+    }
+    setName(city.name);
+    setCells(cellsText(city.cells));
+    setStateId(
+      states.some((state) => state.id === city.recognizedStateId)
+        ? city.recognizedStateId
+        : (states[0]?.id ?? "")
+    );
+    setBuildCount(String(city.historicalBuildTypeCount));
+    setCapital(city.isCapital);
+    setError(null);
+    setEditing(true);
+  };
 
   const save = () => {
     const parsedCells = parseCells(cells);
     const historicalBuildTypeCount = Number(buildCount);
-    if (!name.trim() || !stateId || !parsedCells || !Number.isInteger(historicalBuildTypeCount) || historicalBuildTypeCount < 0) {
+    if (!name.trim() || !selectedStateId || !parsedCells || !Number.isInteger(historicalBuildTypeCount) || historicalBuildTypeCount < 0) {
       setError("Проверьте название, клетки, государство и число типов построек.");
       return;
     }
@@ -67,8 +88,8 @@ function StrategicCityRow({
     void onUpdate(city.id, {
       name: name.trim(),
       cells: parsedCells,
-      recognizedStateId: stateId,
-      deFactoStateId: stateId,
+      recognizedStateId: selectedStateId,
+      deFactoStateId: selectedStateId,
       factionInfluenceId: city.factionInfluenceId,
       mayorId: city.mayorId,
       isCapital: capital,
@@ -86,7 +107,7 @@ function StrategicCityRow({
       {city.isCapital ? <p>Столица</p> : null}
       {role === "GM" ? (
         <div>
-          <button type="button" aria-label={`Редактировать ${city.name}`} onClick={() => setEditing((value) => !value)}>
+          <button type="button" aria-label={`Редактировать ${city.name}`} onClick={beginEditing}>
             Редактировать
           </button>
           <button type="button" aria-label={`Удалить ${city.name}`} onClick={() => void onDelete(city.id)}>
@@ -102,8 +123,10 @@ function StrategicCityRow({
           </label>
           <label>
             Государство
-            <select aria-label={`Редактировать государство ${city.name}`} value={stateId} onChange={(event) => setStateId(event.target.value)}>
-              {states.map((state) => <option key={state.id} value={state.id}>{state.name}</option>)}
+            <select aria-label={`Редактировать государство ${city.name}`} value={selectedStateId} onChange={(event) => setStateId(event.target.value)}>
+              {states.length === 0
+                ? <option value="">Государства не созданы</option>
+                : states.map((state) => <option key={state.id} value={state.id}>{state.name}</option>)}
             </select>
           </label>
           <label>
@@ -134,11 +157,10 @@ function StrategicCityRow({
 }
 
 export function StrategicCityEditor({ role, states, cities, onCreate, onUpdate, onDelete }: StrategicCityEditorProps) {
-  const defaultStateId = states[0]?.id ?? "";
   const [id, setId] = useState("");
   const [name, setName] = useState("");
   const [cityCellsText, setCityCellsText] = useState("");
-  const [stateId, setStateId] = useState(defaultStateId);
+  const [stateId, setStateId] = useState(states[0]?.id ?? "");
   const [buildCount, setBuildCount] = useState("0");
   const [capital, setCapital] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -147,11 +169,14 @@ export function StrategicCityEditor({ role, states, cities, onCreate, onUpdate, 
     () => new Map(states.map((state) => [state.id, state.name])),
     [states]
   );
+  const selectedStateId = states.some((state) => state.id === stateId)
+    ? stateId
+    : (states[0]?.id ?? "");
 
   const submit = () => {
     const cells = parseCells(cityCellsText);
     const historicalBuildTypeCount = Number(buildCount);
-    if (!id.trim() || !name.trim() || !stateId || !cells || !Number.isInteger(historicalBuildTypeCount) || historicalBuildTypeCount < 0) {
+    if (!id.trim() || !name.trim() || !selectedStateId || !cells || !Number.isInteger(historicalBuildTypeCount) || historicalBuildTypeCount < 0) {
       setError("Проверьте ID, название, клетки, государство и число типов построек.");
       return;
     }
@@ -160,8 +185,8 @@ export function StrategicCityEditor({ role, states, cities, onCreate, onUpdate, 
       id: id.trim(),
       name: name.trim(),
       cells,
-      recognizedStateId: stateId,
-      deFactoStateId: stateId,
+      recognizedStateId: selectedStateId,
+      deFactoStateId: selectedStateId,
       factionInfluenceId: null,
       mayorId: null,
       isCapital: capital,
@@ -197,8 +222,10 @@ export function StrategicCityEditor({ role, states, cities, onCreate, onUpdate, 
           </label>
           <label>
             Государство
-            <select aria-label="Государство" value={stateId} onChange={(event) => setStateId(event.target.value)}>
-              {states.map((state) => <option key={state.id} value={state.id}>{state.name}</option>)}
+            <select aria-label="Государство" value={selectedStateId} onChange={(event) => setStateId(event.target.value)}>
+              {states.length === 0
+                ? <option value="">Государства не созданы</option>
+                : states.map((state) => <option key={state.id} value={state.id}>{state.name}</option>)}
             </select>
           </label>
           <label>
@@ -226,7 +253,8 @@ export function StrategicCityEditor({ role, states, cities, onCreate, onUpdate, 
             Столица
           </label>
           {error ? <p role="alert">{error}</p> : null}
-          <button type="button" onClick={submit}>Создать город</button>
+          {states.length === 0 ? <p role="status">Сначала создайте государство в разделе «Управление → Государства».</p> : null}
+          <button type="button" disabled={states.length === 0} onClick={submit}>Создать город</button>
         </div>
       ) : null}
     </section>
