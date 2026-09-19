@@ -3,7 +3,6 @@ import { StrategicGridAdapter } from "../grid/strategicGrid";
 import { getBrushCells, rasterizeBrushStroke, type BrushSize } from "../terrain/brushMath";
 import { PointerMoveCoalescer } from "./pointerMoveCoalescer";
 import {
-  PROGRAMMATIC_ONLY_TOOL_FILTER,
   MAP_BRUSH_ERASER_TARGET_KEY,
   MAP_BRUSH_IMPASSABLE_VALUE_KEY,
   MAP_BRUSH_MODE_KEY,
@@ -204,7 +203,8 @@ export async function registerMapBrushTool(
 
   const tool: Tool = {
     id: MAP_BRUSH_TOOL_ID,
-    icons: [{ icon: iconUrl, label: "Разметка карты", filter: PROGRAMMATIC_ONLY_TOOL_FILTER }],
+    icons: [{ icon: iconUrl, label: "Разметка карты", filter: { roles: ["GM"] } }],
+    defaultMode: MAP_BRUSH_TOOL_MODE_ID,
     defaultMetadata: {
       [MAP_BRUSH_MODE_KEY]: "TERRAIN",
       [MAP_BRUSH_TERRAIN_ID_KEY]: "plain",

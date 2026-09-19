@@ -101,6 +101,8 @@ const serviceHarness = vi.hoisted(() => {
     ackConnectionId: string;
     currentConnectionId: string;
     currentRole: PlayerRole;
+    activeTool: string;
+    activeMode: string | undefined;
     party: PartyPlayer[];
     coordinatorLease: {
       connectionId: string;
@@ -120,6 +122,8 @@ const serviceHarness = vi.hoisted(() => {
     ackConnectionId: "coordinator",
     currentConnectionId: "sender",
     currentRole: "GM",
+    activeTool: "select-tool",
+    activeMode: undefined,
     party: [{
       id: "coordinator-gm",
       connectionId: "coordinator",
@@ -226,10 +230,11 @@ const serviceHarness = vi.hoisted(() => {
     },
     notification: { show: notificationShow },
     tool: {
-      getActiveTool: vi.fn(async () => "select-tool"),
+      getActiveTool: vi.fn(async () => state.activeTool),
+      getActiveToolMode: vi.fn(async () => state.activeMode),
       setMetadata: vi.fn(async () => undefined),
-      activateTool: vi.fn(async () => undefined),
-      activateMode: vi.fn(async () => undefined)
+      activateTool: vi.fn(async (toolId: string) => { state.activeTool = toolId; }),
+      activateMode: vi.fn(async (_toolId: string, modeId: string) => { state.activeMode = modeId; })
     }
   };
 
@@ -254,6 +259,8 @@ const serviceHarness = vi.hoisted(() => {
       state.ackConnectionId = "coordinator";
       state.currentConnectionId = "sender";
       state.currentRole = "GM";
+      state.activeTool = "select-tool";
+      state.activeMode = undefined;
       state.party = [{
         id: "coordinator-gm",
         connectionId: "coordinator",
@@ -673,6 +680,24 @@ describe("extension command feedback", () => {
     expect(serviceHarness.sdk.tool.activateTool).toHaveBeenCalledWith(MAP_BRUSH_TOOL_ID);
     expect(serviceHarness.sdk.tool.activateMode).toHaveBeenCalledWith(MAP_BRUSH_TOOL_ID, MAP_BRUSH_TOOL_MODE_ID);
     expect(serviceHarness.adapter.send).not.toHaveBeenCalled();
+  });
+
+  it("reports a live Owlbear activation mismatch instead of silently claiming the brush opened", async () => {
+    const running = await startServices();
+    serviceHarness.sdk.tool.getActiveToolMode.mockResolvedValueOnce("wrong-mode");
+
+    await running.send({
+      type: "OPEN_MAP_BRUSH",
+      settings: {
+        mode: "TERRAIN", size: 1, terrainId: "forest",
+        impassable: true, eraserTarget: "TERRAIN"
+      }
+    });
+
+    expect(serviceHarness.notificationShow).toHaveBeenCalledWith(
+      expect.stringContaining("Кисть карты не активировалась в Owlbear"),
+      "ERROR"
+    );
   });
 
   it("updates map brush metadata without activating the tool", async () => {

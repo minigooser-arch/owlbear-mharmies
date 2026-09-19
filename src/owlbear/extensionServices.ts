@@ -632,6 +632,18 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
         if (command.type === "OPEN_MAP_BRUSH") {
           await OBR.tool.activateTool(MAP_BRUSH_TOOL_ID);
           await OBR.tool.activateMode(MAP_BRUSH_TOOL_ID, MAP_BRUSH_TOOL_MODE_ID);
+          const [activeToolId, activeModeId] = await Promise.all([
+            OBR.tool.getActiveTool(),
+            OBR.tool.getActiveToolMode()
+          ]);
+          if (activeToolId !== MAP_BRUSH_TOOL_ID || activeModeId !== MAP_BRUSH_TOOL_MODE_ID) {
+            await adapter.show(
+              `Кисть карты не активировалась в Owlbear (tool: ${activeToolId}, mode: ${activeModeId ?? "нет"}).`,
+              "ERROR"
+            );
+            return undefined;
+          }
+          await adapter.show("Кисть карты активна — рисуйте по клеткам сцены.", "INFO");
         }
         return undefined;
       }
