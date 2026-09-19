@@ -13,9 +13,10 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "check": "npm run typecheck && npm run lint && npm test && npm run build",
+    "check": "npm run typecheck && npm run lint && npm test && npm run build && npm run probe:live",
     "verify:dist": "node scripts/verify-dist.mjs",
-    "smoke:dist": "node scripts/smoke-built-popover.mjs"
+    "smoke:dist": "node scripts/smoke-built-popover.mjs",
+    "probe:live": "node scripts/probe-live-pages.mjs"
   },
   "dependencies": {
     "@owlbear-rodeo/sdk": "3.1.0",
