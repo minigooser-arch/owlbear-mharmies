@@ -92,3 +92,43 @@ describe("fleet strategic route action", () => {
     expect(onAction).toHaveBeenCalledWith({ type: "EDIT_SHIP_ROUTE", shipId: "ship" });
   });
 });
+
+
+it("falls back to all factions if the selected fleet filter faction disappears", () => {
+  const blue: Side = {
+    id: "blue",
+    name: "Синие",
+    color: "#00f",
+    playerIds: [],
+    leaderPlayerIds: [],
+    stateId: null
+  };
+  const view = render(
+    <FleetPage
+      ships={[ship(), ship({ id: "blue-ship", name: "Баян", sideId: "blue", sideName: "Синие" })]}
+      armies={[]}
+      sides={[...sides, blue]}
+      role="GM"
+      leaderSideIds={new Set()}
+      onAction={vi.fn()}
+    />
+  );
+
+  fireEvent.change(screen.getByLabelText("Фильтр флота по стороне"), { target: { value: "blue" } });
+  expect(screen.queryByText("Севастополь")).not.toBeInTheDocument();
+  expect(screen.getByText("Баян")).toBeInTheDocument();
+
+  view.rerender(
+    <FleetPage
+      ships={[ship()]}
+      armies={[]}
+      sides={sides}
+      role="GM"
+      leaderSideIds={new Set()}
+      onAction={vi.fn()}
+    />
+  );
+
+  expect(screen.getByLabelText("Фильтр флота по стороне")).toHaveValue("ALL");
+  expect(screen.getByText("Севастополь")).toBeInTheDocument();
+});

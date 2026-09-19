@@ -84,3 +84,56 @@ describe("StrategicCityEditor", () => {
     expect(screen.queryByRole("button", { name: "Удалить Москва" })).toBeNull();
   });
 });
+
+
+it("picks the first state when states arrive after the city editor mounts", () => {
+  const onCreate = vi.fn();
+  const view = render(
+    <StrategicCityEditor role="GM" states={[]} cities={[]} onCreate={onCreate} onUpdate={vi.fn()} onDelete={vi.fn()} />
+  );
+
+  expect(screen.getByLabelText("Государство")).toHaveValue("");
+  expect(screen.getByRole("button", { name: "Создать город" })).toBeDisabled();
+
+  view.rerender(
+    <StrategicCityEditor role="GM" states={states} cities={[]} onCreate={onCreate} onUpdate={vi.fn()} onDelete={vi.fn()} />
+  );
+
+  expect(screen.getByLabelText("Государство")).toHaveValue("russia");
+  expect(screen.getByRole("button", { name: "Создать город" })).toBeEnabled();
+
+  fireEvent.change(screen.getByLabelText("ID города"), { target: { value: "tula" } });
+  fireEvent.change(screen.getByLabelText("Название города"), { target: { value: "Тула" } });
+  fireEvent.change(screen.getByLabelText("Клетки города"), { target: { value: "4,4" } });
+  fireEvent.click(screen.getByRole("button", { name: "Создать город" }));
+
+  expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({
+    id: "tula",
+    recognizedStateId: "russia",
+    deFactoStateId: "russia"
+  }));
+});
+
+it("refreshes an edit form from the latest city data when editing is reopened", () => {
+  const onUpdate = vi.fn();
+  const view = render(
+    <StrategicCityEditor role="GM" states={states} cities={[city]} onCreate={vi.fn()} onUpdate={onUpdate} onDelete={vi.fn()} />
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "Редактировать Москва" }));
+  fireEvent.change(screen.getByLabelText("Редактировать название Москва"), { target: { value: "Черновик" } });
+  fireEvent.click(screen.getByRole("button", { name: "Редактировать Москва" }));
+
+  const updatedCity: StrategicCity = {
+    ...city,
+    name: "Москва обновлённая",
+    historicalBuildTypeCount: 9
+  };
+  view.rerender(
+    <StrategicCityEditor role="GM" states={states} cities={[updatedCity]} onCreate={vi.fn()} onUpdate={onUpdate} onDelete={vi.fn()} />
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "Редактировать Москва обновлённая" }));
+  expect(screen.getByLabelText("Редактировать название Москва обновлённая")).toHaveValue("Москва обновлённая");
+  expect(screen.getByLabelText("Редактировать исторические типы построек Москва обновлённая")).toHaveValue(9);
+});

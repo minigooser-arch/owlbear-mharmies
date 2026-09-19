@@ -24,23 +24,29 @@ export function RebellionsPage({
   const [civilStateName, setCivilStateName] = useState("");
   const [civilStateColor, setCivilStateColor] = useState("#aa3344");
 
-  const capitals = cities.filter((city) => city.isCapital && city.recognizedStateId === sourceStateId);
+  const selectedSourceStateId = activeStates.some((state) => state.id === sourceStateId)
+    ? sourceStateId
+    : (activeStates[0]?.id ?? "");
+  const capitals = cities.filter((city) => city.isCapital && city.recognizedStateId === selectedSourceStateId);
   const selectedCapitalCityId = capitals.some((city) => city.id === capitalCityId)
     ? capitalCityId
     : (capitals[0]?.id ?? "");
-  const participantCandidates = sides.filter((side) => side.stateId === sourceStateId);
+  const participantCandidates = sides.filter((side) => side.stateId === selectedSourceStateId);
   const selectedParticipants = participantCandidates.filter((side) => participantFactionIds.has(side.id));
-  const canStart = Boolean(sourceStateId && selectedCapitalCityId && selectedParticipants.length > 0);
+  const canStart = Boolean(selectedSourceStateId && selectedCapitalCityId && selectedParticipants.length > 0);
 
-  const civilSourceState = states.find((state) => state.id === civilSourceStateId);
+  const selectedCivilSourceStateId = activeStates.some((state) => state.id === civilSourceStateId)
+    ? civilSourceStateId
+    : (activeStates[0]?.id ?? "");
+  const civilSourceState = states.find((state) => state.id === selectedCivilSourceStateId);
   const civilFactionCandidates = sides.filter(
-    (side) => side.stateId === civilSourceStateId && side.id !== civilSourceState?.rulingFactionId
+    (side) => side.stateId === selectedCivilSourceStateId && side.id !== civilSourceState?.rulingFactionId
   );
   const selectedCivilFactionId = civilFactionCandidates.some((side) => side.id === civilRebelFactionId)
     ? civilRebelFactionId
     : (civilFactionCandidates[0]?.id ?? "");
   const canStartCivilWar = Boolean(
-    civilSourceStateId &&
+    selectedCivilSourceStateId &&
     selectedCivilFactionId &&
     civilStateName.trim()
   );
@@ -62,14 +68,16 @@ export function RebellionsPage({
             Государство
             <select
               aria-label="Государство восстания"
-              value={sourceStateId}
+              value={selectedSourceStateId}
               onChange={(event) => {
                 setSourceStateId(event.target.value);
                 setCapitalCityId("");
                 setParticipantFactionIds(new Set());
               }}
             >
-              {activeStates.map((state) => <option key={state.id} value={state.id}>{state.name}</option>)}
+              {activeStates.length === 0
+                ? <option value="">Нет активных государств</option>
+                : activeStates.map((state) => <option key={state.id} value={state.id}>{state.name}</option>)}
             </select>
           </label>
           <label>
@@ -116,7 +124,7 @@ export function RebellionsPage({
             onAction({
               type: "START_REBELLION",
               rebellionId: "rebellion-" + crypto.randomUUID(),
-              sourceStateId,
+              sourceStateId: selectedSourceStateId,
               capitalCityId: selectedCapitalCityId,
               participantFactionIds: selectedParticipants.map((side) => side.id)
             });
@@ -138,13 +146,15 @@ export function RebellionsPage({
             Государство-источник
             <select
               aria-label="Государство-источник раскола"
-              value={civilSourceStateId}
+              value={selectedCivilSourceStateId}
               onChange={(event) => {
                 setCivilSourceStateId(event.target.value);
                 setCivilRebelFactionId("");
               }}
             >
-              {activeStates.map((state) => <option key={state.id} value={state.id}>{state.name}</option>)}
+              {activeStates.length === 0
+                ? <option value="">Нет активных государств</option>
+                : activeStates.map((state) => <option key={state.id} value={state.id}>{state.name}</option>)}
             </select>
           </label>
           <label>
@@ -186,7 +196,7 @@ export function RebellionsPage({
             if (!canStartCivilWar) return;
             onAction({
               type: "START_CIVIL_WAR",
-              sourceStateId: civilSourceStateId,
+              sourceStateId: selectedCivilSourceStateId,
               rebelFactionId: selectedCivilFactionId,
               newStateId: "state-" + crypto.randomUUID(),
               newStateName: civilStateName.trim(),

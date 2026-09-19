@@ -117,3 +117,35 @@ it("builds a civil war split command for a non-ruling faction", () => {
     newStateColor: "#aa3344"
   }));
 });
+
+
+it("recovers rebellion selectors when active states arrive after mount", () => {
+  const onAction = vi.fn();
+  const view = render(
+    <RebellionsPage states={[]} sides={[]} cities={[]} statuses={[]} onAction={onAction} />
+  );
+
+  expect(screen.getByLabelText("Государство восстания")).toHaveValue("");
+  expect(screen.getByLabelText("Государство-источник раскола")).toHaveValue("");
+  expect(screen.getByRole("button", { name: "Запустить восстание" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Начать гражданскую войну" })).toBeDisabled();
+
+  view.rerender(
+    <RebellionsPage states={states} sides={sides} cities={cities} statuses={[]} onAction={onAction} />
+  );
+
+  expect(screen.getByLabelText("Государство восстания")).toHaveValue("state");
+  expect(screen.getByLabelText("Столица восстания")).toHaveValue("capital");
+  expect(screen.getByLabelText("Государство-источник раскола")).toHaveValue("state");
+  expect(screen.getByLabelText("Повстанческая фракция")).toHaveValue("rebels");
+
+  fireEvent.click(screen.getByRole("checkbox", { name: "Участник восстания: Повстанцы" }));
+  fireEvent.click(screen.getByRole("button", { name: "Запустить восстание" }));
+
+  expect(onAction).toHaveBeenCalledWith(expect.objectContaining({
+    type: "START_REBELLION",
+    sourceStateId: "state",
+    capitalCityId: "capital",
+    participantFactionIds: ["rebels"]
+  }));
+});
