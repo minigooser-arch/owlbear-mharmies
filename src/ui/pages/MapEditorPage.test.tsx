@@ -104,8 +104,10 @@ it("offers inactive states for map painting instead of hiding them", () => {
 
   fireEvent.change(screen.getByLabelText("Режим кисти"), { target: { value: "RECOGNIZED_STATE" } });
 
-  expect(screen.getByRole("option", { name: "Великое княжество Финляндское · неактивно" })).toBeInTheDocument();
-  expect(screen.getByLabelText("Государство для разметки")).toHaveValue("finland");
+  const stateSelect = screen.getByLabelText("Государство для разметки");
+  expect(stateSelect).toHaveValue("finland");
+  expect(stateSelect).toContainHTML("Великое княжество Финляндское");
+  expect(stateSelect).toContainHTML("неактивно");
   expect(screen.getByRole("button", { name: "Начать рисовать" })).toBeEnabled();
 });
 
