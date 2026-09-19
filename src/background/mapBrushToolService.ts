@@ -1,6 +1,6 @@
 import type { CommandAck } from "../commands/commandGateway";
 import { StrategicGridAdapter, cellKey } from "../grid/strategicGrid";
-import { reconcileLocalOverlays, type LocalOverlayBatchPort } from "../owlbear/localOverlayReconciler";
+import { LocalOverlayReconcileSession, type LocalOverlayBatchPort } from "../owlbear/localOverlayReconciler";
 import type { MapBrushSettings, MapBrushToolPort } from "../owlbear/mapBrushTool";
 import { METADATA_KEYS } from "../shared/constants";
 import { COMMAND_PROTOCOL_VERSION, type ArmyCommand, type ArmyCommandPayload, type GridCellCoord, type SceneItemRecord } from "../shared/types";
@@ -73,12 +73,14 @@ function commandPayload(settings: MapBrushSettings, cells: GridCellCoord[]): Map
 
 export class MapBrushToolService implements MapBrushToolPort {
   private readonly repository: MetadataRepository;
+  private readonly previewSession: LocalOverlayReconcileSession;
 
   constructor(
     private readonly port: MapBrushServicePort,
     private readonly gateway: MapBrushCommandGateway
   ) {
     this.repository = new MetadataRepository(port);
+    this.previewSession = new LocalOverlayReconcileSession(port, previewKey);
   }
 
   async getRole(): Promise<"GM" | "PLAYER"> {
@@ -129,9 +131,7 @@ export class MapBrushToolService implements MapBrushToolPort {
     const grid = new StrategicGridAdapter({ dpi, offset: { x: 0, y: 0 } });
     const half = dpi / 2;
     const color = previewColor(settings);
-    await reconcileLocalOverlays(
-      this.port,
-      previewKey,
+    await this.previewSession.reconcile(
       cells.map((cell) => {
         const center = grid.cellToSceneCenter(cell);
         const key = cellKey(cell);
@@ -160,7 +160,7 @@ export class MapBrushToolService implements MapBrushToolPort {
   }
 
   async clearPreview(): Promise<void> {
-    await reconcileLocalOverlays(this.port, previewKey, []);
+    await this.previewSession.reconcile([]);
   }
 
   notify(message: string, variant: "INFO" | "WARNING" | "ERROR"): Promise<void> {
