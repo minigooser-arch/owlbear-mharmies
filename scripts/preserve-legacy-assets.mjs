@@ -1,5 +1,6 @@
-import { copyFile, readdir } from "node:fs/promises";
+import { copyFile, readdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { HISTORICAL_PAGE_ASSETS } from "./historical-pages-assets.mjs";
 
 const assetsDir = resolve("dist/assets");
 const files = await readdir(assetsDir);
@@ -13,47 +14,29 @@ function requireAsset(pattern, label) {
 const current = {
   popoverJs: requireAsset(/^popover-.*\.js$/, "popover JS"),
   popoverCss: requireAsset(/^popover-.*\.css$/, "popover CSS"),
-  backgroundJs: requireAsset(/^background-.*\.js$/, "background JS")
+  backgroundJs: requireAsset(/^background-.*\.js$/, "background JS"),
+  sdkAdapterJs: requireAsset(/^sdkAdapter-.*\.js$/, "SDK adapter JS"),
+  turnScheduleJs: requireAsset(/^turnSchedule-.*\.js$/, "turn schedule JS"),
+  localCloneJs: requireAsset(/^localCloneReconciler-.*\.js$/, "local clone reconciler JS")
 };
 
-const aliases = {
-  popoverJs: [
-    "popover-C1pHE-_U.js",
-    "popover-jzQ5quiQ.js",
-    "popover-BSdMMso-.js",
-    "popover-D9JUV3dj.js",
-    "popover-D5J07iIK.js",
-    "popover-DCYe7aVg.js",
-    "popover-CYQunp37.js",
-    "popover-CWaOHTEK.js",
-    "popover-BPIcBEi5.js",
-    "popover-tPvG_MHo.js",
-    "popover-CmsXoGT7.js"
-  ],
-  popoverCss: [
-    "popover-C07c0gpX.css",
-    "popover-b8Y17HPz.css",
-    "popover-DDHaCpnh.css"
-  ],
-  backgroundJs: [
-    "background-CHrT2CU_.js",
-    "background-BgeoMLsM.js",
-    "background-B3cweckT.js",
-    "background-DKTpyEX2.js",
-    "background-D5tZ-m5K.js",
-    "background-DgkKhKHi.js",
-    "background-nnzPXRXT.js",
-    "background-CJc4glRm.js",
-    "background-CLgr5z-H.js",
-    "background-BwdVTWXB.js",
-    "background-zS3bexv7.js"
-  ]
-};
-
-for (const [kind, names] of Object.entries(aliases)) {
+for (const [kind, names] of Object.entries(HISTORICAL_PAGE_ASSETS)) {
+  if (kind === "preloadHelperJs") continue;
   const source = current[kind];
+  if (!source) throw new Error(`No current asset source configured for ${kind}`);
   for (const name of names) {
     if (name === source) continue;
     await copyFile(resolve(assetsDir, source), resolve(assetsDir, name));
   }
+}
+
+// Early Vite builds emitted a standalone preload helper. Old HTML can still try to preload it.
+// A harmless compatibility module prevents that request from becoming a 404.
+const preloadCompat = [
+  "const preload = (baseModule) => baseModule();",
+  "export { preload as _, preload as __vitePreload };",
+  ""
+].join("\n");
+for (const name of HISTORICAL_PAGE_ASSETS.preloadHelperJs) {
+  await writeFile(resolve(assetsDir, name), preloadCompat, "utf8");
 }
