@@ -19,6 +19,10 @@ interface StrategicSnapshotOverlay {
   strategicCities: readonly StrategicCity[];
 }
 
+function emptyStrategicOverlay(): StrategicSnapshotOverlay {
+  return { stateRelations: {}, strategicCities: [] };
+}
+
 function withStrategicState(
   snapshot: RawExtensionSnapshot,
   overlay: StrategicSnapshotOverlay
@@ -49,15 +53,21 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
 }
 
 async function readStrategicOverlay(OBR: OwlbearSdk): Promise<StrategicSnapshotOverlay> {
-  if (!(await OBR.scene.isReady())) return { stateRelations: {}, strategicCities: [] };
-  const metadata = await OBR.scene.getMetadata();
-  const migrated = migrateSceneState(metadata[METADATA_KEYS.scene] ?? { version: 3 });
-  return migrated.ok
-    ? {
-        stateRelations: migrated.value.stateRelations ?? {},
-        strategicCities: migrated.value.strategicCities ?? []
-      }
-    : { stateRelations: {}, strategicCities: [] };
+  try {
+    if (!(await OBR.scene.isReady())) return emptyStrategicOverlay();
+    const metadata = await OBR.scene.getMetadata();
+    const migrated = migrateSceneState(metadata[METADATA_KEYS.scene] ?? { version: 3 });
+    return migrated.ok
+      ? {
+          stateRelations: migrated.value.stateRelations ?? {},
+          strategicCities: migrated.value.strategicCities ?? []
+        }
+      : emptyStrategicOverlay();
+  } catch {
+    // Strategic metadata is an enhancement over the core snapshot. A transient SDK read
+    // failure must not prevent the entire Owlbear popover from starting.
+    return emptyStrategicOverlay();
+  }
 }
 
 export async function createOwlbearExtensionServices(): Promise<RunningExtensionServices> {
