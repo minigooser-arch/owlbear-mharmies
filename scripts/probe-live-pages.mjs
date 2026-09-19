@@ -29,7 +29,7 @@ function pickHeaders(headers) {
 }
 
 for (const [name, url] of targets) {
-  const response = await fetch(url, {
+  const response = await globalThis.fetch(url, {
     redirect: "follow",
     headers: {
       "user-agent": "letopis-armies-live-pages-probe/1.0",
