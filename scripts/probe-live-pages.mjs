@@ -69,8 +69,9 @@ for (const [name, url] of targets) {
     if (manifest.version !== "1.2.4") {
       failures.push(`manifest: expected version 1.2.4, got ${String(manifest.version)}`);
     }
-    if (!String(manifest.action?.popover ?? "").includes("1.2.4")) {
-      failures.push(`manifest: popover URL is not 1.2.4: ${String(manifest.action?.popover)}`);
+    const popoverUrl = String(manifest.action?.popover ?? "");
+    if (!popoverUrl.startsWith(`${base}/index.html?v=`)) {
+      failures.push(`manifest: unexpected popover URL: ${popoverUrl}`);
     }
   }
 
