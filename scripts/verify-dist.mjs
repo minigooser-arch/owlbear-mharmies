@@ -21,8 +21,18 @@ function distPathFromPublicUrl(value) {
   return value.startsWith(prefix) ? value.slice(prefix.length) : null;
 }
 
-for (const htmlName of ["index.html", "background.html"]) {
-  const html = await readFile(resolve(distDir, htmlName), "utf8");
+function assetNameFromPublicUrl(value) {
+  const prefix = "/owlbear-mharmies/assets/";
+  return value.startsWith(prefix) ? value.slice(prefix.length) : null;
+}
+
+const indexHtml = await readFile(resolve(distDir, "index.html"), "utf8");
+const backgroundHtml = await readFile(resolve(distDir, "background.html"), "utf8");
+
+for (const [htmlName, html] of [
+  ["index.html", indexHtml],
+  ["background.html", backgroundHtml]
+]) {
   const refs = [...html.matchAll(/\b(?:src|href)="([^"]+)"/g)].map((match) => match[1]);
   for (const ref of refs) {
     const localPath = distPathFromPublicUrl(ref);
@@ -30,7 +40,6 @@ for (const htmlName of ["index.html", "background.html"]) {
   }
 }
 
-const indexHtml = await readFile(resolve(distDir, "index.html"), "utf8");
 if (!indexHtml.includes("Загрузка интерфейса…")) {
   failures.push("index.html: inline loading fallback is missing");
 }
@@ -65,6 +74,54 @@ for (const names of Object.values(HISTORICAL_PAGE_ASSETS)) {
   }
 }
 
+const currentPopoverJs = assetNameFromPublicUrl(
+  indexHtml.match(/<script[^>]+src="([^"]*popover-[^"]+\.js)"/)?.[1] ?? ""
+);
+const currentPopoverCss = assetNameFromPublicUrl(
+  indexHtml.match(/<link[^>]+href="([^"]*popover-[^"]+\.css)"/)?.[1] ?? ""
+);
+const currentBackgroundJs = assetNameFromPublicUrl(
+  backgroundHtml.match(/<script[^>]+src="([^"]*background-[^"]+\.js)"/)?.[1] ?? ""
+);
+const currentTurnScheduleJs = assetNameFromPublicUrl(
+  indexHtml.match(/href="([^"]*turnSchedule-[^"]+\.js)"/)?.[1] ?? ""
+);
+const currentLocalCloneJs = assetNameFromPublicUrl(
+  backgroundHtml.match(/href="([^"]*localCloneReconciler-[^"]+\.js)"/)?.[1] ?? ""
+);
+
+let currentSdkAdapterJs = null;
+if (currentPopoverJs) {
+  const popoverSource = await readFile(resolve(assetsDir, currentPopoverJs), "utf8");
+  currentSdkAdapterJs = popoverSource.match(/assets\/(sdkAdapter-[A-Za-z0-9_.-]+\.js)/)?.[1] ?? null;
+}
+
+const currentByKind = {
+  popoverJs: currentPopoverJs,
+  popoverCss: currentPopoverCss,
+  backgroundJs: currentBackgroundJs,
+  sdkAdapterJs: currentSdkAdapterJs,
+  turnScheduleJs: currentTurnScheduleJs,
+  localCloneJs: currentLocalCloneJs
+};
+
+for (const [kind, names] of Object.entries(HISTORICAL_PAGE_ASSETS)) {
+  if (kind === "preloadHelperJs") continue;
+  const currentName = currentByKind[kind];
+  if (!currentName || !assetNames.has(currentName)) {
+    failures.push(`could not identify current asset for ${kind}`);
+    continue;
+  }
+  const expected = await readFile(resolve(assetsDir, currentName));
+  for (const name of names) {
+    if (!assetNames.has(name)) continue;
+    const actual = await readFile(resolve(assetsDir, name));
+    if (!actual.equals(expected)) {
+      failures.push(`historical alias assets/${name} does not match current ${kind} asset ${currentName}`);
+    }
+  }
+}
+
 for (const name of assetNames) {
   if (!name.endsWith(".js")) continue;
   const source = await readFile(resolve(assetsDir, name), "utf8");
@@ -85,5 +142,5 @@ if (failures.length > 0) {
 
 process.stdout.write(
   `Verified production artifact: ${assetNames.size} assets, all HTML/module references resolve, ` +
-  `${Object.values(HISTORICAL_PAGE_ASSETS).flat().length} historical aliases present.\\n`
+  `${Object.values(HISTORICAL_PAGE_ASSETS).flat().length} historical aliases present and byte-identical to current assets.\n`
 );
