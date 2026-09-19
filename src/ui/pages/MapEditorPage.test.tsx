@@ -91,3 +91,58 @@ it("does not allow peace transfer confirmation before a preview", () => {
   fireEvent.change(screen.getByLabelText("Клетки передачи"), { target: { value: "1,2" } });
   expect(screen.getByRole("button", { name: "Подтвердить официальную передачу" })).toBeDisabled();
 });
+
+
+it("offers inactive states for map painting instead of hiding them", () => {
+  const inactiveStates: StateEntity[] = [{
+    id: "finland",
+    name: "Великое княжество Финляндское",
+    rulingFactionId: null,
+    active: false
+  }];
+  render(<MapEditorPage terrain={DEFAULT_TERRAIN} sides={sides} states={inactiveStates} onAction={vi.fn()} />);
+
+  fireEvent.change(screen.getByLabelText("Режим кисти"), { target: { value: "RECOGNIZED_STATE" } });
+
+  const stateSelect = screen.getByLabelText("Государство для разметки");
+  expect(stateSelect).toHaveValue("finland");
+  expect(stateSelect).toContainHTML("Великое княжество Финляндское");
+  expect(stateSelect).toContainHTML("неактивно");
+  expect(screen.getByRole("button", { name: "Начать рисовать" })).toBeEnabled();
+});
+
+it("synchronizes the selected state when states arrive after the map editor mounts", async () => {
+  const onAction = vi.fn();
+  const view = render(<MapEditorPage terrain={DEFAULT_TERRAIN} sides={sides} states={[]} onAction={onAction} />);
+
+  fireEvent.change(screen.getByLabelText("Режим кисти"), { target: { value: "RECOGNIZED_STATE" } });
+
+  expect(screen.getByLabelText("Государство для разметки")).toHaveValue("");
+  expect(screen.getByRole("button", { name: "Начать рисовать" })).toBeDisabled();
+  expect(screen.getByRole("status")).toHaveTextContent("Сначала создайте государство");
+
+  view.rerender(<MapEditorPage terrain={DEFAULT_TERRAIN} sides={sides} states={states} onAction={onAction} />);
+
+  await vi.waitFor(() => {
+    expect(screen.getByLabelText("Государство для разметки")).toHaveValue("russia");
+  });
+  expect(screen.getByRole("button", { name: "Начать рисовать" })).toBeEnabled();
+
+  fireEvent.click(screen.getByRole("button", { name: "Начать рисовать" }));
+  expect(onAction).toHaveBeenLastCalledWith(expect.objectContaining({
+    type: "OPEN_MAP_BRUSH",
+    settings: expect.objectContaining({ stateId: "russia" })
+  }));
+});
+
+it("synchronizes the peace-transfer recipient when states arrive after mount", async () => {
+  const view = render(<MapEditorPage terrain={DEFAULT_TERRAIN} sides={sides} states={[]} onAction={vi.fn()} />);
+
+  expect(screen.getByLabelText("Государство-получатель")).toHaveValue("");
+
+  view.rerender(<MapEditorPage terrain={DEFAULT_TERRAIN} sides={sides} states={states} onAction={vi.fn()} />);
+
+  await vi.waitFor(() => {
+    expect(screen.getByLabelText("Государство-получатель")).toHaveValue("russia");
+  });
+});
