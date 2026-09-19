@@ -74,7 +74,7 @@ button { color: inherit; }
 .tabs-primary { overflow-x:auto; justify-content:flex-start; scrollbar-width:none; }
 .tabs-primary::-webkit-scrollbar { display:none; }
 .tabs-primary button { flex:1 0 auto; min-width:76px; min-height:44px; }
-.subtabs { display:flex; gap:6px; overflow-x:auto; margin:0 0 14px; padding:4px; border:1px solid var(--line); border-radius:11px; background:#0d1524; scrollbar-width:none; }
+.subtabs { display:flex; flex-wrap:wrap; gap:6px; overflow:visible; margin:0 0 14px; padding:4px; border:1px solid var(--line); border-radius:11px; background:#0d1524; scrollbar-width:none; }
 .subtabs button,.filter-chips button { border:0; border-radius:8px; padding:8px 10px; background:transparent; color:var(--muted); cursor:pointer; white-space:nowrap; }
 .subtabs button.active,.filter-chips button.active { background:#24324a; color:#fff; font-weight:700; }
 .management-content > section > .section-heading:first-child { display:none; }
