@@ -4,6 +4,7 @@ import OBR from "@owlbear-rodeo/sdk";
 import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE } from "../shared/constants";
 import { createOwlbearExtensionServices } from "../owlbear/extensionServicesV7";
 import { App } from "./App";
+import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import "./app.css";
 import "./wiki-light.css";
 import "./fleet.css";
@@ -43,19 +44,22 @@ const services: ExtensionServices = {
 
 if (container) {
   const root = createRoot(container);
-  root.render(
-    <StrictMode>
-      <App services={services} />
-    </StrictMode>
-  );
+  const renderApp = (nextServices: ExtensionServices) => {
+    root.render(
+      <StrictMode>
+        <AppErrorBoundary>
+          <App services={nextServices} />
+        </AppErrorBoundary>
+      </StrictMode>
+    );
+  };
+
+  renderApp(services);
+
   OBR.onReady(() => {
     void createOwlbearExtensionServices()
       .then((runningServices) => {
-        root.render(
-          <StrictMode>
-            <App services={runningServices} />
-          </StrictMode>
-        );
+        renderApp(runningServices);
       })
       .catch((error: unknown) => {
         console.error("[Letopis Armies] Failed to initialize popover services", error);

@@ -1,11 +1,12 @@
 import { expect, it, vi } from "vitest";
 
 const harness = vi.hoisted(() => {
-  const snapshot = {
+  let coreListener: (() => void) | undefined;
+  let currentSnapshot = {
     ready: true,
     sceneReady: true,
     futureSchema: false,
-    role: "GM",
+    role: "GM" as const,
     playerId: "gm",
     players: [],
     memberSideIds: new Set<string>(),
@@ -23,8 +24,11 @@ const harness = vi.hoisted(() => {
     turn: {}
   };
   const core = {
-    getSnapshot: vi.fn(() => snapshot),
-    subscribe: vi.fn(() => () => undefined),
+    getSnapshot: vi.fn(() => currentSnapshot),
+    subscribe: vi.fn((listener: () => void) => {
+      coreListener = listener;
+      return () => undefined;
+    }),
     send: vi.fn(async () => undefined),
     runDiagnostic: vi.fn(async () => undefined),
     stop: vi.fn()
@@ -38,7 +42,17 @@ const harness = vi.hoisted(() => {
       onMetadataChange: vi.fn(() => () => undefined)
     }
   };
-  return { snapshot, core, sdk };
+  return {
+    core,
+    sdk,
+    get snapshot() {
+      return currentSnapshot;
+    },
+    replaceSnapshot(next: typeof currentSnapshot) {
+      currentSnapshot = next;
+      coreListener?.();
+    }
+  };
 });
 
 vi.mock("@owlbear-rodeo/sdk", () => ({ default: harness.sdk }));
@@ -63,4 +77,34 @@ it("starts from the core snapshot when the strategic metadata overlay cannot be 
 
   services.stop();
   expect(harness.core.stop).toHaveBeenCalledTimes(1);
+});
+
+it("returns the same snapshot reference until the external store actually changes", async () => {
+  const services = await createOwlbearExtensionServices();
+
+  const first = services.getSnapshot();
+  const second = services.getSnapshot();
+  const third = services.getSnapshot();
+
+  expect(second).toBe(first);
+  expect(third).toBe(first);
+
+  services.stop();
+});
+
+it("rebuilds the cached snapshot after the core store publishes a new snapshot", async () => {
+  const services = await createOwlbearExtensionServices();
+  const first = services.getSnapshot();
+
+  harness.replaceSnapshot({
+    ...harness.snapshot,
+    playerId: "gm-2"
+  });
+
+  const second = services.getSnapshot();
+  expect(second).not.toBe(first);
+  expect(second.playerId).toBe("gm-2");
+  expect(services.getSnapshot()).toBe(second);
+
+  services.stop();
 });
