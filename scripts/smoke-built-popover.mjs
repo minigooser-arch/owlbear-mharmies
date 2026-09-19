@@ -30,7 +30,11 @@ const globals = [
   "localStorage"
 ];
 for (const key of globals) {
-  globalThis[key] = dom.window[key];
+  Object.defineProperty(globalThis, key, {
+    value: dom.window[key],
+    configurable: true,
+    writable: true
+  });
 }
 globalThis.requestAnimationFrame = dom.window.requestAnimationFrame.bind(dom.window);
 globalThis.cancelAnimationFrame = dom.window.cancelAnimationFrame.bind(dom.window);
