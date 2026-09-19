@@ -152,5 +152,5 @@ it("appends only newly reached cells during a drag instead of rebuilding the ful
   expect(harness.appendedPreviews.flat().map((cell) => cell.x)).toEqual([1, 2, 3]);
   expect(harness.appendedPreviews.flat()).toHaveLength(3);
 
-  api.mode.onToolDragCancel?.(context);
+  api.mode.onToolDragCancel?.(context, event(350, 50));
 });
