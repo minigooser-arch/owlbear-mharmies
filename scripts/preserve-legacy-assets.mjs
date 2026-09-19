@@ -18,6 +18,7 @@ const current = {
 
 const aliases = {
   popoverJs: [
+    "popover-C1pHE-_U.js",
     "popover-jzQ5quiQ.js",
     "popover-BSdMMso-.js",
     "popover-D9JUV3dj.js",
