@@ -49,10 +49,10 @@ try {
     </html>`);
 
   const result = await page.evaluate(() => {
-    const content = document.querySelector(".wiki-content");
-    const subtabs = document.querySelector(".subtabs");
-    const buttons = Array.from(document.querySelectorAll(".subtabs button"));
-    if (!(content instanceof HTMLElement) || !(subtabs instanceof HTMLElement)) {
+    const content = globalThis.document.querySelector(".wiki-content");
+    const subtabs = globalThis.document.querySelector(".subtabs");
+    const buttons = Array.from(globalThis.globalThis.document.querySelectorAll(".subtabs button"));
+    if (!(content instanceof globalThis.HTMLElement) || !(subtabs instanceof globalThis.HTMLElement)) {
       throw new Error("Fixture layout nodes missing");
     }
 
@@ -63,12 +63,12 @@ try {
     const lastTop = buttons.at(-1)?.getBoundingClientRect().top ?? 0;
 
     return {
-      viewportHeight: window.innerHeight,
-      rootHeight: document.getElementById("root")?.getBoundingClientRect().height ?? 0,
-      shellHeight: document.querySelector(".app-shell")?.getBoundingClientRect().height ?? 0,
+      viewportHeight: globalThis.innerHeight,
+      rootHeight: globalThis.document.getElementById("root")?.getBoundingClientRect().height ?? 0,
+      shellHeight: globalThis.document.querySelector(".app-shell")?.getBoundingClientRect().height ?? 0,
       contentClientHeight: content.clientHeight,
       contentScrollHeight: content.scrollHeight,
-      contentOverflowY: getComputedStyle(content).overflowY,
+      contentOverflowY: globalThis.getComputedStyle(content).overflowY,
       scrollBefore: before,
       scrollAfter: after,
       subtabsClientWidth: subtabs.clientWidth,
