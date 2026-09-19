@@ -38,9 +38,9 @@ globalThis.cancelAnimationFrame = dom.window.cancelAnimationFrame.bind(dom.windo
 const entryUrl = pathToFileURL(resolve(distDir, entryMatch[1])).href;
 await import(`${entryUrl}?dist-smoke=${Date.now()}`);
 
-await new Promise((resolvePromise) => setTimeout(resolvePromise, 50));
+await new Promise((resolvePromise) => globalThis.setTimeout(resolvePromise, 50));
 
-const root = document.getElementById("root");
+const root = globalThis.document.getElementById("root");
 const text = root?.textContent ?? "";
 if (!text.includes("Загрузка")) {
   throw new Error(`Built popover entry did not render its loading UI. Root text: ${JSON.stringify(text)}`);
