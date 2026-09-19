@@ -205,3 +205,55 @@ it("keeps brush writes GM-only even though the tool is registered for role chang
     eraserTarget: "TERRAIN"
   }, [{ x: 0, y: 0 }])).rejects.toMatchObject({ code: "GM_ONLY" });
 });
+
+
+it("keeps preview work linear by adding only new cells and reusing grid geometry", async () => {
+  const current = scene();
+  let localReads = 0;
+  let gridReads = 0;
+  let addedCells = 0;
+  const basePort = servicePort(current);
+  const port = {
+    ...basePort,
+    getGridDpi: async () => {
+      gridReads += 1;
+      return 100;
+    },
+    getLocalItems: async () => {
+      localReads += 1;
+      return [];
+    },
+    addLocalItems: async (items: readonly unknown[]) => {
+      addedCells += items.length;
+    }
+  };
+  const service = new MapBrushToolService(port as never, {
+    send: async (command) => ({
+      protocolVersion: COMMAND_PROTOCOL_VERSION,
+      requestId: command.requestId,
+      status: "ACCEPTED",
+      coordinatorConnectionId: "coord",
+      recipientConnectionId: "c"
+    })
+  });
+  const settings = {
+    mode: "TERRAIN" as const,
+    size: 1 as const,
+    terrainId: "forest",
+    impassable: true,
+    eraserTarget: "TERRAIN" as const
+  };
+
+  await service.renderPreview(settings, [{ x: 0, y: 0 }]);
+  for (let x = 1; x <= 100; x += 1) {
+    await service.appendPreview(settings, [{ x, y: 0 }]);
+  }
+
+  expect(localReads).toBe(1);
+  expect(gridReads).toBe(1);
+  expect(addedCells).toBe(101);
+
+  await service.clearPreview();
+  await service.renderPreview(settings, [{ x: 200, y: 0 }]);
+  expect(gridReads).toBe(2);
+});
