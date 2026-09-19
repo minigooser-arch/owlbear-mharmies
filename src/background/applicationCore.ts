@@ -1340,8 +1340,15 @@ export class ProductionEngine {
     sceneItems: readonly SceneItemRecord[],
     visibleShipIds: ReadonlySet<string>
   ): Promise<void> {
+    let localItemsSnapshot: Promise<SceneItemRecord[]> | undefined;
     const overlayPort = {
-      getLocalItems: () => this.port.getLocalItems(),
+      // Overlay types use disjoint metadata keys. A single immutable snapshot is enough
+      // for all reconciliation passes in this visibility frame and avoids repeatedly
+      // transferring a potentially huge scene.local collection through the SDK.
+      getLocalItems: () => {
+        localItemsSnapshot ??= this.port.getLocalItems();
+        return localItemsSnapshot;
+      },
       addLocalItems: (items: readonly SceneItemRecord[]) => this.port.addLocalItems(items),
       updateLocalItems: (items: readonly SceneItemRecord[]) => this.port.updateLocalItems(items),
       deleteLocalItems: (ids: readonly string[]) => this.port.deleteLocalItems(ids),
