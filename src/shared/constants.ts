@@ -49,6 +49,8 @@ export const MINECRAFT_GRID_TOP_RIGHT = { x: 0, z: -10000 } as const;
 
 export const METADATA_KEYS = {
   scene: `${EXTENSION_ID}/scene`,
+  gridManifest: `${EXTENSION_ID}/grid-manifest`,
+  gridChunk: `${EXTENSION_ID}/grid-chunk`,
   army: `${EXTENSION_ID}/army`,
   ship: `${EXTENSION_ID}/ship`,
   barrier: `${EXTENSION_ID}/barrier`,
@@ -83,7 +85,7 @@ export const DEFAULT_SETTINGS: SceneSettings = {
 };
 
 export const DEFAULT_TERRAIN: TerrainRegistryState = {
-  defaultTerrainId: "plain",
+  defaultTerrainId: "sea",
   types: {
     plain: { id: "plain", name: "Равнины", movementCostUnits: 2, enabled: true, movementDomains: ["LAND"], blocksNavalLos: true, color: "#9ACD66" },
     road: { id: "road", name: "Дорога", movementCostUnits: 1, enabled: true, movementDomains: ["LAND"], blocksNavalLos: true, color: "#BCaaa4" },

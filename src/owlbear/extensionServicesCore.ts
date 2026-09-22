@@ -68,6 +68,7 @@ import type {
 } from "../ui/state/useExtensionState";
 import { DiagnosticsService, type DiagnosticsPort } from "./diagnostics";
 import { notifyRussian } from "./notifications";
+import { GridStorageError } from "../storage/gridChunkCodec";
 import { createRefreshCoordinator } from "./refreshCoordinator";
 import {
   buildSelectedShipRegistrationPayload,
@@ -853,6 +854,10 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
     } catch (error) {
       if (error instanceof RegistrationError) {
         await notifyRussian(adapter, error.code);
+        return undefined;
+      }
+      if (error instanceof GridStorageError) {
+        await notifyRussian(adapter, error.code, "ERROR");
         return undefined;
       }
       if (error instanceof CommandTimeoutError) {

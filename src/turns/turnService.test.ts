@@ -201,7 +201,7 @@ it("automatically continues withdrawal over multiple turns using the available b
   current.sides.push({id:"blue",name:"Blue",color:"#00f",playerIds:[],leaderPlayerIds:[],stateId:"blue-state"});
   current.states.push({id:"blue-state",name:"Blue",rulingFactionId:"blue",active:true});
   current.gridMap.cells = Object.fromEntries(Array.from({length:8}, (_, x) => [
-    x + ",0", {terrainId:null,impassable:false,factionTerritoryIds:[],recognizedStateId:x === 7 ? "red-state" : "blue-state",deFactoStateId:x === 7 ? "red-state" : "blue-state"}
+    x + ",0", {terrainId:"plain",impassable:false,factionTerritoryIds:[],recognizedStateId:x === 7 ? "red-state" : "blue-state",deFactoStateId:x === 7 ? "red-state" : "blue-state"}
   ]));
   const first = completeTurn(current, {a:army(0)}, {
     source:"MANUAL",completedAt:new Date("2026-09-02T10:00:00Z"),armyCells:{a:{x:0,y:0}},

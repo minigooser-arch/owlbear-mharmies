@@ -2,6 +2,7 @@ import type { Metadata, Tool, ToolContext, ToolEvent, ToolMode } from "@owlbear-
 import { StrategicGridAdapter } from "../grid/strategicGrid";
 import { getBrushCells, rasterizeBrushStroke, type BrushSize } from "../terrain/brushMath";
 import { PointerMoveCoalescer } from "./pointerMoveCoalescer";
+import { notificationMessage } from "./notifications";
 import {
   MAP_BRUSH_ERASER_TARGET_KEY,
   MAP_BRUSH_IMPASSABLE_VALUE_KEY,
@@ -111,8 +112,10 @@ export async function registerMapBrushTool(
     const next = tail.then(operation, operation);
     tail = next.catch(async (error: unknown) => {
       const message = error instanceof Error ? error.message : String(error);
+      const code = error instanceof Error && "code" in error && typeof error.code === "string"
+        ? error.code : undefined;
       try {
-        await port.notify(`Не удалось изменить разметку: ${message}`, "ERROR");
+        await port.notify(code ? notificationMessage(code) : `Не удалось изменить разметку: ${message}`, "ERROR");
       } catch {
         // Notification delivery is best-effort and must not break the tool queue.
       }

@@ -17,6 +17,7 @@ import {
   type LocalClonePort
 } from "../visibility/localCloneReconciler";
 import type { NotificationPort } from "./notifications";
+import { sendBatches, splitBatches } from "./boundedBatches";
 
 export interface OwlbearPort
   extends MetadataPort,
@@ -24,6 +25,8 @@ export interface OwlbearPort
     BroadcastPort,
     GridSdkPort,
     NotificationPort {
+  addSceneItems(items: readonly SceneItemRecord[]): Promise<void>;
+  deleteSceneItems(ids: readonly string[]): Promise<void>;
   addLocalItems(items: readonly SceneItemRecord[]): Promise<void>;
   updateLocalItems(items: readonly SceneItemRecord[]): Promise<void>;
   getViewportScale?(): Promise<number>;
@@ -350,26 +353,40 @@ export function createOwlbearAdapter(
 
   const addLocalItems = async (items: readonly SceneItemRecord[]): Promise<void> => {
     if (items.length === 0) return;
-    await sdk.scene.local.addItems(items.map((item) =>
+    await sendBatches(items.map((item) =>
       createSdkLocalItem(item, overlayBuilders) as unknown as Item
-    ));
+    ), batch => sdk.scene.local.addItems(batch));
   };
 
   const updateLocalItems = async (items: readonly SceneItemRecord[]): Promise<void> => {
     if (items.length === 0) return;
     const updateById = new Map(items.map((item) => [item.id, item]));
-    await sdk.scene.local.updateItems(items.map((item) => item.id), (drafts) => {
-      for (const draft of drafts) {
-        const update = updateById.get(draft.id);
-        if (update) applyNormalizedLocalItem(draft, update);
-      }
+    const existing = new Map((await sdk.scene.local.getItems()).map(asRecord).map(item => [item.id, item]));
+    const rendered = items.map(item => {
+      const previous = existing.get(item.id);
+      if (!previous) return createSdkLocalItem(item, overlayBuilders);
+      const next = structuredClone(previous);
+      applyNormalizedLocalItem(next, item);
+      return next;
     });
+    for (const batch of splitBatches(rendered)) {
+      await sdk.scene.local.updateItems(batch.map(item => item.id), (drafts) => {
+        for (const draft of drafts) {
+          const update = updateById.get(draft.id);
+          if (update) applyNormalizedLocalItem(draft, update);
+        }
+      });
+    }
   };
 
   return {
     getSceneMetadata: () => sdk.scene.getMetadata(),
     patchSceneMetadata: (update) => sdk.scene.setMetadata(update),
     getSceneItems: allSceneItems,
+    addSceneItems: async (items) => {
+      await sendBatches(items.map(item => createSdkLocalItem(item, overlayBuilders)), batch => sdk.scene.items.addItems(batch));
+    },
+    deleteSceneItems: (ids) => sendBatches(ids, batch => sdk.scene.items.deleteItems(batch)),
     updateSceneItem: (id, update) => updateCollectionItem(sdk.scene.items, id, update),
     patchSceneItemMetadata: (id, key, value, update, expectedRevision) =>
       patchCollectionItemMetadata(
@@ -385,7 +402,7 @@ export function createOwlbearAdapter(
     addLocalItems,
     updateLocalItem: (id, update) => updateCollectionItem(sdk.scene.local, id, update),
     updateLocalItems,
-    deleteLocalItems: async (ids) => sdk.scene.local.deleteItems([...ids]),
+    deleteLocalItems: (ids) => sendBatches(ids, batch => sdk.scene.local.deleteItems(batch)),
     createClone: createSdkImageClone,
     send: (channel, data) => sdk.broadcast.sendMessage(channel, data, { destination: "ALL" }),
     on: (channel, listener) => sdk.broadcast.onMessage(channel, listener),

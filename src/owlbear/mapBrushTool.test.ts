@@ -13,6 +13,9 @@ import {
   MAP_BRUSH_STATE_ID_KEY
 } from "../shared/constants";
 import type { GridCellCoord } from "../shared/types";
+import { GridStorageError } from "../storage/gridChunkCodec";
+import { MapBrushAuthorizationError } from "../background/mapBrushToolService";
+import { notificationMessage } from "./notifications";
 
 function event(x: number, y: number) {
   return { pointerPosition: { x, y } } as never;
@@ -70,6 +73,23 @@ function portHarness(role: "GM" | "PLAYER") {
 }
 
 describe("map brush tool", () => {
+  it.each([
+    new MapBrushAuthorizationError("GRID_MANIFEST_WRITE_FAILED"),
+    new GridStorageError("GRID_CHUNK_MISSING")
+  ])("shows actionable storage guidance for $code", async (error) => {
+    const api = apiHarness();
+    const { port } = portHarness("GM");
+    const messages: string[] = [];
+    const registration = await registerMapBrushTool(api.api, {
+      ...port,
+      commitStroke: async () => { throw error; },
+      notify: async (message) => { messages.push(message); }
+    }, "/icon.png");
+    await api.mode.onToolClick?.({ metadata: {} } as never, event(50, 50));
+    await registration.cancelSession();
+    expect(messages).toEqual([notificationMessage(error.code)]);
+    await registration();
+  });
   it("registers the GM-visible tool even if the client starts as a player", async () => {
     const api = apiHarness();
     const port = portHarness("PLAYER");

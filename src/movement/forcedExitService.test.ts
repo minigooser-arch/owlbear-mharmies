@@ -15,9 +15,9 @@ function fixture(): { scene: SceneState; armies: Record<string, ArmyState> } {
       {id:"blue-state",name:"Blue State",color:"#00f",rulingFactionId:"blue",active:true}
     ], stateRelations:{}, forcedExitStates:[],
     gridMap:{version:1,revision:0,cells:{
-      "0,0":{terrainId:null,impassable:false,factionTerritoryIds:[],recognizedStateId:"blue-state",deFactoStateId:"blue-state"},
-      "1,0":{terrainId:null,impassable:false,factionTerritoryIds:[],recognizedStateId:"blue-state",deFactoStateId:"blue-state"},
-      "2,0":{terrainId:null,impassable:false,factionTerritoryIds:[],recognizedStateId:"red-state",deFactoStateId:"red-state"}
+      "0,0":{terrainId:"plain",impassable:false,factionTerritoryIds:[],recognizedStateId:"blue-state",deFactoStateId:"blue-state"},
+      "1,0":{terrainId:"plain",impassable:false,factionTerritoryIds:[],recognizedStateId:"blue-state",deFactoStateId:"blue-state"},
+      "2,0":{terrainId:"plain",impassable:false,factionTerritoryIds:[],recognizedStateId:"red-state",deFactoStateId:"red-state"}
     }}
   };
   const armies = { army:{version:3,registered:true,sideId:"red",status:"READY",overrides:{},route:[],plannedRoute:{startCell:{x:0,y:0},executeOnTurn:0,cells:[],totalCostUnits:0,validatedRevision:1,requiresReplan:false},movement:{maxUnits:10,remainingUnits:10,enteredRouteCellCount:0},health:{hp:50,maxHp:50},supply:{supplied:true,checkedOnTurn:1},disband:{pending:false,requestedOnTurn:null,requestedByPlayerId:null},currentWaypointIndex:0,segmentProgressCells:0,ignoresMovementBarriers:false,ignoresVisionBarriers:false,revision:1} } satisfies Record<string, ArmyState>;

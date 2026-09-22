@@ -53,6 +53,25 @@ function overlayKey(item: SceneItemRecord): string | undefined {
   return typeof key === "string" ? key : undefined;
 }
 
+it.each([false, true])("bounds large overlay adds, updates and deletes (session=%s)", async session => {
+  const port = new MemoryOverlayPort();
+  const originalAdd = port.addLocalItems.bind(port), originalUpdate = port.updateLocalItems.bind(port), originalDelete = port.deleteLocalItems.bind(port);
+  const check = (values: readonly unknown[]) => {
+    if (values.length > 64 || new TextEncoder().encode(JSON.stringify(values)).byteLength > 48 * 1024) throw new Error("batch exceeded");
+  };
+  port.addLocalItems = async items => { check(items); await originalAdd(items); };
+  port.updateLocalItems = async items => { check(items); await originalUpdate(items); };
+  port.deleteLocalItems = async ids => { check(ids); await originalDelete(ids); };
+  const service = new LocalOverlayReconcileSession(port, overlayKey);
+  const reconcile = (items: DesiredLocalOverlay[]) => session ? service.reconcile(items) : reconcileLocalOverlays(port, overlayKey, items);
+  await reconcile(Array.from({ length: 500 }, (_, i) => desired(String(i))));
+  expect(port.items).toHaveLength(500);
+  await reconcile(Array.from({ length: 500 }, (_, i) => desired(String(i), 7)));
+  expect(port.items.every(item => (item.points as { x: number }[])[1]?.x === 7)).toBe(true);
+  await reconcile([]);
+  expect(port.items).toEqual([]);
+});
+
 it("adds the first desired overlays in one batch", async () => {
   const port = new MemoryOverlayPort();
 

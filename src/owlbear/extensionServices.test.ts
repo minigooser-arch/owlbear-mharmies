@@ -34,6 +34,7 @@ import {
 } from "./extensionServices";
 import { DiagnosticsService } from "./diagnostics";
 import { notificationMessage } from "./notifications";
+import { GridStorageError } from "../storage/gridChunkCodec";
 
 const serviceHarness = vi.hoisted(() => {
   type AckMode =
@@ -447,6 +448,19 @@ describe("extension command feedback", () => {
     services = await createOwlbearExtensionServices();
     return services;
   }
+
+  it("reports corrupted grid data before sending a command", async () => {
+    const running = await startServices();
+    const original = serviceHarness.adapter.getSceneMetadata.getMockImplementation();
+    if (!original) throw new Error("fixture");
+    serviceHarness.adapter.getSceneMetadata.mockImplementation(async () => {
+      throw new GridStorageError("GRID_CHUNK_MISSING");
+    });
+    try {
+      await running.send({ type: "START_ALL" });
+      expect(serviceHarness.adapter.show).toHaveBeenCalledWith(notificationMessage("GRID_CHUNK_MISSING"), "ERROR");
+    } finally { serviceHarness.adapter.getSceneMetadata.mockImplementation(original); }
+  });
 
   async function waitForMetadataReads(count: number): Promise<void> {
     await vi.waitFor(() => {
