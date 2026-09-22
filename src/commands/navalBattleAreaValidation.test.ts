@@ -18,7 +18,7 @@ it("rejects a naval battle area that contains a non-SEA cell", () => {
     relations: {},
     battleGroups: [],
     terrain: structuredClone(DEFAULT_TERRAIN),
-    gridMap: { version: 1, revision: 0, cells: {} },
+    gridMap: { version: 1, revision: 0, cells: { "0,0": { terrainId: "plain", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null } } },
     wars: [],
     turn: { ...structuredClone(DEFAULT_TURN_STATE), turnNumber: 2, phase: "MOVEMENT" },
     ships: {

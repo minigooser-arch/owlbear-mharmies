@@ -139,6 +139,7 @@ export function MapEditorPage({ terrain, states, onAction }: MapEditorPageProps)
       </div>
       <div className="brush-size" aria-label="Размер кисти"><span>Размер</span>{BRUSH_SIZES.map((brushSize) => <button key={brushSize} type="button" className={size === brushSize ? "active" : ""} onClick={() => selectBrushSize(brushSize)}>{brushSize}×{brushSize}</button>)}</div>
       <p className="helper-text">{description}</p>
+      <p className="helper-text">Неразмеченные клетки — океан / озёра. Наземная местность заменяет воду; стирание местности возвращает воду. Изображение карты не закрашивается базовым водным слоем.</p>
       {needsState && selectableStates.length === 0 && <p className="route-warning" role="status">Сначала создайте государство в разделе «Управление → Государства».</p>}
       <button className="button primary wide" type="button" disabled={!canApply} onClick={applyBrush}>Начать рисовать</button>
     </div>

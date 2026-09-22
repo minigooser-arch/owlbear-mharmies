@@ -1375,7 +1375,8 @@ export class CommandProcessor {
       }
       case "SET_TERRAIN_CELLS": {
         if (command.terrainId !== null && !state.scene.terrain.types[command.terrainId]) return "TERRAIN_NOT_FOUND";
-        state.scene.gridMap = applyCellPatchBatch(state.scene.gridMap, command.cells.map((cell) => ({ cell, patch: { terrainId: command.terrainId } })));
+        const terrainId = command.terrainId === state.scene.terrain.defaultTerrainId ? null : command.terrainId;
+        state.scene.gridMap = applyCellPatchBatch(state.scene.gridMap, command.cells.map((cell) => ({ cell, patch: { terrainId } })));
         revalidateAllRoutes(state);
         return undefined;
       }

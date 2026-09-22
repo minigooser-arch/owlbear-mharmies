@@ -9,11 +9,17 @@ import type {
   ValidationResult
 } from "../shared/types";
 import { migrateArmyState, migrateBarrierState, migrateSceneState, migrateShipState } from "./migrations";
+import { GridChunkRepository, readGridManifest } from "./gridChunkRepository";
+import { GridStorageError, utf8Size } from "./gridChunkCodec";
+import { compactDefaultTerrain } from "../terrain/gridMap";
+import { sendBatches } from "../owlbear/boundedBatches";
 
 export interface MetadataPort {
   getSceneMetadata(): Promise<Record<string, unknown>>;
   patchSceneMetadata(update: Record<string, unknown>): Promise<void>;
   getSceneItems(): Promise<SceneItemRecord[]>;
+  addSceneItems?(items: readonly SceneItemRecord[]): Promise<void>;
+  deleteSceneItems?(ids: readonly string[]): Promise<void>;
   updateSceneItem(id: string, update: ItemUpdate): Promise<void>;
   patchSceneItemMetadata?(
     id: string,
@@ -86,9 +92,34 @@ export class MetadataRepository {
   constructor(private readonly port: MetadataPort) {}
 
   async readScene(): Promise<SceneState> {
+    return (await this.readSnapshot()).state;
+  }
+
+  async readCoordinatorLease(): Promise<SceneState["coordinatorLease"]> {
     const metadata = await this.port.getSceneMetadata();
-    const raw = metadata[METADATA_KEYS.scene] ?? { version: 5 };
-    return requireValid(migrateSceneState(raw), METADATA_KEYS.scene);
+    return requireValid(
+      migrateSceneState(metadata[METADATA_KEYS.scene] ?? { version: 5 }),
+      METADATA_KEYS.scene
+    ).coordinatorLease;
+  }
+
+  private async readSnapshot(): Promise<{ state: SceneState; metadata: Record<string, unknown> }> {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const metadata = await this.port.getSceneMetadata();
+      const raw = metadata[METADATA_KEYS.scene] ?? { version: 5 };
+      const state = requireValid(migrateSceneState(raw), METADATA_KEYS.scene);
+      if (!readGridManifest(metadata)) return { state, metadata };
+      let grid: SceneState["gridMap"] | undefined;
+      let failure: unknown;
+      try { grid = await new GridChunkRepository(this.port).read(metadata); } catch (error) { failure = error; }
+      const latest = await this.port.getSceneMetadata();
+      if (JSON.stringify([latest[METADATA_KEYS.scene], latest[METADATA_KEYS.gridManifest]]) !==
+        JSON.stringify([metadata[METADATA_KEYS.scene], metadata[METADATA_KEYS.gridManifest]])) continue;
+      if (failure) throw failure;
+      if (!grid || grid.revision !== state.gridMap.revision) throw new GridStorageError("GRID_CHUNK_INVALID");
+      return { state: { ...state, gridMap: grid }, metadata };
+    }
+    throw new GridStorageError("GRID_CHUNK_MISSING");
   }
 
   async writeScene(
@@ -96,12 +127,37 @@ export class MetadataRepository {
     expectedRevision: number,
     canCommit: (current: SceneState) => boolean = () => true
   ): Promise<void> {
-    const metadata = await this.port.getSceneMetadata();
-    const raw = metadata[METADATA_KEYS.scene] ?? { version: 5 };
-    const current = requireValid(migrateSceneState(raw), METADATA_KEYS.scene);
+    const { state: current, metadata } = await this.readSnapshot();
     assertRevision(current.revision, expectedRevision);
     if (!canCommit(current)) throw new CommitPreconditionFailed();
-    await this.port.patchSceneMetadata({ [METADATA_KEYS.scene]: state });
+    const next = { ...state, terrain: { ...state.terrain, defaultTerrainId: "sea" }, gridMap: compactDefaultTerrain(state.gridMap, "sea") };
+    if (!this.port.addSceneItems || !this.port.deleteSceneItems) {
+      // Legacy embedding ports may still write small scenes, but never destroy an existing manifest.
+      if (readGridManifest(metadata)) throw new GridStorageError("GRID_CHUNK_WRITE_FAILED");
+      const update = { [METADATA_KEYS.scene]: next };
+      if (utf8Size(update) > 48 * 1024) throw new GridStorageError("GRID_METADATA_TOO_LARGE");
+      await this.port.patchSceneMetadata(update);
+      return;
+    }
+    const chunks = new GridChunkRepository(this.port);
+    const addSceneItems = this.port.addSceneItems.bind(this.port);
+    const staged = chunks.stage(current.gridMap, next.gridMap, readGridManifest(metadata));
+    const update = { [METADATA_KEYS.scene]: { ...next, gridMap: { ...next.gridMap, cells: {} } }, [METADATA_KEYS.gridManifest]: staged.manifest };
+    if (utf8Size(update) > 48 * 1024) throw new GridStorageError("GRID_METADATA_TOO_LARGE");
+    try {
+      try {
+        await sendBatches(staged.additions, addSceneItems);
+      } catch (cause) { throw new GridStorageError("GRID_CHUNK_WRITE_FAILED", { cause }); }
+      const latest = await this.readScene();
+      assertRevision(latest.revision, expectedRevision);
+      if (!canCommit(latest)) throw new CommitPreconditionFailed();
+      try { await this.port.patchSceneMetadata(update); }
+      catch (cause) { throw new GridStorageError("GRID_MANIFEST_WRITE_FAILED", { cause }); }
+    } catch (error) {
+      await chunks.cleanup(staged.additions.map(item => item.id));
+      throw error;
+    }
+    await chunks.cleanup(staged.superseded);
   }
 
   async readArmies(): Promise<ArmyRecord[]> {

@@ -66,7 +66,7 @@ function scene(): SceneState {
     relations: {},
     battleGroups: [],
     terrain: structuredClone(DEFAULT_TERRAIN),
-    gridMap: { version: 1, revision: 0, cells: {} },
+    gridMap: { version: 1, revision: 0, cells: { "1,0": { terrainId: "plain", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null } } },
     wars: [],
     turn: { ...structuredClone(DEFAULT_TURN_STATE), phase: "MOVEMENT" },
     ships: {
@@ -292,7 +292,7 @@ describe("transport command authorization and consent", () => {
       { id: "host", name: "Берег", color: "#00f", rulingFactionId: "blue", active: true }
     ];
     current.scene.stateRelations = {};
-    current.scene.gridMap.cells["1,0"] = { terrainId: null, impassable: false, factionTerritoryIds: [], recognizedStateId: "host", deFactoStateId: "host" };
+    current.scene.gridMap.cells["1,0"] = { terrainId: "plain", impassable: false, factionTerritoryIds: [], recognizedStateId: "host", deFactoStateId: "host" };
     const embarked = execute("red-leader", { type: "EMBARK_ARMY", shipId: "transport", armyId: "army" }, current);
     expect(embarked.status).toBe("ACCEPTED");
     if (embarked.status !== "ACCEPTED") return;
@@ -315,7 +315,7 @@ describe("transport command authorization and consent", () => {
       { id: "host", name: "Берег", color: "#00f", rulingFactionId: "blue", active: true }
     ];
     current.scene.stateRelations = {};
-    current.scene.gridMap.cells["1,0"] = { terrainId: null, impassable: false, factionTerritoryIds: [], recognizedStateId: "host", deFactoStateId: "host" };
+    current.scene.gridMap.cells["1,0"] = { terrainId: "plain", impassable: false, factionTerritoryIds: [], recognizedStateId: "host", deFactoStateId: "host" };
     const embarked = execute("red-leader", { type: "EMBARK_ARMY", shipId: "transport", armyId: "army" }, current);
     expect(embarked.status).toBe("ACCEPTED");
     if (embarked.status !== "ACCEPTED") return;

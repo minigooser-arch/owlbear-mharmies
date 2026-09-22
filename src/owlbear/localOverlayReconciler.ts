@@ -1,4 +1,5 @@
 import type { SceneItemRecord, Vector2 } from "../shared/types";
+import { sendBatches } from "./boundedBatches";
 
 export interface LocalOverlayBatchPort {
   getLocalItems(): Promise<SceneItemRecord[]>;
@@ -91,9 +92,9 @@ export async function reconcileLocalOverlays(
     if (!existing || sameRenderedItem(existing, item)) return [];
     return [{ ...structuredClone(item), id: existing.id }];
   });
-  if (additions.length > 0) await port.addLocalItems(additions);
-  if (updates.length > 0) await port.updateLocalItems(updates);
-  if (deletions.length > 0) await port.deleteLocalItems(deletions);
+  await sendBatches(additions, batch => port.addLocalItems(batch));
+  await sendBatches(updates, batch => port.updateLocalItems(batch));
+  await sendBatches(deletions, batch => port.deleteLocalItems(batch));
 }
 
 /**
@@ -129,7 +130,7 @@ export class LocalOverlayReconcileSession {
         if (survivor) this.existingByKey.set(key, survivor);
         duplicateIds.push(...duplicates.map((item) => item.id));
       }
-      if (duplicateIds.length > 0) await this.port.deleteLocalItems(duplicateIds);
+      await sendBatches(duplicateIds, batch => this.port.deleteLocalItems(batch));
       this.initialized = true;
     }
 
@@ -152,8 +153,8 @@ export class LocalOverlayReconcileSession {
     }
 
     try {
-      if (additions.length > 0) await this.port.addLocalItems(additions);
-      if (updates.length > 0) await this.port.updateLocalItems(updates);
+      await sendBatches(additions, batch => this.port.addLocalItems(batch));
+      await sendBatches(updates, batch => this.port.updateLocalItems(batch));
       for (const [key, item] of nextEntries) this.existingByKey.set(key, item);
     } catch (error) {
       this.invalidate();
@@ -207,9 +208,9 @@ export class LocalOverlayReconcileSession {
     }
 
     try {
-      if (additions.length > 0) await this.port.addLocalItems(additions);
-      if (updates.length > 0) await this.port.updateLocalItems(updates);
-      if (deletions.length > 0) await this.port.deleteLocalItems(deletions);
+      await sendBatches(additions, batch => this.port.addLocalItems(batch));
+      await sendBatches(updates, batch => this.port.updateLocalItems(batch));
+      await sendBatches(deletions, batch => this.port.deleteLocalItems(batch));
       this.existingByKey = nextByKey;
     } catch (error) {
       this.invalidate();

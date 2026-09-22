@@ -216,6 +216,7 @@ describe("naval shore bombardment command", () => {
     expect(accepted.state.armies.army?.health.hp).toBe(13);
 
     const bowTarget = state();
+    bowTarget.scene.gridMap.cells["1,0"] = { terrainId: "plain", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null };
     shipTable(bowTarget).attacker = createRegisteredShip("red", "CRUISER", "NORTH");
     positionTable(bowTarget).army = centerForCell({ x: 1, y: 0 });
     item(bowTarget, "army").position = centerForCell({ x: 1, y: 0 });

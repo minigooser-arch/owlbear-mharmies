@@ -1,4 +1,5 @@
 import { resolveCityDeFactoState } from "../cities/strategicCities";
+import { createGridErrorReporter } from "./gridErrorReporter";
 import { forcedExitRouteGate, hasRightToRemain } from "../movement/forcedExitService";
 import { joinReinforcements } from "../battles/battleGroupService";
 import { findEarliestEnemyCollisions } from "../battles/collisionEngine";
@@ -76,7 +77,8 @@ import {
   type StateRelations,
   type Vector2
 } from "../shared/types";
-import { MetadataRepository, type ArmyRecord, type BarrierRecord } from "../storage/metadataRepository";
+import { MetadataRepository, RevisionConflict, type ArmyRecord, type BarrierRecord } from "../storage/metadataRepository";
+import { GridStorageError } from "../storage/gridChunkCodec";
 import { buildDetectionGraph } from "../visibility/detectionGraph";
 import { buildSceneDetectionGraph, detectedShipIdsForSide } from "../visibility/sceneDetectionGraph";
 import { LocalCloneReconciler, UpdateOriginGuard } from "../visibility/localCloneReconciler";
@@ -321,7 +323,7 @@ export class ProductionEngine {
   }
 
   async readCoordinatorLease(): Promise<HeartbeatLease | undefined> {
-    return (await this.repository.readScene()).coordinatorLease;
+    return this.repository.readCoordinatorLease();
   }
 
   private captureCoordinatorGuard(expectedConnectionId = this.activeCoordinatorConnectionId): () => boolean {
@@ -1108,11 +1110,16 @@ export class ProductionEngine {
       }
       try {
         await this.persistCommandState(result.state, commandState, sceneItems);
-      } catch {
+      } catch (error) {
+        if (error instanceof RevisionConflict) {
+          await sendCommandAck(this.port, { requestId: command.requestId, status: "CONFLICT", actualRevision: error.actualRevision,
+            coordinatorConnectionId, recipientConnectionId: sender.connectionId });
+          return;
+        }
         await sendCommandAck(this.port, {
           requestId: command.requestId,
           status: "REJECTED",
-          reason: "PERSISTENCE_FAILED",
+          reason: error instanceof GridStorageError ? error.code : "PERSISTENCE_FAILED",
           coordinatorConnectionId,
           recipientConnectionId: sender.connectionId
         });
@@ -1522,6 +1529,7 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
     import("../owlbear/sdkAdapter")
   ]);
   const port = createOwlbearAdapter();
+  const gridErrors = createGridErrorReporter(port);
   const engine = new ProductionEngine(port);
   const connectedParty = async (): Promise<ConnectedParticipant[]> => {
     const [players, id, role, currentConnectionId] = await Promise.all([
@@ -1637,6 +1645,7 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
   const sceneWork = new SceneWorkTracker();
   let commandReady = false;
   const lease = new CoordinatorLease({
+    onError: gridErrors.report,
     currentConnectionId: () => OBR.player.getConnectionId(),
     now: () => Date.now(),
     participants: party,
@@ -1652,6 +1661,7 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
     isSceneReady: () => OBR.scene.isReady(),
     onSceneReady: (callback) => OBR.scene.onReadyChange(callback),
     onSceneOpen: async () => {
+      gridErrors.reset();
       engine.invalidateOverlayCaches();
       lease.start();
       try {
@@ -1724,7 +1734,7 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
     visibilityTick: async () => engine.visibilityTick(await OBR.player.getRole(), await OBR.player.getId()),
     turnTick: () => engine.turnTick()
   };
-  const runtime = new BackgroundRuntime(runtimePort);
+  const runtime = new BackgroundRuntime(runtimePort, undefined, gridErrors.report);
   runtime.start();
   const counter = setInterval(() => {
     const key = `${METADATA_KEYS.scene}/background-counter`;

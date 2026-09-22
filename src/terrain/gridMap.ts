@@ -30,6 +30,15 @@ function isDefaultCell(cell: CellState): boolean {
   return cell.terrainId === null && !cell.impassable && cell.factionTerritoryIds.length === 0 && cell.recognizedStateId === null && cell.deFactoStateId === null;
 }
 
+export function compactDefaultTerrain(gridMap: GridMapState, defaultTerrainId: string): GridMapState {
+  const cells: Record<string, CellState> = {};
+  for (const [key, cell] of Object.entries(gridMap.cells)) {
+    const next = cell.terrainId === defaultTerrainId ? { ...cell, terrainId: null } : cell;
+    if (!isDefaultCell(next)) cells[key] = next;
+  }
+  return { ...gridMap, cells };
+}
+
 function touchesCurrentLayer(patch: CellPatch): boolean {
   return patch.terrainId !== undefined ||
     patch.impassable !== undefined ||

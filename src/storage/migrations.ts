@@ -13,6 +13,7 @@ import type {
   ValidationResult
 } from "../shared/types";
 import { compareOrdinal } from "../shared/ordering";
+import { compactDefaultTerrain } from "../terrain/gridMap";
 import { DEFAULT_TERRAIN, DEFAULT_TURN_STATE } from "../shared/constants";
 import {
   normalizeArmyState,
@@ -386,7 +387,12 @@ export function migrateSceneState(raw: unknown): ValidationResult<SceneState> {
   }
   if (migrated.version === 7) {
     migrated = { ...migrated, terrain: ensureBuiltInTerrains(migrated.terrain) };
-    return normalizeStrategicSceneState(migrated);
+    const result = normalizeStrategicSceneState(migrated);
+    if (!result.ok) return result;
+    return { ok: true, value: { ...result.value,
+      terrain: { ...result.value.terrain, defaultTerrainId: "sea" },
+      gridMap: compactDefaultTerrain(result.value.gridMap, "sea")
+    } };
   }
   return normalizeSceneState(migrated);
 }

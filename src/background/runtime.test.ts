@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { BackgroundRuntime, type BackgroundRuntimePort } from "./runtime";
+import { createGridErrorReporter } from "./gridErrorReporter";
+import { GridStorageError } from "../storage/gridChunkCodec";
 
 class RuntimePort implements BackgroundRuntimePort {
   subscriptions = new Set<() => void>();
@@ -50,6 +52,27 @@ class RuntimePort implements BackgroundRuntimePort {
 }
 
 describe("BackgroundRuntime", () => {
+  it("notifies on failed map hydration without clearing existing overlays", async () => {
+    const port = new RuntimePort();
+    const show = vi.fn(async () => undefined);
+    const reporter = createGridErrorReporter({ show }, () => undefined);
+    port.visibility.mockRejectedValue(new GridStorageError("GRID_CHUNK_MISSING"));
+    const runtime = new BackgroundRuntime(port, undefined, reporter.report);
+    try {
+      runtime.start();
+      await runtime.whenIdle();
+      runtime.requestVisibilityTick();
+      await runtime.whenIdle();
+      expect(show).toHaveBeenCalledTimes(1);
+      expect(port.deleted).toBe(0);
+      port.visibility.mockResolvedValue(undefined);
+      runtime.requestVisibilityTick();
+      await runtime.whenIdle();
+      expect(port.visibility).toHaveBeenCalledTimes(3);
+    } finally {
+      await runtime.stop();
+    }
+  });
   it("keeps the ready listener and reopens after a scene close", async () => {
     const port = new RuntimePort();
     const runtime = new BackgroundRuntime(port);

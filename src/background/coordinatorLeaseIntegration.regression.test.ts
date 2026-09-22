@@ -4,6 +4,7 @@ import { COMMAND_PROTOCOL_VERSION, type SceneState } from "../shared/types";
 import type { OwlbearPort } from "../owlbear/sdkAdapter";
 import { CoordinatorLease } from "./coordinator";
 import { ProductionEngine } from "./application";
+import { GridStorageError } from "../storage/gridChunkCodec";
 
 function fixture() {
   let scene: SceneState = {
@@ -53,6 +54,17 @@ function fixture() {
   return { port, sent, get scene() { return scene; } };
 }
 
+it("reads the coordinator lease without hydrating missing grid chunks", async () => {
+  const { port, scene } = fixture();
+  scene.coordinatorLease = { connectionId: "gm-a", epoch: 1, expiresAt: 20_000 };
+  port.getSceneMetadata = async () => ({
+    [METADATA_KEYS.scene]: scene,
+    [METADATA_KEYS.gridManifest]: { version: 1, revision: 0, chunks: { "0,0": "missing" } }
+  });
+  const engine = new ProductionEngine(port);
+  await expect(engine.readCoordinatorLease()).resolves.toEqual(scene.coordinatorLease);
+});
+
 async function acquireInitialLease(engine: ProductionEngine) {
   const lease = new CoordinatorLease({
     currentConnectionId: async () => "gm-a",
@@ -65,6 +77,18 @@ async function acquireInitialLease(engine: ProductionEngine) {
   await lease.tick();
   return lease;
 }
+
+it("returns the specific grid persistence failure to a brush command", async () => {
+  const state = fixture();
+  const engine = new ProductionEngine(state.port, () => new Date(10_000));
+  await acquireInitialLease(engine);
+  state.port.patchSceneMetadata = async () => { throw new GridStorageError("GRID_CHUNK_TOO_LARGE"); };
+  await engine.processCommand({ connectionId: "gm-a", data: {
+    protocolVersion: COMMAND_PROTOCOL_VERSION, requestId: "paint", senderPlayerId: "gm", senderConnectionId: "gm-a",
+    expectedRevision: 2, type: "SET_TERRAIN_CELLS", cells: [{ x: 0, y: 0 }], terrainId: "plain"
+  } }, { role: "GM", playerId: "gm", connectionId: "gm-a", connectedPlayerIds: new Set(["gm"]) });
+  expect(state.sent.at(-1)?.data).toMatchObject({ status: "REJECTED", reason: "GRID_CHUNK_TOO_LARGE" });
+});
 
 it("persists the initial coordinator lease before activating the production engine", async () => {
   const state = fixture();
@@ -106,7 +130,8 @@ it("accepts a map brush terrain command immediately after initial coordinator ac
 
   const ack = state.sent.at(-1)?.data as { status?: string } | undefined;
   expect(ack?.status).toBe("ACCEPTED");
-  expect(state.scene.gridMap.cells["4,7"]?.terrainId).toBe("sea");
+  expect(state.scene.gridMap.cells["4,7"]).toBeUndefined();
+  expect(state.scene.terrain.defaultTerrainId).toBe("sea");
   expect(state.scene.revision).toBe(3);
 });
 

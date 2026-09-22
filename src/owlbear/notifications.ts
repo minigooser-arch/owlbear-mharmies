@@ -1,4 +1,10 @@
 export type NotificationCode =
+  | "GRID_CHUNK_INVALID"
+  | "GRID_CHUNK_TOO_LARGE"
+  | "GRID_CHUNK_MISSING"
+  | "GRID_CHUNK_WRITE_FAILED"
+  | "GRID_MANIFEST_WRITE_FAILED"
+  | "GRID_METADATA_TOO_LARGE"
   | "GM_ONLY"
   | "NOT_DIRECT_OWNER"
   | "NOT_SIDE_LEADER"
@@ -69,6 +75,12 @@ export type NotificationCode =
   | "NAVAL_BATTLE_ACTIVE";
 
 const RUSSIAN_MESSAGES: Readonly<Record<NotificationCode, string>> = {
+  GRID_CHUNK_TOO_LARGE: "Слишком много данных в одном участке карты. Сохранение отменено; уменьшите объём свойств клеток.",
+  GRID_CHUNK_MISSING: "Не найден участок сохранённой карты. Перезагрузите сцену; не удаляйте служебные объекты карты.",
+  GRID_CHUNK_INVALID: "Повреждены данные участка карты или используется неизвестная версия формата.",
+  GRID_CHUNK_WRITE_FAILED: "Не удалось сохранить участок карты. Повторите мазок.",
+  GRID_MANIFEST_WRITE_FAILED: "Не удалось завершить сохранение карты. Перезагрузите сцену и проверьте последний мазок.",
+  GRID_METADATA_TOO_LARGE: "Данные сцены превышают допустимый размер запроса. Сохранение отменено.",
   GM_ONLY: "Это действие доступно только ведущему.",
   NOT_DIRECT_OWNER: "Эта армия принадлежит другому игроку.",
   NOT_SIDE_LEADER: "Это действие доступно только лидеру стороны.",
