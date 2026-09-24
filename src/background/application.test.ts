@@ -273,6 +273,35 @@ describe("ProductionEngine overlay performance", () => {
     // One read may belong to visibility clones, and one shared read serves every overlay type.
     expect(localReads).toBeLessThanOrEqual(2);
   });
+
+  it("renders map overlays locally for players instead of adding them to shared scene items", async () => {
+    const fixture = commandPort();
+    fixture.scene.gridMap.cells["0,0"] = {
+      terrainId: "plain",
+      impassable: false,
+      factionTerritoryIds: [],
+      recognizedStateId: null,
+      deFactoStateId: null
+    };
+    const localItems: SceneItemRecord[] = [];
+    fixture.port.getLocalItems = async () => structuredClone(localItems);
+    fixture.port.addLocalItems = async (items: readonly SceneItemRecord[]) => {
+      localItems.push(...structuredClone(items));
+    };
+    fixture.port.updateLocalItems = async () => undefined;
+    fixture.port.deleteLocalItems = async (ids: readonly string[]) => {
+      const removed = new Set(ids);
+      for (let index = localItems.length - 1; index >= 0; index -= 1) {
+        const item = localItems[index];
+        if (item && removed.has(item.id)) localItems.splice(index, 1);
+      }
+    };
+
+    await new ProductionEngine(fixture.port).visibilityTick("PLAYER", "player");
+
+    expect(localItems.some((item) => item.metadata[METADATA_KEYS.mapOverlay])).toBe(true);
+    expect(fixture.items.some((item) => item.metadata[METADATA_KEYS.mapOverlay])).toBe(false);
+  });
 });
 
 describe("ProductionEngine command boundary", () => {
