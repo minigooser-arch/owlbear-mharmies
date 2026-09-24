@@ -155,8 +155,9 @@ describe("independent political map layers", () => {
     expect(test.items().find((item) => item.type === "LABEL" && item.text === "Т: Красные")).toBeUndefined();
     expect(overlayMetadata).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: "TERRAIN" }),
+      expect.objectContaining({ kind: "RECOGNIZED_STATE_FILL", stateId: "russia" }),
       expect.objectContaining({ kind: "STATE_BOUNDARY", stateId: "russia" }),
-      expect.objectContaining({ kind: "DEFACTO_STATE" })
+      expect.objectContaining({ kind: "DEFACTO_BOUNDARY", stateId: "germany" })
     ]));
   });
 });
