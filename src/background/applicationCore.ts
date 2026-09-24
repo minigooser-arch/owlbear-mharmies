@@ -694,7 +694,365 @@ export class ProductionEngine {
         if (!inBattle) continue;
         const collisionPosition = collisionPositions.get(frame.record.item.id);
         if (collisionPosition) frame.to = collisionPosition;
-        const group = battleGroups.find((candidate) => candidate.participantIds.includes(fra…3963 tokens truncated…e>;
+        const group = battleGroups.find((candidate) => candidate.participantIds.includes(frame.record.item.id));
+        frame.state = cloneArmyState(frame.state, {
+          status: "IN_BATTLE",
+          stopReason: "BATTLE",
+          movement: { ...frame.state.movement, remainingUnits: 0 },
+          ...(group ? { battleGroupId: group.battleId } : {})
+        });
+      }
+      for (const record of armies) {
+        if (movingIds.has(record.item.id) || !strategicBattleArmyIds.has(record.item.id)) continue;
+        const group = battleGroups.find((candidate) => candidate.participantIds.includes(record.item.id));
+        if (!canCommit()) return;
+        await this.port.patchSceneItemMetadata(
+          record.item.id,
+          METADATA_KEYS.army,
+          cloneArmyState(record.state, {
+            status: "IN_BATTLE",
+            stopReason: "BATTLE",
+            movement: { ...record.state.movement, remainingUnits: 0 },
+            ...(group ? { battleGroupId: group.battleId } : {})
+          }),
+          {},
+          record.state.revision
+        );
+      }
+    }
+
+    const annexOperations: CellPatchOperation[] = [];
+    let nextStateRelations: StateRelations = structuredClone(scene.stateRelations ?? {});
+    for (const frame of frames) {
+      if (!frame.state.plannedRoute.requiresReplan && frame.state.plannedRoute.cells.length > 0) {
+        const progress = reconcileStrategicMovementProgress({
+          routeCells: frame.state.plannedRoute.cells,
+          previousEnteredCount: frame.record.state.movement.enteredRouteCellCount,
+          movementWaypointIndex: frame.state.currentWaypointIndex,
+          finalCell: strategicGrid.sceneToCell(frame.to),
+          remainingUnits: frame.record.state.movement.remainingUnits,
+          costForCell: (cell) => {
+            const cost = getDestinationMovementCostUnits(scene.terrain, readCell(scene.gridMap, cell));
+            if (cost === undefined) throw new Error(`Invalid terrain for strategic cell ${cell.x},${cell.y}`);
+            return cost;
+          }
+        });
+        frame.state = {
+          ...frame.state,
+          movement: {
+            ...frame.state.movement,
+            remainingUnits: frame.state.status === "IN_BATTLE" ? 0 : progress.remainingUnits,
+            enteredRouteCellCount: progress.enteredRouteCellCount
+          }
+        };
+        const enteredCells = frame.state.plannedRoute.cells.slice(
+          frame.record.state.movement.enteredRouteCellCount,
+          progress.enteredRouteCellCount
+        );
+        const withdrawing = forcedExitRouteGate(scene, frame.record.item.id, frame.record.state,
+          frame.record.state.plannedRoute.startCell, frame.record.state.plannedRoute.cells);
+        const diplomacy = withdrawing ? {stateRelations: nextStateRelations} : applyDiplomacyForEnteredCells({
+          sideId: frame.state.sideId,
+          cells: enteredCells,
+          gridMap: scene.gridMap,
+          sides: scene.sides,
+          states: scene.states,
+          stateRelations: nextStateRelations
+        });
+        nextStateRelations = diplomacy.stateRelations;
+        for (const cell of enteredCells) {
+          const destination = readCell(scene.gridMap, cell);
+          const annexingStateId = annexingStateForEntry(
+            { states: scene.states, sides: scene.sides, wars: scene.wars, stateRelations: nextStateRelations },
+            frame.state.sideId,
+            destination
+          );
+          if (annexingStateId) annexOperations.push({ cell, patch: { deFactoStateId: annexingStateId } });
+        }
+      }
+      if (!canCommit()) return;
+      await this.port.patchSceneItemMetadata(
+        frame.record.item.id,
+        METADATA_KEYS.army,
+        frame.state,
+        { position: frame.to },
+        frame.record.state.revision
+      );
+    }
+    const nextForcedExits = (scene.forcedExitStates ?? []).filter((entry) => {
+      const frame = frames.find((candidate) => candidate.record.item.id === entry.armyId);
+      if (!frame) return true;
+      const reached = frame.state.plannedRoute.cells[frame.state.movement.enteredRouteCellCount - 1];
+      return !reached || !hasRightToRemain(scene, frame.state, reached);
+    });
+    const forcedExitsChanged = nextForcedExits.length !== (scene.forcedExitStates ?? []).length;
+    const nextGridMap = applyCellPatchBatch(scene.gridMap, annexOperations);
+    const stateRelationsChanged = JSON.stringify(nextStateRelations) !== JSON.stringify(scene.stateRelations ?? {});
+    if (battleGroups || nextGridMap !== scene.gridMap || stateRelationsChanged || forcedExitsChanged) {
+      if (!canCommit()) return;
+      await this.repository.writeScene(
+        {
+          ...scene,
+          revision: scene.revision + 1,
+          battleGroups: battleGroups ?? scene.battleGroups,
+          gridMap: nextGridMap,
+          ...(scene.strategicCities ? {strategicCities: scene.strategicCities.map((city) => {
+            const controller = resolveCityDeFactoState(city, nextGridMap);
+            return controller ? {...city, deFactoStateId: controller} : city;
+          })} : {}),
+          stateRelations: nextStateRelations,
+          forcedExitStates: nextForcedExits
+        },
+        scene.revision,
+        (current) =>
+          canCommit() &&
+          (expectedCoordinatorConnectionId === undefined ||
+            current.coordinatorLease?.connectionId === expectedCoordinatorConnectionId)
+      );
+    }
+  }
+
+  pauseMovingArmies(): Promise<void> {
+    return this.enqueueMutation(() => this.pauseMovingArmiesNow());
+  }
+
+  private async pauseMovingArmiesNow(): Promise<void> {
+    const armies = await this.repository.readArmies();
+    for (const record of armies) {
+      if (record.state.status !== "MOVING") continue;
+      await this.port.patchSceneItemMetadata(
+        record.item.id,
+        METADATA_KEYS.army,
+        cloneArmyState(record.state, {
+          status: "PAUSED",
+          stopReason: "COORDINATOR_GAP"
+        }),
+        {},
+        record.state.revision
+      );
+    }
+  }
+
+  processCommand(event: BroadcastEvent, sender: CommandSender): Promise<void> {
+    return this.enqueueMutation(() => this.processCommandNow(event, sender));
+  }
+
+  private async processCommandNow(event: BroadcastEvent, sender: CommandSender): Promise<void> {
+    if (!this.coordinator) return;
+    const validation = validateArmyCommand(event.data);
+    if (!validation.ok) {
+      if (validation.requestId) {
+        await sendCommandAck(this.port, {
+          requestId: validation.requestId,
+          status: "REJECTED",
+          reason: validation.reason,
+          coordinatorConnectionId: await this.currentConnectionId(),
+          recipientConnectionId: sender.connectionId
+        });
+      }
+      return;
+    }
+    const command = validation.command;
+    const [scene, armyRecords, barrierRecords, sceneItems] = await Promise.all([
+      this.repository.readScene(),
+      this.repository.readArmies(),
+      this.repository.readBarriers(),
+      this.port.getSceneItems()
+    ]);
+    const commandState: CommandState = {
+      scene,
+      armies: Object.fromEntries(armyRecords.map((record) => [record.item.id, record.state])),
+      barriers: Object.fromEntries(barrierRecords.map((record) => [record.item.id, record.state])),
+      items: Object.fromEntries(sceneItems.map((item) => [item.id, item])),
+      positions: Object.fromEntries(sceneItems.map((item) => [item.id, item.position]))
+    };
+    let commandCellForPosition: ((position: Vector2) => import("../shared/types").GridCellCoord) | undefined;
+    let commandPositionForCell: ((cell: import("../shared/types").GridCellCoord) => Vector2) | undefined;
+    if (
+      command.type === "COMPLETE_TURN_NOW" ||
+      command.type === "COMPLETE_MOVEMENT_PHASE" ||
+      command.type === "REGISTER_SHIP" ||
+      command.type === "SET_SHIP_ROUTE" ||
+      command.type === "NAVAL_MOVE_FORWARD" ||
+      command.type === "START_NAVAL_BATTLE" ||
+      command.type === "NAVAL_SHORE_BOMBARDMENT" ||
+      command.type === "EMBARK_ARMY" ||
+      command.type === "ACCEPT_EMBARK_ARMY" ||
+      command.type === "DISEMBARK_ARMY"
+    ) {
+      try {
+        const grid = new StrategicGridAdapter({ dpi: await this.grid.getDpi(), offset: { x: 0, y: 0 } });
+        commandCellForPosition = (position) => grid.sceneToCell(position);
+        commandPositionForCell = (cell) => grid.cellToSceneCenter(cell);
+      } catch {
+        // CommandProcessor rejects commands that require strategic cells when positions cannot be resolved.
+      }
+    }
+    let detectedNavalTargetsForSide: (sideId: string) => ReadonlySet<string> = () => new Set<string>();
+    let visibleArmyTargetsForSide: (sideId: string) => ReadonlySet<string> = () => new Set<string>();
+    if (
+      command.type === "REQUEST_NAVAL_BATTLE" ||
+      command.type === "NAVAL_SHORE_BOMBARDMENT" ||
+      (command.type === "START_NAVAL_BATTLE" && command.navalRequestId !== null)
+    ) {
+      try {
+        const detectionGraph = await buildSceneDetectionGraph({
+          scene,
+          armies: armyRecords,
+          sceneItems,
+          distancePort: this.grid,
+          visionBarriers: extractBarrierSegments(barrierRecords, "vision")
+        });
+        detectedNavalTargetsForSide = (sideId) =>
+          detectedShipIdsForSide(detectionGraph, scene.ships ?? {}, sideId);
+        const armyIds = new Set(armyRecords.map((record) => record.item.id));
+        visibleArmyTargetsForSide = (sideId) => new Set(
+          [...(detectionGraph.visibleTargetsBySide.get(sideId) ?? [])]
+            .filter((unitId) => armyIds.has(unitId))
+        );
+      } catch {
+        // Detection-dependent commands fail closed while authoritative geometry is unavailable.
+      }
+    }
+    if (command.type === "START_NAVAL_BATTLE" && command.navalRequestId !== null) {
+      const navalRequest = scene.navalBattleRequests?.find(
+        (candidate) => candidate.id === command.navalRequestId
+      );
+      if (!navalRequest) {
+        await sendCommandAck(this.port, {
+          requestId: command.requestId,
+          status: "REJECTED",
+          reason: "NAVAL_BATTLE_REQUEST_NOT_FOUND",
+          coordinatorConnectionId: await this.currentConnectionId(),
+          recipientConnectionId: sender.connectionId
+        });
+        return;
+      }
+      if (
+        navalRequest.initiatingShipId !== command.initiatingShipId ||
+        !command.participantShipIds.includes(navalRequest.targetShipId)
+      ) {
+        await sendCommandAck(this.port, {
+          requestId: command.requestId,
+          status: "REJECTED",
+          reason: "INVALID_NAVAL_BATTLE_REQUEST",
+          coordinatorConnectionId: await this.currentConnectionId(),
+          recipientConnectionId: sender.connectionId
+        });
+        return;
+      }
+      const initiatingShip = scene.ships?.[navalRequest.initiatingShipId];
+      const requestValidation = validateNavalBattleRequest({
+        scene: scene as import("../shared/types").NavalSceneState,
+        request: navalRequest,
+        detectedTargetShipIds: initiatingShip
+          ? detectedNavalTargetsForSide(initiatingShip.sideId)
+          : new Set<string>()
+      });
+      if (!requestValidation.ok) {
+        await sendCommandAck(this.port, {
+          requestId: command.requestId,
+          status: "REJECTED",
+          reason: requestValidation.reason,
+          coordinatorConnectionId: await this.currentConnectionId(),
+          recipientConnectionId: sender.connectionId
+        });
+        return;
+      }
+    }
+    let shoreBombardmentDistanceCells: (from: import("../shared/types").GridCellCoord, to: import("../shared/types").GridCellCoord) => number = () => Number.POSITIVE_INFINITY;
+    let shoreBombardmentHasLineOfSight: (from: import("../shared/types").GridCellCoord, to: import("../shared/types").GridCellCoord) => boolean = () => false;
+    if (command.type === "NAVAL_SHORE_BOMBARDMENT" && commandCellForPosition && commandPositionForCell) {
+      const attackerPosition = commandState.positions?.[command.shipId];
+      const targetPosition = commandState.positions?.[command.armyId];
+      if (attackerPosition && targetPosition) {
+        try {
+          const attackerCell = commandCellForPosition(attackerPosition);
+          const targetCell = commandCellForPosition(targetPosition);
+          const distance = await this.grid.distance(
+            commandPositionForCell(attackerCell),
+            commandPositionForCell(targetCell)
+          );
+          shoreBombardmentDistanceCells = () => distance;
+          const occupiedShipCells = Object.keys(scene.ships ?? {}).flatMap((shipId) => {
+            const position = commandState.positions?.[shipId];
+            return position ? [commandCellForPosition(position)] : [];
+          });
+          shoreBombardmentHasLineOfSight = (from, to) =>
+            scene.activeNavalBattle?.status === "ACTIVE"
+              ? hasNavalBattleLineOfSight({ scene, from, to, occupiedShipCells })
+              : hasNavalLineOfSight(scene, from, to);
+        } catch {
+          // Range and LOS remain fail-closed when authoritative grid geometry is unavailable.
+        }
+      }
+    }
+    const result = new CommandProcessor(
+      () => this.wallClock(),
+      commandCellForPosition,
+      commandPositionForCell,
+      detectedNavalTargetsForSide,
+      undefined,
+      visibleArmyTargetsForSide,
+      () => false,
+      shoreBombardmentDistanceCells,
+      shoreBombardmentHasLineOfSight
+    ).execute(
+      {
+        role: sender.role,
+        playerId: sender.playerId,
+        connectionId: sender.connectionId,
+        connectedPlayerIds: sender.connectedPlayerIds,
+        state: commandState
+      },
+      command
+    );
+    const coordinatorConnectionId = await this.currentConnectionId();
+    if (result.status === "ACCEPTED" && command.type === "REGISTER_ARMY") {
+      const item = sceneItems.find((candidate) => candidate.id === command.itemId);
+      if (item) {
+        try {
+          result.state.positions ??= {};
+          result.state.positions[command.itemId] = await this.grid.snapGridCenter(item.position);
+        } catch {
+          await sendCommandAck(this.port, {
+            requestId: command.requestId,
+            status: "REJECTED",
+            reason: "PERSISTENCE_FAILED",
+            coordinatorConnectionId,
+            recipientConnectionId: sender.connectionId
+          });
+          return;
+        }
+      }
+    }
+    if (result.status === "ACCEPTED" && command.type === "SET_ROUTE") {
+      const army = armyRecords.find((record) => record.item.id === command.armyId);
+      if (army) {
+        let snapped: Awaited<ReturnType<typeof snapRouteToGrid>>;
+        try {
+          snapped = await snapRouteToGrid(army.item.position, command.route, this.grid);
+        } catch {
+          await sendCommandAck(this.port, {
+            requestId: command.requestId,
+            status: "REJECTED",
+            reason: "PERSISTENCE_FAILED",
+            coordinatorConnectionId,
+            recipientConnectionId: sender.connectionId
+          });
+          return;
+        }
+        if (!snapped.waypointsWereCentered) {
+          await sendCommandAck(this.port, {
+            requestId: command.requestId,
+            status: "REJECTED",
+            reason: "INVALID_COMMAND",
+            coordinatorConnectionId,
+            recipientConnectionId: sender.connectionId
+          });
+          return;
+        }
+        let failure: ReturnType<typeof validateStrategicRouteShape>;
         try {
           const gridDpi = await this.grid.getDpi();
           failure = validateStrategicRouteShape({
