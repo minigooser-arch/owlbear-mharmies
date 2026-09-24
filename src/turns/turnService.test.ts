@@ -10,8 +10,8 @@ function scene(): SceneState {
     states:[{id:"red-state",name:"Red State",rulingFactionId:"red",active:true}],
     relations:{}, battleGroups:[], terrain:structuredClone(DEFAULT_TERRAIN),
     gridMap:{version:1,revision:0,cells:{
-      "0,0":{terrainId:null,impassable:false,factionTerritoryIds:["red"],recognizedStateId:"red-state",deFactoStateId:"red-state"},
-      "1,0":{terrainId:null,impassable:false,factionTerritoryIds:["red"],recognizedStateId:"red-state",deFactoStateId:"red-state"}
+      "0,0":{terrainId:"plain",impassable:false,factionTerritoryIds:["red"],recognizedStateId:"red-state",deFactoStateId:"red-state"},
+      "1,0":{terrainId:"plain",impassable:false,factionTerritoryIds:["red"],recognizedStateId:"red-state",deFactoStateId:"red-state"}
     }},
     wars:[], turn:{...structuredClone(DEFAULT_TURN_STATE),phase:"POST_MOVEMENT"}
   };

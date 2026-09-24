@@ -27,8 +27,8 @@ function activation(sideId: string) {
       version: 1 as const,
       revision: 0,
       cells: {
-        "0,0": { terrainId: null, impassable: false, factionTerritoryIds: [], recognizedStateId: "russia", deFactoStateId: "russia" },
-        "1,0": { terrainId: null, impassable: false, factionTerritoryIds: [], recognizedStateId: "germany", deFactoStateId: "germany" }
+        "0,0": { terrainId: "plain", impassable: false, factionTerritoryIds: [], recognizedStateId: "russia", deFactoStateId: "russia" },
+        "1,0": { terrainId: "plain", impassable: false, factionTerritoryIds: [], recognizedStateId: "germany", deFactoStateId: "germany" }
       }
     },
     wars: [],

@@ -1,4 +1,5 @@
 import { isOrthogonalNeighbor } from "../grid/strategicGrid";
+import { terrainSupportsDomain } from "../terrain/movementDomains";
 import { getTerrain } from "../terrain/terrainRegistry";
 import type {
   CellState,
@@ -51,6 +52,9 @@ export function validateMovementStep(context: MovementStepContext): MovementStep
   }
   const terrain = getTerrain(context.terrain, context.cell.terrainId);
   if (!terrain.ok) {
+    return { allowed: false, reason: "INVALID_TERRAIN", problemCell };
+  }
+  if (!terrainSupportsDomain(terrain.terrain, "LAND")) {
     return { allowed: false, reason: "INVALID_TERRAIN", problemCell };
   }
   const stepCostUnits = terrain.terrain.movementCostUnits;
