@@ -27,6 +27,8 @@ export const TRANSPORT_LANDING_ARMY_ID_KEY = `${TRANSPORT_LANDING_TOOL_ID}/army-
 export const TRANSPORT_LANDING_RETURN_TOOL_KEY = `${TRANSPORT_LANDING_TOOL_ID}/return-tool`;
 export const MAP_BRUSH_TOOL_ID = `${EXTENSION_ID}/map-brush-tool`;
 export const MAP_BRUSH_TOOL_MODE_ID = `${MAP_BRUSH_TOOL_ID}/paint`;
+export const CELL_COORDINATE_TOOL_ID = `${EXTENSION_ID}/cell-coordinate-tool`;
+export const CELL_COORDINATE_TOOL_MODE_ID = `${CELL_COORDINATE_TOOL_ID}/inspect`;
 export const MAP_BRUSH_MODE_KEY = `${MAP_BRUSH_TOOL_ID}/mode`;
 export const MAP_BRUSH_TERRAIN_ID_KEY = `${MAP_BRUSH_TOOL_ID}/terrain-id`;
 export const MAP_BRUSH_SIDE_ID_KEY = `${MAP_BRUSH_TOOL_ID}/side-id`;
@@ -67,7 +69,8 @@ export const METADATA_KEYS = {
   interceptionOverlay: `${EXTENSION_ID}/interception-overlay`,
   mapBrushPreview: `${EXTENSION_ID}/map-brush-preview`,
   navalBattleAreaPreview: `${EXTENSION_ID}/naval-battle-area-preview`,
-  peaceTransferOverlay: `${EXTENSION_ID}/peace-transfer-overlay`
+  peaceTransferOverlay: `${EXTENSION_ID}/peace-transfer-overlay`,
+  coordinateOverlay: `${EXTENSION_ID}/coordinate-overlay`
 } as const;
 
 export const DEFAULT_SETTINGS: SceneSettings = {

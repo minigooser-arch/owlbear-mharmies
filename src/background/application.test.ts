@@ -57,7 +57,7 @@ it("extracts only requested blocking polylines into barrier segments", () => {
   expect(extractBarrierSegments(records, "vision")).toEqual([]);
 });
 
-it("includes route, map brush, and health overlays in local overlay cleanup", () => {
+it("includes route, map brush, coordinate, and health overlays in local overlay cleanup", () => {
   expect(localOverlayIds([
     {
       id: "route-preview",
@@ -78,6 +78,12 @@ it("includes route, map brush, and health overlays in local overlay cleanup", ()
       metadata: { [METADATA_KEYS.healthOverlay]: { armyId: "army" } }
     },
     {
+      id: "cell-coordinate",
+      type: "LABEL",
+      position: { x: 0, y: 0 },
+      metadata: { [METADATA_KEYS.coordinateOverlay]: { kind: "HOVER" } }
+    },
+    {
       id: "naval-area-preview",
       type: "CURVE",
       position: { x: 0, y: 0 },
@@ -89,7 +95,7 @@ it("includes route, map brush, and health overlays in local overlay cleanup", ()
       position: { x: 0, y: 0 },
       metadata: { other: true }
     }
-  ])).toEqual(["route-preview", "map-brush-preview", "health", "naval-area-preview"]);
+  ])).toEqual(["route-preview", "map-brush-preview", "health", "cell-coordinate", "naval-area-preview"]);
 });
 
 describe("background command readiness", () => {

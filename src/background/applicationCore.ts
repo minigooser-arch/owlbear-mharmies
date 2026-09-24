@@ -65,6 +65,7 @@ import { MapBrushToolService } from "./mapBrushToolService";
 import { NavalBattleAreaToolService } from "./navalBattleAreaToolService";
 import { NavalInterceptionContextMenuService } from "./navalInterceptionContextMenuService";
 import { registerMapBrushTool, type MapBrushToolRegistration } from "../owlbear/mapBrushTool";
+import { registerCellCoordinateTool, type CellCoordinateToolRegistration } from "../owlbear/cellCoordinateTool";
 import { registerNavalBattleAreaTool, type NavalBattleAreaToolRegistration } from "../owlbear/navalBattleAreaTool";
 import { METADATA_KEYS } from "../shared/constants";
 import {
@@ -246,7 +247,8 @@ export function localOverlayIds(items: readonly SceneItemRecord[]): string[] {
     METADATA_KEYS.navalShipOverlay,
     METADATA_KEYS.interceptionOverlay,
     METADATA_KEYS.mapBrushPreview,
-    METADATA_KEYS.navalBattleAreaPreview
+    METADATA_KEYS.navalBattleAreaPreview,
+    METADATA_KEYS.coordinateOverlay
   ];
   return items
     .filter((item) => keys.some((key) => item.metadata[key] !== undefined))
@@ -1646,6 +1648,21 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
     routeGateway.stop();
     throw error;
   }
+  let removeCellCoordinateTool: CellCoordinateToolRegistration;
+  try {
+    removeCellCoordinateTool = await registerCellCoordinateTool(
+      OBR.tool,
+      toolPort,
+      `${import.meta.env.BASE_URL}coordinates.svg`
+    );
+  } catch (error) {
+    await removeMapBrushTool();
+    await removeTransportLandingTool();
+    await removeShipRouteTool();
+    await removeRouteTool();
+    routeGateway.stop();
+    throw error;
+  }
   let removeNavalBattleAreaTool: NavalBattleAreaToolRegistration;
   try {
     removeNavalBattleAreaTool = await registerNavalBattleAreaTool(
@@ -1654,6 +1671,7 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
       `${import.meta.env.BASE_URL}icon-1.2.png`
     );
   } catch (error) {
+    await removeCellCoordinateTool();
     await removeMapBrushTool();
     await removeTransportLandingTool();
     await removeShipRouteTool();
@@ -1689,7 +1707,8 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
           removeRouteTool.cancelSession(),
           removeShipRouteTool.cancelSession(),
           removeTransportLandingTool.cancelSession(),
-          removeMapBrushTool.cancelSession()
+          removeMapBrushTool.cancelSession(),
+          removeCellCoordinateTool.cancelSession()
         ]);
       } catch {
         // A stale preview must not disable command delivery or coordinator heartbeats.
@@ -1707,7 +1726,8 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
           removeRouteTool.cancelSession(),
           removeShipRouteTool.cancelSession(),
           removeTransportLandingTool.cancelSession(),
-          removeMapBrushTool.cancelSession()
+          removeMapBrushTool.cancelSession(),
+          removeCellCoordinateTool.cancelSession()
         ]);
       } catch {
         // Scene teardown continues so subscriptions and overlays can still be cleaned up.
@@ -1770,6 +1790,7 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
         await lease.stop();
         try {
           await removeNavalBattleAreaTool();
+          await removeCellCoordinateTool();
           await removeMapBrushTool();
           await removeTransportLandingTool();
           await removeShipRouteTool();
