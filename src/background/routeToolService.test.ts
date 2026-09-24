@@ -157,6 +157,31 @@ describe("RouteToolService", () => {
     }));
   });
 
+  it("retries a route save rejected while the background scene is still opening", async () => {
+    const port = new MemoryPort();
+    const requestIds: string[] = [];
+    const send = vi.fn(async (command: ArmyCommand): Promise<CommandAck> => {
+      requestIds.push(command.requestId);
+      if (requestIds.length === 1) {
+        return {
+          protocolVersion: COMMAND_PROTOCOL_VERSION,
+          requestId: command.requestId,
+          status: "REJECTED",
+          reason: "BACKGROUND_NOT_READY",
+          coordinatorConnectionId: "coordinator",
+          recipientConnectionId: command.senderConnectionId
+        };
+      }
+      return accepted(command);
+    });
+    const service = new RouteToolService(port, { send });
+
+    await service.commitRoute("army-a", [{ x: 150, y: 50 }], { x: 0, y: 0 }, [{ x: 1, y: 0 }]);
+
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(requestIds[1]).not.toBe(requestIds[0]);
+  });
+
   it("rejects unsnapped scene coordinates before broadcasting", async () => {
     const port = new MemoryPort();
     const send = vi.fn(async (command: ArmyCommand) => accepted(command));

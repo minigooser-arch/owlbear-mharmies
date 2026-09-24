@@ -1281,7 +1281,15 @@ describe("ProductionEngine strategic movement costs", () => {
     expect(persisted.movement).toEqual({
       maxUnits: 10,
       remainingUnits: 9,
-      enteredRouteCellCount: 1
+      enteredRouteCellCount: 0
+    });
+    expect(persisted.route).toEqual([]);
+    expect(persisted.plannedRoute).toMatchObject({
+      startCell: { x: 1, y: 0 },
+      executeOnTurn: 0,
+      cells: [],
+      totalCostUnits: 0,
+      requiresReplan: false
     });
   });
 
