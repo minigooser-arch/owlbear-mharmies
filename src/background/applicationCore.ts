@@ -297,6 +297,7 @@ export class ProductionEngine {
   private mutationTail: Promise<void> = Promise.resolve();
   private lastMapOverlaySignature: string | undefined;
   private clearedLegacyMapOverlays = false;
+  private clearedSharedMapOverlays = false;
 
   constructor(
     private readonly port: OwlbearPort,
@@ -321,6 +322,8 @@ export class ProductionEngine {
 
   invalidateOverlayCaches(): void {
     this.lastMapOverlaySignature = undefined;
+    this.clearedLegacyMapOverlays = false;
+    this.clearedSharedMapOverlays = false;
   }
 
   async readCoordinatorLease(): Promise<HeartbeatLease | undefined> {
@@ -1483,21 +1486,31 @@ export class ProductionEngine {
       }
     }
 
-    if (role !== "GM") return;
+    if (role === "GM" && !this.clearedSharedMapOverlays) {
+      const sharedMapOverlayPort = {
+        getLocalItems: () => this.port.getSceneItems(),
+        addLocalItems: (items: readonly SceneItemRecord[]) => this.port.addSceneItems(items),
+        updateLocalItems: async (items: readonly SceneItemRecord[]) => {
+          await Promise.all(items.map(({ id, ...item }) => this.port.updateSceneItem(id, item)));
+        },
+        deleteLocalItems: (ids: readonly string[]) => this.port.deleteSceneItems(ids),
+        createId: () => crypto.randomUUID()
+      };
+      try {
+        // Remove shared per-cell overlays created by older versions. Map visuals
+        // are now rebuilt locally by each client from shared scene metadata.
+        await new MapOverlayService(sharedMapOverlayPort).reconcile(undefined);
+        this.clearedSharedMapOverlays = true;
+      } catch {
+        // Retry cleanup on the next visibility frame.
+      }
+    }
     if (!this.clearedLegacyMapOverlays) {
-      // Remove legacy GM-only local overlays left by earlier versions.
+      // Remove legacy local overlays before rebuilding them for this client.
       await new MapOverlayService(overlayPort).reconcile(undefined);
       this.clearedLegacyMapOverlays = true;
     }
-    const mapOverlayService = new MapOverlayService({
-      getLocalItems: () => this.port.getSceneItems(),
-      addLocalItems: (items) => this.port.addSceneItems(items),
-      updateLocalItems: async (items) => {
-        await Promise.all(items.map(({ id, ...item }) => this.port.updateSceneItem(id, item)));
-      },
-      deleteLocalItems: (ids) => this.port.deleteSceneItems(ids),
-      createId: () => crypto.randomUUID()
-    });
+    const mapOverlayService = new MapOverlayService(overlayPort);
     try {
       const dpi = await this.grid.getDpi();
       const signature = JSON.stringify([

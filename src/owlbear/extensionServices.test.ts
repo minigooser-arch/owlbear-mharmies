@@ -234,7 +234,10 @@ const serviceHarness = vi.hoisted(() => {
       getActiveTool: vi.fn(async () => state.activeTool),
       getActiveToolMode: vi.fn(async () => state.activeMode),
       setMetadata: vi.fn(async () => undefined),
-      activateTool: vi.fn(async (toolId: string) => { state.activeTool = toolId; }),
+      activateTool: vi.fn(async (toolId: string) => {
+        state.activeTool = toolId;
+        if (toolId === ROUTE_TOOL_ID) state.activeMode = ROUTE_TOOL_MODE_ID;
+      }),
       activateMode: vi.fn(async (_toolId: string, modeId: string) => { state.activeMode = modeId; })
     }
   };
@@ -744,16 +747,21 @@ describe("extension command feedback", () => {
       [ROUTE_RETURN_TOOL_KEY]: "select-tool"
     });
     expect(serviceHarness.sdk.tool.activateTool).toHaveBeenCalledWith(ROUTE_TOOL_ID);
-    expect(serviceHarness.sdk.tool.activateMode).toHaveBeenCalledWith(
-      ROUTE_TOOL_ID,
-      ROUTE_TOOL_MODE_ID
-    );
+    expect(serviceHarness.sdk.tool.activateMode).not.toHaveBeenCalled();
     expect(serviceHarness.sdk.tool.setMetadata.mock.invocationCallOrder[0]).toBeLessThan(
       serviceHarness.sdk.tool.activateTool.mock.invocationCallOrder[0] ?? Infinity
     );
-    expect(serviceHarness.sdk.tool.activateTool.mock.invocationCallOrder[0]).toBeLessThan(
-      serviceHarness.sdk.tool.activateMode.mock.invocationCallOrder[0] ?? Infinity
-    );
+  });
+
+  it("reactivates the route mode when switching armies while the route tool is already active", async () => {
+    const running = await startServices();
+    serviceHarness.state.activeTool = ROUTE_TOOL_ID;
+    serviceHarness.state.activeMode = ROUTE_TOOL_MODE_ID;
+
+    await running.send({ type: "EDIT_ROUTE", armyId: "army-b" });
+
+    expect(serviceHarness.sdk.tool.activateTool).not.toHaveBeenCalled();
+    expect(serviceHarness.sdk.tool.activateMode).toHaveBeenCalledWith(ROUTE_TOOL_ID, ROUTE_TOOL_MODE_ID);
   });
 
   it("activates the ship route tool with the ship and previous tool metadata", async () => {
@@ -775,7 +783,7 @@ describe("extension command feedback", () => {
 
   it("clears route metadata when tool activation fails", async () => {
     const running = await startServices();
-    serviceHarness.sdk.tool.activateMode.mockRejectedValueOnce(new Error("activation failed"));
+    serviceHarness.sdk.tool.activateTool.mockRejectedValueOnce(new Error("activation failed"));
 
     await expect(running.send({ type: "EDIT_ROUTE", armyId: "army-a" }))
       .resolves.toBeUndefined();
