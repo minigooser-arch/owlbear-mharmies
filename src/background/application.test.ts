@@ -311,6 +311,82 @@ describe("ProductionEngine overlay performance", () => {
 });
 
 describe("ProductionEngine command boundary", () => {
+  it("starts an army route at movement phase end and clears it on arrival", async () => {
+    const army: ArmyState = {
+      version: 3,
+      registered: true,
+      sideId: "red",
+      status: "READY",
+      overrides: { speedCellsPerSecond: 2 },
+      route: [{ x: 150, y: 50 }],
+      plannedRoute: {
+        startCell: { x: 0, y: 0 },
+        executeOnTurn: 2,
+        cells: [{ x: 1, y: 0 }],
+        totalCostUnits: 1,
+        validatedRevision: 2,
+        requiresReplan: false
+      },
+      movement: { maxUnits: 10, remainingUnits: 0, enteredRouteCellCount: 0 },
+      health: { hp: 50, maxHp: 50 },
+      supply: { supplied: true, checkedOnTurn: 1 },
+      disband: { pending: false, requestedOnTurn: null, requestedByPlayerId: null },
+      currentWaypointIndex: 0,
+      segmentProgressCells: 0,
+      ignoresMovementBarriers: false,
+      ignoresVisionBarriers: false,
+      revision: 1
+    };
+    const fixture = commandPort([{
+      id: "army",
+      type: "IMAGE",
+      position: { x: 50, y: 50 },
+      metadata: { [METADATA_KEYS.army]: army }
+    }], async (from, to) => Math.hypot(to.x - from.x, to.y - from.y) / 100);
+    fixture.scene.turn.phase = "MOVEMENT";
+    fixture.scene.sides.push({
+      id: "red", name: "Красные", color: "#f00", playerIds: [], leaderPlayerIds: [], stateId: null
+    });
+    fixture.scene.gridMap.cells = {
+      "0,0": { terrainId: "plain", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null },
+      "1,0": { terrainId: "plain", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null }
+    };
+    const engine = new ProductionEngine(fixture.port);
+    engine.setCoordinator(true, "coordinator");
+
+    await engine.processCommand({
+      connectionId: "gm-connection",
+      data: {
+        protocolVersion: COMMAND_PROTOCOL_VERSION,
+        requestId: "complete-movement-with-route",
+        senderPlayerId: "gm",
+        senderConnectionId: "gm-connection",
+        expectedRevision: fixture.scene.revision,
+        type: "COMPLETE_MOVEMENT_PHASE"
+      }
+    }, {
+      role: "GM",
+      playerId: "gm",
+      connectionId: "gm-connection",
+      connectedPlayerIds: new Set(["gm"])
+    });
+
+    expect(fixture.sent.at(-1)).toMatchObject({
+      data: { requestId: "complete-movement-with-route", status: "ACCEPTED" }
+    });
+    expect((fixture.items[0]?.metadata[METADATA_KEYS.army] as ArmyState).status).toBe("MOVING");
+
+    (engine as unknown as { lastMovementAt: number }).lastMovementAt = performance.now() - 1_000;
+    await engine.movementTick();
+
+    expect(fixture.items[0]?.position).toEqual({ x: 150, y: 50 });
+    expect(fixture.items[0]?.metadata[METADATA_KEYS.army]).toMatchObject({
+      status: "READY",
+      route: [],
+      plannedRoute: { cells: [], executeOnTurn: 0 }
+    });
+  });
+
   it("centres an Image when the GM registers it as an army", async () => {
     const fixture = commandPort(
       [{ id: "candidate", type: "IMAGE", position: { x: 17, y: 29 }, metadata: {} }],

@@ -747,7 +747,7 @@ describe("extension command feedback", () => {
       [ROUTE_RETURN_TOOL_KEY]: "select-tool"
     });
     expect(serviceHarness.sdk.tool.activateTool).toHaveBeenCalledWith(ROUTE_TOOL_ID);
-    expect(serviceHarness.sdk.tool.activateMode).not.toHaveBeenCalled();
+    expect(serviceHarness.sdk.tool.activateMode).toHaveBeenCalledWith(ROUTE_TOOL_ID, ROUTE_TOOL_MODE_ID);
     expect(serviceHarness.sdk.tool.setMetadata.mock.invocationCallOrder[0]).toBeLessThan(
       serviceHarness.sdk.tool.activateTool.mock.invocationCallOrder[0] ?? Infinity
     );
@@ -806,7 +806,7 @@ describe("extension command feedback", () => {
     await running.send({ type: "EDIT_ROUTE", armyId: "army-a" });
 
     expect(serviceHarness.notificationShow).toHaveBeenCalledWith(
-      expect.stringContaining("выберите «Маршрут армии» в панели инструментов"),
+      expect.stringContaining("повторно откройте маршрут из панели армии"),
       "ERROR"
     );
     expect(serviceHarness.sdk.tool.setMetadata).toHaveBeenLastCalledWith(ROUTE_TOOL_ID, {

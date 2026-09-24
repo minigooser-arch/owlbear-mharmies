@@ -199,6 +199,37 @@ function revalidateAllRoutes(state: CommandState): void {
   for (const armyId of Object.keys(state.armies)) revalidateArmyRoute(state, armyId);
 }
 
+function startRoutesForMovementPhase(state: CommandState): void {
+  const turnNumber = state.scene.turn.turnNumber;
+  for (const [armyId, army] of Object.entries(state.armies)) {
+    if (army.plannedRoute.executeOnTurn !== turnNumber + 1 || army.status === "IN_BATTLE") continue;
+    revalidateArmyRoute(state, armyId);
+    const current = state.armies[armyId];
+    if (
+      !current ||
+      current.status === "IN_BATTLE" ||
+      current.stopReason === "BATTLE" ||
+      current.plannedRoute.requiresReplan ||
+      current.plannedRoute.invalidReason ||
+      current.route.length === 0 ||
+      current.plannedRoute.cells.length === 0
+    ) {
+      continue;
+    }
+    state.armies[armyId] = bumpArmy(current, {
+      status: "MOVING",
+      plannedRoute: { ...current.plannedRoute, executeOnTurn: turnNumber },
+      movement: {
+        ...current.movement,
+        remainingUnits: current.movement.maxUnits,
+        enteredRouteCellCount: 0
+      },
+      currentWaypointIndex: 0,
+      segmentProgressCells: 0
+    });
+  }
+}
+
 function reconcileForcedExits(state: CommandState, cellForPosition: ((position: Vector2) => GridCellCoord) | undefined, reason: ForcedExitReason): void {
   if (!cellForPosition) return;
   const cells = Object.fromEntries(Object.keys(state.armies).flatMap((armyId) => {
@@ -984,6 +1015,7 @@ export class CommandProcessor {
           this.positionForCell
         );
         if (!resolved.ok) return resolved.reason;
+        startRoutesForMovementPhase(state);
         state.scene.turn.phase = "POST_MOVEMENT";
         state.scene.transportEmbarkRequests = [];
         return undefined;
@@ -1593,7 +1625,7 @@ export class CommandProcessor {
         return undefined;
       }
       case "COMPLETE_TURN_NOW": {
-        const blockers = preCheckpointTurnBlockers(state.scene);
+        const blockers = preCheckpointTurnBlockers(state.scene, state.armies);
         if (blockers.length > 0) return `TURN_BLOCKED:${blockers.join(",")}`;
         const armyCells = Object.fromEntries(Object.entries(state.armies).flatMap(([armyId]) => {
           const position = state.positions?.[armyId];

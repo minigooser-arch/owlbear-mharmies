@@ -7,6 +7,7 @@ class RuntimePort implements BackgroundRuntimePort {
   subscriptions = new Set<() => void>();
   sceneReady: ((ready: boolean) => void) | undefined;
   coordinator: ((active: boolean) => void) | undefined;
+  sceneItemsChange: (() => void) | undefined;
   ready = true;
   opened = 0;
   closed = 0;
@@ -35,7 +36,9 @@ class RuntimePort implements BackgroundRuntimePort {
   onCoordinatorChange(callback: (active: boolean) => void) {
     return this.subscribe((value) => { this.coordinator = value; }, callback as never);
   }
-  onSceneItemsChange(callback: () => void) { void callback; return this.subscribe(() => undefined, (() => undefined) as never); }
+  onSceneItemsChange(callback: () => void) {
+    return this.subscribe((value) => { this.sceneItemsChange = value; }, callback as never);
+  }
   onLocalItemsChange(callback: () => void) { void callback; return this.subscribe(() => undefined, (() => undefined) as never); }
   onSceneMetadataChange(callback: () => void) { void callback; return this.subscribe(() => undefined, (() => undefined) as never); }
   onGridChange(callback: () => void) { void callback; return this.subscribe(() => undefined, (() => undefined) as never); }
@@ -52,6 +55,29 @@ class RuntimePort implements BackgroundRuntimePort {
 }
 
 describe("BackgroundRuntime", () => {
+  it("refreshes visibility on scene changes without polling idle scenes", async () => {
+    vi.useFakeTimers();
+    const port = new RuntimePort();
+    const runtime = new BackgroundRuntime(port);
+
+    try {
+      runtime.start();
+      await runtime.whenIdle();
+      expect(port.visibility).toHaveBeenCalledTimes(1);
+
+      port.sceneItemsChange?.();
+      await runtime.whenIdle();
+      expect(port.visibility).toHaveBeenCalledTimes(2);
+
+      await vi.advanceTimersByTimeAsync(1_500);
+      await runtime.whenIdle();
+      expect(port.visibility).toHaveBeenCalledTimes(2);
+    } finally {
+      await runtime.stop();
+      vi.useRealTimers();
+    }
+  });
+
   it("notifies on failed map hydration without clearing existing overlays", async () => {
     const port = new RuntimePort();
     const show = vi.fn(async () => undefined);

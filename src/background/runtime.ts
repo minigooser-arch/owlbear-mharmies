@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 2003)
+Total output lines: 243
+
 import { SubscriptionManager } from "./subscriptions";
 
 export interface BackgroundRuntimePort {
@@ -22,7 +25,6 @@ export interface BackgroundRuntimePort {
 
 export interface RuntimeRates {
   movementHz: number;
-  visibilityHz: number;
 }
 
 export type RuntimeErrorReporter = (error: unknown, context: string) => void;
@@ -35,7 +37,6 @@ export class BackgroundRuntime {
   private readonly readySubscriptions = new SubscriptionManager();
   private readonly sceneSubscriptions = new SubscriptionManager();
   private movementTimer: ReturnType<typeof setInterval> | undefined;
-  private visibilityTimer: ReturnType<typeof setInterval> | undefined;
   private turnTimer: ReturnType<typeof setInterval> | undefined;
   private coordinator = false;
   private started = false;
@@ -54,7 +55,7 @@ export class BackgroundRuntime {
 
   constructor(
     private readonly port: BackgroundRuntimePort,
-    private readonly rates: RuntimeRates = { movementHz: 5, visibilityHz: 4 },
+    private readonly rates: RuntimeRates = { movementHz: 5 },
     private readonly reportError: RuntimeErrorReporter = defaultRuntimeErrorReporter
   ) {}
 
@@ -79,73 +80,7 @@ export class BackgroundRuntime {
     });
   }
 
-  async stop(): Promise<void> {
-    if (!this.started) {
-      await this.whenIdle();
-      return;
-    }
-    this.started = false;
-    this.readyGeneration += 1;
-    this.clearSubscriptions(this.readySubscriptions, "ready-subscription-cleanup");
-    this.trackLifecycle(() => this.closeScene());
-    await this.whenIdle();
-  }
-
-  requestMovementTick(): void {
-    if (!this.sceneOpen) return;
-    if (this.movementRunning) {
-      this.movementPending = true;
-      return;
-    }
-    this.movementRunning = true;
-    this.movementWork = this.runMovementQueue().catch((error: unknown) => {
-      this.reportError(error, "movement-tick");
-    });
-  }
-
-  requestVisibilityTick(): void {
-    if (!this.sceneOpen) return;
-    if (this.visibilityRunning) {
-      this.visibilityPending = true;
-      return;
-    }
-    this.visibilityRunning = true;
-    this.visibilityWork = this.runVisibilityQueue().catch((error: unknown) => {
-      this.reportError(error, "visibility-tick");
-    });
-  }
-
-  requestTurnTick(): void {
-    if (!this.sceneOpen) return;
-    if (this.turnRunning) {
-      this.turnPending = true;
-      return;
-    }
-    this.turnRunning = true;
-    this.turnWork = this.runTurnQueue().catch((error: unknown) => {
-      this.reportError(error, "turn-tick");
-    });
-  }
-
-  async whenIdle(): Promise<void> {
-    await this.lifecycleWork;
-    await Promise.all([this.movementWork, this.visibilityWork, this.turnWork]);
-  }
-
-  private async openScene(): Promise<void> {
-    if (!this.started || this.sceneOpen) return;
-    this.sceneOpen = true;
-    try {
-      this.sceneSubscriptions.add(this.port.onCoordinatorChange((active) => {
-        const lost = this.coordinator && !active;
-        this.coordinator = active;
-        if (active) this.requestTurnTick();
-        if (lost) this.trackLifecycle(() => this.port.pauseMovingArmies());
-      }));
-      this.sceneSubscriptions.add(
-        this.port.onSceneItemsChange(() => this.requestVisibilityTick())
-      );
-      this.sceneSubscriptions.add(this.port.onLocalItemsChange(() => undefined));
+  as…503 tokens truncated…ort.onLocalItemsChange(() => undefined));
       this.sceneSubscriptions.add(
         this.port.onSceneMetadataChange(() => this.requestVisibilityTick())
       );
@@ -155,10 +90,6 @@ export class BackgroundRuntime {
       this.movementTimer = setInterval(
         () => this.requestMovementTick(),
         1_000 / this.rates.movementHz
-      );
-      this.visibilityTimer = setInterval(
-        () => this.requestVisibilityTick(),
-        1_000 / this.rates.visibilityHz
       );
       this.turnTimer = setInterval(() => this.requestTurnTick(), 30_000);
       await this.port.onSceneOpen();
@@ -194,10 +125,8 @@ export class BackgroundRuntime {
     this.turnPending = false;
     this.clearSubscriptions(this.sceneSubscriptions, "scene-subscription-cleanup");
     if (this.movementTimer !== undefined) clearInterval(this.movementTimer);
-    if (this.visibilityTimer !== undefined) clearInterval(this.visibilityTimer);
     if (this.turnTimer !== undefined) clearInterval(this.turnTimer);
     this.movementTimer = undefined;
-    this.visibilityTimer = undefined;
     this.turnTimer = undefined;
   }
 

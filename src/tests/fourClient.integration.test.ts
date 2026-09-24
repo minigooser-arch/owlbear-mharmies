@@ -133,7 +133,6 @@ describe("four-client room", () => {
     expect(await room.other.routeIds()).toContain("red-token");
 
     await room.gm.send({ type: "COMPLETE_MOVEMENT_PHASE" });
-    await room.gm.send({ type: "COMPLETE_TURN_NOW" });
     expect(await room.member.routeIds()).toContain("red-token");
     expect(await room.other.routeIds()).toContain("red-token");
   });

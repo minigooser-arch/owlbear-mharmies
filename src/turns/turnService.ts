@@ -144,7 +144,7 @@ export function completeTurn(
     }
   }
 
-  const blockers = preCheckpointTurnBlockers(scene);
+  const blockers = preCheckpointTurnBlockers(scene, armies);
   if (blockers.length > 0) {
     return { changed: false, reason: blockers[0] ?? "MOVEMENT_RESOLUTION_PENDING", blockers };
   }

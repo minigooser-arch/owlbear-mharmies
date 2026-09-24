@@ -50,6 +50,23 @@ it("always starts the new turn in movement phase", () => {
   expect(result.scene.turn.phase).toBe("MOVEMENT");
 });
 
+it("keeps the turn open until armies finish their active movement routes", () => {
+  const current = scene();
+  current.turn.phase = "POST_MOVEMENT";
+  const moving = army(8, 1);
+  moving.status = "MOVING";
+  const result = completeTurn(current, { a: moving }, {
+    source: "MANUAL",
+    completedAt: new Date("2026-09-09T10:00:00.000Z"),
+    armyCells: { a: { x: 0, y: 0 } }
+  });
+  expect(result).toMatchObject({
+    changed: false,
+    reason: "MOVEMENT_RESOLUTION_PENDING",
+    blockers: ["MOVEMENT_RESOLUTION_PENDING"]
+  });
+});
+
 it("refuses any global turn completion while a naval battle is active", () => {
   const current = scene();
   current.version = 6;
