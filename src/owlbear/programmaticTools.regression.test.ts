@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest";
 import { PROGRAMMATIC_ONLY_TOOL_FILTER } from "../shared/constants";
 
 const sources = [
-  "routeToolIntegration.ts",
   "shipRouteToolIntegration.ts",
   "transportLandingTool.ts",
   "navalBattleAreaTool.ts"

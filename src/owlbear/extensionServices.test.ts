@@ -790,7 +790,7 @@ describe("extension command feedback", () => {
     );
   });
 
-  it("reports when Owlbear accepts the route calls but leaves another tool active", async () => {
+  it("keeps route metadata available for manual activation when Owlbear leaves another tool active", async () => {
     const running = await startServices();
     serviceHarness.sdk.tool.activateTool.mockImplementationOnce(async () => undefined);
     serviceHarness.sdk.tool.activateMode.mockImplementationOnce(async () => undefined);
@@ -798,12 +798,12 @@ describe("extension command feedback", () => {
     await running.send({ type: "EDIT_ROUTE", armyId: "army-a" });
 
     expect(serviceHarness.notificationShow).toHaveBeenCalledWith(
-      expect.stringContaining("Маршрут не активировался в Owlbear"),
+      expect.stringContaining("выберите «Маршрут армии» в панели инструментов"),
       "ERROR"
     );
     expect(serviceHarness.sdk.tool.setMetadata).toHaveBeenLastCalledWith(ROUTE_TOOL_ID, {
-      [ROUTE_ARMY_ID_KEY]: null,
-      [ROUTE_RETURN_TOOL_KEY]: null
+      [ROUTE_ARMY_ID_KEY]: "army-a",
+      [ROUTE_RETURN_TOOL_KEY]: "select-tool"
     });
   });
 
