@@ -27,6 +27,7 @@ export interface ArmyView {
   sideId: string;
   sideName: string;
   status: ArmyStatus;
+  cell?: GridCellCoord;
   route: Vector2[];
   movementMaxUnits: number;
   movementRemainingUnits: number;

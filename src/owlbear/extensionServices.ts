@@ -1,4 +1,5 @@
 import { resolveCoordinatorConnectionId } from "../background/coordinator";
+import { StrategicGridAdapter } from "../grid/strategicGrid";
 import {
   CommandGateway,
   CommandTimeoutError,
@@ -80,6 +81,7 @@ export interface SnapshotInput {
   armies: readonly ArmyRecord[];
   ships?: readonly ShipRecord[];
   mapVisibleSourceIds: ReadonlySet<string>;
+  gridDpi?: number;
 }
 
 export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapshot {
@@ -185,18 +187,16 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
     });
   const armies: ArmyView[] = authorizedRecords.map(({ item, state }) => {
     const forcedExit = input.scene.forcedExitStates?.find((entry) => entry.armyId === item.id);
-    const routeVisible = input.role === "GM" || (
-      state.status === "READY"
-        ? leaderSideIds.has(state.sideId)
-        : memberSideIds.has(state.sideId)
-    );
     return {
       id: item.id,
       name: item.name ?? "Безымянная армия",
       sideId: state.sideId,
       sideName: sideNames.get(state.sideId) ?? "Неизвестная сторона",
       status: state.status,
-      route: routeVisible ? state.route.map((point) => ({ ...point })) : [],
+      ...(input.gridDpi ? {
+        cell: new StrategicGridAdapter({ dpi: input.gridDpi, offset: { x: 0, y: 0 } }).sceneToCell(item.position)
+      } : {}),
+      route: state.route.map((point) => ({ ...point })),
       movementMaxUnits: state.movement.maxUnits,
       movementRemainingUnits: state.movement.remainingUnits,
       routeCostUnits: state.plannedRoute.totalCostUnits,
@@ -657,6 +657,21 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
           });
           await OBR.tool.activateTool(ROUTE_TOOL_ID);
           await OBR.tool.activateMode(ROUTE_TOOL_ID, ROUTE_TOOL_MODE_ID);
+          const [activeToolId, activeModeId] = await Promise.all([
+            OBR.tool.getActiveTool(),
+            OBR.tool.getActiveToolMode()
+          ]);
+          if (activeToolId !== ROUTE_TOOL_ID || activeModeId !== ROUTE_TOOL_MODE_ID) {
+            await OBR.tool.setMetadata(ROUTE_TOOL_ID, {
+              [ROUTE_ARMY_ID_KEY]: null,
+              [ROUTE_RETURN_TOOL_KEY]: null
+            });
+            await adapter.show(
+              `Маршрут не активировался в Owlbear (tool: ${activeToolId}, mode: ${activeModeId ?? "нет"}).`,
+              "ERROR"
+            );
+            return undefined;
+          }
         } catch (error) {
           try {
             await OBR.tool.setMetadata(ROUTE_TOOL_ID, {

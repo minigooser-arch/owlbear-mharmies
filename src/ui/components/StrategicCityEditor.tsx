@@ -103,6 +103,8 @@ function StrategicCityRow({
       <h3>{city.name}</h3>
       <p>{stateNames.get(city.recognizedStateId) ?? city.recognizedStateId}</p>
       <p>Клеток: {city.cells.length}</p>
+      <p>Координаты клеток: {cellsText(city.cells)}</p>
+      {city.cells.length > 0 ? <button type="button" onClick={() => void navigator.clipboard?.writeText(cellsText(city.cells))}>Скопировать координаты</button> : null}
       <p>Исторических типов построек: {city.historicalBuildTypeCount}</p>
       {city.isCapital ? <p>Столица</p> : null}
       {role === "GM" ? (
@@ -130,7 +132,7 @@ function StrategicCityRow({
             </select>
           </label>
           <label>
-            Клетки
+            Клетки (X,Y через точку с запятой)
             <input aria-label={`Редактировать клетки ${city.name}`} value={cells} onChange={(event) => setCells(event.target.value)} />
           </label>
           <label>
@@ -229,12 +231,12 @@ export function StrategicCityEditor({ role, states, cities, onCreate, onUpdate, 
             </select>
           </label>
           <label>
-            Клетки города
+            Клетки города (X,Y через точку с запятой)
             <input
               aria-label="Клетки города"
+              placeholder="12,5; 13,5"
               value={cityCellsText}
               onChange={(event) => setCityCellsText(event.target.value)}
-              placeholder="1,2; 2,2"
             />
           </label>
           <label>

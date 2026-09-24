@@ -151,6 +151,11 @@ export class MapOverlayService {
       });
     }
 
+    for (const overlay of overlays) {
+      overlay.item.layer = "MAP";
+      overlay.item.locked = true;
+    }
+
     await reconcileLocalOverlays(this.port, mapOverlayKey, overlays);
   }
 }

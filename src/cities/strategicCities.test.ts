@@ -52,10 +52,10 @@ describe("strategic cities", () => {
     expect(validateStrategicCity({ ...baseCity, historicalBuildTypeCount: 1.5 }, mapWithControllers("russia", "russia"), states)).toMatchObject({ ok: false, reason: "CITY_BUILD_COUNT_INVALID" });
   });
 
-  it("requires every city cell to exist on the strategic map", () => {
+  it("accepts city cells with implicit default sea terrain", () => {
     const map = mapWithControllers("russia", "russia");
     delete map.cells["1,0"];
-    expect(validateStrategicCity(baseCity, map, states)).toMatchObject({ ok: false, reason: "CITY_CELL_NOT_FOUND" });
+    expect(validateStrategicCity(baseCity, map, states)).toEqual({ ok: true });
   });
 
   it("resolves full de-facto control only when all city cells share the same controller", () => {

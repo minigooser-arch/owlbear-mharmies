@@ -235,7 +235,7 @@ it("migrates v2 army through health supply disband and transport schema with fix
     ok: true,
     value: {
       version: 4,
-      health: { hp: 50, maxHp: 50 },
+      health: { hp: 40, maxHp: 40 },
       supply: { supplied: true, checkedOnTurn: 0 },
       disband: { pending: false, requestedOnTurn: null, requestedByPlayerId: null },
       embarkedOnShipId: null,

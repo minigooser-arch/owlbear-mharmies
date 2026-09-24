@@ -439,7 +439,7 @@ export function migrateArmyState(raw: unknown): ValidationResult<ArmyState> {
       ...migrated,
       version: 3,
       movement: { maxUnits: 10, remainingUnits: 10, enteredRouteCellCount: 0 },
-      health: { hp: 50, maxHp: 50 },
+      health: { hp: 40, maxHp: 40 },
       supply: { supplied: true, checkedOnTurn: 0 },
       disband: { pending: false, requestedOnTurn: null, requestedByPlayerId: null },
       plannedRoute: {

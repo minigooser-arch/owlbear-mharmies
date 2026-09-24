@@ -40,15 +40,15 @@ function viewer(kind: "GM" | "LEADER" | "MEMBER" | "OTHER"): RouteOverlayViewer 
 it.each([
   ["GM", "READY", true],
   ["LEADER", "READY", true],
-  ["MEMBER", "READY", false],
-  ["OTHER", "READY", false],
+  ["MEMBER", "READY", true],
+  ["OTHER", "READY", true],
   ["GM", "MOVING", true],
   ["LEADER", "MOVING", true],
   ["MEMBER", "MOVING", true],
-  ["OTHER", "MOVING", false],
+  ["OTHER", "MOVING", true],
   ["MEMBER", "PAUSED", true],
   ["MEMBER", "IN_BATTLE", true]
-] as const)("filters %s viewer for %s route", async (viewerKind, status, visible) => {
+] as const)("shows %s viewer the %s route", async (viewerKind, status, visible) => {
   const port = new MemoryOverlayPort();
   await new RouteOverlayService(port).reconcile(
     [

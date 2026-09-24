@@ -42,7 +42,16 @@ it("lets GM enter exact HP and fix it without quick adjustment buttons", () => {
   fireEvent.click(screen.getByRole("button", { name: "Зафиксировать" }));
 
   expect(onAction).toHaveBeenCalledTimes(1);
-  expect(onAction).toHaveBeenCalledWith({ type: "SET_ARMY_HP", armyId: "army-red", hp: 27 });
+  expect(onAction).toHaveBeenCalledWith({ type: "SET_ARMY_HP", armyId: "army-red", hp: 27, maxHp: 50 });
+});
+
+it("allows GM to increase the maximum without changing current HP", () => {
+  const onAction = vi.fn();
+  render(<ArmyCard army={army} isGM canEditRoute canRequestDisband onAction={onAction} />);
+  fireEvent.click(screen.getByText("Управление"));
+  fireEvent.change(screen.getByRole("spinbutton", { name: "Максимальное HP Первая армия" }), { target: { value: "80" } });
+  fireEvent.click(screen.getByRole("button", { name: "Зафиксировать" }));
+  expect(onAction).toHaveBeenCalledWith({ type: "SET_ARMY_HP", armyId: "army-red", hp: 45, maxHp: 80 });
 });
 
 it("does not allow fixing an empty, negative or above-maximum HP value", () => {

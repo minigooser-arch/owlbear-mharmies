@@ -665,7 +665,7 @@ export function normalizeArmyState(raw: unknown): ValidationResult<ArmyState> {
     movement: normalizeMovement(raw.movement),
     health: (() => {
       const health = isRecord(raw.health) ? raw.health : {};
-      const maxHp = positiveInteger(health.maxHp) ? health.maxHp : 50;
+      const maxHp = positiveInteger(health.maxHp) ? health.maxHp : 40;
       const hp = Number.isInteger(health.hp) && nonNegative(health.hp)
         ? Math.min(health.hp as number, maxHp)
         : maxHp;
