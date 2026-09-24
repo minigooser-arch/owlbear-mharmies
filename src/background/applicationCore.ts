@@ -34,1751 +34,4 @@ import { SHIP_CLASSES } from "../naval/ships/shipClasses";
 import { rotationForFacing } from "../naval/ships/shipRotation";
 import { visibleShipIdsForPlayer } from "../naval/detection/navalVisibility";
 import { validateNavalBattleRequest } from "../naval/battle/navalBattleRequest";
-import { hasNavalBattleLineOfSight } from "../naval/battle/navalBattleLineOfSight";
-import { hasNavalLineOfSight } from "../naval/detection/navalLineOfSight";
-import { getDueTurnBoundary } from "../turns/turnSchedule";
-import { completeTurn } from "../turns/turnService";
-import { getDestinationMovementCostUnits } from "../terrain/terrainRegistry";
-import { GridDistanceService } from "../grid/gridDistance";
-import { StrategicGridAdapter } from "../grid/strategicGrid";
-import { RouteOverlayService } from "../routes/routeOverlayService";
-import { validateStrategicRouteShape } from "../routes/strategicRoute";
-import {
-  registerRouteTool,
-  type RouteToolRegistration
-} from "../owlbear/routeToolIntegration";
-import {
-  registerShipRouteTool,
-  type ShipRouteToolRegistration
-} from "../owlbear/shipRouteToolIntegration";
-import {
-  registerTransportLandingTool,
-  type TransportLandingToolRegistration
-} from "../owlbear/transportLandingTool";
-import {
-  RouteToolService,
-  snapRouteToGrid
-} from "./routeToolService";
-import { ShipRouteToolService } from "./shipRouteToolService";
-import { TransportLandingToolService } from "./transportLandingToolService";
-import { MapBrushToolService } from "./mapBrushToolService";
-import { NavalBattleAreaToolService } from "./navalBattleAreaToolService";
-import { NavalInterceptionContextMenuService } from "./navalInterceptionContextMenuService";
-import { registerMapBrushTool, type MapBrushToolRegistration } from "../owlbear/mapBrushTool";
-import { registerNavalBattleAreaTool, type NavalBattleAreaToolRegistration } from "../owlbear/navalBattleAreaTool";
-import { METADATA_KEYS } from "../shared/constants";
-import {
-  COMMAND_PROTOCOL_VERSION,
-  type ArmyState,
-  type BattleGroup,
-  type SceneItemRecord,
-  type SceneState,
-  type SideRelation,
-  type StateRelations,
-  type Vector2
-} from "../shared/types";
-import { MetadataRepository, RevisionConflict, type ArmyRecord, type BarrierRecord } from "../storage/metadataRepository";
-import { GridStorageError } from "../storage/gridChunkCodec";
-import { buildDetectionGraph } from "../visibility/detectionGraph";
-import { buildSceneDetectionGraph, detectedShipIdsForSide } from "../visibility/sceneDetectionGraph";
-import { LocalCloneReconciler, UpdateOriginGuard } from "../visibility/localCloneReconciler";
-import { visibleArmyIdsForPlayer } from "../visibility/visibilityEngine";
-import type { OwlbearPort } from "../owlbear/sdkAdapter";
-import {
-  CoordinatorLease,
-  resolveCoordinatorConnectionId,
-  type CoordinatorParticipant,
-  type HeartbeatLease
-} from "./coordinator";
-import { BackgroundRuntime, type BackgroundRuntimePort } from "./runtime";
-
-type BarrierPurpose = "movement" | "vision";
-
-type CommandAckPayload = Omit<CommandAck, "protocolVersion">;
-
-export function sendCommandAck(
-  port: Pick<OwlbearPort, "send">,
-  acknowledgement: CommandAckPayload
-): Promise<void> {
-  return port.send(CommandGateway.ACK_CHANNEL, {
-    protocolVersion: COMMAND_PROTOCOL_VERSION,
-    ...acknowledgement
-  });
-}
-
-export interface ConnectedParticipant {
-  id: string;
-  connectionId: string;
-  role: "GM" | "PLAYER";
-}
-
-export interface BackgroundCommandDispatchInput {
-  event: BroadcastEvent;
-  participants: readonly ConnectedParticipant[];
-  currentConnectionId: string;
-  lease: HeartbeatLease | undefined;
-  now: number;
-  ready: boolean;
-  active: boolean;
-  sendAck(acknowledgement: CommandAckPayload): Promise<void>;
-  process(sender: CommandSender): Promise<void>;
-}
-
-function recoverRequestId(value: unknown): string | undefined {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
-  const requestId = (value as Record<string, unknown>).requestId;
-  return typeof requestId === "string" && requestId.trim().length > 0
-    ? requestId
-    : undefined;
-}
-
-function commandProtocol(value: unknown): unknown {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
-  return (value as Record<string, unknown>).protocolVersion;
-}
-
-export async function dispatchBackgroundCommand(
-  input: BackgroundCommandDispatchInput
-): Promise<void> {
-  const sender = input.participants.find(
-    (participant) => participant.connectionId === input.event.connectionId
-  );
-  if (!sender) return;
-  const authoritativeConnectionId = resolveCoordinatorConnectionId(
-    input.participants.map(({ connectionId, role }) => ({ connectionId, role })),
-    input.lease,
-    input.now
-  );
-  if (authoritativeConnectionId !== input.currentConnectionId) return;
-  const requestId = recoverRequestId(input.event.data);
-  if (!requestId) return;
-  if (commandProtocol(input.event.data) !== COMMAND_PROTOCOL_VERSION) {
-    await input.sendAck({
-      requestId,
-      status: "REJECTED",
-      reason: "PROTOCOL_MISMATCH",
-      coordinatorConnectionId: input.currentConnectionId,
-      recipientConnectionId: sender.connectionId
-    });
-    return;
-  }
-  if (!input.ready || !input.active) {
-    await input.sendAck({
-      requestId,
-      status: "REJECTED",
-      reason: "BACKGROUND_NOT_READY",
-      coordinatorConnectionId: input.currentConnectionId,
-      recipientConnectionId: sender.connectionId
-    });
-    return;
-  }
-  await input.process({
-    role: sender.role,
-    playerId: sender.id,
-    connectionId: sender.connectionId,
-    connectedPlayerIds: new Set(input.participants.map((participant) => participant.id))
-  });
-}
-
-export type BackgroundOperationalErrorReporter = (
-  error: unknown,
-  context: string
-) => void;
-
-function defaultBackgroundOperationalErrorReporter(
-  error: unknown,
-  context: string
-): void {
-  console.error(`Letopis Armies background operation failed: ${context}`, error);
-}
-
-export class SceneWorkTracker {
-  private readonly pending = new Set<Promise<void>>();
-
-  constructor(
-    private readonly reportError: BackgroundOperationalErrorReporter = defaultBackgroundOperationalErrorReporter
-  ) {}
-
-  track(work: Promise<unknown>): void {
-    const tracked = work.then(() => undefined).finally(() => this.pending.delete(tracked));
-    this.pending.add(tracked);
-    void tracked.catch((error: unknown) => this.reportError(error, "scene-work"));
-  }
-
-  async drain(): Promise<void> {
-    while (this.pending.size > 0) {
-      await Promise.allSettled([...this.pending]);
-    }
-  }
-}
-
-export function mergeCurrentParticipant(
-  party: readonly ConnectedParticipant[],
-  current: ConnectedParticipant
-): ConnectedParticipant[] {
-  return [
-    ...party.filter(
-      (player) => player.id !== current.id && player.connectionId !== current.connectionId
-    ),
-    current
-  ];
-}
-
-function curvePoints(item: SceneItemRecord): Vector2[] {
-  if (!Array.isArray(item.points)) return [];
-  return item.points.filter((point): point is Vector2 => {
-    if (typeof point !== "object" || point === null) return false;
-    const candidate = point as Record<string, unknown>;
-    return typeof candidate.x === "number" && typeof candidate.y === "number";
-  });
-}
-
-export function localOverlayIds(items: readonly SceneItemRecord[]): string[] {
-  const keys = [
-    METADATA_KEYS.localClone,
-    METADATA_KEYS.routeOverlay,
-    METADATA_KEYS.routePreview,
-    METADATA_KEYS.shipRouteOverlay,
-    METADATA_KEYS.shipRoutePreview,
-    METADATA_KEYS.barrierOverlay,
-    METADATA_KEYS.mapOverlay,
-    METADATA_KEYS.healthOverlay,
-    METADATA_KEYS.navalShipOverlay,
-    METADATA_KEYS.interceptionOverlay,
-    METADATA_KEYS.mapBrushPreview,
-    METADATA_KEYS.navalBattleAreaPreview
-  ];
-  return items
-    .filter((item) => keys.some((key) => item.metadata[key] !== undefined))
-    .map((item) => item.id);
-}
-
-export function extractBarrierSegments(
-  records: readonly BarrierRecord[],
-  purpose: BarrierPurpose
-): BarrierSegment[] {
-  return records.flatMap((record) => {
-    const enabled = purpose === "movement" ? record.state.blocksMovement : record.state.blocksVision;
-    return enabled ? segmentsFromPolyline(record.item.id, curvePoints(record.item)) : [];
-  });
-}
-
-function relation(scene: SceneState, left: string, right: string): SideRelation {
-  return scene.relations[left]?.[right] ?? "NEUTRAL";
-}
-
-function cloneArmyState(state: ArmyState, patch: Partial<ArmyState>): ArmyState {
-  return { ...state, ...patch, revision: state.revision + 1 };
-}
-
-export interface CommandSender {
-  role: "GM" | "PLAYER";
-  playerId: string;
-  connectionId: string;
-  connectedPlayerIds: ReadonlySet<string>;
-}
-
-interface AppliedMetadataWrite {
-  itemId: string;
-  key: string;
-  previousValue: unknown | undefined;
-  rollbackUpdate: Record<string, unknown>;
-  expectedRevision: number | null;
-}
-
-export class ProductionEngine {
-  private readonly repository: MetadataRepository;
-  private readonly grid: GridDistanceService;
-  private readonly cloneReconciler: LocalCloneReconciler;
-  private coordinator = false;
-  private coordinatorGeneration = 0;
-  private activeCoordinatorConnectionId: string | undefined;
-  private lastMovementAt = performance.now();
-  private mutationTail: Promise<void> = Promise.resolve();
-  private lastMapOverlaySignature: string | undefined;
-  private clearedLegacyMapOverlays = false;
-  private clearedSharedMapOverlays = false;
-
-  constructor(
-    private readonly port: OwlbearPort,
-    private readonly wallClock: () => Date = () => new Date(),
-    private readonly reportOperationalError: BackgroundOperationalErrorReporter = defaultBackgroundOperationalErrorReporter
-  ) {
-    this.repository = new MetadataRepository(port);
-    this.grid = new GridDistanceService(port);
-    this.cloneReconciler = new LocalCloneReconciler(port, new UpdateOriginGuard());
-  }
-
-  setCoordinator(active: boolean, connectionId?: string): void {
-    this.coordinatorGeneration += 1;
-    this.coordinator = active;
-    this.activeCoordinatorConnectionId = active ? connectionId : undefined;
-    if (active) this.lastMovementAt = performance.now();
-  }
-
-  isCoordinator(): boolean {
-    return this.coordinator;
-  }
-
-  invalidateOverlayCaches(): void {
-    this.lastMapOverlaySignature = undefined;
-    this.clearedLegacyMapOverlays = false;
-    this.clearedSharedMapOverlays = false;
-  }
-
-  async readCoordinatorLease(): Promise<HeartbeatLease | undefined> {
-    return this.repository.readCoordinatorLease();
-  }
-
-  private captureCoordinatorGuard(expectedConnectionId = this.activeCoordinatorConnectionId): () => boolean {
-    const generation = this.coordinatorGeneration;
-    return () =>
-      this.coordinator &&
-      this.coordinatorGeneration === generation &&
-      this.activeCoordinatorConnectionId === expectedConnectionId;
-  }
-
-  async visibilityTick(role: "GM" | "PLAYER", playerId: string): Promise<void> {
-    const [scene, armies, barriers, sceneItems] = await Promise.all([
-      this.repository.readScene(),
-      this.repository.readArmies(),
-      this.repository.readBarriers(),
-      this.port.getSceneItems()
-    ]);
-    const sceneItemById = new Map(sceneItems.map((item) => [item.id, item]));
-    const reciprocallyEmbarkedArmyIds = new Set(armies.flatMap(({ item, state }) => {
-      if (state.embarkedOnShipId == null) return [];
-      const ship = scene.ships?.[state.embarkedOnShipId];
-      return ship?.embarkedArmyId === item.id ? [item.id] : [];
-    }));
-    const activeLandArmies = armies.filter(({ item }) => !reciprocallyEmbarkedArmyIds.has(item.id));
-    const armyDetectionUnits = activeLandArmies.map(({ item, state }) => ({
-      id: item.id,
-      sideId: state.sideId,
-      position: item.position,
-      detectionRangeCells:
-        state.overrides.detectionRangeCells ?? scene.settings.defaultDetectionRangeCells,
-      ignoresVisionBarriers: state.ignoresVisionBarriers
-    }));
-    const shipDetectionUnits = Object.entries(scene.ships ?? {}).flatMap(([shipId, state]) => {
-      const item = sceneItemById.get(shipId);
-      if (!item) return [];
-      return [{
-        id: shipId,
-        sideId: state.sideId,
-        position: item.position,
-        detectionRangeCells: state.detectionOverride ?? scene.settings.defaultDetectionRangeCells,
-        ignoresVisionBarriers: false
-      }];
-    });
-    const graph = await buildDetectionGraph({
-      mode: scene.settings.detectionMode,
-      units: [...armyDetectionUnits, ...shipDetectionUnits],
-      distancePort: this.grid,
-      visionBarriers: extractBarrierSegments(barriers, "vision")
-    });
-    const memberSideIds = scene.sides
-      .filter((side) => side.playerIds.includes(playerId))
-      .map((side) => side.id);
-    const leaderSideIds = scene.sides
-      .filter((side) => side.leaderPlayerIds.includes(playerId))
-      .map((side) => side.id);
-    const visible = visibleArmyIdsForPlayer({
-      isGM: role === "GM",
-      playerSideIds: memberSideIds,
-      armies: activeLandArmies.map(({ item, state }) => ({ id: item.id, sideId: state.sideId })),
-      detectionGraph: graph,
-      battleGroups: scene.battleGroups
-    });
-    const visibleShips = visibleShipIdsForPlayer({
-      isGM: role === "GM",
-      playerSideIds: memberSideIds,
-      ships: scene.ships ?? {},
-      detectionGraph: graph,
-      revealUntilTurn: scene.navalRevealUntilTurn ?? {},
-      currentTurn: scene.turn.turnNumber
-    });
-    const shipSources = sceneItems.filter((item) => (scene.ships ?? {})[item.id] !== undefined);
-    const visibleSourceIds = new Set([...visible, ...visibleShips]);
-    await this.cloneReconciler.reconcile(
-      visibleSourceIds,
-      [...armies.map((record) => record.item), ...shipSources]
-    );
-    await this.reconcileOverlays(
-      scene,
-      activeLandArmies,
-      barriers,
-      role,
-      memberSideIds,
-      leaderSideIds,
-      visible,
-      sceneItems,
-      visibleShips
-    );
-  }
-
-  movementTick(): Promise<void> {
-    return this.enqueueMutation(() => this.movementTickNow());
-  }
-
-  turnTick(): Promise<void> {
-    return this.enqueueMutation(() => this.turnTickNow());
-  }
-
-  private async turnTickNow(): Promise<void> {
-    if (!this.coordinator) return;
-    const expectedCoordinatorConnectionId = this.activeCoordinatorConnectionId;
-    const canCommit = this.captureCoordinatorGuard(expectedCoordinatorConnectionId);
-    const now = this.wallClock();
-    const [scene, armyRecords, barrierRecords, sceneItems] = await Promise.all([
-      this.repository.readScene(),
-      this.repository.readArmies(),
-      this.repository.readBarriers(),
-      this.port.getSceneItems()
-    ]);
-    if (!canCommit()) return;
-    const boundary = getDueTurnBoundary(now, scene.turn);
-    if (!boundary) return;
-    const armies = Object.fromEntries(armyRecords.map((record) => [record.item.id, record.state]));
-    let strategicGrid: StrategicGridAdapter;
-    try {
-      strategicGrid = new StrategicGridAdapter({
-        dpi: await this.grid.getDpi(),
-        offset: { x: 0, y: 0 }
-      });
-    } catch (error) {
-      this.reportOperationalError(error, "turn-grid-unavailable");
-      return;
-    }
-    const armyCells = Object.fromEntries(armyRecords.map((record) => [
-      record.item.id,
-      strategicGrid.sceneToCell(record.item.position)
-    ]));
-    const completion = completeTurn(scene, armies, {
-      source: "SCHEDULE",
-      completedAt: now,
-      boundaryId: boundary.id,
-      positionForCell: (cell) => strategicGrid.cellToSceneCenter(cell),
-      armyCells
-    });
-    if (!completion.changed) return;
-
-    const previous: CommandState = {
-      scene,
-      armies,
-      barriers: Object.fromEntries(barrierRecords.map((record) => [record.item.id, record.state])),
-      items: Object.fromEntries(sceneItems.map((item) => [item.id, item])),
-      positions: Object.fromEntries(sceneItems.map((item) => [item.id, item.position]))
-    };
-    const next: CommandState = {
-      ...structuredClone(previous),
-      scene: { ...completion.scene, revision: scene.revision + 1 },
-      armies: completion.armies
-    };
-    if (!canCommit()) return;
-    await this.persistCommandState(next, previous, sceneItems);
-  }
-
-  private async movementTickNow(): Promise<void> {
-    if (!this.coordinator) return;
-    const expectedCoordinatorConnectionId = this.activeCoordinatorConnectionId;
-    const canCommit = this.captureCoordinatorGuard(expectedCoordinatorConnectionId);
-    const now = performance.now();
-    const deltaSeconds = Math.max(0, (now - this.lastMovementAt) / 1_000);
-    this.lastMovementAt = now;
-    const [scene, armies, barriers] = await Promise.all([
-      this.repository.readScene(),
-      this.repository.readArmies(),
-      this.repository.readBarriers()
-    ]);
-    const moving = armies.filter((record) => {
-      if (record.state.status !== "MOVING") return false;
-      const shipId = record.state.embarkedOnShipId;
-      if (shipId == null) return true;
-      return scene.ships?.[shipId]?.embarkedArmyId !== record.item.id;
-    });
-    if (moving.length === 0) return;
-    const movementBarriers = extractBarrierSegments(barriers, "movement");
-    let strategicGrid: StrategicGridAdapter;
-    try {
-      strategicGrid = new StrategicGridAdapter({
-        dpi: await this.grid.getDpi(),
-        offset: { x: 0, y: 0 }
-      });
-    } catch (error) {
-      this.reportOperationalError(error, "movement-grid-unavailable");
-      return;
-    }
-    const frames: Array<{
-      record: ArmyRecord;
-      from: Vector2;
-      to: Vector2;
-      state: ArmyState;
-    }> = [];
-    const movingIds = new Set(moving.map((record) => record.item.id));
-    const strategicConflictEdges = findStrategicConflictEdges(
-      moving.flatMap((record) => {
-        const enteredCount = Math.max(0, Math.min(record.state.plannedRoute.cells.length, record.state.movement.enteredRouteCellCount));
-        const nextCell = record.state.plannedRoute.cells[enteredCount];
-        if (!nextCell) return [];
-        return [{
-          armyId: record.item.id,
-          sideId: record.state.sideId,
-          from: strategicGrid.sceneToCell(record.item.position),
-          to: nextCell
-        }];
-      }),
-      (left, right) => relation(scene, left, right),
-      armies
-        .filter((record) => !movingIds.has(record.item.id))
-        .map((record) => ({
-          armyId: record.item.id,
-          sideId: record.state.sideId,
-          cell: strategicGrid.sceneToCell(record.item.position)
-        }))
-    );
-    const strategicBattleArmyIds = new Set(strategicConflictEdges.flat());
-    for (const record of moving) {
-      if (strategicBattleArmyIds.has(record.item.id)) {
-        frames.push({
-          record,
-          from: { ...record.item.position },
-          to: { ...record.item.position },
-          state: cloneArmyState(record.state, {
-            status: "IN_BATTLE",
-            stopReason: "BATTLE",
-            movement: { ...record.state.movement, remainingUnits: 0 }
-          })
-        });
-        continue;
-      }
-      const enteredCount = Math.max(
-        0,
-        Math.min(record.state.plannedRoute.cells.length, record.state.movement.enteredRouteCellCount)
-      );
-      const remainingCells = unenteredRouteCells(record.state.plannedRoute.cells, enteredCount);
-      const remainingStart = enteredCount === 0
-        ? record.state.plannedRoute.startCell
-        : record.state.plannedRoute.cells[enteredCount - 1] ?? record.state.plannedRoute.startCell;
-      const political = forcedExitRouteGate(scene, record.item.id, record.state, remainingStart, remainingCells) ?? politicalRouteGate({
-        sideId: record.state.sideId,
-        cells: remainingCells,
-        gridMap: scene.gridMap,
-        sides: scene.sides,
-        states: scene.states,
-        stateRelations: scene.stateRelations ?? {}
-      });
-      const authorizedCells = remainingCells.slice(0, political.allowedCellCount);
-      if (remainingCells.length > 0 && political.allowedCellCount === 0 && political.blockedReason && political.blockedCell) {
-        frames.push({
-          record,
-          from: { ...record.item.position },
-          to: { ...record.item.position },
-          state: cloneArmyState(record.state, {
-            status: "PAUSED",
-            stopReason: "INVALID_ROUTE",
-            plannedRoute: {
-              ...record.state.plannedRoute,
-              validatedRevision: scene.revision,
-              invalidReason: political.blockedReason,
-              invalidCell: { ...political.blockedCell }
-            }
-          })
-        });
-        continue;
-      }
-      const validation = record.state.plannedRoute.requiresReplan
-        ? undefined
-        : validatePlannedRoute({
-            start: remainingStart,
-            cells: authorizedCells,
-            sideId: record.state.sideId,
-            terrain: scene.terrain,
-            wars: scene.wars,
-            remainingUnits: record.state.movement.remainingUnits,
-            readCell: (cell) => readCell(scene.gridMap, cell),
-            armyStateAllowsMovement: true,
-            skipLegacyPoliticalCheck: true
-          });
-      if (!validation || !validation.valid) {
-        const plannedRoute: ArmyState["plannedRoute"] = validation && !validation.valid
-          ? {
-              ...record.state.plannedRoute,
-              validatedRevision: scene.revision,
-              invalidReason: validation.reason,
-              invalidCell: { ...validation.problemCell }
-            }
-          : { ...record.state.plannedRoute };
-        frames.push({
-          record,
-          from: { ...record.item.position },
-          to: { ...record.item.position },
-          state: cloneArmyState(record.state, {
-            status: "PAUSED",
-            stopReason: "INVALID_ROUTE",
-            plannedRoute
-          })
-        });
-        continue;
-      }
-
-      const plannedRoute: ArmyState["plannedRoute"] = {
-        startCell: { ...record.state.plannedRoute.startCell },
-        executeOnTurn: record.state.plannedRoute.executeOnTurn,
-        cells: record.state.plannedRoute.cells.map((cell) => ({ ...cell })),
-        totalCostUnits: record.state.plannedRoute.totalCostUnits,
-        validatedRevision: scene.revision,
-        requiresReplan: false,
-        ...(political.blockedReason && political.blockedCell
-          ? {
-              invalidReason: political.blockedReason,
-              invalidCell: { ...political.blockedCell }
-            }
-          : {})
-      };
-      const maxWaypointExclusive = record.state.currentWaypointIndex + political.allowedCellCount;
-      const waypoints = political.blockedReason
-        ? record.state.route.slice(0, maxWaypointExclusive)
-        : record.state.route;
-      const result = await advanceArmy({
-        position: record.item.position,
-        waypoints,
-        currentWaypointIndex: record.state.currentWaypointIndex,
-        segmentProgressCells: record.state.segmentProgressCells,
-        speedCellsPerSecond:
-          record.state.overrides.speedCellsPerSecond ?? scene.settings.defaultSpeedCellsPerSecond,
-        deltaSeconds,
-        distancePort: this.grid,
-        movementBarriers,
-        ignoresMovementBarriers: record.state.ignoresMovementBarriers
-      });
-      const reachedClosedBorder = Boolean(political.blockedReason) && result.status === "READY";
-      frames.push({
-        record,
-        from: { ...record.item.position },
-        to: result.position,
-        state: cloneArmyState(record.state, {
-          status: reachedClosedBorder ? "PAUSED" : result.status,
-          currentWaypointIndex: result.currentWaypointIndex,
-          segmentProgressCells: result.segmentProgressCells,
-          plannedRoute,
-          ...(reachedClosedBorder
-            ? { stopReason: "INVALID_ROUTE" }
-            : result.stopReason ? { stopReason: result.stopReason } : {})
-        })
-      });
-    }
-
-    const collisions = await findEarliestEnemyCollisions({
-      armies: frames.map((frame) => ({
-        id: frame.record.item.id,
-        sideId: frame.record.state.sideId,
-        from: frame.from,
-        to: frame.to,
-        collisionRangeCells:
-          frame.record.state.overrides.collisionRangeCells ?? scene.settings.defaultCollisionRangeCells
-      })),
-      relationForSides: (left, right) => relation(scene, left, right),
-      distancePort: this.grid
-    });
-
-    let battleGroups: BattleGroup[] | undefined;
-    const collisionEdges = collisions.map((collision) => [collision.armyAId, collision.armyBId] as const);
-    const allBattleEdges = [...strategicConflictEdges, ...collisionEdges];
-    if (allBattleEdges.length > 0) {
-      battleGroups = joinReinforcements(scene.battleGroups, allBattleEdges, () => crypto.randomUUID());
-      const collisionPositions = new Map<string, Vector2>();
-      for (const collision of collisions) {
-        collisionPositions.set(collision.armyAId, collision.positionA);
-        collisionPositions.set(collision.armyBId, collision.positionB);
-      }
-      for (const frame of frames) {
-        const inBattle = allBattleEdges.some(([left, right]) => left === frame.record.item.id || right === frame.record.item.id);
-        if (!inBattle) continue;
-        const collisionPosition = collisionPositions.get(frame.record.item.id);
-        if (collisionPosition) frame.to = collisionPosition;
-        const group = battleGroups.find((candidate) => candidate.participantIds.includes(frame.record.item.id));
-        frame.state = cloneArmyState(frame.state, {
-          status: "IN_BATTLE",
-          stopReason: "BATTLE",
-          movement: { ...frame.state.movement, remainingUnits: 0 },
-          ...(group ? { battleGroupId: group.battleId } : {})
-        });
-      }
-      for (const record of armies) {
-        if (movingIds.has(record.item.id) || !strategicBattleArmyIds.has(record.item.id)) continue;
-        const group = battleGroups.find((candidate) => candidate.participantIds.includes(record.item.id));
-        if (!canCommit()) return;
-        await this.port.patchSceneItemMetadata(
-          record.item.id,
-          METADATA_KEYS.army,
-          cloneArmyState(record.state, {
-            status: "IN_BATTLE",
-            stopReason: "BATTLE",
-            movement: { ...record.state.movement, remainingUnits: 0 },
-            ...(group ? { battleGroupId: group.battleId } : {})
-          }),
-          {},
-          record.state.revision
-        );
-      }
-    }
-
-    const annexOperations: CellPatchOperation[] = [];
-    let nextStateRelations: StateRelations = structuredClone(scene.stateRelations ?? {});
-    for (const frame of frames) {
-      if (!frame.state.plannedRoute.requiresReplan && frame.state.plannedRoute.cells.length > 0) {
-        const progress = reconcileStrategicMovementProgress({
-          routeCells: frame.state.plannedRoute.cells,
-          previousEnteredCount: frame.record.state.movement.enteredRouteCellCount,
-          movementWaypointIndex: frame.state.currentWaypointIndex,
-          finalCell: strategicGrid.sceneToCell(frame.to),
-          remainingUnits: frame.record.state.movement.remainingUnits,
-          costForCell: (cell) => {
-            const cost = getDestinationMovementCostUnits(scene.terrain, readCell(scene.gridMap, cell));
-            if (cost === undefined) throw new Error(`Invalid terrain for strategic cell ${cell.x},${cell.y}`);
-            return cost;
-          }
-        });
-        frame.state = {
-          ...frame.state,
-          movement: {
-            ...frame.state.movement,
-            remainingUnits: frame.state.status === "IN_BATTLE" ? 0 : progress.remainingUnits,
-            enteredRouteCellCount: progress.enteredRouteCellCount
-          }
-        };
-        const enteredCells = frame.state.plannedRoute.cells.slice(
-          frame.record.state.movement.enteredRouteCellCount,
-          progress.enteredRouteCellCount
-        );
-        const withdrawing = forcedExitRouteGate(scene, frame.record.item.id, frame.record.state,
-          frame.record.state.plannedRoute.startCell, frame.record.state.plannedRoute.cells);
-        const diplomacy = withdrawing ? {stateRelations: nextStateRelations} : applyDiplomacyForEnteredCells({
-          sideId: frame.state.sideId,
-          cells: enteredCells,
-          gridMap: scene.gridMap,
-          sides: scene.sides,
-          states: scene.states,
-          stateRelations: nextStateRelations
-        });
-        nextStateRelations = diplomacy.stateRelations;
-        for (const cell of enteredCells) {
-          const destination = readCell(scene.gridMap, cell);
-          const annexingStateId = annexingStateForEntry(
-            { states: scene.states, sides: scene.sides, wars: scene.wars, stateRelations: nextStateRelations },
-            frame.state.sideId,
-            destination
-          );
-          if (annexingStateId) annexOperations.push({ cell, patch: { deFactoStateId: annexingStateId } });
-        }
-      }
-      if (!canCommit()) return;
-      await this.port.patchSceneItemMetadata(
-        frame.record.item.id,
-        METADATA_KEYS.army,
-        frame.state,
-        { position: frame.to },
-        frame.record.state.revision
-      );
-    }
-    const nextForcedExits = (scene.forcedExitStates ?? []).filter((entry) => {
-      const frame = frames.find((candidate) => candidate.record.item.id === entry.armyId);
-      if (!frame) return true;
-      const reached = frame.state.plannedRoute.cells[frame.state.movement.enteredRouteCellCount - 1];
-      return !reached || !hasRightToRemain(scene, frame.state, reached);
-    });
-    const forcedExitsChanged = nextForcedExits.length !== (scene.forcedExitStates ?? []).length;
-    const nextGridMap = applyCellPatchBatch(scene.gridMap, annexOperations);
-    const stateRelationsChanged = JSON.stringify(nextStateRelations) !== JSON.stringify(scene.stateRelations ?? {});
-    if (battleGroups || nextGridMap !== scene.gridMap || stateRelationsChanged || forcedExitsChanged) {
-      if (!canCommit()) return;
-      await this.repository.writeScene(
-        {
-          ...scene,
-          revision: scene.revision + 1,
-          battleGroups: battleGroups ?? scene.battleGroups,
-          gridMap: nextGridMap,
-          ...(scene.strategicCities ? {strategicCities: scene.strategicCities.map((city) => {
-            const controller = resolveCityDeFactoState(city, nextGridMap);
-            return controller ? {...city, deFactoStateId: controller} : city;
-          })} : {}),
-          stateRelations: nextStateRelations,
-          forcedExitStates: nextForcedExits
-        },
-        scene.revision,
-        (current) =>
-          canCommit() &&
-          (expectedCoordinatorConnectionId === undefined ||
-            current.coordinatorLease?.connectionId === expectedCoordinatorConnectionId)
-      );
-    }
-  }
-
-  pauseMovingArmies(): Promise<void> {
-    return this.enqueueMutation(() => this.pauseMovingArmiesNow());
-  }
-
-  private async pauseMovingArmiesNow(): Promise<void> {
-    const armies = await this.repository.readArmies();
-    for (const record of armies) {
-      if (record.state.status !== "MOVING") continue;
-      await this.port.patchSceneItemMetadata(
-        record.item.id,
-        METADATA_KEYS.army,
-        cloneArmyState(record.state, {
-          status: "PAUSED",
-          stopReason: "COORDINATOR_GAP"
-        }),
-        {},
-        record.state.revision
-      );
-    }
-  }
-
-  processCommand(event: BroadcastEvent, sender: CommandSender): Promise<void> {
-    return this.enqueueMutation(() => this.processCommandNow(event, sender));
-  }
-
-  private async processCommandNow(event: BroadcastEvent, sender: CommandSender): Promise<void> {
-    if (!this.coordinator) return;
-    const validation = validateArmyCommand(event.data);
-    if (!validation.ok) {
-      if (validation.requestId) {
-        await sendCommandAck(this.port, {
-          requestId: validation.requestId,
-          status: "REJECTED",
-          reason: validation.reason,
-          coordinatorConnectionId: await this.currentConnectionId(),
-          recipientConnectionId: sender.connectionId
-        });
-      }
-      return;
-    }
-    const command = validation.command;
-    const [scene, armyRecords, barrierRecords, sceneItems] = await Promise.all([
-      this.repository.readScene(),
-      this.repository.readArmies(),
-      this.repository.readBarriers(),
-      this.port.getSceneItems()
-    ]);
-    const commandState: CommandState = {
-      scene,
-      armies: Object.fromEntries(armyRecords.map((record) => [record.item.id, record.state])),
-      barriers: Object.fromEntries(barrierRecords.map((record) => [record.item.id, record.state])),
-      items: Object.fromEntries(sceneItems.map((item) => [item.id, item])),
-      positions: Object.fromEntries(sceneItems.map((item) => [item.id, item.position]))
-    };
-    let commandCellForPosition: ((position: Vector2) => import("../shared/types").GridCellCoord) | undefined;
-    let commandPositionForCell: ((cell: import("../shared/types").GridCellCoord) => Vector2) | undefined;
-    if (
-      command.type === "COMPLETE_TURN_NOW" ||
-      command.type === "COMPLETE_MOVEMENT_PHASE" ||
-      command.type === "REGISTER_SHIP" ||
-      command.type === "SET_SHIP_ROUTE" ||
-      command.type === "NAVAL_MOVE_FORWARD" ||
-      command.type === "START_NAVAL_BATTLE" ||
-      command.type === "NAVAL_SHORE_BOMBARDMENT" ||
-      command.type === "EMBARK_ARMY" ||
-      command.type === "ACCEPT_EMBARK_ARMY" ||
-      command.type === "DISEMBARK_ARMY"
-    ) {
-      try {
-        const grid = new StrategicGridAdapter({ dpi: await this.grid.getDpi(), offset: { x: 0, y: 0 } });
-        commandCellForPosition = (position) => grid.sceneToCell(position);
-        commandPositionForCell = (cell) => grid.cellToSceneCenter(cell);
-      } catch {
-        // CommandProcessor rejects commands that require strategic cells when positions cannot be resolved.
-      }
-    }
-    let detectedNavalTargetsForSide: (sideId: string) => ReadonlySet<string> = () => new Set<string>();
-    let visibleArmyTargetsForSide: (sideId: string) => ReadonlySet<string> = () => new Set<string>();
-    if (
-      command.type === "REQUEST_NAVAL_BATTLE" ||
-      command.type === "NAVAL_SHORE_BOMBARDMENT" ||
-      (command.type === "START_NAVAL_BATTLE" && command.navalRequestId !== null)
-    ) {
-      try {
-        const detectionGraph = await buildSceneDetectionGraph({
-          scene,
-          armies: armyRecords,
-          sceneItems,
-          distancePort: this.grid,
-          visionBarriers: extractBarrierSegments(barrierRecords, "vision")
-        });
-        detectedNavalTargetsForSide = (sideId) =>
-          detectedShipIdsForSide(detectionGraph, scene.ships ?? {}, sideId);
-        const armyIds = new Set(armyRecords.map((record) => record.item.id));
-        visibleArmyTargetsForSide = (sideId) => new Set(
-          [...(detectionGraph.visibleTargetsBySide.get(sideId) ?? [])]
-            .filter((unitId) => armyIds.has(unitId))
-        );
-      } catch {
-        // Detection-dependent commands fail closed while authoritative geometry is unavailable.
-      }
-    }
-    if (command.type === "START_NAVAL_BATTLE" && command.navalRequestId !== null) {
-      const navalRequest = scene.navalBattleRequests?.find(
-        (candidate) => candidate.id === command.navalRequestId
-      );
-      if (!navalRequest) {
-        await sendCommandAck(this.port, {
-          requestId: command.requestId,
-          status: "REJECTED",
-          reason: "NAVAL_BATTLE_REQUEST_NOT_FOUND",
-          coordinatorConnectionId: await this.currentConnectionId(),
-          recipientConnectionId: sender.connectionId
-        });
-        return;
-      }
-      if (
-        navalRequest.initiatingShipId !== command.initiatingShipId ||
-        !command.participantShipIds.includes(navalRequest.targetShipId)
-      ) {
-        await sendCommandAck(this.port, {
-          requestId: command.requestId,
-          status: "REJECTED",
-          reason: "INVALID_NAVAL_BATTLE_REQUEST",
-          coordinatorConnectionId: await this.currentConnectionId(),
-          recipientConnectionId: sender.connectionId
-        });
-        return;
-      }
-      const initiatingShip = scene.ships?.[navalRequest.initiatingShipId];
-      const requestValidation = validateNavalBattleRequest({
-        scene: scene as import("../shared/types").NavalSceneState,
-        request: navalRequest,
-        detectedTargetShipIds: initiatingShip
-          ? detectedNavalTargetsForSide(initiatingShip.sideId)
-          : new Set<string>()
-      });
-      if (!requestValidation.ok) {
-        await sendCommandAck(this.port, {
-          requestId: command.requestId,
-          status: "REJECTED",
-          reason: requestValidation.reason,
-          coordinatorConnectionId: await this.currentConnectionId(),
-          recipientConnectionId: sender.connectionId
-        });
-        return;
-      }
-    }
-    let shoreBombardmentDistanceCells: (from: import("../shared/types").GridCellCoord, to: import("../shared/types").GridCellCoord) => number = () => Number.POSITIVE_INFINITY;
-    let shoreBombardmentHasLineOfSight: (from: import("../shared/types").GridCellCoord, to: import("../shared/types").GridCellCoord) => boolean = () => false;
-    if (command.type === "NAVAL_SHORE_BOMBARDMENT" && commandCellForPosition && commandPositionForCell) {
-      const attackerPosition = commandState.positions?.[command.shipId];
-      const targetPosition = commandState.positions?.[command.armyId];
-      if (attackerPosition && targetPosition) {
-        try {
-          const attackerCell = commandCellForPosition(attackerPosition);
-          const targetCell = commandCellForPosition(targetPosition);
-          const distance = await this.grid.distance(
-            commandPositionForCell(attackerCell),
-            commandPositionForCell(targetCell)
-          );
-          shoreBombardmentDistanceCells = () => distance;
-          const occupiedShipCells = Object.keys(scene.ships ?? {}).flatMap((shipId) => {
-            const position = commandState.positions?.[shipId];
-            return position ? [commandCellForPosition(position)] : [];
-          });
-          shoreBombardmentHasLineOfSight = (from, to) =>
-            scene.activeNavalBattle?.status === "ACTIVE"
-              ? hasNavalBattleLineOfSight({ scene, from, to, occupiedShipCells })
-              : hasNavalLineOfSight(scene, from, to);
-        } catch {
-          // Range and LOS remain fail-closed when authoritative grid geometry is unavailable.
-        }
-      }
-    }
-    const result = new CommandProcessor(
-      () => this.wallClock(),
-      commandCellForPosition,
-      commandPositionForCell,
-      detectedNavalTargetsForSide,
-      undefined,
-      visibleArmyTargetsForSide,
-      () => false,
-      shoreBombardmentDistanceCells,
-      shoreBombardmentHasLineOfSight
-    ).execute(
-      {
-        role: sender.role,
-        playerId: sender.playerId,
-        connectionId: sender.connectionId,
-        connectedPlayerIds: sender.connectedPlayerIds,
-        state: commandState
-      },
-      command
-    );
-    const coordinatorConnectionId = await this.currentConnectionId();
-    if (result.status === "ACCEPTED" && command.type === "REGISTER_ARMY") {
-      const item = sceneItems.find((candidate) => candidate.id === command.itemId);
-      if (item) {
-        try {
-          result.state.positions ??= {};
-          result.state.positions[command.itemId] = await this.grid.snapGridCenter(item.position);
-        } catch {
-          await sendCommandAck(this.port, {
-            requestId: command.requestId,
-            status: "REJECTED",
-            reason: "PERSISTENCE_FAILED",
-            coordinatorConnectionId,
-            recipientConnectionId: sender.connectionId
-          });
-          return;
-        }
-      }
-    }
-    if (result.status === "ACCEPTED" && command.type === "SET_ROUTE") {
-      const army = armyRecords.find((record) => record.item.id === command.armyId);
-      if (army) {
-        let snapped: Awaited<ReturnType<typeof snapRouteToGrid>>;
-        try {
-          snapped = await snapRouteToGrid(army.item.position, command.route, this.grid);
-        } catch {
-          await sendCommandAck(this.port, {
-            requestId: command.requestId,
-            status: "REJECTED",
-            reason: "PERSISTENCE_FAILED",
-            coordinatorConnectionId,
-            recipientConnectionId: sender.connectionId
-          });
-          return;
-        }
-        if (!snapped.waypointsWereCentered) {
-          await sendCommandAck(this.port, {
-            requestId: command.requestId,
-            status: "REJECTED",
-            reason: "INVALID_COMMAND",
-            coordinatorConnectionId,
-            recipientConnectionId: sender.connectionId
-          });
-          return;
-        }
-        let failure: ReturnType<typeof validateStrategicRouteShape>;
-        try {
-          const gridDpi = await this.grid.getDpi();
-          failure = validateStrategicRouteShape({
-            start: snapped.start,
-            route: snapped.route,
-            startCell: command.startCell,
-            cells: command.cells,
-            grid: new StrategicGridAdapter({ dpi: gridDpi, offset: { x: 0, y: 0 } }),
-            barriers: army.state.ignoresMovementBarriers
-              ? []
-              : extractBarrierSegments(barrierRecords, "movement")
-          });
-        } catch {
-          await sendCommandAck(this.port, {
-            requestId: command.requestId,
-            status: "REJECTED",
-            reason: "PERSISTENCE_FAILED",
-            coordinatorConnectionId,
-            recipientConnectionId: sender.connectionId
-          });
-          return;
-        }
-        if (failure) {
-          await sendCommandAck(this.port, {
-            requestId: command.requestId,
-            status: "REJECTED",
-            reason: failure,
-            coordinatorConnectionId,
-            recipientConnectionId: sender.connectionId
-          });
-          return;
-        }
-        const nextArmy = result.state.armies[command.armyId];
-        if (nextArmy) nextArmy.route = snapped.route;
-        result.state.positions ??= {};
-        result.state.positions[command.armyId] = snapped.start;
-      }
-    }
-    if (result.status === "ACCEPTED") {
-      const commitScene = await this.repository.readScene();
-      const leaseMatches = this.activeCoordinatorConnectionId === undefined ||
-        commitScene.coordinatorLease?.connectionId === this.activeCoordinatorConnectionId;
-      if (
-        !this.coordinator ||
-        !leaseMatches ||
-        commitScene.revision !== commandState.scene.revision
-      ) {
-        await sendCommandAck(this.port, {
-          requestId: command.requestId,
-          status: "CONFLICT",
-          actualRevision: commitScene.revision,
-          coordinatorConnectionId,
-          recipientConnectionId: sender.connectionId
-        });
-        return;
-      }
-      try {
-        await this.persistCommandState(result.state, commandState, sceneItems);
-      } catch (error) {
-        if (error instanceof RevisionConflict) {
-          await sendCommandAck(this.port, { requestId: command.requestId, status: "CONFLICT", actualRevision: error.actualRevision,
-            coordinatorConnectionId, recipientConnectionId: sender.connectionId });
-          return;
-        }
-        await sendCommandAck(this.port, {
-          requestId: command.requestId,
-          status: "REJECTED",
-          reason: error instanceof GridStorageError ? error.code : "PERSISTENCE_FAILED",
-          coordinatorConnectionId,
-          recipientConnectionId: sender.connectionId
-        });
-        return;
-      }
-      await sendCommandAck(this.port, {
-        requestId: command.requestId,
-        status: "ACCEPTED",
-        coordinatorConnectionId,
-        recipientConnectionId: sender.connectionId
-      });
-    } else {
-      await sendCommandAck(this.port, {
-        requestId: command.requestId,
-        status: result.status,
-        coordinatorConnectionId,
-        recipientConnectionId: sender.connectionId,
-        ...(result.status === "REJECTED" ? { reason: result.reason } : { actualRevision: result.actualRevision })
-      });
-    }
-  }
-
-  private async currentConnectionId(): Promise<string> {
-    if (this.activeCoordinatorConnectionId) return this.activeCoordinatorConnectionId;
-    const raw = (await this.repository.readScene()).coordinatorLease?.connectionId;
-    return raw ?? "";
-  }
-
-  private async persistCommandState(
-    next: CommandState,
-    previous: CommandState,
-    items: readonly SceneItemRecord[]
-  ): Promise<void> {
-    const itemById = new Map(items.map((item) => [item.id, item]));
-    const applied: AppliedMetadataWrite[] = [];
-    const expectedCoordinatorConnectionId = this.activeCoordinatorConnectionId;
-    const canCommit = this.captureCoordinatorGuard(expectedCoordinatorConnectionId);
-    try {
-      const armyIds = new Set([...Object.keys(previous.armies), ...Object.keys(next.armies)]);
-      for (const armyId of armyIds) {
-        const previousState = previous.armies[armyId];
-        const state = next.armies[armyId];
-        const previousPosition = previous.positions?.[armyId];
-        const nextPosition = next.positions?.[armyId];
-        if (
-          JSON.stringify(previousState) === JSON.stringify(state) &&
-          JSON.stringify(previousPosition) === JSON.stringify(nextPosition)
-        ) {
-          continue;
-        }
-        const item = itemById.get(armyId);
-        if (!item) continue;
-        if (!canCommit()) throw new Error("Coordinator stopped during persistence");
-        await this.port.patchSceneItemMetadata(armyId, METADATA_KEYS.army, state, {
-          visible: state === undefined,
-          ...(nextPosition ? { position: nextPosition } : {})
-        }, previousState?.revision ?? null);
-        applied.push({
-          itemId: armyId,
-          key: METADATA_KEYS.army,
-          previousValue: previousState,
-          rollbackUpdate: {
-            visible: item.visible ?? true,
-            ...(previousPosition ? { position: previousPosition } : {})
-          },
-          expectedRevision: state?.revision ?? null
-        });
-      }
-      const previousShips = previous.scene.ships ?? {};
-      const nextShips = next.scene.ships ?? {};
-      const shipIds = new Set([...Object.keys(previousShips), ...Object.keys(nextShips)]);
-      for (const shipId of shipIds) {
-        const previousState = previousShips[shipId];
-        const state = nextShips[shipId];
-        const previousPosition = previous.positions?.[shipId];
-        const nextPosition = next.positions?.[shipId];
-        if (
-          JSON.stringify(previousState) === JSON.stringify(state) &&
-          JSON.stringify(previousPosition) === JSON.stringify(nextPosition)
-        ) continue;
-        const item = itemById.get(shipId);
-        if (!item) continue;
-        if (!canCommit()) throw new Error("Coordinator stopped during persistence");
-        await this.port.patchSceneItemMetadata(
-          shipId,
-          METADATA_KEYS.ship,
-          state,
-          {
-            visible: state === undefined,
-            ...(nextPosition ? { position: nextPosition } : {}),
-            ...(state ? { rotation: rotationForFacing(state.facing) } : {})
-          },
-          previousState?.revision ?? null
-        );
-        applied.push({
-          itemId: shipId,
-          key: METADATA_KEYS.ship,
-          previousValue: previousState,
-          rollbackUpdate: {
-            visible: item.visible ?? true,
-            ...(previousPosition ? { position: previousPosition } : {}),
-            ...(item.rotation !== undefined ? { rotation: item.rotation } : {})
-          },
-          expectedRevision: state?.revision ?? null
-        });
-      }
-      const barrierIds = new Set([
-        ...Object.keys(previous.barriers),
-        ...Object.keys(next.barriers)
-      ]);
-      for (const barrierId of barrierIds) {
-        const previousState = previous.barriers[barrierId];
-        const state = next.barriers[barrierId];
-        if (JSON.stringify(previousState) === JSON.stringify(state)) continue;
-        if (!itemById.has(barrierId)) continue;
-        if (!canCommit()) throw new Error("Coordinator stopped during persistence");
-        await this.port.patchSceneItemMetadata(
-          barrierId,
-          METADATA_KEYS.barrier,
-          state,
-          {},
-          previousState?.revision ?? null
-        );
-        applied.push({
-          itemId: barrierId,
-          key: METADATA_KEYS.barrier,
-          previousValue: previousState,
-          rollbackUpdate: {},
-          expectedRevision: state?.revision ?? null
-        });
-      }
-      if (!canCommit()) throw new Error("Coordinator stopped during persistence");
-      const latestScene = await this.repository.readScene();
-      if (!canCommit()) throw new Error("Coordinator stopped during persistence");
-      if (latestScene.revision !== previous.scene.revision) {
-        throw new Error("Scene revision changed during command persistence");
-      }
-      if (
-        expectedCoordinatorConnectionId !== undefined &&
-        latestScene.coordinatorLease?.connectionId !== expectedCoordinatorConnectionId
-      ) {
-        throw new Error("Coordinator lease changed during command persistence");
-      }
-      const nextSceneWithoutLease = { ...next.scene };
-      delete nextSceneWithoutLease.coordinatorLease;
-      const sceneToWrite = latestScene.coordinatorLease
-        ? { ...nextSceneWithoutLease, coordinatorLease: latestScene.coordinatorLease }
-        : nextSceneWithoutLease;
-      await this.repository.writeScene(
-        sceneToWrite,
-        previous.scene.revision,
-        (current) =>
-          canCommit() &&
-          (expectedCoordinatorConnectionId === undefined ||
-            current.coordinatorLease?.connectionId === expectedCoordinatorConnectionId)
-      );
-    } catch (error) {
-      for (const write of applied.reverse()) {
-        try {
-          await this.port.patchSceneItemMetadata(
-            write.itemId,
-            write.key,
-            write.previousValue,
-            write.rollbackUpdate,
-            write.expectedRevision
-          );
-        } catch {
-          // A newer item revision wins over this guarded compensation.
-        }
-      }
-      throw error;
-    }
-  }
-
-  writeCoordinatorHeartbeat(
-    heartbeat: NonNullable<SceneState["coordinatorLease"]>
-  ): Promise<void> {
-    return this.enqueueMutation(async () => {
-      const generation = this.coordinatorGeneration;
-      const claimIsCurrent = () =>
-        this.coordinatorGeneration === generation &&
-        (!this.coordinator || this.activeCoordinatorConnectionId === heartbeat.connectionId);
-      const leaseIsClaimable = (current: SceneState) => {
-        const lease = current.coordinatorLease;
-        return lease === undefined ||
-          lease.connectionId === heartbeat.connectionId ||
-          lease.expiresAt <= this.wallClock().getTime();
-      };
-
-      if (!claimIsCurrent()) return;
-      const scene = await this.repository.readScene();
-      if (!claimIsCurrent()) return;
-      if (!leaseIsClaimable(scene)) {
-        throw new Error("Coordinator lease is held by another live connection");
-      }
-      try {
-        await this.repository.writeScene(
-          { ...scene, coordinatorLease: heartbeat },
-          scene.revision,
-          (current) => claimIsCurrent() && leaseIsClaimable(current)
-        );
-      } catch (error) {
-        if (!claimIsCurrent()) return;
-        throw error;
-      }
-    });
-  }
-
-  private enqueueMutation<T>(operation: () => Promise<T>): Promise<T> {
-    const result = this.mutationTail.then(operation, operation);
-    this.mutationTail = result.then(
-      () => undefined,
-      () => undefined
-    );
-    return result;
-  }
-
-  async whenIdle(): Promise<void> {
-    await this.mutationTail;
-  }
-
-  private async reconcileOverlays(
-    scene: SceneState,
-    armies: readonly ArmyRecord[],
-    barriers: readonly BarrierRecord[],
-    role: "GM" | "PLAYER",
-    memberSideIds: readonly string[],
-    leaderSideIds: readonly string[],
-    visibleArmyIds: ReadonlySet<string>,
-    sceneItems: readonly SceneItemRecord[],
-    visibleShipIds: ReadonlySet<string>
-  ): Promise<void> {
-    let localItemsSnapshot: Promise<SceneItemRecord[]> | undefined;
-    const overlayPort = {
-      // Overlay types use disjoint metadata keys. A single immutable snapshot is enough
-      // for all reconciliation passes in this visibility frame and avoids repeatedly
-      // transferring a potentially huge scene.local collection through the SDK.
-      getLocalItems: () => {
-        localItemsSnapshot ??= this.port.getLocalItems();
-        return localItemsSnapshot;
-      },
-      addLocalItems: (items: readonly SceneItemRecord[]) => this.port.addLocalItems(items),
-      updateLocalItems: (items: readonly SceneItemRecord[]) => this.port.updateLocalItems(items),
-      deleteLocalItems: (ids: readonly string[]) => this.port.deleteLocalItems(ids),
-      createId: () => crypto.randomUUID()
-    };
-    const sideColors = new Map(scene.sides.map((side) => [side.id, side.color]));
-    await new RouteOverlayService(overlayPort).reconcile(
-      armies
-        .filter((record) => record.state.route.length > 0)
-        .map((record) => ({
-          armyId: record.item.id,
-          sideId: record.state.sideId,
-          status: record.state.status,
-          color: sideColors.get(record.state.sideId) ?? "#607d8b",
-          start: record.item.position,
-          waypoints: record.state.route
-        })),
-      { isGM: role === "GM", memberSideIds, leaderSideIds }
-    );
-    const plannedShips = Object.entries(scene.ships ?? {}).filter(([, state]) => state.plannedRoute.length > 0);
-    const shipRouteViewer = { isGM: role === "GM", leaderSideIds };
-    if (plannedShips.length === 0) {
-      await new ShipRouteOverlayService(overlayPort).reconcile([], shipRouteViewer);
-    } else {
-      try {
-        const routeGrid = new StrategicGridAdapter({ dpi: await this.grid.getDpi(), offset: { x: 0, y: 0 } });
-        const routeItemById = new Map(sceneItems.map((item) => [item.id, item]));
-        await new ShipRouteOverlayService(overlayPort).reconcile(
-          plannedShips.flatMap(([shipId, state]) => {
-            const item = routeItemById.get(shipId);
-            if (!item) return [];
-            return [{
-              shipId,
-              sideId: state.sideId,
-              color: sideColors.get(state.sideId) ?? "#607d8b",
-              start: item.position,
-              waypoints: state.plannedRoute.map((cell) => routeGrid.cellToSceneCenter(cell))
-            }];
-          }),
-          shipRouteViewer
-        );
-      } catch {
-        // Preserve the last valid route overlay while Owlbear grid geometry is unavailable.
-      }
-    }
-
-    await new BarrierOverlayService(overlayPort).reconcile(
-      barriers.map((record) => ({
-        id: record.item.id,
-        points: curvePoints(record.item),
-        color: record.state.color,
-        visibility: record.state.visibility
-      })),
-      role === "GM"
-    );
-
-    await new HealthOverlayService(overlayPort).reconcile(
-      armies.map((record) => ({
-        armyId: record.item.id,
-        position: record.item.position,
-        hp: record.state.health.hp,
-        maxHp: record.state.health.maxHp,
-        color: sideColors.get(record.state.sideId) ?? "#ffffff"
-      })),
-      visibleArmyIds
-    );
-
-    const sceneItemById = new Map(sceneItems.map((item) => [item.id, item]));
-    const viewportScale = await this.port.getViewportScale?.() ?? 1;
-    await new NavalShipOverlayService(overlayPort).reconcile(
-      Object.entries(scene.ships ?? {}).flatMap(([shipId, state]) => {
-        const item = sceneItemById.get(shipId);
-        if (!item) return [];
-        const definition = SHIP_CLASSES[state.classId];
-        return [{
-          shipId,
-          name: item.name?.trim() || definition.name,
-          position: item.position,
-          hp: state.hp,
-          maxHp: definition.maxHp,
-          color: sideColors.get(state.sideId) ?? "#ffffff"
-        }];
-      }),
-      visibleShipIds,
-      viewportScale
-    );
-
-    const interceptionViewer = { isGM: role === "GM", leaderSideIds };
-    const activeInterceptions = Object.values(scene.activeNavalBattle?.interceptions ?? {});
-    const canViewActiveInterception = role === "GM" || activeInterceptions.some((interception) => {
-      const cruiser = (scene.ships ?? {})[interception.cruiserShipId];
-      return cruiser !== undefined && leaderSideIds.includes(cruiser.sideId);
-    });
-    const interceptionOverlayService = new InterceptionOverlayService(overlayPort);
-    if (
-      scene.activeNavalBattle?.status !== "ACTIVE" ||
-      activeInterceptions.length === 0 ||
-      !canViewActiveInterception
-    ) {
-      await interceptionOverlayService.reconcile(undefined, interceptionViewer);
-    } else {
-      try {
-        const shipPositions = Object.fromEntries(
-          Object.keys(scene.ships ?? {}).flatMap((shipId) => {
-            const item = sceneItemById.get(shipId);
-            return item ? [[shipId, item.position] as const] : [];
-          })
-        );
-        await interceptionOverlayService.reconcile(
-          {
-            dpi: await this.grid.getDpi(),
-            scene: scene as import("../shared/types").NavalSceneState,
-            shipPositions
-          },
-          interceptionViewer
-        );
-      } catch {
-        // Preserve the last valid authorized interception overlay while grid geometry is unavailable.
-      }
-    }
-
-    if (role === "GM" && !this.clearedSharedMapOverlays) {
-      const sharedMapOverlayPort = {
-        getLocalItems: () => this.port.getSceneItems(),
-        addLocalItems: (items: readonly SceneItemRecord[]) => this.port.addSceneItems(items),
-        updateLocalItems: async (items: readonly SceneItemRecord[]) => {
-          await Promise.all(items.map(({ id, ...item }) => this.port.updateSceneItem(id, item)));
-        },
-        deleteLocalItems: (ids: readonly string[]) => this.port.deleteSceneItems(ids),
-        createId: () => crypto.randomUUID()
-      };
-      try {
-        // Remove shared per-cell overlays created by older versions. Map visuals
-        // are now rebuilt locally by each client from shared scene metadata.
-        await new MapOverlayService(sharedMapOverlayPort).reconcile(undefined);
-        this.clearedSharedMapOverlays = true;
-      } catch {
-        // Retry cleanup on the next visibility frame.
-      }
-    }
-    if (!this.clearedLegacyMapOverlays) {
-      // Remove legacy local overlays before rebuilding them for this client.
-      await new MapOverlayService(overlayPort).reconcile(undefined);
-      this.clearedLegacyMapOverlays = true;
-    }
-    const mapOverlayService = new MapOverlayService(overlayPort);
-    try {
-      const dpi = await this.grid.getDpi();
-      const signature = JSON.stringify([
-        dpi,
-        scene.gridMap.revision,
-        Object.values(scene.terrain.types)
-          .map((terrain) => [terrain.id, terrain.enabled, terrain.color ?? null])
-          .sort(([left], [right]) => String(left).localeCompare(String(right))),
-        scene.states
-          .map((state) => [state.id, state.name, state.color ?? null])
-          .sort(([left], [right]) => String(left).localeCompare(String(right)))
-      ]);
-      if (this.lastMapOverlaySignature === signature) return;
-      await mapOverlayService.reconcile({
-        dpi,
-        gridMap: scene.gridMap,
-        terrain: scene.terrain,
-        sides: scene.sides,
-        states: scene.states
-      });
-      this.lastMapOverlaySignature = signature;
-    } catch {
-      // Keep the last valid GM map overlay if grid geometry is temporarily unavailable.
-    }
-  }
-}
-
-export interface BackgroundApplication {
-  activateInterception(shipId: string): Promise<void>;
-  stop(): Promise<void>;
-}
-
-export async function startBackgroundApplication(): Promise<BackgroundApplication> {
-  const [{ default: OBR }, { createOwlbearAdapter }] = await Promise.all([
-    import("@owlbear-rodeo/sdk"),
-    import("../owlbear/sdkAdapter")
-  ]);
-  const port = createOwlbearAdapter();
-  const gridErrors = createGridErrorReporter(port);
-  const engine = new ProductionEngine(port);
-  const connectedParty = async (): Promise<ConnectedParticipant[]> => {
-    const [players, id, role, currentConnectionId] = await Promise.all([
-      OBR.party.getPlayers(),
-      OBR.player.getId(),
-      OBR.player.getRole(),
-      OBR.player.getConnectionId()
-    ]);
-    return mergeCurrentParticipant(players, { id, role, connectionId: currentConnectionId });
-  };
-  const party = async (): Promise<CoordinatorParticipant[]> => {
-    const players = await connectedParty();
-    return players.map((player) => ({ connectionId: player.connectionId, role: player.role }));
-  };
-  const routeGateway = new CommandGateway(
-    port,
-    5_000,
-    async () => resolveCoordinatorConnectionId(
-      await party(),
-      await engine.readCoordinatorLease().catch(() => undefined),
-      Date.now()
-    )
-  );
-  routeGateway.start();
-  const toolPort = Object.assign(port, {
-    getPlayerIdentity: async () => {
-      const [id, role, currentConnectionId] = await Promise.all([
-        OBR.player.getId(),
-        OBR.player.getRole(),
-        OBR.player.getConnectionId()
-      ]);
-      return { id, role, connectionId: currentConnectionId };
-    },
-    getSceneRevision: async () => (await new MetadataRepository(port).readScene()).revision,
-    createId: () => crypto.randomUUID(),
-    activateTool: (toolId: string) => OBR.tool.activateTool(toolId)
-  });
-  const interceptionContextMenuService = new NavalInterceptionContextMenuService(toolPort, routeGateway);
-  const routeService = new RouteToolService(toolPort, routeGateway);
-  let removeRouteTool: RouteToolRegistration;
-  try {
-    removeRouteTool = await registerRouteTool(
-      OBR.tool,
-      routeService,
-      {
-        distance: (from, to) => port.getGridDistance(from, to),
-        snapGridCenter: (position) => port.snapGridCenter(position)
-      },
-      `${import.meta.env.BASE_URL}icon-1.2.png`
-    );
-  } catch (error) {
-    routeGateway.stop();
-    throw error;
-  }
-  const shipRouteService = new ShipRouteToolService(toolPort, routeGateway);
-  let removeShipRouteTool: ShipRouteToolRegistration;
-  try {
-    removeShipRouteTool = await registerShipRouteTool(
-      OBR.tool,
-      shipRouteService,
-      { snapGridCenter: (position) => port.snapGridCenter(position) },
-      `${import.meta.env.BASE_URL}icon-1.2.png`
-    );
-  } catch (error) {
-    await removeRouteTool();
-    routeGateway.stop();
-    throw error;
-  }
-  const transportLandingService = new TransportLandingToolService(toolPort, routeGateway);
-  let removeTransportLandingTool: TransportLandingToolRegistration;
-  try {
-    removeTransportLandingTool = await registerTransportLandingTool(
-      OBR.tool,
-      transportLandingService,
-      `${import.meta.env.BASE_URL}icon-1.2.png`
-    );
-  } catch (error) {
-    await removeShipRouteTool();
-    await removeRouteTool();
-    routeGateway.stop();
-    throw error;
-  }
-  let removeMapBrushTool: MapBrushToolRegistration;
-  try {
-    removeMapBrushTool = await registerMapBrushTool(
-      OBR.tool,
-      new MapBrushToolService(toolPort, routeGateway),
-      `${import.meta.env.BASE_URL}icon-1.2.png`
-    );
-  } catch (error) {
-    await removeTransportLandingTool();
-    await removeShipRouteTool();
-    await removeRouteTool();
-    routeGateway.stop();
-    throw error;
-  }
-  let removeNavalBattleAreaTool: NavalBattleAreaToolRegistration;
-  try {
-    removeNavalBattleAreaTool = await registerNavalBattleAreaTool(
-      OBR.tool,
-      new NavalBattleAreaToolService(toolPort),
-      `${import.meta.env.BASE_URL}icon-1.2.png`
-    );
-  } catch (error) {
-    await removeMapBrushTool();
-    await removeTransportLandingTool();
-    await removeShipRouteTool();
-    await removeRouteTool();
-    routeGateway.stop();
-    throw error;
-  }
-  const coordinatorListeners = new Set<(active: boolean) => void>();
-  const sceneWork = new SceneWorkTracker();
-  let commandReady = false;
-  const lease = new CoordinatorLease({
-    onError: gridErrors.report,
-    currentConnectionId: () => OBR.player.getConnectionId(),
-    now: () => Date.now(),
-    participants: party,
-    readHeartbeat: () => engine.readCoordinatorLease(),
-    writeHeartbeat: (heartbeat) => engine.writeCoordinatorHeartbeat(heartbeat),
-    onTransition: (active, activeConnectionId) => {
-      engine.setCoordinator(active, activeConnectionId);
-      for (const listener of coordinatorListeners) listener(active);
-    }
-  });
-
-  const runtimePort: BackgroundRuntimePort = {
-    isSceneReady: () => OBR.scene.isReady(),
-    onSceneReady: (callback) => OBR.scene.onReadyChange(callback),
-    onSceneOpen: async () => {
-      gridErrors.reset();
-      engine.invalidateOverlayCaches();
-      lease.start();
-      try {
-        await Promise.all([
-          removeRouteTool.cancelSession(),
-          removeShipRouteTool.cancelSession(),
-          removeTransportLandingTool.cancelSession(),
-          removeMapBrushTool.cancelSession()
-        ]);
-      } catch {
-        // A stale preview must not disable command delivery or coordinator heartbeats.
-      }
-      commandReady = true;
-    },
-    onSceneClose: async () => {
-      commandReady = false;
-      engine.invalidateOverlayCaches();
-      await lease.stop();
-      await sceneWork.drain();
-      await engine.whenIdle();
-      try {
-        await Promise.all([
-          removeRouteTool.cancelSession(),
-          removeShipRouteTool.cancelSession(),
-          removeTransportLandingTool.cancelSession(),
-          removeMapBrushTool.cancelSession()
-        ]);
-      } catch {
-        // Scene teardown continues so subscriptions and overlays can still be cleaned up.
-      }
-    },
-    onCoordinatorChange: (callback) => {
-      coordinatorListeners.add(callback);
-      return () => coordinatorListeners.delete(callback);
-    },
-    onSceneItemsChange: (callback) => OBR.scene.items.onChange(callback),
-    onLocalItemsChange: (callback) => OBR.scene.local.onChange(callback),
-    onSceneMetadataChange: (callback) => OBR.scene.onMetadataChange(callback),
-    onGridChange: (callback) => OBR.scene.grid.onChange(callback),
-    onPlayerChange: (callback) => OBR.player.onChange(callback),
-    onPartyChange: (callback) => OBR.party.onChange(callback),
-    onBroadcast: (callback) => OBR.broadcast.onMessage(CommandGateway.COMMAND_CHANNEL, (event) => {
-      callback();
-      sceneWork.track((async () => {
-        const [players, currentConnectionId, persistedLease] = await Promise.all([
-          connectedParty(),
-          OBR.player.getConnectionId(),
-          engine.readCoordinatorLease().catch(() => undefined)
-        ]);
-        await dispatchBackgroundCommand({
-          event,
-          participants: players,
-          currentConnectionId,
-          lease: persistedLease,
-          now: Date.now(),
-          ready: commandReady,
-          active: engine.isCoordinator(),
-          sendAck: (acknowledgement) => sendCommandAck(port, acknowledgement),
-          process: (sender) => engine.processCommand(event, sender)
-        });
-      })());
-    }),
-    deleteLocalOverlays: async () => {
-      const items = await port.getLocalItems();
-      const ids = localOverlayIds(items);
-      if (ids.length > 0) await port.deleteLocalItems(ids);
-    },
-    pauseMovingArmies: () => engine.pauseMovingArmies(),
-    movementTick: () => engine.movementTick(),
-    visibilityTick: async () => engine.visibilityTick(await OBR.player.getRole(), await OBR.player.getId()),
-    turnTick: () => engine.turnTick()
-  };
-  const runtime = new BackgroundRuntime(runtimePort, undefined, gridErrors.report);
-  runtime.start();
-  const counter = setInterval(() => {
-    const key = `${METADATA_KEYS.scene}/background-counter`;
-    localStorage.setItem(key, String(Number(localStorage.getItem(key) ?? 0) + 1));
-  }, 1_000);
-  let stopWork: Promise<void> | undefined;
-  return {
-    activateInterception: (shipId) => interceptionContextMenuService.activateInterception(shipId),
-    stop: () => {
-      stopWork ??= (async () => {
-        clearInterval(counter);
-        await runtime.stop();
-        await lease.stop();
-        try {
-          await removeNavalBattleAreaTool();
-          await removeMapBrushTool();
-          await removeTransportLandingTool();
-          await removeShipRouteTool();
-          await removeRouteTool();
-        } finally {
-          routeGateway.stop();
-        }
-      })();
-      return stopWork;
-    }
-  };
-}
+import { hasNavalBattleLmwÓß-¢G§²ÚîÆ­yÝÉÐ°ì(€€€€€€€€€€€É•ÅÕ•ÍÑ%è½µµ…¹¹É•ÅÕ•ÍÑ%°(€€€€€€€€€€€ÍÑ…ÑÕÌè€‰I)Qˆ°(€€€€€€€€€€€É•…Í½¸è€‰AIM%MQ9}%1ˆ°(€€€€€€€€€€€½½É‘¥¹…Ñ½É½¹¹•Ñ¥½¹%°(€€€€€€€€€€€É•¥Á¥•¹Ñ½¹¹•Ñ¥½¹%èÍ•¹‘•È¹½¹¹•Ñ¥½¹%(€€€€€€€€€ô¤ì(€€€€€€€€€É•ÑÕÉ¸ì(€€€€€€€ô(€€€€€ô(€€€ô(€€€¥˜€¡É•ÍÕ±Ð¹ÍÑ…ÑÕÌ€ôôô€‰AQˆ€˜˜½µµ…¹¹ÑåÁ”€ôôô€‰MQ}I=UQˆ¤ì(€€€€€½¹ÍÐ…Éµä€ô…ÉµåI•½É‘Ì¹™¥¹ ¡É•½É¤€ôøÉ•½É¹¥Ñ•´¹¥€ôôô½µµ…¹¹…Éµå%¤ì(€€€€€¥˜€¡…Éµä¤ì(€€€€€€€±•ÐÍ¹…ÁÁ•èÝ…¥Ñ•ñI•ÑÕÉ¹QåÁ”ñÑåÁ•½˜Í¹…ÁI½ÕÑ•Q½É¥øøì(€€€€€€€ÑÉäì(€€€€€€€€€Í¹…ÁÁ•€ô…Ý…¥ÐÍ¹…ÁI½ÕÑ•Q½É¥¡…Éµä¹¥Ñ•´¹Á½Í¥Ñ¥½¸°½µµ…¹¹É½ÕÑ”°Ñ¡¥Ì¹É¥¤ì(€€€€€€€ô…Ñ ì(€€€€€€€€€…Ý…¥ÐÍ•¹‘½µµ…¹‘¬¡Ñ¡¥Ì¹Á½ÉÐ°ì(€€€€€€€€€€€É•ÅÕ•ÍÑ%è½µµ…¹¹É•ÅÕ•ÍÑ%°(€€€€€€€€€€€ÍÑ…ÑÕÌè€‰I)Qˆ°(€€€€€€€€€€€É•…Í½¸è€‰AIM%MQ9}%1ˆ°(€€€€€€€€€€€½½É‘¥¹…Ñ½É½¹¹•Ñ¥½¹%°(€€€€€€€€€€€É•¥Á¥•¹Ñ½¹¹•Ñ¥½¹%èÍ•¹‘•È¹½¹¹•Ñ¥½¹%(€€€€€€€€€ô¤ì(€€€€€€€€€É•ÑÕÉ¸ì(€€€€€€€ô(€€€€€€€¥˜€ …Í¹…ÁÁ•¹Ý…åÁ½¥¹ÑÍ]•É••¹Ñ•É•¤ì(€€€€€€€€€…Ý…¥ÐÍ•¹‘½µµ…¹‘¬¡Ñ¡¥Ì¹Á½ÉÐ°ì(€€€€€€€€€€€É•ÅÕ•ÍÑ%è½µµ…¹¹É•ÅÕ•ÍÑ%°(€€€€€€€€€€€ÍÑ…ÑÕÌè€‰I)Qˆ°(€€€€€€€€€€€É•…Í½¸è€‰%9Y1%}=559ˆ°(€€€€€€€€€€€½½É‘¥¹…Ñ½É½¹¹•Ñ¥½¹%°(€€€€€€€€€€€É•¥Á¥•¹Ñ½¹¹•Ñ¥½¹%èÍ•¹‘•È¹½¹¹•Ñ¥½¹%(€€€€€€€€€ô¤ì(€€€€€€€€€É•ÑÕÉ¸ì(€€€€€€€ô(€€€€€€€±•Ð™…¥±ÕÉ”èI•ÑÕÉ¹QåÁ”ñÑåÁ•½˜Ù…±¥‘…Ñ•MÑÉ…Ñ•¥I½ÕÑ•M¡…Á”øì(€€€€€€€ÑÉäì(€€€€€€€€€½¹ÍÐÉ¥‘Á¤€ô…Ý…¥ÐÑ¡¥Ì¹É¥¹•ÑÁ¤ ¤ì(€€€€€€€€€™…¥±ÕÉ”€ôÙ…±¥‘…Ñ•MÑÉ…Ñ•¥I½ÕÑ•M¡…Á”¡ì(€€€€€€€€€€€ÍÑ…ÉÐèÍ¹…ÁÁ•¹ÍÑ…ÉÐ°(€€€€€€€€€€€É½ÕÑ”èÍ¹…ÁÁ•¹É½ÕÑ”°(€€€€€€€€€€€ÍÑ…ÉÑ•±°è½µµ…¹¹ÍÑ…ÉÑ•±°°(€€€€€€€€€€€•±±Ìè½µµ…¹¹•±±Ì°(€€€€€€€€€€€É¥è¹•ÜMÑÉ…Ñ•¥É¥‘‘…ÁÑ•È¡ì‘Á¤èÉ¥‘Á¤°½™™Í•Ðèìàè€À°äè€Àôô¤°(€€€€€€€€€€€‰…ÉÉ¥•ÉÌè…Éµä¹ÍÑ…Ñ”¹¥¹½É•Í5½Ù•µ•¹Ñ	…ÉÉ¥•ÉÌ(€€€€€€€€€€€€€€ümt(€€€€€€€€€€€€€€è•áÑÉ…Ñ	…ÉÉ¥•ÉM•µ•¹ÑÌ¡‰…ÉÉ¥•ÉI•½É‘Ì°€‰µ½Ù•µ•¹Ðˆ¤(€€€€€€€€€ô¤ì(€€€€€€€ô…Ñ ì(€€€€€€€€€…Ý…¥ÐÍ•¹‘½µµ…¹‘¬¡Ñ¡¥Ì¹Á½ÉÐ°ì(€€€€€€€€€€€É•ÅÕ•ÍÑ%è½µµ…¹¹É•ÅÕ•ÍÑ%°(€€€€€€€€€€€ÍÑ…ÑÕÌè€‰I)Qˆ°(€€€€€€€€€€€É•…Í½¸è€‰AIM%MQ9}%1ˆ°(€€€€€€€€€€€½½É‘¥¹…Ñ½É½¹¹•Ñ¥½¹%°(€€€€€€€€€€€É•¥Á¥•¹Ñ½¹¹•Ñ¥½¹%èÍ•¹‘•È¹½¹¹•Ñ¥½¹%(€€€€€€€€€ô¤ì(€€€€€€€€€É•ÑÕÉ¸ì(€€€€€€€ô(€€€€€€€¥˜€¡™…¥±ÕÉ”¤ì(€€€€€€€€€…Ý…¥ÐÍ•¹‘½µµ…¹‘¬¡Ñ¡¥Ì¹Á½ÉÐ°ì(€€€€€€€€€€€É•ÅÕ•ÍÑ%è½µµ…¹¹É•ÅÕ•ÍÑ%°(€€€€€€€€€€€ÍÑ…ÑÕÌè€‰I)Qˆ°(€€€€€€€€€€€É•…Í½¸è™…¥±ÕÉ”°(€€€€€€€€€€€½½É‘¥¹…Ñ½É½¹¹•Ñ¥½¹%°(€€€€€€€€€€€É•¥Á¥•¹Ñ½¹¹•Ñ¥½¹%èÍ•¹‘•È¹½¹¹•Ñ¥½¹%(€€€€€€€€€ô¤ì(€€€€€€€€€É•ÑÕÉ¸ì(€€€€€€€ô(€€€€€€€½¹ÍÐ¹•áÑÉµä€ôÉ•ÍÕ±Ð¹ÍÑ…Ñ”¹…Éµ¥•Ím½µµ…¹¹…Éµå%‘tì(€€€€€€€¥˜€¡¹•áÑÉµä¤¹•áÑÉµä¹É½ÕÑ”€ôÍ¹…ÁÁ•¹É½ÕÑ”ì(€€€€€€€É•ÍÕ±Ð¹ÍÑ…Ñ”¹Á½Í¥Ñ¥½¹Ì€üüôíôì(€€€€€€€É•ÍÕ±Ð¹ÍÑ…Ñ”¹Á½Í¥Ñ¥½¹Ím½µµ…¹¹…Éµå%‘t€ôÍ¹…ÁÁ•¹ÍÑ…ÉÐì(€€€€€ô(€€€ô(€€€¥˜€¡É•ÍÕ±Ð¹ÍÑ…ÑÕÌ€ôôô€‰AQˆ¤ì(€€€€€½¹ÍÐ½µµ¥ÑM•¹”€ô…Ý…¥ÐÑ¡¥Ì¹É•Á½Í¥Ñ½Éä¹É•…‘M•¹” ¤ì(€€€€€½¹ÍÐ±•…Í•5…Ñ¡•Ì€ôÑ¡¥Ì¹…Ñ¥Ù•½½É‘¥¹…Ñ½É½¹¹•Ñ¥½¹%€ôôôÕ¹‘•™¥¹•ñð(€€€€€€€½µµ¥ÑM•¹”¹½½É‘¥¹…Ñ½É1•…Í”ü¹½¹¹•Ñ¥½¹%€ôôôÑ¡¥Ì¹…Ñ¥Ù•½½É‘¥¹…Ñ½É½¹¹•Ñ¥½¹%ì(€€€€€¥˜€ (€€€€€€€€…Ñ¡¥Ì¹½½É‘¥¹…Ñ½Èñð(€€€€€€€€…±•…Í•5…Ñ¡•Ìñð(€€€€€€€½µµ¥ÑM•¹”¹É•Ù¥Í¥½¸€„ôô½µµ…¹‘MÑ…Ñ”¹Í•¹”¹É•Ù¥Í¥½¸(€€€€€€¤ì(€€€€€€€…Ý…¥ÐÍ•¹‘½µµ…¹‘¬¡Ñ¡¥Ì¹Á½ÉÐ°ì(€€€€€€€€€É•ÅÕ•ÍÑ%è½µµ…¹¹É•ÅÕ•ÍÑ%°(€€€€€€€€€ÍÑ…ÑÕÌè€‰=91%Pˆ°(€€€€€€€€€…ÑÕ…±I•Ù¥Í¥½¸è½µµ¥ÑM•¹”¹É•Ù¥Í¥½¸°(€€€€€€€€€½½É‘¥¹…Ñ½É½¹¹•Ñ¥½¹%°(€€€€€€€€€É•¥Á¥•¹Ñ½¹¹•Ñ¥½¹%èÍ•¹‘•È¹½¹¹•Ñ¥½¹%(€€€€€€€ô¤ì(€€€€€€€É•ÑÕÉ¸ì(€€€€€ô(€€€€€ÑÉäì(€€€€€€€…Ý…¥ÐÑ¡¥Ì¹Á•ÉÍ¥ÍÑ½µµ…¹‘MÑ…Ñ”¡É•ÍÕ±Ð¹ÍÑ…Ñ”°½µµ…¹‘MÑ…Ñ”°Í•¹•%Ñ•µÌ¤ì(€€€€€ô…Ñ €¡•ÉÉ½È¤ì(€€€€€€€¥˜€¡•ÉÉ½È¥¹ÍÑ…¹•½˜I•Ù¥Í¥½¹½¹™±¥Ð¤ì(€€€€€€€€€…Ý…¥ÐÍ•¹‘½µµ…¹‘¬¡Ñ¡¥Ì¹Á½ÉÐ°ìÉ•ÅÕ•ÍÑ%è½µµ…¹¹É•ÅÕ•ÍÑ%°ÍÑ…ÑÕÌè€‰=91%Pˆ°…ÑÕ…±I•Ù¥Í¥½¸è•ÉÉ½È¹…ÑÕ…±I•Ù¥Í¥½¸°(€€€€€€€€€€€½½É‘¥¹…Ñ½É½¹¹•Ñ¥½¹%°É•¥Á¥•¹Ñ½¹¹•Ñ¥½¹%èÍ•¹‘•È¹½¹¹•Ñ¥½¹%ô¤ì(€€€€€€€€€É•ÑÕÉ¸ì(€€€€€€€ô(€€€€€€€…Ý…¥ÐÍ•¹‘½µµ…¹‘¬¡Ñ¡¥Ì¹Á½ÉÐ°ì(€€€€€€€€€É•ÅÕ•ÍÑ%è½µµ…¹¹É•ÅÕ•ÍÑ%°(€€€€€€€€€ÍÑ…ÑÕÌè€‰I)Qˆ°(€€€€€€€€€É•…Í½¸è•ÉÉ½È¥¹ÍÑ…¹•½˜É¥‘MÑ½É…•ÉÉ½È€ü•ÉÉ½È¹½‘”€è€‰AIM%MQ9}%1ˆ°(€€€€€€€€€½½É‘¥¹…Ñ½É½¹¹•Ñ¥½¹%°(€€€€€€€€€É•¥Á¥•¹Ñ½¹¹•Ñ¥½¹%èÍ•¹‘•È¹½¹¹•Ñ¥½¹%(€€€€€€€ô¤ì(€€€€€€€É•ÑÕÉ¸ì(€€€€€ô(€€€€€…Ý…¥ÐÍ•¹‘½µµ…¹‘¬¡Ñ¡¥Ì¹Á½ÉÐ°ì(€€€€€€€É•ÅÕ•ÍÑ%è½µµ…¹¹É•ÅÕ•ÍÑ%°(€€€€€€€ÍÑ…ÑÕÌè€‰AQˆ°(€€€€€€€½½É‘¥¹…Ñ½É½¹¹•Ñ¥½¹%°(€€€€€€€É•¥Á¥•¹Ñ½¹¹•Ñ¥½¹%èÍ•¹‘•È¹½¹¹•Ñ¥½¹%(€€€€€ô¤ì(€€€ô•±Í”ì(€€€€€…Ý…¥ÐÍ•¹‘½µµ…¹‘¬¡Ñ¡¥Ì¹Á½ÉÐ°ì(€€€€€€€É•ÅÕ•ÍÑ%è½µµ…¹¹É•ÅÕ•ÍÑ%°(€€€€€€€ÍÑ…ÑÕÌèÉ•ÍÕ±Ð¹ÍÑ…ÑÕÌ°(€€€€€€€½½É‘¥¹…Ñ½É½¹¹•Ñ¥½¹%°(€€€€€€€É•¥Á¥•¹Ñ½¹¹•Ñ¥½¹%èÍ•¹‘•È¹½¹¹•Ñ¥½¹%°(€€€€€€€€¸¸¸¡É•ÍÕ±Ð¹ÍÑ…ÑÕÌ€ôôô€‰I)Qˆ€üìÉ•…Í½¸èÉ•ÍÕ±Ð¹É•…Í½¸ô€èì…ÑÕ…±I•Ù¥Í¥½¸èÉ•ÍÕ±Ð¹…ÑÕ…±I•Ù¥Í¥½¸ô¤(€€€€€ô¤ì(€€€ô(€ô((€ÁÉ¥Ù…Ñ”…Íå¹ŒÕÉÉ•¹Ñ½¹¹•Ñ¥½¹% ¤èAÉ½µ¥Í”ñÍÑÉ¥¹œøì(€€€¥˜€¡Ñ¡¥Ì¹…Ñ¥Ù•½½É‘¥¹…Ñ½É½¹¹•Ñ¥½¹%¤É•ÑÕÉ¸Ñ¡¥Ì¹…Ñ¥Ù•½½É‘¥¹…Ñ½É½¹¹•Ñ¥½¹%ì(€€€½¹ÍÐÉ…Ü€ô€¡…Ý…¥ÐÑ¡¥Ì¹É•Á½Í¥Ñ½Éä¹É•…‘M•¹” ¤¤¹½½É‘¥¹…Ñ½É1•…Í”ü¹½¹¹•Ñ¥½¹%ì(€€€É•ÑÕÉ¸É…Ü€üü€ˆˆì(€ô((€ÁÉ¥Ù…Ñ”…Íå¹ŒÁ•ÉÍ¥ÍÑ½µµ…¹‘MÑ…Ñ” (€€€¹•áÐè½µµ…¹‘MÑ…Ñ”°(€€€ÁÉ•Ù¥½ÕÌè½µµ…¹‘MÑ…Ñ”°(€€€¥Ñ•µÌèÉ•…‘½¹±äM•¹•%Ñ•µI•½É‘mt(€€¤èAÉ½µ¥Í”ñÙ½¥øì(€€€½¹ÍÐ¥Ñ•µ	å%€ô¹•Ü5…À¡¥Ñ•µÌ¹µ…À ¡¥Ñ•´¤€ôøm¥Ñ•´¹¥°¥Ñ•µt¤¤ì(€€€½¹ÍÐ…ÁÁ±¥•èÁÁ±¥•‘5•Ñ…‘…Ñ…]É¥Ñ•mt€ômtì(€€€½¹ÍÐ•áÁ•Ñ•‘½½É‘¥¹…Ñ½É½¹¹•Ñ¥½¹%€ôÑ¡¥Ì¹…Ñ¥Ù•½½É‘¥¹…Ñ½É½¹¹•Ñ¥½¹%ì(€€€½¹ÍÐ…¹½µµ¥Ð€ôÑ¡¥Ì¹…ÁÑÕÉ•½½É‘¥¹…Ñ½ÉÕ…É¡•áÁ•Ñ•‘½½É‘¥¹…Ñ½É½¹¹•Ñ¥½¹%¤ì(€€€ÑÉäì(€€€€€½¹ÍÐ…Éµå%‘Ì€ô¹•ÜM•Ð¡l¸¸¹=‰©•Ð¹­•åÌ¡ÁÉ•Ù¥½ÕÌ¹…Éµ¥•Ì¤°€¸¸¹=‰©•Ð¹­•åÌ¡¹•áÐ¹…Éµ¥•Ì¥t¤ì(€€€€€™½È€¡½¹ÍÐ…Éµå%½˜…Éµå%‘Ì¤ì(€€€€€€€½¹ÍÐÁÉ•Ù¥½ÕÍMÑ…Ñ”€ôÁÉ•Ù¥½ÕÌ¹…Éµ¥•Ím…Éµå%‘tì(€€€€€€€½¹ÍÐÍÑ…Ñ”€ô¹•áÐ¹…Éµ¥•Ím…Éµå%‘tì(€€€€€€€½¹ÍÐÁÉ•Ù¥½ÕÍA½Í¥Ñ¥½¸€ôÁÉ•Ù¥½ÕÌ¹Á½Í¥Ñ¥½¹Ìü¹m…Éµå%‘tì(€€€€€€€½¹ÍÐ¹•áÑA½Í¥Ñ¥½¸€ô¹•áÐ¹Á½Í¥Ñ¥½¹Ìü¹m…Éµå%‘tì(€€€€€€€¥˜€ (€€€€€€€€€)M=8¹ÍÑÉ¥¹¥™ä¡ÁÉ•Ù¥½ÕÍMÑ…Ñ”¤€ôôô)M=8¹ÍÑÉ¥¹¥™ä¡ÍÑ…Ñ”¤€˜˜(€€€€€€€€€)M=8¹ÍÑÉ¥¹¥™ä¡ÁÉ•Ù¥½ÕÍA½Í¥Ñ¥½¸¤€ôôô)M=8¹ÍÑÉ¥¹¥™ä¡¹•áÑA½Í¥Ñ¥½¸¤(€€€€€€€€¤ì(€€€€€€€€€½¹Ñ¥¹Õ”ì(€€€€€€€ô(€€€€€€€½¹ÍÐ¥Ñ•´€ô¥Ñ•µ	å%¹•Ð¡…Éµå%¤ì(€€€€€€€¥˜€ …¥Ñ•´¤½¹Ñ¥¹Õ”ì(€€€€€€€¥˜€ ……¹½µµ¥Ð ¤¤Ñ¡É½Ü¹•ÜÉÉ½È ‰½½É‘¥¹…Ñ½ÈÍÑ½ÁÁ•‘ÕÉ¥¹œÁ•ÉÍ¥ÍÑ•¹”ˆ¤ì(€€€€€€€…Ý…¥ÐÑ¡¥Ì¹Á½ÉÐ¹Á…Ñ¡M•¹•%Ñ•µ5•Ñ…‘…Ñ„¡…Éµå%°5QQ}-eL¹…Éµä°ÍÑ…Ñ”°ì(€€€€€€€€€Ù¥Í¥‰±”èÍÑ…Ñ”€ôôôÕ¹‘•™¥¹•°(€€€€€€€€€€¸¸¸¡¹•áÑA½Í¥Ñ¥½¸€üìÁ½Í¥Ñ¥½¸è¹•áÑA½Í¥Ñ¥½¸ô€èíô¤(€€€€€€€ô°ÁÉ•Ù¥½ÕÍMÑ…Ñ”ü¹É•Ù¥Í¥½¸€üü¹Õ±°¤ì(€€€€€€€…ÁÁ±¥•¹ÁÕÍ ¡ì(€€€€€€€€€¥Ñ•µ%è…Éµå%°(€€€€€€€€€­•äè5QQ}-eL¹…Éµä°(€€€€€€€€€ÁÉ•Ù¥½ÕÍY…±Õ”èÁÉ•Ù¥½ÕÍMÑ…Ñ”°(€€€€€€€€€É½±±‰…­UÁ‘…Ñ”èì(€€€€€€€€€€€Ù¥Í¥‰±”è¥Ñ•´¹Ù¥Í¥‰±”€üüÑÉÕ”°(€€€€€€€€€€€€¸¸¸¡ÁÉ•Ù¥½ÕÍA½Í¥Ñ¥½¸€üìÁ½Í¥Ñ¥½¸èÁÉ•Ù¥½ÕÍA½Í¥Ñ¥½¸ô€èíô¤(€€€€€€€€€ô°(€€€€€€€€€•áÁ•Ñ•‘I•Ù¥Í¥½¸èÍÑ…Ñ”ü¹É•Ù¥Í¥½¸€üü¹Õ±°(€€€€€€€ô¤ì(€€€€€ô(€€€€€½¹ÍÐÁÉ•Ù¥½ÕÍM¡¥ÁÌ€ôÁÉ•Ù¥½ÕÌ¹Í•¹”¹Í¡¥ÁÌ€üüíôì(€€€€€½¹ÍÐ¹•áÑM¡¥ÁÌ€ô¹•áÐ¹Í•¹”¹Í¡¥ÁÌ€üüíôì(€€€€€½¹ÍÐÍ¡¥Á%‘Ì€ô¹•ÜM•Ð¡l¸¸¹=‰©•Ð¹­•åÌ¡ÁÉ•Ù¥½ÕÍM¡¥ÁÌ¤°€¸¸¹=‰©•Ð¹­•åÌ¡¹•áÑM¡¥ÁÌ¥t¤ì(€€€€€™½È€¡½¹ÍÐÍ¡¥Á%½˜Í¡¥Á%‘Ì¤ì(€€€€€€€½¹ÍÐÁÉ•Ù¥½ÕÍMÑ…Ñ”€ôÁÉ•Ù¥½ÕÍM¡¥ÁÍmÍ¡¥Á%‘tì(€€€€€€€½¹ÍÐÍÑ…Ñ”€ô¹•áÑM¡¥ÁÍmÍ¡¥Á%‘tì(€€€€€€€½¹ÍÐÁÉ•Ù¥½ÕÍA½Í¥Ñ¥½¸€ôÁÉ•Ù¥½ÕÌ¹Á½Í¥Ñ¥½¹Ìü¹mÍ¡¥Á%‘tì(€€€€€€€½¹ÍÐ¹•áÑA½Í¥Ñ¥½¸€ô¹•áÐ¹Á½Í¥Ñ¥½¹Ìü¹mÍ¡¥Á%‘tì(€€€€€€€¥˜€ (€€€€€€€€€)M=8¹ÍÑÉ¥¹¥™ä¡ÁÉ•Ù¥½ÕÍMÑ…Ñ”¤€ôôô)M=8¹ÍÑÉ¥¹¥™ä¡ÍÑ…Ñ”¤€˜˜(€€€€€€€€€)M=8¹ÍÑÉ¥¹¥™ä¡ÁÉ•Ù¥½ÕÍA½Í¥Ñ¥½¸¤€ôôô)M=8¹ÍÑÉ¥¹¥™ä¡¹•áÑA½Í¥Ñ¥½¸¤(€€€€€€€€¤½¹Ñ¥¹Õ”ì(€€€€€€€½¹ÍÐ¥Ñ•´€ô¥Ñ•µ	å%¹•Ð¡Í¡¥Á%¤ì(€€€€€€€¥˜€ …¥Ñ•´¤½¹Ñ¥¹Õ”ì(€€€€€€€¥˜€ ……¹½µµ¥Ð ¤¤Ñ¡É½Ü¹•ÜÉÉ½È ‰½½É‘¥¹…Ñ½ÈÍÑ½ÁÁ•‘ÕÉ¥¹œÁ•ÉÍ¥ÍÑ•¹”ˆ¤ì(€€€€€€€…Ý…¥ÐÑ¡¥Ì¹Á½ÉÐ¹Á…Ñ¡M•¹•%Ñ•µ5•Ñ…‘…Ñ„ (€€€€€€€€€Í¡¥Á%°(€€€€€€€€€5QQ}-eL¹Í¡¥À°(€€€€€€€€€ÍÑ…Ñ”°(€€€€€€€€€ì(€€€€€€€€€€€Ù¥Í¥‰±”èÍÑ…Ñ”€ôôôÕ¹‘•™¥¹•°(€€€€€€€€€€€€¸¸¸¡¹•áÑA½Í¥Ñ¥½¸€üìÁ½Í¥Ñ¥½¸è¹•áÑA½Í¥Ñ¥½¸ô€èíô¤°(€€€€€€€€€€€€¸¸¸¡ÍÑ…Ñ”€üìÉ½Ñ…Ñ¥½¸èÉ½Ñ…Ñ¥½¹½É…¥¹œ¡ÍÑ…Ñ”¹™…¥¹œ¤ô€èíô¤(€€€€€€€€€ô°(€€€€€€€€€ÁÉ•Ù¥½ÕÍMÑ…Ñ”ü¹É•Ù¥Í¥½¸€üü¹Õ±°(€€€€€€€€¤ì(€€€€€€€…ÁÁ±¥•¹ÁÕÍ ¡ì(€€€€€€€€€¥Ñ•µ%èÍ¡¥Á%°(€€€€€€€€€­•äè5QQ}-eL¹Í¡¥À°(€€€€€€€€€ÁÉ•Ù¥½ÕÍY…±Õ”èÁÉ•Ù¥½ÕÍMÑ…Ñ”°(€€€€€€€€€É½±±‰…­UÁ‘…Ñ”èì(€€€€€€€€€€€Ù¥Í¥‰±”è¥Ñ•´¹Ù¥Í¥‰±”€üüÑÉÕ”°(€€€€€€€€€€€€¸¸¸¡ÁÉ•Ù¥½ÕÍA½Í¥Ñ¥½¸€üìÁ½Í¥Ñ¥½¸èÁÉ•Ù¥½ÕÍA½Í¥Ñ¥½¸ô€èíô¤°(€€€€€€€€€€€€¸¸¸¡¥Ñ•´¹É½Ñ…Ñ¥½¸€„ôôÕ¹‘•™¥¹•€üìÉ½Ñ…Ñ¥½¸è¥Ñ•´¹É½Ñ…Ñ¥½¸ô€èíô¤(€€€€€€€€€ô°(€€€€€€€€€•áÁ•Ñ•‘I•Ù¥Í¥½¸èÍÑ…Ñ”ü¹É•Ù¥Í¥½¸€üü¹Õ±°(€€€€€€€ô¤ì(€€€€€ô(€€€€€½¹ÍÐ‰…ÉÉ¥•É%‘Ì€ô¹•ÜM•Ð¡l(€€€€€€€€¸¸¹=‰©•Ð¹­•åÌ¡ÁÉ•Ù¥½ÕÌ¹‰…ÉÉ¥•ÉÌ¤°(€€€€€€€€¸¸¹=‰©•Ð¹­•åÌ¡¹•áÐ¹‰…ÉÉ¥•ÉÌ¤(€€€€€t¤ì(€€€€€™½È€¡½¹ÍÐ‰…ÉÉ¥•É%½˜‰…ÉÉ¥•É%‘Ì¤ì(€€€€€€€½¹ÍÐÁÉ•Ù¥½ÕÍMÑ…Ñ”€ôÁÉ•Ù¥½ÕÌ¹‰…ÉÉ¥•ÉÍm‰…ÉÉ¥•É%‘tì(€€€€€€€½¹ÍÐÍÑ…Ñ”€ô¹•áÐ¹‰…ÉÉ¥•ÉÍm‰…ÉÉ¥•É%‘tì(€€€€€€€¥˜€¡)M=8¹ÍÑÉ¥¹¥™ä¡ÁÉ•Ù¥½ÕÍMÑ…Ñ”¤€ôôô)M=8¹ÍÑÉ¥¹¥™ä¡ÍÑ…Ñ”¤¤½¹Ñ¥¹Õ”ì(€€€€€€€¥˜€ …¥Ñ•µ	å%¹¡…Ì¡‰…ÉÉ¥•É%¤¤½¹Ñ¥¹Õ”ì(€€€€€€€¥˜€ ……¹½µµ¥Ð ¤¤Ñ¡É½Ü¹•ÜÉÉ½È ‰½½É‘¥¹…Ñ½ÈÍÑ½ÁÁ•‘ÕÉ¥¹œÁ•ÉÍ¥ÍÑ•¹”ˆ¤ì(€€€€€€€…Ý…¥ÐÑ¡¥Ì¹Á½ÉÐ¹Á…Ñ¡M•¹•%Ñ•µ5•Ñ…‘…Ñ„ (€€€€€€€€€‰…ÉÉ¥•É%°(€€€€€€€€€5QQ}-eL¹‰…ÉÉ¥•È°(€€€€€€€€€ÍÑ…Ñ”°(€€€€€€€€€íô°(€€€€€€€€€ÁÉ•Ù¥½ÕÍMÑ…Ñ”ü¹É•Ù¥Í¥½¸€üü¹Õ±°(€€€€€€€€¤ì(€€€€€€€…ÁÁ±¥•¹ÁÕÍ ¡ì(€€€€€€€€€¥Ñ•µ%è‰…ÉÉ¥•É%°(€€€€€€€€€­•äè5QQ}-eL¹‰…ÉÉ¥•È°(€€€€€€€€€ÁÉ•Ù¥½ÕÍY…±Õ”èÁÉ•Ù¥½ÕÍMÑ…Ñ”°(€€€€€€€€€É½±±‰…­UÁ‘…Ñ”èíô°(€€€€€€€€€•áÁ•Ñ•‘I•Ù¥Í¥½¸èÍÑ…Ñ”ü¹É•Ù¥Í¥½¸€üü¹Õ±°(€€€€€€€ô¤ì(€€€€€ô(€€€€€¥˜€ ……¹½µµ¥Ð ¤¤Ñ¡É½Ü¹•ÜÉÉ½È ‰½½É‘¥¹…Ñ½ÈÍÑ½ÁÁ•‘ÕÉ¥¹œÁ•ÉÍ¥ÍÑ•¹”ˆ¤ì(€€€€€½¹ÍÐ±…Ñ•ÍÑM•¹”€ô…Ý…¥ÐÑ¡¥Ì¹É•Á½Í¥Ñ½Éä¹É•…‘M•¹” ¤ì(€€€€€¥˜€ ……¹½µµ¥Ð ¤¤Ñ¡É½Ü¹•ÜÉÉ½È ‰½½É‘¥¹…Ñ½ÈÍÑ½ÁÁ•‘ÕÉ¥¹œÁ•ÉÍ¥ÍÑ•¹”ˆ¤ì(€€€€€¥˜€¡±…Ñ•ÍÑM•¹”¹É•Ù¥Í¥½¸€„ôôÁÉ•Ù¥½ÕÌ¹Í•¹”¹É•Ù¥Í¥½¸¤ì(€€€€€€€Ñ¡É½Ü¹•ÜÉÉ½È ‰M•¹”É•Ù¥Í¥½¸¡…¹•‘ÕÉ¥¹œ½µµ…¹Á•ÉÍ¥ÍÑ•¹”ˆ¤ì(€€€€€ô(€€€€€¥˜€ (€€€€€€€•áÁ•Ñ•‘½½É‘¥¹…Ñ½É½¹¹•Ñ¥½¹%€„ôôÕ¹‘•™¥¹•€˜˜(€€€€€€€±…Ñ•ÍÑM•¹”¹½½É‘¥¹…Ñ½É1•…Í”ü¹½¹¹•Ñ¥½¹%€„ôô•áÁ•Ñ•‘½½É‘¥¹…Ñ½É½¹¹•Ñ¥½¹%(€€€€€€¤ì(€€€€€€€Ñ¡É½Ü¹•ÜÉÉ½È ‰½½É‘¥¹…Ñ½È±•…Í”¡…¹•‘ÕÉ¥¹œ½µµ…¹Á•ÉÍ¥ÍÑ•¹”ˆ¤ì(€€€€€ô(€€€€€½¹ÍÐ¹•áÑM•¹•]¥Ñ¡½ÕÑ1•…Í”€ôì€¸¸¹¹•áÐ¹Í•¹”ôì(€€€€€‘•±•Ñ”¹•áÑM•¹•]¥Ñ¡½ÕÑ1•…Í”¹½½É‘¥¹…Ñ½É1•…Í”ì(€€€€€½¹ÍÐÍ•¹•Q½]É¥Ñ”€ô±…Ñ•ÍÑM•¹”¹½½É‘¥¹…Ñ½É1•…Í”(€€€€€€€€üì€¸¸¹¹•áÑM•¹•]¥Ñ¡½ÕÑ1•…Í”°½½É‘¥¹…Ñ½É1•…Í”è±…Ñ•ÍÑM•¹”¹½½É‘¥¹…Ñ½É1•…Í”ô(€€€€€€€€è¹•áÑM•¹•]¥Ñ¡½ÕÑ1•…Í”ì(€€€€€…Ý…¥ÐÑ¡¥Ì¹É•Á½Í¥Ñ½Éä¹ÝÉ¥Ñ•M•¹” (€€€€€€€Í•¹•Q½]É¥Ñ”°(€€€€€€€ÁÉ•Ù¥½ÕÌ¹Í•¹”¹É•Ù¥Í¥½¸°(€€€€€€€€¡ÕÉÉ•¹Ð¤€ôø(€€€€€€€€€…¹½µµ¥Ð ¤€˜˜(€€€€€€€€€€¡•áÁ•Ñ•‘½½É‘¥¹…Ñ½É½¹¹•Ñ¥½¹%€ôôôÕ¹‘•™¥¹•ñð(€€€€€€€€€€€ÕÉÉ•¹Ð¹½½É‘¥¹…Ñ½É1•…Í”ü¹½¹¹•Ñ¥½¹%€ôôô•áÁ•Ñ•‘½½É‘¥¹…Ñ½É½¹¹•Ñ¥½¹%¤(€€€€€€¤ì(€€€ô…Ñ €¡•ÉÉ½È¤ì(€€€€€™½È€¡½¹ÍÐÝÉ¥Ñ”½˜…ÁÁ±¥•¹É•Ù•ÉÍ” ¤¤ì(€€€€€€€ÑÉäì(€€€€€€€€€…Ý…¥ÐÑ¡¥Ì¹Á½ÉÐ¹Á…Ñ¡M•¹•%Ñ•µ5•Ñ…‘…Ñ„ (€€€€€€€€€€€ÝÉ¥Ñ”¹¥Ñ•µ%°(€€€€€€€€€€€ÝÉ¥Ñ”¹­•ä°(€€€€€€€€€€€ÝÉ¥Ñ”¹ÁÉ•Ù¥½ÕÍY…±Õ”°(€€€€€€€€€€€ÝÉ¥Ñ”¹É½±±‰…­UÁ‘…Ñ”°(€€€€€€€€€€€ÝÉ¥Ñ”¹•áÁ•Ñ•‘I•Ù¥Í¥½¸(€€€€€€€€€€¤ì(€€€€€€€ô…Ñ ì(€€€€€€€€€€¼¼¹•Ý•È¥Ñ•´É•Ù¥Í¥½¸Ý¥¹Ì½Ù•ÈÑ¡¥ÌÕ…É‘•½µÁ•¹Í…Ñ¥½¸¸(€€€€€€€ô(€€€€€ô(€€€€€Ñ¡É½Ü•ÉÉ½Èì(€€€ô(€ô((€ÝÉ¥Ñ•½½É‘¥¹…Ñ½É!•…ÉÑ‰•…Ð (€€€¡•…ÉÑ‰•…Ðè9½¹9Õ±±…‰±”ñM•¹•MÑ…Ñ•l‰½½É‘¥¹…Ñ½É1•…Í”‰tø(€€¤èAÉ½µ¥Í”ñÙ½¥øì(€€€É•ÑÕÉ¸Ñ¡¥Ì¹•¹ÅÕ•Õ•5ÕÑ…Ñ¥½¸¡…Íå¹Œ€ ¤€ôøì(€€€€€½¹ÍÐ•¹•É…Ñ¥½¸€ôÑ¡¥Ì¹½½É‘¥¹…Ñ½É•¹•É…Ñ¥½¸ì(€€€€€½¹ÍÐ±…¥µ%ÍÕÉÉ•¹Ð€ô€ ¤€ôø(€€€€€€€Ñ¡¥Ì¹½½É‘¥¹…Ñ½É•¹•É…Ñ¥½¸€ôôô•¹•É…Ñ¥½¸€˜˜(€€€€€€€€ …Ñ¡¥Ì¹½½É‘¥¹…Ñ½ÈñðÑ¡¥Ì¹…Ñ¥Ù•½½É‘¥¹…Ñ½É½¹¹•Ñ¥½¹%€ôôô¡•…ÉÑ‰•…Ð¹½¹¹•Ñ¥½¹%¤ì(€€€€€½¹ÍÐ±•…Í•%Í±…¥µ…‰±”€ô€¡ÕÉÉ•¹ÐèM•¹•MÑ…Ñ”¤€ôøì(€€€€€€€½¹ÍÐ±•…Í”€ôÕÉÉ•¹Ð¹½½É‘¥¹…Ñ½É1•…Í”ì(€€€€€€€É•ÑÕÉ¸±•…Í”€ôôôÕ¹‘•™¥¹•ñð(€€€€€€€€€±•…Í”¹½¹¹•Ñ¥½¹%€ôôô¡•…ÉÑ‰•…Ð¹½¹¹•Ñ¥½¹%ñð(€€€€€€€€€±•…Í”¹•áÁ¥É•ÍÐ€ðôÑ¡¥Ì¹Ý…±±±½¬ ¤¹•ÑQ¥µ” ¤ì(€€€€€ôì((€€€€€¥˜€ …±…¥µ%ÍÕÉÉ•¹Ð ¤¤É•ÑÕÉ¸ì(€€€€€½¹ÍÐÍ•¹”€ô…Ý…¥ÐÑ¡¥Ì¹É•Á½Í¥Ñ½Éä¹É•…‘M•¹” ¤ì(€€€€€¥˜€ …±…¥µ%ÍÕÉÉ•¹Ð ¤¤É•ÑÕÉ¸ì(€€€€€¥˜€ …±•…Í•%Í±…¥µ…‰±”¡Í•¹”¤¤ì(€€€€€€€Ñ¡É½Ü¹•ÜÉÉ½È ‰½½É‘¥¹…Ñ½È±•…Í”¥Ì¡•±‰ä…¹½Ñ¡•È±¥Ù”½¹¹•Ñ¥½¸ˆ¤ì(€€€€€ô(€€€€€ÑÉäì(€€€€€€€…Ý…¥ÐÑ¡¥Ì¹É•Á½Í¥Ñ½Éä¹ÝÉ¥Ñ•M•¹” (€€€€€€€€€ì€¸¸¹Í•¹”°½½É‘¥¹…Ñ½É1•…Í”è¡•…ÉÑ‰•…Ðô°(€€€€€€€€€Í•¹”¹É•Ù¥Í¥½¸°(€€€€€€€€€€¡ÕÉÉ•¹Ð¤€ôø±…¥µ%ÍÕÉÉ•¹Ð ¤€˜˜±•…Í•%Í±…¥µ…‰±”¡ÕÉÉ•¹Ð¤(€€€€€€€€¤ì(€€€€€ô…Ñ €¡•ÉÉ½È¤ì(€€€€€€€¥˜€ …±…¥µ%ÍÕÉÉ•¹Ð ¤¤É•ÑÕÉ¸ì(€€€€€€€Ñ¡É½Ü•ÉÉ½Èì(€€€€€ô(€€€ô¤ì(€ô((€ÁÉ¥Ù…Ñ”•¹ÅÕ•Õ•5ÕÑ…Ñ¥½¸ñPø¡½Á•É…Ñ¥½¸è€ ¤€ôøAÉ½µ¥Í”ñPø¤èAÉ½µ¥Í”ñPøì(€€€½¹ÍÐÉ•ÍÕ±Ð€ôÑ¡¥Ì¹µÕÑ…Ñ¥½¹Q…¥°¹Ñ¡•¸¡½Á•É…Ñ¥½¸°½Á•É…Ñ¥½¸¤ì(€€€Ñ¡¥Ì¹µÕÑ…Ñ¥½¹Q…¥°€ôÉ•ÍÕ±Ð¹Ñ¡•¸ (€€€€€€ ¤€ôøÕ¹‘•™¥¹•°(€€€€€€ ¤€ôøÕ¹‘•™¥¹•(€€€€¤ì(€€€É•ÑÕÉ¸É•ÍÕ±Ðì(€ô((€…Íå¹ŒÝ¡•¹%‘±” ¤èAÉ½µ¥Í”ñÙ½¥øì(€€€…Ý…¥ÐÑ¡¥Ì¹µÕÑ…Ñ¥½¹Q…¥°ì(€ô((€ÁÉ¥Ù…Ñ”…Íå¹ŒÉ•½¹¥±•=Ù•É±…åÌ (€€€Í•¹”èM•¹•MÑ…Ñ”°(€€€…Éµ¥•ÌèÉ•…‘½¹±äÉµåI•½É‘mt°(€€€‰…ÉÉ¥•ÉÌèÉ•…‘½¹±ä	…ÉÉ¥•ÉI•½É‘mt°(€€€É½±”è€‰4ˆð€‰A1eHˆ°(€€€µ•µ‰•ÉM¥‘•%‘ÌèÉ•…‘½¹±äÍÑÉ¥¹mt°(€€€±•…‘•ÉM¥‘•%‘ÌèÉ•…‘½¹±äÍÑÉ¥¹mt°(€€€Ù¥Í¥‰±•Éµå%‘ÌèI•…‘½¹±åM•ÐñÍÑÉ¥¹œø°(€€€Í•¹•%Ñ•µÌèÉ•…‘½¹±äM•¹•%Ñ•µI•½É‘mt°(€€€Ù¥Í¥‰±•M¡¥Á%‘ÌèI•…‘½¹±åM•ÐñÍÑÉ¥¹œø(€€¤èAÉ½µ¥Í”ñÙ½¥øì(€€€±•Ð±½…±%Ñ•µÍM¹…ÁÍ¡½ÐèAÉ½µ¥Í”ñM•¹•%Ñ•µI•½É‘mtøðÕ¹‘•™¥¹•ì(€€€½¹ÍÐ½Ù•É±…åA½ÉÐ€ôì(€€€€€€¼¼=Ù•É±…äÑåÁ•ÌÕÍ”‘¥Í©½¥¹Ðµ•Ñ…‘…Ñ„­•åÌ¸Í¥¹±”¥µµÕÑ…‰±”Í¹…ÁÍ¡½Ð¥Ì•¹½Õ (€€€€€€¼¼™½È…±°É•½¹¥±¥…Ñ¥½¸Á…ÍÍ•Ì¥¸Ñ¡¥ÌÙ¥Í¥‰¥±¥Ñä™É…µ”…¹…Ù½¥‘ÌÉ•Á•…Ñ•‘±ä(€€€€€€¼¼ÑÉ…¹Í™•ÉÉ¥¹œ„Á½Ñ•¹Ñ¥…±±ä¡Õ”Í•¹”¹±½…°½±±•Ñ¥½¸Ñ¡É½Õ Ñ¡”M,¸(€€€€€•Ñ1½…±%Ñ•µÌè€ ¤€ôøì(€€€€€€€±½…±%Ñ•µÍM¹…ÁÍ¡½Ð€üüôÑ¡¥Ì¹Á½ÉÐ¹•Ñ1½…±%Ñ•µÌ ¤ì(€€€€€€€É•ÑÕÉ¸±½…±%Ñ•µÍM¹…ÁÍ¡½Ðì(€€€€€ô°(€€€€€…‘‘1½…±%Ñ•µÌè€¡¥Ñ•µÌèÉ•…‘½¹±äM•¹•%Ñ•µI•½É‘mt¤€ôøÑ¡¥Ì¹Á½ÉÐ¹…‘‘1½…±%Ñ•µÌ¡¥Ñ•µÌ¤°(€€€€€ÕÁ‘…Ñ•1½…±%Ñ•µÌè€¡¥Ñ•µÌèÉ•…‘½¹±äM•¹•%Ñ•µI•½É‘mt¤€ôøÑ¡¥Ì¹Á½ÉÐ¹ÕÁ‘…Ñ•1½…±%Ñ•µÌ¡¥Ñ•µÌ¤°(€€€€€‘•±•Ñ•1½…±%Ñ•µÌè€¡¥‘ÌèÉ•…‘½¹±äÍÑÉ¥¹mt¤€ôøÑ¡¥Ì¹Á½ÉÐ¹‘•±•Ñ•1½…±%Ñ•µÌ¡¥‘Ì¤°(€€€€€É•…Ñ•%è€ ¤€ôøÉåÁÑ¼¹É…¹‘½µUU% ¤(€€€ôì(€€€½¹ÍÐÍ¥‘•½±½ÉÌ€ô¹•Ü5…À¡Í•¹”¹Í¥‘•Ì¹µ…À ¡Í¥‘”¤€ôømÍ¥‘”¹¥°Í¥‘”¹½±½Ét¤¤ì(€€€…Ý…¥Ð¹•ÜI½ÕÑ•=Ù•É±…åM•ÉÙ¥”¡½Ù•É±…åA½ÉÐ¤¹É•½¹¥±” (€€€€€…Éµ¥•Ì(€€€€€€€€¹™¥±Ñ•È ¡É•½É¤€ôøÉ•½É¹ÍÑ…Ñ”¹É½ÕÑ”¹±•¹Ñ €ø€À¤(€€€€€€€€¹µ…À ¡É•½É¤€ôø€¡ì(€€€€€€€€€…Éµå%èÉ•½É¹¥Ñ•´¹¥°(€€€€€€€€€Í¥‘•%èÉ•½É¹ÍÑ…Ñ”¹Í¥‘•%°(€€€€€€€€€ÍÑ…ÑÕÌèÉ•½É¹ÍÑ…Ñ”¹ÍÑ…ÑÕÌ°(€€€€€€€€€½±½ÈèÍ¥‘•½±½ÉÌ¹•Ð¡É•½É¹ÍÑ…Ñ”¹Í¥‘•%¤€üü€ˆŒØÀÝáˆˆ°(€€€€€€€€€ÍÑ…ÉÐèÉ•½É¹¥Ñ•´¹Á½Í¥Ñ¥½¸°(€€€€€€€€€Ý…åÁ½¥¹ÑÌèÉ•½É¹ÍÑ…Ñ”¹É½ÕÑ”(€€€€€€€ô¤¤°(€€€€€ì¥Í4èÉ½±”€ôôô€‰4ˆ°µ•µ‰•ÉM¥‘•%‘Ì°±•…‘•ÉM¥‘•%‘Ìô(€€€€¤ì(€€€½¹ÍÐÁ±…¹¹•‘M¡¥ÁÌ€ô=‰©•Ð¹•¹ÑÉ¥•Ì¡Í•¹”¹Í¡¥ÁÌ€üüíô¤¹™¥±Ñ•È ¡l°ÍÑ…Ñ•t¤€ôøÍÑ…Ñ”¹Á±…¹¹•‘I½ÕÑ”¹±•¹Ñ €ø€À¤ì(€€€½¹ÍÐÍ¡¥ÁI½ÕÑ•Y¥•Ý•È€ôì¥Í4èÉ½±”€ôôô€‰4ˆ°±•…‘•ÉM¥‘•%‘Ìôì(€€€¥˜€¡Á±…¹¹•‘M¡¥ÁÌ¹±•¹Ñ €ôôô€À¤ì(€€€€€…Ý…¥Ð¹•ÜM¡¥ÁI½ÕÑ•=Ù•É±…åM•ÉÙ¥”¡½Ù•É±…åA½ÉÐ¤¹É•½¹¥±”¡mt°Í¡¥ÁI½ÕÑ•Y¥•Ý•È¤ì(€€€ô•±Í”ì(€€€€€ÑÉäì(€€€€€€€½¹ÍÐÉ½ÕÑ•É¥€ô¹•ÜMÑÉ…Ñ•¥É¥‘‘…ÁÑ•È¡ì‘Á¤è…Ý…¥ÐÑ¡¥Ì¹É¥¹•ÑÁ¤ ¤°½™™Í•Ðèìàè€À°äè€Àôô¤ì(€€€€€€€½¹ÍÐÉ½ÕÑ•%Ñ•µ	å%€ô¹•Ü5…À¡Í•¹•%Ñ•µÌ¹µ…À ¡¥Ñ•´¤€ôøm¥Ñ•´¹¥°¥Ñ•µt¤¤ì(€€€€€€€…Ý…¥Ð¹•ÜM¡¥ÁI½ÕÑ•=Ù•É±…åM•ÉÙ¥”¡½Ù•É±…åA½ÉÐ¤¹É•½¹¥±” (€€€€€€€€€Á±…¹¹•‘M¡¥ÁÌ¹™±…Ñ5…À ¡mÍ¡¥Á%°ÍÑ…Ñ•t¤€ôøì(€€€€€€€€€€€½¹ÍÐ¥Ñ•´€ôÉ½ÕÑ•%Ñ•µ	å%¹•Ð¡Í¡¥Á%¤ì(€€€€€€€€€€€¥˜€ …¥Ñ•´¤É•ÑÕÉ¸mtì(€€€€€€€€€€€É•ÑÕÉ¸mì(€€€€€€€€€€€€€Í¡¥Á%°(€€€€€€€€€€€€€Í¥‘•%èÍÑ…Ñ”¹Í¥‘•%°(€€€€€€€€€€€€€½±½ÈèÍ¥‘•½±½ÉÌ¹•Ð¡ÍÑ…Ñ”¹Í¥‘•%¤€üü€ˆŒØÀÝáˆˆ°(€€€€€€€€€€€€€ÍÑ…ÉÐè¥Ñ•´¹Á½Í¥Ñ¥½¸°(€€€€€€€€€€€€€Ý…åÁ½¥¹ÑÌèÍÑ…Ñ”¹Á±…¹¹•‘I½ÕÑ”¹µ…À ¡•±°¤€ôøÉ½ÕÑ•É¥¹•±±Q½M•¹••¹Ñ•È¡•±°¤¤(€€€€€€€€€€€õtì(€€€€€€€€€ô¤°(€€€€€€€€€Í¡¥ÁI½ÕÑ•Y¥•Ý•È(€€€€€€€€¤ì(€€€€€ô…Ñ ì(€€€€€€€€¼¼AÉ•Í•ÉÙ”Ñ¡”±…ÍÐÙ…±¥É½ÕÑ”½Ù•É±…äÝ¡¥±”=Ý±‰•…ÈÉ¥•½µ•ÑÉä¥ÌÕ¹…Ù…¥±…‰±”¸(€€€€€ô(€€€ô((€€€…Ý…¥Ð¹•Ü	…ÉÉ¥•É=Ù•É±…åM•ÉÙ¥”¡½Ù•É±…åA½ÉÐ¤¹É•½¹¥±” (€€€€€‰…ÉÉ¥•ÉÌ¹µ…À ¡É•½É¤€ôø€¡ì(€€€€€€€¥èÉ•½É¹¥Ñ•´¹¥°(€€€€€€€Á½¥¹ÑÌèÕÉÙ•A½¥¹ÑÌ¡É•½É¹¥Ñ•´¤°(€€€€€€€½±½ÈèÉ•½É¹ÍÑ…Ñ”¹½±½È°(€€€€€€€Ù¥Í¥‰¥±¥ÑäèÉ•½É¹ÍÑ…Ñ”¹Ù¥Í¥‰¥±¥Ñä(€€€€€ô¤¤°(€€€€€É½±”€ôôô€‰4ˆ(€€€€¤ì((€€€…Ý…¥Ð¹•Ü!•…±Ñ¡=Ù•É±…åM•ÉÙ¥”¡½Ù•É±…åA½ÉÐ¤¹É•½¹¥±” (€€€€€…Éµ¥•Ì¹µ…À ¡É•½É¤€ôø€¡ì(€€€€€€€…Éµå%èÉ•½É¹¥Ñ•´¹¥°(€€€€€€€Á½Í¥Ñ¥½¸èÉ•½É¹¥Ñ•´¹Á½Í¥Ñ¥½¸°(€€€€€€€¡ÀèÉ•½É¹ÍÑ…Ñ”¹¡•…±Ñ ¹¡À°(€€€€€€€µ…á!ÀèÉ•½É¹ÍÑ…Ñ”¹¡•…±Ñ ¹µ…á!À°(€€€€€€€½±½ÈèÍ¥‘•½±½ÉÌ¹•Ð¡É•½É¹ÍÑ…Ñ”¹Í¥‘•%¤€üü€ˆ™™™™™˜ˆ(€€€€€ô¤¤°(€€€€€Ù¥Í¥‰±•Éµå%‘Ì(€€€€¤ì((€€€½¹ÍÐÍ•¹•%Ñ•µ	å%€ô¹•Ü5…À¡Í•¹•%Ñ•µÌ¹µ…À ¡¥Ñ•´¤€ôøm¥Ñ•´¹¥°¥Ñ•µt¤¤ì(€€€½¹ÍÐÙ¥•ÝÁ½ÉÑM…±”€ô…Ý…¥ÐÑ¡¥Ì¹Á½ÉÐ¹•ÑY¥•ÝÁ½ÉÑM…±”ü¸ ¤€üü€Äì(€€€…Ý…¥Ð¹•Ü9…Ù…±M¡¥Á=Ù•É±…åM•ÉÙ¥”¡½Ù•É±…åA½ÉÐ¤¹É•½¹¥±” (€€€€€=‰©•Ð¹•¹ÑÉ¥•Ì¡Í•¹”¹Í¡¥ÁÌ€üüíô¤¹™±…Ñ5…À ¡mÍ¡¥Á%°ÍÑ…Ñ•t¤€ôøì(€€€€€€€½¹ÍÐ¥Ñ•´€ôÍ•¹•%Ñ•µ	å%¹•Ð¡Í¡¥Á%¤ì(€€€€€€€¥˜€ …¥Ñ•´¤É•ÑÕÉ¸mtì(€€€€€€€½¹ÍÐ‘•™¥¹¥Ñ¥½¸€ôM!%A}1MMMmÍÑ…Ñ”¹±…ÍÍ%‘tì(€€€€€€€É•ÑÕÉ¸mì(€€€€€€€€€Í¡¥Á%°(€€€€€€€€€¹…µ”è¥Ñ•´¹¹…µ”ü¹ÑÉ¥´ ¤ñð‘•™¥¹¥Ñ¥½¸¹¹…µ”°(€€€€€€€€€Á½Í¥Ñ¥½¸è¥Ñ•´¹Á½Í¥Ñ¥½¸°(€€€€€€€€€¡ÀèÍÑ…Ñ”¹¡À°(€€€€€€€€€µ…á!Àè‘•™¥¹¥Ñ¥½¸¹µ…á!À°(€€€€€€€€€½±½ÈèÍ¥‘•½±½ÉÌ¹•Ð¡ÍÑ…Ñ”¹Í¥‘•%¤€üü€ˆ™™™™™˜ˆ(€€€€€€€õtì(€€€€€ô¤°(€€€€€Ù¥Í¥‰±•M¡¥Á%‘Ì°(€€€€€Ù¥•ÝÁ½ÉÑM…±”(€€€€¤ì((€€€½¹ÍÐ¥¹Ñ•É•ÁÑ¥½¹Y¥•Ý•È€ôì¥Í4èÉ½±”€ôôô€‰4ˆ°±•…‘•ÉM¥‘•%‘Ìôì(€€€½¹ÍÐ…Ñ¥Ù•%¹Ñ•É•ÁÑ¥½¹Ì€ô=‰©•Ð¹Ù…±Õ•Ì¡Í•¹”¹…Ñ¥Ù•9…Ù…±	…ÑÑ±”ü¹¥¹Ñ•É•ÁÑ¥½¹Ì€üüíô¤ì(€€€½¹ÍÐ…¹Y¥•ÝÑ¥Ù•%¹Ñ•É•ÁÑ¥½¸€ôÉ½±”€ôôô€‰4ˆñð…Ñ¥Ù•%¹Ñ•É•ÁÑ¥½¹Ì¹Í½µ” ¡¥¹Ñ•É•ÁÑ¥½¸¤€ôøì(€€€€€½¹ÍÐÉÕ¥Í•È€ô€¡Í•¹”¹Í¡¥ÁÌ€üüíô¥m¥¹Ñ•É•ÁÑ¥½¸¹ÉÕ¥Í•ÉM¡¥Á%‘tì(€€€€€É•ÑÕÉ¸ÉÕ¥Í•È€„ôôÕ¹‘•™¥¹•€˜˜±•…‘•ÉM¥‘•%‘Ì¹¥¹±Õ‘•Ì¡ÉÕ¥Í•È¹Í¥‘•%¤ì(€€€ô¤ì(€€€½¹ÍÐ¥¹Ñ•É•ÁÑ¥½¹=Ù•É±…åM•ÉÙ¥”€ô¹•Ü%¹Ñ•É•ÁÑ¥½¹=Ù•É±…åM•ÉÙ¥”¡½Ù•É±…åA½ÉÐ¤ì(€€€¥˜€ (€€€€€Í•¹”¹…Ñ¥Ù•9…Ù…±	…ÑÑ±”ü¹ÍÑ…ÑÕÌ€„ôô€‰Q%Yˆñð(€€€€€…Ñ¥Ù•%¹Ñ•É•ÁÑ¥½¹Ì¹±•¹Ñ €ôôô€Àñð(€€€€€€……¹Y¥•ÝÑ¥Ù•%¹Ñ•É•ÁÑ¥½¸(€€€€¤ì(€€€€€…Ý…¥Ð¥¹Ñ•É•ÁÑ¥½¹=Ù•É±…åM•ÉÙ¥”¹É•½¹¥±”¡Õ¹‘•™¥¹•°¥¹Ñ•É•ÁÑ¥½¹Y¥•Ý•È¤ì(€€€ô•±Í”ì(€€€€€ÑÉäì(€€€€€€€½¹ÍÐÍ¡¥ÁA½Í¥Ñ¥½¹Ì€ô=‰©•Ð¹™É½µ¹ÑÉ¥•Ì (€€€€€€€€€=‰©•Ð¹­•åÌ¡Í•¹”¹Í¡¥ÁÌ€üüíô¤¹™±…Ñ5…À ¡Í¡¥Á%¤€ôøì(€€€€€€€€€€€½¹ÍÐ¥Ñ•´€ôÍ•¹•%Ñ•µ	å%¹•Ð¡Í¡¥Á%¤ì(€€€€€€€€€€€É•ÑÕÉ¸¥Ñ•´€ümmÍ¡¥Á%°¥Ñ•´¹Á½Í¥Ñ¥½¹t…Ì½¹ÍÑt€èmtì(€€€€€€€€€ô¤(€€€€€€€€¤ì(€€€€€€€…Ý…¥Ð¥¹Ñ•É•ÁÑ¥½¹=Ù•É±…åM•ÉÙ¥”¹É•½¹¥±” (€€€€€€€€€ì(€€€€€€€€€€€‘Á¤è…Ý…¥ÐÑ¡¥Ì¹É¥¹•ÑÁ¤ ¤°(€€€€€€€€€€€Í•¹”èÍ•¹”…Ì¥µÁ½ÉÐ ˆ¸¸½Í¡…É•½ÑåÁ•Ìˆ¤¹9…Ù…±M•¹•MÑ…Ñ”°(€€€€€€€€€€€Í¡¥ÁA½Í¥Ñ¥½¹Ì(€€€€€€€€€ô°(€€€€€€€€€¥¹Ñ•É•ÁÑ¥½¹Y¥•Ý•È(€€€€€€€€¤ì(€€€€€ô…Ñ ì(€€€€€€€€¼¼AÉ•Í•ÉÙ”Ñ¡”±…ÍÐÙ…±¥…ÕÑ¡½É¥é•¥¹Ñ•É•ÁÑ¥½¸½Ù•É±…äÝ¡¥±”É¥•½µ•ÑÉä¥ÌÕ¹…Ù…¥±…‰±”¸(€€€€€ô(€€€ô((€€€¥˜€¡É½±”€ôôô€‰4ˆ€˜˜€…Ñ¡¥Ì¹±•…É•‘M¡…É•‘5…Á=Ù•É±…åÌ¤ì(€€€€€½¹ÍÐÍ¡…É•‘5…Á=Ù•É±…åA½ÉÐ€ôì(€€€€€€€•Ñ1½…±%Ñ•µÌè€ ¤€ôøÑ¡¥Ì¹Á½ÉÐ¹•ÑM•¹•%Ñ•µÌ ¤°(€€€€€€€…‘‘1½…±%Ñ•µÌè€¡¥Ñ•µÌèÉ•…‘½¹±äM•¹•%Ñ•µI•½É‘mt¤€ôøÑ¡¥Ì¹Á½ÉÐ¹…‘‘M•¹•%Ñ•µÌ¡¥Ñ•µÌ¤°(€€€€€€€ÕÁ‘…Ñ•1½…±%Ñ•µÌè…Íå¹Œ€¡¥Ñ•µÌèÉ•…‘½¹±äM•¹•%Ñ•µI•½É‘mt¤€ôøì(€€€€€€€€€…Ý…¥ÐAÉ½µ¥Í”¹…±°¡¥Ñ•µÌ¹µ…À ¡ì¥°€¸¸¹¥Ñ•´ô¤€ôøÑ¡¥Ì¹Á½ÉÐ¹ÕÁ‘…Ñ•M•¹•%Ñ•´¡¥°¥Ñ•´¤¤¤ì(€€€€€€€ô°(€€€€€€€‘•±•Ñ•1½…±%Ñ•µÌè€¡¥‘ÌèÉ•…‘½¹±äÍÑÉ¥¹mt¤€ôøÑ¡¥Ì¹Á½ÉÐ¹‘•±•Ñ•M•¹•%Ñ•µÌ¡¥‘Ì¤°(€€€€€€€É•…Ñ•%è€ ¤€ôøÉåÁÑ¼¹É…¹‘½µUU% ¤(€€€€€ôì(€€€€€ÑÉäì(€€€€€€€€¼¼I•µ½Ù”Í¡…É•Á•Èµ•±°½Ù•É±…åÌÉ•…Ñ•‰ä½±‘•ÈÙ•ÉÍ¥½¹Ì¸5…ÀÙ¥ÍÕ…±Ì(€€€€€€€€¼¼…É”¹½ÜÉ•‰Õ¥±Ð±½…±±ä‰ä•… ±¥•¹Ð™É½´Í¡…É•Í•¹”µ•Ñ…‘…Ñ„¸(€€€€€€€…Ý…¥Ð¹•Ü5…Á=Ù•É±…åM•ÉÙ¥”¡Í¡…É•‘5…Á=Ù•É±…åA½ÉÐ¤¹É•½¹¥±”¡Õ¹‘•™¥¹•¤ì(€€€€€€€Ñ¡¥Ì¹±•…É•‘M¡…É•‘5…Á=Ù•É±…åÌ€ôÑÉÕ”ì(€€€€€ô…Ñ ì(€€€€€€€€¼¼I•ÑÉä±•…¹ÕÀ½¸Ñ¡”¹•áÐÙ¥Í¥‰¥±¥Ñä™É…µ”¸(€€€€€ô(€€€ô(€€€¥˜€ …Ñ¡¥Ì¹±•…É•‘1•…å5…Á=Ù•É±…åÌ¤ì(€€€€€€¼¼I•µ½Ù”±•…ä±½…°½Ù•É±…åÌ‰•™½É”É•‰Õ¥±‘¥¹œÑ¡•´™½ÈÑ¡¥Ì±¥•¹Ð¸(€€€€€…Ý…¥Ð¹•Ü5…Á=Ù•É±…åM•ÉÙ¥”¡½Ù•É±…åA½ÉÐ¤¹É•½¹¥±”¡Õ¹‘•™¥¹•¤ì(€€€€€Ñ¡¥Ì¹±•…É•‘1•…å5…Á=Ù•É±…åÌ€ôÑÉÕ”ì(€€€ô(€€€½¹ÍÐµ…Á=Ù•É±…åM•ÉÙ¥”€ô¹•Ü5…Á=Ù•É±…åM•ÉÙ¥”¡½Ù•É±…åA½ÉÐ¤ì(€€€ÑÉäì(€€€€€½¹ÍÐ‘Á¤€ô…Ý…¥ÐÑ¡¥Ì¹É¥¹•ÑÁ¤ ¤ì(€€€€€½¹ÍÐÍ¥¹…ÑÕÉ”€ô)M=8¹ÍÑÉ¥¹¥™ä¡l(€€€€€€€‘Á¤°(€€€€€€€Í•¹”¹É¥‘5…À¹É•Ù¥Í¥½¸°(€€€€€€€=‰©•Ð¹Ù…±Õ•Ì¡Í•¹”¹Ñ•ÉÉ…¥¸¹ÑåÁ•Ì¤(€€€€€€€€€€¹µ…À ¡Ñ•ÉÉ…¥¸¤€ôømÑ•ÉÉ…¥¸¹¥°Ñ•ÉÉ…¥¸¹•¹…‰±•°Ñ•ÉÉ…¥¸¹½±½È€üü¹Õ±±t¤(€€€€€€€€€€¹Í½ÉÐ ¡m±•™Ñt°mÉ¥¡Ñt¤€ôøMÑÉ¥¹œ¡±•™Ð¤¹±½…±•½µÁ…É”¡MÑÉ¥¹œ¡É¥¡Ð¤¤¤°(€€€€€€€Í•¹”¹ÍÑ…Ñ•Ì(€€€€€€€€€€¹µ…À ¡ÍÑ…Ñ”¤€ôømÍÑ…Ñ”¹¥°ÍÑ…Ñ”¹¹…µ”°ÍÑ…Ñ”¹½±½È€üü¹Õ±±t¤(€€€€€€€€€€¹Í½ÉÐ ¡m±•™Ñt°mÉ¥¡Ñt¤€ôøMÑÉ¥¹œ¡±•™Ð¤¹±½…±•½µÁ…É”¡MÑÉ¥¹œ¡É¥¡Ð¤¤¤(€€€€€t¤ì(€€€€€¥˜€¡Ñ¡¥Ì¹±…ÍÑ5…Á=Ù•É±…åM¥¹…ÑÕÉ”€ôôôÍ¥¹…ÑÕÉ”¤É•ÑÕÉ¸ì(€€€€€…Ý…¥Ðµ…Á=Ù•É±…åM•ÉÙ¥”¹É•½¹¥±”¡ì(€€€€€€€‘Á¤°(€€€€€€€É¥‘5…ÀèÍ•¹”¹É¥‘5…À°(€€€€€€€Ñ•ÉÉ…¥¸èÍ•¹”¹Ñ•ÉÉ…¥¸°(€€€€€€€Í¥‘•ÌèÍ•¹”¹Í¥‘•Ì°(€€€€€€€ÍÑ…Ñ•ÌèÍ•¹”¹ÍÑ…Ñ•Ì(€€€€€ô¤ì(€€€€€Ñ¡¥Ì¹±…ÍÑ5…Á=Ù•É±…åM¥¹…ÑÕÉ”€ôÍ¥¹…ÑÕÉ”ì(€€€ô…Ñ ì(€€€€€€¼¼-••ÀÑ¡”±…ÍÐÙ…±¥4µ…À½Ù•É±…ä¥˜É¥•½µ•ÑÉä¥ÌÑ•µÁ½É…É¥±äÕ¹…Ù…¥±…‰±”¸(€€€ô(€ô)ô()•áÁ½ÉÐ¥¹Ñ•É™…”	…­É½Õ¹‘ÁÁ±¥…Ñ¥½¸ì(€…Ñ¥Ù…Ñ•%¹Ñ•É•ÁÑ¥½¸¡Í¡¥Á%èÍÑÉ¥¹œ¤èAÉ½µ¥Í”ñÙ½¥øì(€ÍÑ½À ¤èAÉ½µ¥Í”ñÙ½¥øì)ô()•áÁ½ÉÐ…Íå¹Œ™Õ¹Ñ¥½¸ÍÑ…ÉÑ	…­É½Õ¹‘ÁÁ±¥…Ñ¥½¸ ¤èAÉ½µ¥Í”ñ	…­É½Õ¹‘ÁÁ±¥…Ñ¥½¸øì(€½¹ÍÐmì‘•™…Õ±Ðè=	Hô°ìÉ•…Ñ•=Ý±‰•…É‘…ÁÑ•Èõt€ô…Ý…¥ÐAÉ½µ¥Í”¹…±°¡l(€€€¥µÁ½ÉÐ ‰½Ý±‰•…ÈµÉ½‘•¼½Í‘¬ˆ¤°(€€€¥µÁ½ÉÐ ˆ¸¸½½Ý±‰•…È½Í‘­‘…ÁÑ•Èˆ¤(€t¤ì(€½¹ÍÐÁ½ÉÐ€ôÉ•…Ñ•=Ý±‰•…É‘…ÁÑ•È ¤ì(€½¹ÍÐÉ¥‘ÉÉ½ÉÌ€ôÉ•…Ñ•É¥‘ÉÉ½ÉI•Á½ÉÑ•È¡Á½ÉÐ¤ì(€½¹ÍÐ•¹¥¹”€ô¹•ÜAÉ½‘ÕÑ¥½¹¹¥¹”¡Á½ÉÐ¤ì(€½¹ÍÐ½¹¹•Ñ•‘A…ÉÑä€ô…Íå¹Œ€ ¤èAÉ½µ¥Í”ñ½¹¹•Ñ•‘A…ÉÑ¥¥Á…¹Ñmtø€ôøì(€€€½¹ÍÐmÁ±…å•ÉÌ°¥°É½±”°ÕÉÉ•¹Ñ½¹¹•Ñ¥½¹%‘t€ô…Ý…¥ÐAÉ½µ¥Í”¹…±°¡l(€€€€€=	H¹Á…ÉÑä¹•ÑA±…å•ÉÌ ¤°(€€€€€=	H¹Á±…å•È¹•Ñ% ¤°(€€€€€=	H¹Á±…å•È¹•ÑI½±” ¤°(€€€€€=	H¹Á±…å•È¹•Ñ½¹¹•Ñ¥½¹% ¤(€€€t¤ì(€€€É•ÑÕÉ¸µ•É•ÕÉÉ•¹ÑA…ÉÑ¥¥Á…¹Ð¡Á±…å•ÉÌ°ì¥°É½±”°½¹¹•Ñ¥½¹%èÕÉÉ•¹Ñ½¹¹•Ñ¥½¹%ô¤ì(€ôì(€½¹ÍÐÁ…ÉÑä€ô…Íå¹Œ€ ¤èAÉ½µ¥Í”ñ½½É‘¥¹…Ñ½ÉA…ÉÑ¥¥Á…¹Ñmtø€ôøì(€€€½¹ÍÐÁ±…å•ÉÌ€ô…Ý…¥Ð½¹¹•Ñ•‘A…ÉÑä ¤ì(€€€É•ÑÕÉ¸Á±…å•ÉÌ¹µ…À ¡Á±…å•È¤€ôø€¡ì½¹¹•Ñ¥½¹%èÁ±…å•È¹½¹¹•Ñ¥½¹%°É½±”èÁ±…å•È¹É½±”ô¤¤ì(€ôì(€½¹ÍÐÉ½ÕÑ•…Ñ•Ý…ä€ô¹•Ü½µµ…¹‘…Ñ•Ý…ä (€€€Á½ÉÐ°(€€€€Õ|ÀÀÀ°(€€€…Íå¹Œ€ ¤€ôøÉ•Í½±Ù•½½É‘¥¹…Ñ½É½¹¹•Ñ¥½¹% (€€€€€…Ý…¥ÐÁ…ÉÑä ¤°(€€€€€…Ý…¥Ð•¹¥¹”¹É•…‘½½É‘¥¹…Ñ½É1•…Í” ¤¹…Ñ   ¤€ôøÕ¹‘•™¥¹•¤°(€€€€€…Ñ”¹¹½Ü ¤(€€€€¤(€€¤ì(€É½ÕÑ•…Ñ•Ý…ä¹ÍÑ…ÉÐ ¤ì(€½¹ÍÐÑ½½±A½ÉÐ€ô=‰©•Ð¹…ÍÍ¥¸¡Á½ÉÐ°ì(€€€•ÑA±…å•É%‘•¹Ñ¥Ñäè…Íå¹Œ€ ¤€ôøì(€€€€€½¹ÍÐm¥°É½±”°ÕÉÉ•¹Ñ½¹¹•Ñ¥½¹%‘t€ô…Ý…¥ÐAÉ½µ¥Í”¹…±°¡l(€€€€€€€=	H¹Á±…å•È¹•Ñ% ¤°(€€€€€€€=	H¹Á±…å•È¹•ÑI½±” ¤°(€€€€€€€=	H¹Á±…å•È¹•Ñ½¹¹•Ñ¥½¹% ¤(€€€€€t¤ì(€€€€€É•ÑÕÉ¸ì¥°É½±”°½¹¹•Ñ¥½¹%èÕÉÉ•¹Ñ½¹¹•Ñ¥½¹%ôì(€€€ô°(€€€•ÑM•¹•I•Ù¥Í¥½¸è…Íå¹Œ€ ¤€ôø€¡…Ý…¥Ð¹•Ü5•Ñ…‘…Ñ…I•Á½Í¥Ñ½Éä¡Á½ÉÐ¤¹É•…‘M•¹” ¤¤¹É•Ù¥Í¥½¸°(€€€É•…Ñ•%è€ ¤€ôøÉåÁÑ¼¹É…¹‘½µUU% ¤°(€€€…Ñ¥Ù…Ñ•Q½½°è€¡Ñ½½±%èÍÑÉ¥¹œ¤€ôø=	H¹Ñ½½°¹…Ñ¥Ù…Ñ•Q½½°¡Ñ½½±%¤(€ô¤ì(€½¹ÍÐ¥¹Ñ•É•ÁÑ¥½¹½¹Ñ•áÑ5•¹ÕM•ÉÙ¥”€ô¹•Ü9…Ù…±%¹Ñ•É•ÁÑ¥½¹½¹Ñ•áÑ5•¹ÕM•ÉÙ¥”¡Ñ½½±A½ÉÐ°É½ÕÑ•…Ñ•Ý…ä¤ì(€½¹ÍÐÉ½ÕÑ•M•ÉÙ¥”€ô¹•ÜI½ÕÑ•Q½½±M•ÉÙ¥”¡Ñ½½±A½ÉÐ°É½ÕÑ•…Ñ•Ý…ä¤ì(€±•ÐÉ•µ½Ù•I½ÕÑ•Q½½°èI½ÕÑ•Q½½±I•¥ÍÑÉ…Ñ¥½¸ì(€ÑÉäì(€€€É•µ½Ù•I½ÕÑ•Q½½°€ô…Ý…¥ÐÉ•¥ÍÑ•ÉI½ÕÑ•Q½½° (€€€€€=	H¹Ñ½½°°(€€€€€É½ÕÑ•M•ÉÙ¥”°(€€€€€ì(€€€€€€€‘¥ÍÑ…¹”è€¡™É½´°Ñ¼¤€ôøÁ½ÉÐ¹•ÑÉ¥‘¥ÍÑ…¹”¡™É½´°Ñ¼¤°(€€€€€€€Í¹…ÁÉ¥‘•¹Ñ•Èè€¡Á½Í¥Ñ¥½¸¤€ôøÁ½ÉÐ¹Í¹…ÁÉ¥‘•¹Ñ•È¡Á½Í¥Ñ¥½¸¤(€€€€€ô°(€€€€€€‘í¥µÁ½ÉÐ¹µ•Ñ„¹•¹Ø¹	M}UI1õ¥½¸´Ä¸È¹Á¹€(€€€€¤ì(€ô…Ñ €¡•ÉÉ½È¤ì(€€€É½ÕÑ•…Ñ•Ý…ä¹ÍÑ½À ¤ì(€€€Ñ¡É½Ü•ÉÉ½Èì(€ô(€½¹ÍÐÍ¡¥ÁI½ÕÑ•M•ÉÙ¥”€ô¹•ÜM¡¥ÁI½ÕÑ•Q½½±M•ÉÙ¥”¡Ñ½½±A½ÉÐ°É½ÕÑ•…Ñ•Ý…ä¤ì(€±•ÐÉ•µ½Ù•M¡¥ÁI½ÕÑ•Q½½°èM¡¥ÁI½ÕÑ•Q½½±I•¥ÍÑÉ…Ñ¥½¸ì(€ÑÉäì(€€€É•µ½Ù•M¡¥ÁI½ÕÑ•Q½½°€ô…Ý…¥ÐÉ•¥ÍÑ•ÉM¡¥ÁI½ÕÑ•Q½½° (€€€€€=	H¹Ñ½½°°(€€€€€Í¡¥ÁI½ÕÑ•M•ÉÙ¥”°(€€€€€ìÍ¹…ÁÉ¥‘•¹Ñ•Èè€¡Á½Í¥Ñ¥½¸¤€ôøÁ½ÉÐ¹Í¹…ÁÉ¥‘•¹Ñ•È¡Á½Í¥Ñ¥½¸¤ô°(€€€€€€‘í¥µÁ½ÉÐ¹µ•Ñ„¹•¹Ø¹	M}UI1õ¥½¸´Ä¸È¹Á¹€(€€€€¤ì(€ô…Ñ €¡•ÉÉ½È¤ì(€€€…Ý…¥ÐÉ•µ½Ù•I½ÕÑ•Q½½° ¤ì(€€€É½ÕÑ•…Ñ•Ý…ä¹ÍÑ½À ¤ì(€€€Ñ¡É½Ü•ÉÉ½Èì(€ô(€½¹ÍÐÑÉ…¹ÍÁ½ÉÑ1…¹‘¥¹M•ÉÙ¥”€ô¹•ÜQÉ…¹ÍÁ½ÉÑ1…¹‘¥¹Q½½±M•ÉÙ¥”¡Ñ½½±A½ÉÐ°É½ÕÑ•…Ñ•Ý…ä¤ì(€±•ÐÉ•µ½Ù•QÉ…¹ÍÁ½ÉÑ1…¹‘¥¹Q½½°èQÉ…¹ÍÁ½ÉÑ1…¹‘¥¹Q½½±I•¥ÍÑÉ…Ñ¥½¸ì(€ÑÉäì(€€€É•µ½Ù•QÉ…¹ÍÁ½ÉÑ1…¹‘¥¹Q½½°€ô…Ý…¥ÐÉ•¥ÍÑ•ÉQÉ…¹ÍÁ½ÉÑ1…¹‘¥¹Q½½° (€€€€€=	H¹Ñ½½°°(€€€€€ÑÉ…¹ÍÁ½ÉÑ1…¹‘¥¹M•ÉÙ¥”°(€€€€€€‘í¥µÁ½ÉÐ¹µ•Ñ„¹•¹Ø¹	M}UI1õ¥½¸´Ä¸È¹Á¹€(€€€€¤ì(€ô…Ñ €¡•ÉÉ½È¤ì(€€€…Ý…¥ÐÉ•µ½Ù•M¡¥ÁI½ÕÑ•Q½½° ¤ì(€€€…Ý…¥ÐÉ•µ½Ù•I½ÕÑ•Q½½° ¤ì(€€€É½ÕÑ•…Ñ•Ý…ä¹ÍÑ½À ¤ì(€€€Ñ¡É½Ü•ÉÉ½Èì(€ô(€±•ÐÉ•µ½Ù•5…Á	ÉÕÍ¡Q½½°è5…Á	ÉÕÍ¡Q½½±I•¥ÍÑÉ…Ñ¥½¸ì(€ÑÉäì(€€€É•µ½Ù•5…Á	ÉÕÍ¡Q½½°€ô…Ý…¥ÐÉ•¥ÍÑ•É5…Á	ÉÕÍ¡Q½½° (€€€€€=	H¹Ñ½½°°(€€€€€¹•Ü5…Á	ÉÕÍ¡Q½½±M•ÉÙ¥”¡Ñ½½±A½ÉÐ°É½ÕÑ•…Ñ•Ý…ä¤°(€€€€€€‘í¥µÁ½ÉÐ¹µ•Ñ„¹•¹Ø¹	M}UI1õ¥½¸´Ä¸È¹Á¹€(€€€€¤ì(€ô…Ñ €¡•ÉÉ½È¤ì(€€€…Ý…¥ÐÉ•µ½Ù•QÉ…¹ÍÁ½ÉÑ1…¹‘¥¹Q½½° ¤ì(€€€…Ý…¥ÐÉ•µ½Ù•M¡¥ÁI½ÕÑ•Q½½° ¤ì(€€€…Ý…¥ÐÉ•µ½Ù•I½ÕÑ•Q½½° ¤ì(€€€É½ÕÑ•…Ñ•Ý…ä¹ÍÑ½À ¤ì(€€€Ñ¡É½Ü•ÉÉ½Èì(€ô(€±•ÐÉ•µ½Ù••±±½½É‘¥¹…Ñ•Q½½°è•±±½½É‘¥¹…Ñ•Q½½±I•¥ÍÑÉ…Ñ¥½¸ì(€ÑÉäì(€€€É•µ½Ù••±±½½É‘¥¹…Ñ•Q½½°€ô…Ý…¥ÐÉ•¥ÍÑ•É•±±½½É‘¥¹…Ñ•Q½½° (€€€€€=	H¹Ñ½½°°(€€€€€Ñ½½±A½ÉÐ°(€€€€€€‘í¥µÁ½ÉÐ¹µ•Ñ„¹•¹Ø¹	M}UI1õ½½É‘¥¹…Ñ•Ì¹ÍÙ€(€€€€¤ì(€ô…Ñ €¡•ÉÉ½È¤ì(€€€…Ý…¥ÐÉ•µ½Ù•5…Á	ÉÕÍ¡Q½½° ¤ì(€€€…Ý…¥ÐÉ•µ½Ù•QÉ…¹ÍÁ½ÉÑ1…¹‘¥¹Q½½° ¤ì(€€€…Ý…¥ÐÉ•µ½Ù•M¡¥ÁI½ÕÑ•Q½½° ¤ì(€€€…Ý…¥ÐÉ•µ½Ù•I½ÕÑ•Q½½° ¤ì(€€€É½ÕÑ•…Ñ•Ý…ä¹ÍÑ½À ¤ì(€€€Ñ¡É½Ü•ÉÉ½Èì(€ô(€±•ÐÉ•µ½Ù•9…Ù…±	…ÑÑ±•É•…Q½½°è9…Ù…±	…ÑÑ±•É•…Q½½±I•¥ÍÑÉ…Ñ¥½¸ì(€ÑÉäì(€€€É•µ½Ù•9…Ù…±	…ÑÑ±•É•…Q½½°€ô…Ý…¥ÐÉ•¥ÍÑ•É9…Ù…±	…ÑÑ±•É•…Q½½° (€€€€€=	H¹Ñ½½°°(€€€€€¹•Ü9…Ù…±	…ÑÑ±•É•…Q½½±M•ÉÙ¥”¡Ñ½½±A½ÉÐ¤°(€€€€€€‘í¥µÁ½ÉÐ¹µ•Ñ„¹•¹Ø¹	M}UI1õ¥½¸´Ä¸È¹Á¹€(€€€€¤ì(€ô…Ñ €¡•ÉÉ½È¤ì(€€€…Ý…¥ÐÉ•µ½Ù••±±½½É‘¥¹…Ñ•Q½½° ¤ì(€€€…Ý…¥ÐÉ•µ½Ù•5…Á	ÉÕÍ¡Q½½° ¤ì(€€€…Ý…¥ÐÉ•µ½Ù•QÉ…¹ÍÁ½ÉÑ1…¹‘¥¹Q½½° ¤ì(€€€…Ý…¥ÐÉ•µ½Ù•M¡¥ÁI½ÕÑ•Q½½° ¤ì(€€€…Ý…¥ÐÉ•µ½Ù•I½ÕÑ•Q½½° ¤ì(€€€É½ÕÑ•…Ñ•Ý…ä¹ÍÑ½À ¤ì(€€€Ñ¡É½Ü•ÉÉ½Èì(€ô(€½¹ÍÐ½½É‘¥¹…Ñ½É1¥ÍÑ•¹•ÉÌ€ô¹•ÜM•Ðð¡…Ñ¥Ù”è‰½½±•…¸¤€ôøÙ½¥ø ¤ì(€½¹ÍÐÍ•¹•]½É¬€ô¹•ÜM•¹•]½É­QÉ…­•È ¤ì(€±•Ð½µµ…¹‘I•…‘ä€ô™…±Í”ì(€½¹ÍÐ±•…Í”€ô¹•Ü½½É‘¥¹…Ñ½É1•…Í”¡ì(€€€½¹ÉÉ½ÈèÉ¥‘ÉÉ½ÉÌ¹É•Á½ÉÐ°(€€€ÕÉÉ•¹Ñ½¹¹•Ñ¥½¹%è€ ¤€ôø=	H¹Á±…å•È¹•Ñ½¹¹•Ñ¥½¹% ¤°(€€€¹½Üè€ ¤€ôø…Ñ”¹¹½Ü ¤°(€€€Á…ÉÑ¥¥Á…¹ÑÌèÁ…ÉÑä°(€€€É•…‘!•…ÉÑ‰•…Ðè€ ¤€ôø•¹¥¹”¹É•…‘½½É‘¥¹…Ñ½É1•…Í” ¤°(€€€ÝÉ¥Ñ•!•…ÉÑ‰•…Ðè€¡¡•…ÉÑ‰•…Ð¤€ôø•¹¥¹”¹ÝÉ¥Ñ•½½É‘¥¹…Ñ½É!•…ÉÑ‰•…Ð¡¡•…ÉÑ‰•…Ð¤°(€€€½¹QÉ…¹Í¥Ñ¥½¸è€¡…Ñ¥Ù”°…Ñ¥Ù•½¹¹•Ñ¥½¹%¤€ôøì(€€€€€•¹¥¹”¹Í•Ñ½½É‘¥¹…Ñ½È¡…Ñ¥Ù”°…Ñ¥Ù•½¹¹•Ñ¥½¹%¤ì(€€€€€™½È€¡½¹ÍÐ±¥ÍÑ•¹•È½˜½½É‘¥¹…Ñ½É1¥ÍÑ•¹•ÉÌ¤±¥ÍÑ•¹•È¡…Ñ¥Ù”¤ì(€€€ô(€ô¤ì((€½¹ÍÐÉÕ¹Ñ¥µ•A½ÉÐè	…­É½Õ¹‘IÕ¹Ñ¥µ•A½ÉÐ€ôì(€€€¥ÍM•¹•I•…‘äè€ ¤€ôø=	H¹Í•¹”¹¥ÍI•…‘ä ¤°(€€€½¹M•¹•I•…‘äè€¡…±±‰…¬¤€ôø=	H¹Í•¹”¹½¹I•…‘å¡…¹”¡…±±‰…¬¤°(€€€½¹M•¹•=Á•¸è…Íå¹Œ€ ¤€ôøì(€€€€€É¥‘ÉÉ½ÉÌ¹É•Í•Ð ¤ì(€€€€€•¹¥¹”¹¥¹Ù…±¥‘…Ñ•=Ù•É±…å…¡•Ì ¤ì(€€€€€±•…Í”¹ÍÑ…ÉÐ ¤ì(€€€€€ÑÉäì(€€€€€€€…Ý…¥ÐAÉ½µ¥Í”¹…±°¡l(€€€€€€€€€É•µ½Ù•I½ÕÑ•Q½½°¹…¹•±M•ÍÍ¥½¸ ¤°(€€€€€€€€€É•µ½Ù•M¡¥ÁI½ÕÑ•Q½½°¹…¹•±M•ÍÍ¥½¸ ¤°(€€€€€€€€€É•µ½Ù•QÉ…¹ÍÁ½ÉÑ1…¹‘¥¹Q½½°¹…¹•±M•ÍÍ¥½¸ ¤°(€€€€€€€€€É•µ½Ù•5…Á	ÉÕÍ¡Q½½°¹…¹•±M•ÍÍ¥½¸ ¤°(€€€€€€€€€É•µ½Ù••±±½½É‘¥¹…Ñ•Q½½°¹…¹•±M•ÍÍ¥½¸ ¤(€€€€€€€t¤ì(€€€€€ô…Ñ ì(€€€€€€€€¼¼ÍÑ…±”ÁÉ•Ù¥•ÜµÕÍÐ¹½Ð‘¥Í…‰±”½µµ…¹‘•±¥Ù•Éä½È½½É‘¥¹…Ñ½È¡•…ÉÑ‰•…ÑÌ¸(€€€€€ô(€€€€€½µµ…¹‘I•…‘ä€ôÑÉÕ”ì(€€€ô°(€€€½¹M•¹•±½Í”è…Íå¹Œ€ ¤€ôøì(€€€€€½µµ…¹‘I•…‘ä€ô™…±Í”ì(€€€€€•¹¥¹”¹¥¹Ù…±¥‘…Ñ•=Ù•É±…å…¡•Ì ¤ì(€€€€€…Ý…¥Ð±•…Í”¹ÍÑ½À ¤ì(€€€€€…Ý…¥ÐÍ•¹•]½É¬¹‘É…¥¸ ¤ì(€€€€€…Ý…¥Ð•¹¥¹”¹Ý¡•¹%‘±” ¤ì(€€€€€ÑÉäì(€€€€€€€…Ý…¥ÐAÉ½µ¥Í”¹…±°¡l(€€€€€€€€€É•µ½Ù•I½ÕÑ•Q½½°¹…¹•±M•ÍÍ¥½¸ ¤°(€€€€€€€€€É•µ½Ù•M¡¥ÁI½ÕÑ•Q½½°¹…¹•±M•ÍÍ¥½¸ ¤°(€€€€€€€€€É•µ½Ù•QÉ…¹ÍÁ½ÉÑ1…¹‘¥¹Q½½°¹…¹•±M•ÍÍ¥½¸ ¤°(€€€€€€€€€É•µ½Ù•5…Á	ÉÕÍ¡Q½½°¹…¹•±M•ÍÍ¥½¸ ¤°(€€€€€€€€€É•µ½Ù••±±½½É‘¥¹…Ñ•Q½½°¹…¹•±M•ÍÍ¥½¸ ¤(€€€€€€€t¤ì(€€€€€ô…Ñ ì(€€€€€€€€¼¼M•¹”Ñ•…É‘½Ý¸½¹Ñ¥¹Õ•ÌÍ¼ÍÕ‰ÍÉ¥ÁÑ¥½¹Ì…¹½Ù•É±…åÌ…¸ÍÑ¥±°‰”±•…¹•ÕÀ¸(€€€€€ô(€€€ô°(€€€½¹½½É‘¥¹…Ñ½É¡…¹”è€¡…±±‰…¬¤€ôøì(€€€€€½½É‘¥¹…Ñ½É1¥ÍÑ•¹•ÉÌ¹…‘¡…±±‰…¬¤ì(€€€€€É•ÑÕÉ¸€ ¤€ôø½½É‘¥¹…Ñ½É1¥ÍÑ•¹•ÉÌ¹‘•±•Ñ”¡…±±‰…¬¤ì(€€€ô°(€€€½¹M•¹•%Ñ•µÍ¡…¹”è€¡…±±‰…¬¤€ôø=	H¹Í•¹”¹¥Ñ•µÌ¹½¹¡…¹”¡…±±‰…¬¤°(€€€½¹1½…±%Ñ•µÍ¡…¹”è€¡…±±‰…¬¤€ôø=	H¹Í•¹”¹±½…°¹½¹¡…¹”¡…±±‰…¬¤°(€€€½¹M•¹•5•Ñ…‘…Ñ…¡…¹”è€¡…±±‰…¬¤€ôø=	H¹Í•¹”¹½¹5•Ñ…‘…Ñ…¡…¹”¡…±±‰…¬¤°(€€€½¹É¥‘¡…¹”è€¡…±±‰…¬¤€ôø=	H¹Í•¹”¹É¥¹½¹¡…¹”¡…±±‰…¬¤°(€€€½¹A±…å•É¡…¹”è€¡…±±‰…¬¤€ôø=	H¹Á±…å•È¹½¹¡…¹”¡…±±‰…¬¤°(€€€½¹A…ÉÑå¡…¹”è€¡…±±‰…¬¤€ôø=	H¹Á…ÉÑä¹½¹¡…¹”¡…±±‰…¬¤°(€€€½¹	É½…‘…ÍÐè€¡…±±‰…¬¤€ôø=	H¹‰É½…‘…ÍÐ¹½¹5•ÍÍ…”¡½µµ…¹‘…Ñ•Ý…ä¹=559}!990°€¡•Ù•¹Ð¤€ôøì(€€€€€…±±‰…¬ ¤ì(€€€€€Í•¹•]½É¬¹ÑÉ…¬ ¡…Íå¹Œ€ ¤€ôøì(€€€€€€€½¹ÍÐmÁ±…å•ÉÌ°ÕÉÉ•¹Ñ½¹¹•Ñ¥½¹%°Á•ÉÍ¥ÍÑ•‘1•…Í•t€ô…Ý…¥ÐAÉ½µ¥Í”¹…±°¡l(€€€€€€€€€½¹¹•Ñ•‘A…ÉÑä ¤°(€€€€€€€€€=	H¹Á±…å•È¹•Ñ½¹¹•Ñ¥½¹% ¤°(€€€€€€€€€•¹¥¹”¹É•…‘½½É‘¥¹…Ñ½É1•…Í” ¤¹…Ñ   ¤€ôøÕ¹‘•™¥¹•¤(€€€€€€€t¤ì(€€€€€€€…Ý…¥Ð‘¥ÍÁ…Ñ¡	…­É½Õ¹‘½µµ…¹¡ì(€€€€€€€€€•Ù•¹Ð°(€€€€€€€€€Á…ÉÑ¥¥Á…¹ÑÌèÁ±…å•ÉÌ°(€€€€€€€€€ÕÉÉ•¹Ñ½¹¹•Ñ¥½¹%°(€€€€€€€€€±•…Í”èÁ•ÉÍ¥ÍÑ•‘1•…Í”°(€€€€€€€€€¹½Üè…Ñ”¹¹½Ü ¤°(€€€€€€€€€É•…‘äè½µµ…¹‘I•…‘ä°(€€€€€€€€€…Ñ¥Ù”è•¹¥¹”¹¥Í½½É‘¥¹…Ñ½È ¤°(€€€€€€€€€Í•¹‘¬è€¡…­¹½Ý±•‘•µ•¹Ð¤€ôøÍ•¹‘½µµ…¹‘¬¡Á½ÉÐ°…­¹½Ý±•‘•µ•¹Ð¤°(€€€€€€€€€ÁÉ½•ÍÌè€¡Í•¹‘•È¤€ôø•¹¥¹”¹ÁÉ½•ÍÍ½µµ…¹¡•Ù•¹Ð°Í•¹‘•È¤(€€€€€€€ô¤ì(€€€€€ô¤ ¤¤ì(€€€ô¤°(€€€‘•±•Ñ•1½…±=Ù•É±…åÌè…Íå¹Œ€ ¤€ôøì(€€€€€½¹ÍÐ¥Ñ•µÌ€ô…Ý…¥ÐÁ½ÉÐ¹•Ñ1½…±%Ñ•µÌ ¤ì(€€€€€½¹ÍÐ¥‘Ì€ô±½…±=Ù•É±…å%‘Ì¡¥Ñ•µÌ¤ì(€€€€€¥˜€¡¥‘Ì¹±•¹Ñ €ø€À¤…Ý…¥ÐÁ½ÉÐ¹‘•±•Ñ•1½…±%Ñ•µÌ¡¥‘Ì¤ì(€€€ô°(€€€Á…ÕÍ•5½Ù¥¹Éµ¥•Ìè€ ¤€ôø•¹¥¹”¹Á…ÕÍ•5½Ù¥¹Éµ¥•Ì ¤°(€€€µ½Ù•µ•¹ÑQ¥¬è€ ¤€ôø•¹¥¹”¹µ½Ù•µ•¹ÑQ¥¬ ¤°(€€€Ù¥Í¥‰¥±¥ÑåQ¥¬è…Íå¹Œ€ ¤€ôø•¹¥¹”¹Ù¥Í¥‰¥±¥ÑåQ¥¬¡…Ý…¥Ð=	H¹Á±…å•È¹•ÑI½±” ¤°…Ý…¥Ð=	H¹Á±…å•È¹•Ñ% ¤¤°(€€€ÑÕÉ¹Q¥¬è€ ¤€ôø•¹¥¹”¹ÑÕÉ¹Q¥¬ ¤(€ôì(€½¹ÍÐÉÕ¹Ñ¥µ”€ô¹•Ü	…­É½Õ¹‘IÕ¹Ñ¥µ”¡ÉÕ¹Ñ¥µ•A½ÉÐ°Õ¹‘•™¥¹•°É¥‘ÉÉ½ÉÌ¹É•Á½ÉÐ¤ì(€ÉÕ¹Ñ¥µ”¹ÍÑ…ÉÐ ¤ì(€½¹ÍÐ½Õ¹Ñ•È€ôÍ•Ñ%¹Ñ•ÉÙ…°  ¤€ôøì(€€€½¹ÍÐ­•ä€ô€‘í5QQ}-eL¹Í•¹•ô½‰…­É½Õ¹µ½Õ¹Ñ•É€ì(€€€±½…±MÑ½É…”¹Í•Ñ%Ñ•´¡­•ä°MÑÉ¥¹œ¡9Õµ‰•È¡±½…±MÑ½É…”¹•Ñ%Ñ•´¡­•ä¤€üü€À¤€¬€Ä¤¤ì(€ô°€Å|ÀÀÀ¤ì(€±•ÐÍÑ½Á]½É¬èAÉ½µ¥Í”ñÙ½¥øðÕ¹‘•™¥¹•ì(€É•ÑÕÉ¸ì(€€€…Ñ¥Ù…Ñ•%¹Ñ•É•ÁÑ¥½¸è€¡Í¡¥Á%¤€ôø¥¹Ñ•É•ÁÑ¥½¹½¹Ñ•áÑ5•¹ÕM•ÉÙ¥”¹…Ñ¥Ù…Ñ•%¹Ñ•É•ÁÑ¥½¸¡Í¡¥Á%¤°(€€€ÍÑ½Àè€ ¤€ôøì(€€€€€ÍÑ½Á]½É¬€üüô€¡…Íå¹Œ€ ¤€ôøì(€€€€€€€±•…É%¹Ñ•ÉÙ…°¡½Õ¹Ñ•È¤ì(€€€€€€€…Ý…¥ÐÉÕ¹Ñ¥µ”¹ÍÑ½À ¤ì(€€€€€€€…Ý…¥Ð±•…Í”¹ÍÑ½À ¤ì(€€€€€€€ÑÉäì(€€€€€€€€€…Ý…¥ÐÉ•µ½Ù•9…Ù…±	…ÑÑ±•É•…Q½½° ¤ì(€€€€€€€€€…Ý…¥ÐÉ•µ½Ù••±±½½É‘¥¹…Ñ•Q½½° ¤ì(€€€€€€€€€…Ý…¥ÐÉ•µ½Ù•5…Á	ÉÕÍ¡Q½½° ¤ì(€€€€€€€€€…Ý…¥ÐÉ•µ½Ù•QÉ…¹ÍÁ½ÉÑ1…¹‘¥¹Q½½° ¤ì(€€€€€€€€€…Ý…¥ÐÉ•µ½Ù•M¡¥ÁI½ÕÑ•Q½½° ¤ì(€€€€€€€€€…Ý…¥ÐÉ•µ½Ù•I½ÕÑ•Q½½° ¤ì(€€€€€€€ô™¥¹…±±äì(€€€€€€€€€É½ÕÑ•…Ñ•Ý…ä¹ÍÑ½À ¤ì(€€€€€€€ô(€€€€€ô¤ ¤ì(€€€€€É•ÑÕÉ¸ÍÑ½Á]½É¬ì(€€€ô(€ôì)ô
