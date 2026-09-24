@@ -61,7 +61,7 @@ function fixture() {
     commitRoute: async (armyId, _route, _startCell, cells) => { commits.push({ armyId, cells: structuredClone(cells) }); },
     renderPreview: async (snapshot) => { rendered.push(structuredClone(snapshot)); },
     clearPreview: async () => { clearCount += 1; },
-    notify: async () => {},
+    notify: vi.fn(async () => {}),
     restoreTool: async (toolId) => { restored.push(toolId); }
   };
 
@@ -85,9 +85,7 @@ describe("route tool SDK integration", () => {
     const cleanup = await registerRouteTool(f.api, f.port, f.distancePort, "/icon.svg");
 
     expect(f.api.tools[0]?.id).toBe(ROUTE_TOOL_ID);
-    expect(f.api.tools[0]?.icons[0]?.filter).toEqual({
-      activeTools: ["com.letopis.army-control/__programmatic-only__"]
-    });
+    expect(f.api.tools[0]?.icons[0]?.filter).toBeUndefined();
     expect(f.api.tools[0]?.defaultMode).toBe(ROUTE_TOOL_MODE_ID);
     expect(f.api.modes[0]?.id).toBe(ROUTE_TOOL_MODE_ID);
     expect(f.api.actions.map((candidate) => candidate.id)).toEqual([
@@ -99,6 +97,21 @@ describe("route tool SDK integration", () => {
       ROUTE_UNDO_ACTION_ID, ROUTE_CLEAR_ACTION_ID, ROUTE_CANCEL_ACTION_ID,
       ROUTE_TOOL_MODE_ID, ROUTE_TOOL_ID
     ]);
+  });
+
+  it("prevents opening the toolbar route tool without an army", async () => {
+    const f = fixture();
+    await registerRouteTool(f.api, f.port, f.distancePort, "/icon.svg");
+    const tool = f.api.tools[0];
+    if (!tool?.onClick) throw new Error("Tool click handler missing");
+
+    await expect(tool.onClick(context(), "route-tool-icon")).resolves.toBe(false);
+    expect(f.port.notify).toHaveBeenCalledWith(
+      "Выберите армию в панели управления, чтобы проложить маршрут.",
+      "INFO"
+    );
+    await expect(tool.onClick(context({ [ROUTE_ARMY_ID_KEY]: "army-a" }), "route-tool-icon"))
+      .resolves.toBe(true);
   });
 
   it("does not commit on Enter and commits exactly once from the map finish affordance", async () => {

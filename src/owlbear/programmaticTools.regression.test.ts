@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest";
 import { PROGRAMMATIC_ONLY_TOOL_FILTER } from "../shared/constants";
 
 const sources = [
-  "routeToolIntegration.ts",
   "shipRouteToolIntegration.ts",
   "transportLandingTool.ts",
   "navalBattleAreaTool.ts"
@@ -28,4 +27,10 @@ it("keeps the map brush as a real GM-visible Owlbear tool with a default mode", 
   expect(source).not.toContain("PROGRAMMATIC_ONLY_TOOL_FILTER");
   expect(source).toContain('filter: { roles: ["GM"] }');
   expect(source).toContain("defaultMode: MAP_BRUSH_TOOL_MODE_ID");
+});
+
+it("keeps the army route tool directly activatable from the army panel", () => {
+  const source = readFileSync(fileURLToPath(new URL("./routeToolIntegration.ts", import.meta.url)), "utf8");
+  expect(source).not.toContain("PROGRAMMATIC_ONLY_TOOL_FILTER");
+  expect(source).toContain("defaultMode: ROUTE_TOOL_MODE_ID");
 });
