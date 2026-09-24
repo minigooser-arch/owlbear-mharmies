@@ -495,7 +495,10 @@ export class ProductionEngine {
       this.repository.readBarriers()
     ]);
     const moving = armies.filter((record) => {
-      if (record.state.status !== "MOVING") return false;
+      const movingNow = record.state.status === "MOVING";
+      const recoverableCoordinatorPause = record.state.status === "PAUSED" &&
+        record.state.stopReason === "COORDINATOR_GAP";
+      if (!movingNow && !recoverableCoordinatorPause) return false;
       const shipId = record.state.embarkedOnShipId;
       if (shipId == null) return true;
       return scene.ships?.[shipId]?.embarkedArmyId !== record.item.id;
@@ -657,19 +660,21 @@ export class ProductionEngine {
         ignoresMovementBarriers: record.state.ignoresMovementBarriers
       });
       const reachedClosedBorder = Boolean(political.blockedReason) && result.status === "READY";
+      const nextArmyState = cloneArmyState(record.state, {
+        status: reachedClosedBorder ? "PAUSED" : result.status,
+        currentWaypointIndex: result.currentWaypointIndex,
+        segmentProgressCells: result.segmentProgressCells,
+        plannedRoute,
+        ...(reachedClosedBorder
+          ? { stopReason: "INVALID_ROUTE" }
+          : result.stopReason ? { stopReason: result.stopReason } : {})
+      });
+      if (!reachedClosedBorder && !result.stopReason) delete nextArmyState.stopReason;
       frames.push({
         record,
         from: { ...record.item.position },
         to: result.position,
-        state: cloneArmyState(record.state, {
-          status: reachedClosedBorder ? "PAUSED" : result.status,
-          currentWaypointIndex: result.currentWaypointIndex,
-          segmentProgressCells: result.segmentProgressCells,
-          plannedRoute,
-          ...(reachedClosedBorder
-            ? { stopReason: "INVALID_ROUTE" }
-            : result.stopReason ? { stopReason: result.stopReason } : {})
-        })
+        state: nextArmyState
       });
     }
 
@@ -797,6 +802,7 @@ export class ProductionEngine {
             currentWaypointIndex: 0,
             segmentProgressCells: 0
           };
+          delete frame.state.stopReason;
         }
       }
       if (!canCommit()) return;

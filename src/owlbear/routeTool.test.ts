@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { GridRoutePort } from "../routes/routeMath";
 import { DEFAULT_TERRAIN } from "../shared/constants";
 import type { RouteToolActivation } from "./routeTool";
@@ -38,6 +38,35 @@ function activation(overrides: Partial<RouteToolActivation> = {}): RouteToolActi
 }
 
 describe("route tool", () => {
+  it("projects hover locally and skips repeated work within the same cell", async () => {
+    const snapGridCenter = vi.fn(hundredPixelCells.snapGridCenter);
+    const tool = new RouteToolController({ ...hundredPixelCells, snapGridCenter });
+    tool.activate(activation());
+
+    expect(await tool.move({ x: 150, y: 50 })).toBe(true);
+    expect(await tool.move({ x: 155, y: 52 })).toBe(false);
+    expect(snapGridCenter).not.toHaveBeenCalled();
+  });
+
+  it("uses SDK snapping only when the pointer lies exactly on a cell boundary", async () => {
+    const snapGridCenter = vi.fn(hundredPixelCells.snapGridCenter);
+    const tool = new RouteToolController({ ...hundredPixelCells, snapGridCenter });
+    tool.activate(activation());
+
+    await tool.move({ x: 100, y: 50 });
+    expect(snapGridCenter).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves SDK boundary resolution even when a boundary maps to the current preview cell", async () => {
+    const snapGridCenter = vi.fn(hundredPixelCells.snapGridCenter);
+    const tool = new RouteToolController({ ...hundredPixelCells, snapGridCenter });
+    tool.activate(activation());
+
+    await tool.move({ x: 150, y: 50 });
+    await tool.move({ x: 100, y: 50 });
+    expect(snapGridCenter).toHaveBeenCalledTimes(1);
+  });
+
   it("charges destination terrain for consecutive orthogonal cells", async () => {
     const tool = new RouteToolController(hundredPixelCells);
     tool.activate(activation());

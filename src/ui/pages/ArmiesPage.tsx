@@ -9,7 +9,6 @@ interface ArmiesPageProps {
   role: "GM" | "PLAYER";
   playerId: string;
   leaderSideIds: ReadonlySet<string>;
-  memberSideIds: ReadonlySet<string>;
   pendingTransportEmbarkRequests?: readonly TransportEmbarkRequestView[];
   onAction(command: UiCommand): void;
 }
@@ -19,7 +18,6 @@ export function ArmiesPage({
   sides,
   role,
   leaderSideIds,
-  memberSideIds,
   pendingTransportEmbarkRequests = [],
   onAction
 }: ArmiesPageProps) {
@@ -146,7 +144,7 @@ export function ArmiesPage({
               sideColor={side?.color ?? "#687F91"}
               isGM={role === "GM"}
               canEditRoute={role === "GM" || leaderSideIds.has(army.sideId)}
-              canRequestDisband={role === "GM" || memberSideIds.has(army.sideId)}
+              canRequestDisband={role === "GM" || leaderSideIds.has(army.sideId)}
               onAction={onAction}
             />
           );

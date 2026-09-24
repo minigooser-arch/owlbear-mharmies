@@ -22,7 +22,7 @@ function harness() {
 }
 
 describe("unit route Owlbear context menu", () => {
-  it("keeps a fallback icon visible for any Letopis clone even if hasRoute metadata is temporarily absent", async () => {
+  it("shows a route icon only when the local clone grants route editing", async () => {
     const test = harness();
     await registerRouteContextMenu(test.port, test.service, "/icon.png");
 
@@ -35,13 +35,19 @@ describe("unit route Owlbear context menu", () => {
           filter: expect.objectContaining({
             min: 1,
             max: 1,
-            every: [
-              { key: ["metadata", METADATA_KEYS.localClone], operator: "!=", value: undefined }
-            ]
+            every: expect.arrayContaining([
+              { key: ["metadata", METADATA_KEYS.localClone], operator: "!=", value: undefined },
+              { key: ["metadata", METADATA_KEYS.localClone, "canEditRoute"], value: true }
+            ])
           })
         })
       ])
     });
+    expect(test.entries[0]?.icons.every((icon) =>
+      icon.filter.every.some((condition) =>
+        Array.isArray(condition.key) && condition.key.at(-1) === "canEditRoute" && condition.value === true
+      )
+    )).toBe(true);
   });
 
   it("opens the same route editor action regardless of the current icon state", async () => {

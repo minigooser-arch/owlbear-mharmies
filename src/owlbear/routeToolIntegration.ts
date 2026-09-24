@@ -106,7 +106,7 @@ export async function registerRouteTool(
     previewRendered = true;
   };
 
-  const moveCoalescer = new PointerMoveCoalescer(1_000 / 12, (point) =>
+  const moveCoalescer = new PointerMoveCoalescer(1_000 / 30, (point) =>
     enqueue(async () => {
       if (!active) return;
       const changed = await controller.move(point);

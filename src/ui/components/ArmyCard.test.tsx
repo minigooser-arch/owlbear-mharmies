@@ -28,6 +28,13 @@ const redArmy: ArmyView = {
 afterEach(cleanup);
 
 describe("ArmyCard capabilities", () => {
+  it("hides route and disband controls from a faction member without leader rights", () => {
+    render(<ArmyCard army={redArmy} isGM={false} canEditRoute={false} canRequestDisband={false} onAction={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: "Проложить маршрут" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Управление")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Распустить армию" })).not.toBeInTheDocument();
+  });
+
   it("shows movement points, planned cost, and war state", () => {
     render(<ArmyCard army={redArmy} isGM={false} canEditRoute canRequestDisband onAction={vi.fn()} />);
     expect(screen.getByLabelText("Параметры армии")).toHaveTextContent(/ОП\s*4,5 \/ 6/);

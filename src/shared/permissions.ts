@@ -65,11 +65,7 @@ export function authorizeArmyCommand(
   if (command.type === "REQUEST_ARMY_DISBAND") {
     const army = context.armies.get(command.armyId);
     if (!army) return { allowed: false, reason: "ARMY_NOT_FOUND" };
-    const side = context.sides.find((candidate) => candidate.id === army.sideId);
-    if (!side) return { allowed: false, reason: "SIDE_NOT_FOUND" };
-    return side.playerIds.includes(context.playerId)
-      ? { allowed: true }
-      : { allowed: false, reason: "NOT_FACTION_MEMBER" };
+    return ledBy(context, army.sideId);
   }
 
   if (command.type === "SET_ROUTE" || command.type === "CLEAR_ROUTE") {

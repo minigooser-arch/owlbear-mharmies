@@ -100,6 +100,21 @@ describe("LocalCloneReconciler", () => {
     });
   });
 
+  it("marks route editing available only to GMs and leaders, including a leader who is a member", async () => {
+    const port = new MemoryClonePort();
+    const routedArmy = {
+      ...source(),
+      metadata: { [METADATA_KEYS.army]: { sideId: "red", plannedRoute: { cells: [] } } }
+    };
+    const reconciler = new LocalCloneReconciler(port, new UpdateOriginGuard());
+
+    await reconciler.reconcile(new Set([routedArmy.id]), [routedArmy], { isGM: false, leaderSideIds: new Set() });
+    expect(port.localItems[0]?.metadata[METADATA_KEYS.localClone]).toMatchObject({ canEditRoute: false });
+
+    await reconciler.reconcile(new Set([routedArmy.id]), [routedArmy], { isGM: false, leaderSideIds: new Set(["red"]) });
+    expect(port.localItems[0]?.metadata[METADATA_KEYS.localClone]).toMatchObject({ canEditRoute: true });
+  });
+
   it("removes a clone after the source becomes hidden", async () => {
     const port = new MemoryClonePort();
     port.localItems.push(clone("clone-a"));

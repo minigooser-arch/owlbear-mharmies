@@ -1369,6 +1369,45 @@ describe("ProductionEngine strategic movement costs", () => {
     });
   });
 
+  it("resumes every army paused by a coordinator gap on the next movement tick", async () => {
+    const paused = (startCell: { x: number; y: number }, endCell: { x: number; y: number }) => ({
+      ...movingArmyState(),
+      status: "PAUSED" as const,
+      stopReason: "COORDINATOR_GAP" as const,
+      route: [{ x: endCell.x * 100 + 50, y: endCell.y * 100 + 50 }],
+      plannedRoute: {
+        ...movingArmyState().plannedRoute,
+        startCell,
+        cells: [endCell]
+      }
+    });
+    const fixture = commandPort(
+      [
+        { id: "army-a", type: "IMAGE", position: { x: 50, y: 50 }, metadata: { [METADATA_KEYS.army]: paused({ x: 0, y: 0 }, { x: 1, y: 0 }) } },
+        { id: "army-b", type: "IMAGE", position: { x: 50, y: 150 }, metadata: { [METADATA_KEYS.army]: paused({ x: 0, y: 1 }, { x: 1, y: 1 }) } }
+      ],
+      async (from, to) => Math.hypot(to.x - from.x, to.y - from.y) / 100
+    );
+    fixture.scene.sides.push({
+      id: "red", name: "Красные", color: "#f00", playerIds: [], leaderPlayerIds: [], stateId: null
+    });
+    for (const cell of ["0,0", "1,0", "0,1", "1,1"]) {
+      fixture.scene.gridMap.cells[cell] = {
+        terrainId: "road", impassable: false, factionTerritoryIds: ["red"], recognizedStateId: null, deFactoStateId: null
+      };
+    }
+    const engine = new ProductionEngine(fixture.port);
+    engine.setCoordinator(true);
+    (engine as unknown as { lastMovementAt: number }).lastMovementAt = performance.now() - 1_000;
+
+    await engine.movementTick();
+
+    expect(fixture.items.map((item) => item.position)).toEqual([
+      { x: 150, y: 50 },
+      { x: 150, y: 150 }
+    ]);
+  });
+
   it("pauses before entering a route cell that became invalid", async () => {
     const fixture = commandPort(
       [{

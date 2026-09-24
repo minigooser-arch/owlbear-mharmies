@@ -18,6 +18,7 @@ it("treats a planned final facing as an existing ship route order", () => {
 
   expect(localCloneMetadataForSource(source)).toEqual({
     sourceItemId: "ship",
-    hasRoute: true
+    hasRoute: true,
+    canEditRoute: false
   });
 });

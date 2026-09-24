@@ -58,10 +58,21 @@ function sourceHasRoute(source: SceneItemRecord): boolean {
   return Array.isArray(plannedRoute?.cells) && plannedRoute.cells.length > 0;
 }
 
-export function localCloneMetadataForSource(source: SceneItemRecord): Record<string, unknown> {
+export interface LocalCloneViewer {
+  isGM: boolean;
+  leaderSideIds: ReadonlySet<string>;
+}
+
+export function localCloneMetadataForSource(
+  source: SceneItemRecord,
+  viewer: LocalCloneViewer = { isGM: false, leaderSideIds: new Set() }
+): Record<string, unknown> {
+  const army = objectRecord(source.metadata[METADATA_KEYS.army]);
+  const sideId = typeof army?.sideId === "string" ? army.sideId : undefined;
   return {
     sourceItemId: source.id,
-    hasRoute: sourceHasRoute(source)
+    hasRoute: sourceHasRoute(source),
+    canEditRoute: viewer.isGM || (sideId !== undefined && viewer.leaderSideIds.has(sideId))
   };
 }
 
@@ -79,7 +90,7 @@ const RENDER_FIELDS = [
   "grid"
 ] as const;
 
-function changedRenderFields(source: SceneItemRecord, clone: SceneItemRecord): ItemUpdate {
+function changedRenderFields(source: SceneItemRecord, clone: SceneItemRecord, viewer: LocalCloneViewer): ItemUpdate {
   const update: ItemUpdate = {};
   const indexedUpdate = update as Record<string, unknown>;
   for (const field of RENDER_FIELDS) {
@@ -90,7 +101,7 @@ function changedRenderFields(source: SceneItemRecord, clone: SceneItemRecord): I
   if (clone.visible !== true) update.visible = true;
   if (clone.locked !== true) update.locked = true;
   if (clone.disableHit !== false) update.disableHit = false;
-  const desiredCloneMetadata = localCloneMetadataForSource(source);
+  const desiredCloneMetadata = localCloneMetadataForSource(source, viewer);
   if (JSON.stringify(clone.metadata[METADATA_KEYS.localClone]) !== JSON.stringify(desiredCloneMetadata)) {
     update.metadata = {
       ...clone.metadata,
@@ -108,7 +119,8 @@ export class LocalCloneReconciler {
 
   async reconcile(
     visibleSourceIds: ReadonlySet<string>,
-    sources: readonly SceneItemRecord[]
+    sources: readonly SceneItemRecord[],
+    viewer: LocalCloneViewer = { isGM: false, leaderSideIds: new Set() }
   ): Promise<void> {
     const sourceById = new Map(sources.map((source) => [source.id, source]));
     const clonesBySource = new Map<string, SceneItemRecord[]>();
@@ -141,7 +153,7 @@ export class LocalCloneReconciler {
       const survivorItem = survivor;
       const duplicates = clones.slice(1).map((clone) => clone.id);
       if (duplicates.length > 0) await this.port.deleteLocalItems(duplicates);
-      const update = changedRenderFields(source, survivorItem);
+      const update = changedRenderFields(source, survivorItem, viewer);
       if (Object.keys(update).length > 0) {
         await this.guard.run(survivorItem.id, "RECONCILIATION", () =>
           this.port.updateLocalItem(survivorItem.id, update)

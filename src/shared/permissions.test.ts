@@ -160,7 +160,7 @@ describe("command authorization", () => {
   });
 });
 
-it("allows any faction member to request disband of their faction army", () => {
+it("rejects a faction member who is not its leader from requesting disband", () => {
   const army = structuredClone(redArmy);
   const result = authorizeArmyCommand({
     role: "PLAYER",
@@ -170,5 +170,18 @@ it("allows any faction member to request disband of their faction army", () => {
     settings: DEFAULT_SETTINGS,
     connectedPlayerIds: new Set(["member"])
   }, command("REQUEST_ARMY_DISBAND", "member", { armyId:"army" }));
-  expect(result).toEqual({ allowed:true });
+  expect(result).toEqual({ allowed: false, reason: "NOT_SIDE_LEADER" });
+});
+
+it("allows a leader who is also a faction member to request disband", () => {
+  const army = structuredClone(redArmy);
+  const result = authorizeArmyCommand({
+    role: "PLAYER",
+    playerId: "leader",
+    armies: new Map([["army", army]]),
+    sides: [{ id:"red",name:"Красные",color:"#f00",playerIds:["leader","member"],leaderPlayerIds:["leader"],stateId:null }],
+    settings: DEFAULT_SETTINGS,
+    connectedPlayerIds: new Set(["leader"])
+  }, command("REQUEST_ARMY_DISBAND", "leader", { armyId:"army" }));
+  expect(result).toEqual({ allowed: true });
 });

@@ -13,7 +13,6 @@ export function ForcesPage({
   role,
   playerId,
   leaderSideIds,
-  memberSideIds,
   relations = {},
   navalRequestTargets = [],
   pendingNavalBattleRequests = [],
@@ -28,7 +27,6 @@ export function ForcesPage({
   role: "GM" | "PLAYER";
   playerId: string;
   leaderSideIds: ReadonlySet<string>;
-  memberSideIds: ReadonlySet<string>;
   relations?: Readonly<Record<string, Readonly<Record<string, SideRelation>>>>;
   navalRequestTargets?: readonly NavalRequestTargetView[];
   pendingNavalBattleRequests?: readonly NavalBattleRequestView[];
@@ -56,7 +54,6 @@ export function ForcesPage({
           role={role}
           playerId={playerId}
           leaderSideIds={leaderSideIds}
-          memberSideIds={memberSideIds}
           pendingTransportEmbarkRequests={pendingTransportEmbarkRequests}
           onAction={onAction}
         />

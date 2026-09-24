@@ -137,6 +137,20 @@ function pointForCell(active: RouteToolActivation, cell: GridCellCoord): Vector2
   };
 }
 
+function locallyProjectedCell(active: RouteToolActivation, pointer: Vector2): GridCellCoord {
+  return {
+    x: active.startCell.x + Math.round((pointer.x - active.start.x) / active.gridDpi),
+    y: active.startCell.y + Math.round((pointer.y - active.start.y) / active.gridDpi)
+  };
+}
+
+function isCellBoundary(active: RouteToolActivation, pointer: Vector2, cell: GridCellCoord): boolean {
+  const projected = pointForCell(active, cell);
+  const halfCell = active.gridDpi / 2;
+  return Math.abs(Math.abs(pointer.x - projected.x) - halfCell) < 0.01 ||
+    Math.abs(Math.abs(pointer.y - projected.y) - halfCell) < 0.01;
+}
+
 function samePreview(left: RoutePreview | undefined, right: RoutePreview): boolean {
   return left !== undefined &&
     left.cell.x === right.cell.x &&
@@ -242,6 +256,13 @@ export class RouteToolController {
 
   async move(point: Vector2): Promise<boolean> {
     const sequence = ++this.sequence;
+    const active = this.activation;
+    const currentCell = this.currentPreview?.cell;
+    if (active && currentCell) {
+      const projectedCell = locallyProjectedCell(active, point);
+      if (projectedCell.x === currentCell.x && projectedCell.y === currentCell.y &&
+          !isCellBoundary(active, point, projectedCell)) return false;
+    }
     const preview = await this.analyze(point);
     if (sequence !== this.sequence) return false;
     if (samePreview(this.currentPreview, preview)) return false;
@@ -299,8 +320,14 @@ export class RouteToolController {
         label: messageForPreview("INACTIVE"), totalCostUnits: 0, remainingUnits: 0, reason: "INACTIVE"
       };
     }
-    const snapped = await this.gridPort.snapGridCenter(pointer);
-    const cell = cellForSnappedPoint(active, snapped);
+    // The army's snapped center and DPI define the same square grid used by
+    // the SDK. Project pointer coordinates locally so hover does not make a
+    // round trip through the Owlbear grid API for every mouse event.
+    let cell = locallyProjectedCell(active, pointer);
+    if (isCellBoundary(active, pointer, cell)) {
+      const snapped = await this.gridPort.snapGridCenter(pointer);
+      cell = cellForSnappedPoint(active, snapped);
+    }
     const point = pointForCell(active, cell);
     const anchorCell = this.cells.at(-1) ?? active.startCell;
     const anchorPoint = this.points.at(-1) ?? active.start;

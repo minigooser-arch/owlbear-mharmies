@@ -35,7 +35,6 @@ describe("army registration panel", () => {
         role="PLAYER"
         playerId="p"
         leaderSideIds={new Set()}
-        memberSideIds={new Set()}
         onAction={onAction}
       />
     );
@@ -48,7 +47,6 @@ describe("army registration panel", () => {
         role="GM"
         playerId="gm"
         leaderSideIds={new Set()}
-        memberSideIds={new Set()}
         onAction={onAction}
       />
     );
@@ -65,7 +63,6 @@ describe("army registration panel", () => {
         role="GM"
         playerId="gm"
         leaderSideIds={new Set()}
-        memberSideIds={new Set()}
         onAction={onAction}
       />
     );
@@ -86,7 +83,6 @@ describe("army registration panel", () => {
         role="GM"
         playerId="gm"
         leaderSideIds={new Set()}
-        memberSideIds={new Set()}
         onAction={vi.fn()}
       />
     );
@@ -111,7 +107,6 @@ describe("army side filter", () => {
         role="PLAYER"
         playerId="p"
         leaderSideIds={new Set()}
-        memberSideIds={new Set()}
         onAction={vi.fn()}
       />
     );

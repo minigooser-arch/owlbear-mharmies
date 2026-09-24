@@ -52,6 +52,9 @@ function routeFallbackIcon(iconUrl: string): RouteContextMenuEntry["icons"][numb
         key: ["metadata", METADATA_KEYS.localClone],
         operator: "!=",
         value: undefined
+      }, {
+        key: ["metadata", METADATA_KEYS.localClone, "canEditRoute"],
+        value: true
       }]
     }
   };
@@ -77,6 +80,10 @@ function routeIcon(
         {
           key: ["metadata", METADATA_KEYS.localClone, "hasRoute"],
           value: hasRoute
+        },
+        {
+          key: ["metadata", METADATA_KEYS.localClone, "canEditRoute"],
+          value: true
         }
       ]
     }

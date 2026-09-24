@@ -36,7 +36,6 @@ it("lets the army-side leader accept a foreign embark request", () => {
       role="PLAYER"
       playerId="blue-leader"
       leaderSideIds={new Set(["blue"])}
-      memberSideIds={new Set(["blue"])}
       pendingTransportEmbarkRequests={[request]}
       onAction={onAction}
     />
@@ -63,7 +62,6 @@ it("shows no consent panel when there are no role-safe pending requests", () => 
       role="PLAYER"
       playerId="member"
       leaderSideIds={new Set()}
-      memberSideIds={new Set(["blue"])}
       pendingTransportEmbarkRequests={[]}
       onAction={vi.fn()}
     />
