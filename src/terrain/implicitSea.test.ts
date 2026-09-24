@@ -5,11 +5,15 @@ import { compactDefaultTerrain, DEFAULT_CELL_STATE } from "./gridMap";
 import { cellSupportsDomain } from "./movementDomains";
 import { CommandProcessor } from "../commands/commandProcessor";
 import { COMMAND_PROTOCOL_VERSION, type ArmyCommand } from "../shared/types";
+import { validatePlannedRoute } from "../movement/movementRules";
 
 it("makes an unpainted cell navigable by sea, not land", () => {
   const scene = { terrain: DEFAULT_TERRAIN, gridMap: { version: 1 as const, revision: 0, cells: {} } };
   expect(cellSupportsDomain(scene, { x: 0, y: 0 }, "SEA")).toBe(true);
   expect(cellSupportsDomain(scene, { x: 0, y: 0 }, "LAND")).toBe(false);
+  expect(validatePlannedRoute({ start: { x: 0, y: 0 }, cells: [{ x: 1, y: 0 }], sideId: "red",
+    terrain: DEFAULT_TERRAIN, wars: [], remainingUnits: 40, readCell: () => DEFAULT_CELL_STATE
+  })).toMatchObject({ valid: false, reason: "INVALID_TERRAIN", problemCell: { x: 1, y: 0 } });
 });
 
 it("painting and erasing sea retain political data without terrain overrides", () => {

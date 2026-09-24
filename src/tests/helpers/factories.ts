@@ -203,7 +203,7 @@ class SideLeaderRoom {
       states: [],
       relations: {},
       battleGroups: [],
-      terrain: structuredClone(DEFAULT_TERRAIN),
+      terrain: { ...structuredClone(DEFAULT_TERRAIN), defaultTerrainId: "plain" },
       gridMap: {
         version: 1,
         revision: 0,

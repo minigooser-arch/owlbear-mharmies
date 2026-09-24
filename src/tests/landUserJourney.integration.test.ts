@@ -89,6 +89,12 @@ it("plays a land campaign from empty scene setup through state map, armies, dipl
   };
 
   execute("GM", "gm", {
+    type: "SET_TERRAIN_CELLS",
+    terrainId: "plain",
+    cells: [0, 1, 2, 3, 4].map((x) => ({ x, y: 0 }))
+  });
+
+  execute("GM", "gm", {
     type: "CREATE_SIDE",
     side: {
       id: "red",
