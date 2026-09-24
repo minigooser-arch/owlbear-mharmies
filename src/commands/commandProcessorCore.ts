@@ -580,7 +580,467 @@ export class CommandProcessor {
             ships: state.scene.ships ?? {},
             movingShipId: command.shipId,
             sourceCell: from,
-            dest…5319 tokens truncated…;
+            destinationCell: result.destination,
+            shipCells,
+            hasLineOfSight: (losFrom, losTo) => hasNavalBattleLineOfSight({
+              scene: state.scene,
+              from: losFrom,
+              to: losTo,
+              occupiedShipCells
+            }),
+            rollD6: this.rollD6
+          });
+          state.scene.ships = interception.ships;
+          if (interception.triggered.length > 0) {
+            const sequenceStart = interception.battle.events.length;
+            interception.battle.events = [
+              ...interception.battle.events,
+              ...interception.triggered.map((trigger, index) => ({
+                type: "INTERCEPTION_TRIGGERED",
+                sequence: sequenceStart + index + 1,
+                roundNumber: battle.roundNumber,
+                cruiserShipId: trigger.cruiserShipId,
+                targetShipId: command.shipId,
+                rolledDamage: trigger.rolledDamage,
+                armor: trigger.armor,
+                damage: trigger.damage
+              }))
+            ];
+          }
+          state.scene.activeNavalBattle = interception.battle;
+
+          const movedShip = state.scene.ships?.[command.shipId];
+          if (movedShip && movedShip.hp <= 0 && interception.triggered.length > 0) {
+            destroyReciprocalTransportCargo(state, command.shipId, movedShip);
+            const sceneRevision = state.scene.revision;
+            const destroyed = destroyShip(state.scene as NavalSceneState, command.shipId);
+            state.scene = destroyed.scene;
+            state.scene.revision = sceneRevision;
+          }
+          return undefined;
+        } catch (error) {
+          return this.navalTacticalFailure(error);
+        }
+      }
+      case "NAVAL_TURN_SHIP": {
+        const battle = state.scene.activeNavalBattle;
+        if (!battle || battle.status !== "ACTIVE") return "NO_ACTIVE_NAVAL_BATTLE";
+        const ship = state.scene.ships?.[command.shipId];
+        if (!ship) return "SHIP_NOT_FOUND";
+        if (ship.status !== "IN_NAVAL_BATTLE" || ship.battleId !== battle.id) return "SHIP_NOT_IN_NAVAL_BATTLE";
+        if (ship.hp <= 0) return "SHIP_DESTROYED";
+        if (battle.currentShipId !== command.shipId) return "SHIP_NOT_ACTIVE";
+        try {
+          const result = applyTacticalTurn(battle, command.shipId, ship, command.direction);
+          state.scene.activeNavalBattle = result.battle;
+          state.scene.ships ??= {};
+          state.scene.ships[command.shipId] = result.ship;
+          return undefined;
+        } catch (error) {
+          return this.navalTacticalFailure(error);
+        }
+      }
+      case "NAVAL_BROADSIDE_ATTACK": {
+        const battle = state.scene.activeNavalBattle;
+        if (!battle || battle.status !== "ACTIVE") return "NO_ACTIVE_NAVAL_BATTLE";
+        const attacker = state.scene.ships?.[command.shipId];
+        if (!attacker) return "SHIP_NOT_FOUND";
+        const target = state.scene.ships?.[command.targetShipId];
+        if (!target) return "TARGET_SHIP_NOT_FOUND";
+        if (
+          attacker.status !== "IN_NAVAL_BATTLE" ||
+          attacker.battleId !== battle.id ||
+          !battle.participantShipIds.includes(command.shipId)
+        ) return "SHIP_NOT_IN_NAVAL_BATTLE";
+        if (
+          target.status !== "IN_NAVAL_BATTLE" ||
+          target.battleId !== battle.id ||
+          !battle.participantShipIds.includes(command.targetShipId)
+        ) return "TARGET_NOT_IN_NAVAL_BATTLE";
+        const relation = relationForSides(state.scene, attacker.sideId, target.sideId);
+        if ((attacker.sideId === target.sideId || relation === "ALLY") && !command.friendlyFireConfirmed) {
+          return "FRIENDLY_FIRE_CONFIRMATION_REQUIRED";
+        }
+        if (!this.cellForPosition) return "NAVAL_POSITION_UNAVAILABLE";
+        const attackerPosition = commandPosition(state, command.shipId);
+        const targetPosition = commandPosition(state, command.targetShipId);
+        if (!attackerPosition || !targetPosition) return "NAVAL_POSITION_UNAVAILABLE";
+        const attackerCell = this.cellForPosition(attackerPosition);
+        const targetCell = this.cellForPosition(targetPosition);
+        const occupiedShipCells = Object.entries(state.scene.ships ?? {})
+          .filter(([shipId, ship]) => shipId !== command.shipId && shipId !== command.targetShipId && ship.hp > 0)
+          .flatMap(([shipId]) => {
+            const position = commandPosition(state, shipId);
+            return position ? [this.cellForPosition?.(position)].filter((cell): cell is GridCellCoord => cell !== undefined) : [];
+          });
+        const result = commitBroadsideAttack({
+          battle,
+          ships: state.scene.ships ?? {},
+          attackerId: command.shipId,
+          targetId: command.targetShipId,
+          attackerCell,
+          targetCell,
+          distanceCells: (from, to) => Math.max(Math.abs(to.x - from.x), Math.abs(to.y - from.y)),
+          hasLineOfSight: (from, to) => hasNavalBattleLineOfSight({
+            scene: state.scene,
+            from,
+            to,
+            occupiedShipCells
+          }),
+          rollD6: this.rollD6
+        });
+        if (!result.ok) return result.reason;
+        state.scene.ships ??= {};
+        state.scene.ships[command.targetShipId] = result.target;
+
+        const actualHpLoss = Math.max(
+          0,
+          target.hp + target.temporaryHp - result.target.hp - result.target.temporaryHp
+        );
+        const hadActiveInterception = battle.interceptions?.[command.targetShipId] !== undefined;
+        const battleAfterDamage = hadActiveInterception && actualHpLoss > 0
+          ? removeCruiserInterceptionAfterDamage(result.battle, command.targetShipId, actualHpLoss)
+          : result.battle;
+        const broadsideEvent = {
+          type: "BROADSIDE_ATTACK",
+          sequence: battleAfterDamage.events.length + 1,
+          roundNumber: battle.roundNumber,
+          attackerShipId: command.shipId,
+          targetShipId: command.targetShipId,
+          rolledDamage: result.rolledDamage,
+          armor: result.armor,
+          damage: result.damage,
+          special: result.special
+        };
+        const interceptionRemovalEvent = hadActiveInterception && actualHpLoss > 0
+          ? {
+              type: "INTERCEPTION_REMOVED_BY_DAMAGE",
+              sequence: broadsideEvent.sequence + 1,
+              roundNumber: battle.roundNumber,
+              cruiserShipId: command.targetShipId,
+              actualHpLoss
+            }
+          : null;
+        battleAfterDamage.events = [
+          ...battleAfterDamage.events,
+          broadsideEvent,
+          ...(interceptionRemovalEvent ? [interceptionRemovalEvent] : [])
+        ];
+        state.scene.activeNavalBattle = battleAfterDamage;
+        if (result.target.hp <= 0) {
+          destroyReciprocalTransportCargo(state, command.targetShipId, result.target);
+          const sceneRevision = state.scene.revision;
+          const destroyed = destroyShip(state.scene as NavalSceneState, command.targetShipId);
+          state.scene = destroyed.scene;
+          state.scene.revision = sceneRevision;
+        }
+        return undefined;
+      }
+      case "NAVAL_ACTIVATE_INTERCEPTION": {
+        const battle = state.scene.activeNavalBattle;
+        if (!battle || battle.status !== "ACTIVE") return "NO_ACTIVE_NAVAL_BATTLE";
+        const cruiser = state.scene.ships?.[command.shipId];
+        if (!cruiser) return "SHIP_NOT_FOUND";
+        if (
+          cruiser.status !== "IN_NAVAL_BATTLE" ||
+          cruiser.battleId !== battle.id ||
+          !battle.participantShipIds.includes(command.shipId)
+        ) return "SHIP_NOT_IN_NAVAL_BATTLE";
+        const result = activateCruiserInterception({
+          battle,
+          cruiserId: command.shipId,
+          cruiser,
+          ships: state.scene.ships ?? {}
+        });
+        if (!result.ok) return result.reason;
+        result.battle.events = [
+          ...result.battle.events,
+          {
+            type: "INTERCEPTION_ACTIVATED",
+            sequence: result.battle.events.length + 1,
+            roundNumber: battle.roundNumber,
+            cruiserShipId: command.shipId
+          }
+        ];
+        state.scene.activeNavalBattle = result.battle;
+        return undefined;
+      }
+      case "NAVAL_SHORE_BOMBARDMENT": {
+        if (state.scene.turn.phase !== "POST_MOVEMENT") return "NOT_POST_MOVEMENT_PHASE";
+        if (state.scene.activeNavalBattle?.status === "ACTIVE") return "NAVAL_BATTLE_ACTIVE";
+        const ship = state.scene.ships?.[command.shipId];
+        if (!ship) return "SHIP_NOT_FOUND";
+        const target = state.armies[command.armyId];
+        if (!target) return "ARMY_NOT_FOUND";
+        const relation = relationForSides(state.scene, ship.sideId, target.sideId);
+        if ((ship.sideId === target.sideId || relation === "ALLY") && !command.friendlyFireConfirmed) {
+          return "FRIENDLY_FIRE_CONFIRMATION_REQUIRED";
+        }
+        if (!this.cellForPosition) return "NAVAL_POSITION_UNAVAILABLE";
+        const shipPosition = commandPosition(state, command.shipId);
+        const targetPosition = commandPosition(state, command.armyId);
+        if (!shipPosition || !targetPosition) return "NAVAL_POSITION_UNAVAILABLE";
+        const shipCell = this.cellForPosition(shipPosition);
+        const targetCell = this.cellForPosition(targetPosition);
+        const occupiedShipCells = Object.entries(state.scene.ships ?? {})
+          .filter(([shipId, candidate]) => shipId !== command.shipId && candidate.hp > 0)
+          .flatMap(([shipId]) => {
+            const position = commandPosition(state, shipId);
+            return position
+              ? [this.cellForPosition?.(position)].filter(
+                  (cell): cell is GridCellCoord => cell !== undefined
+                )
+              : [];
+          });
+        const result = commitShoreBombardment({
+          attackerId: command.shipId,
+          attacker: ship,
+          targetId: command.armyId,
+          target,
+          attackerCell: shipCell,
+          targetCell,
+          currentTurn: state.scene.turn.turnNumber,
+          targetVisible: this.visibleArmyTargetsForSide(ship.sideId).has(command.armyId),
+          targetCellSupportsLand:
+            target.embarkedOnShipId == null && cellSupportsDomain(state.scene, targetCell, "LAND"),
+          distanceCells: (from, to) => Math.max(Math.abs(to.x - from.x), Math.abs(to.y - from.y)),
+          hasLineOfSight: (from, to) => hasNavalBattleLineOfSight({
+            scene: state.scene,
+            from,
+            to,
+            occupiedShipCells
+          }),
+          rollD6: this.rollD6
+        });
+        if (!result.ok) return result.reason;
+        state.scene.ships ??= {};
+        state.scene.ships[command.shipId] = result.attacker;
+        state.scene.navalRevealUntilTurn = applyShipRevealUntilNextTurn({
+          shipId: command.shipId,
+          observerSideId: target.sideId,
+          revealUntilTurn: state.scene.navalRevealUntilTurn ?? {},
+          currentTurn: state.scene.turn.turnNumber
+        });
+        if (result.target.health.hp <= 0) {
+          const destroyed = destroyArmy(state.armies, state.scene.battleGroups, command.armyId);
+          state.armies = destroyed.armies;
+          state.scene.battleGroups = destroyed.battleGroups;
+        } else {
+          state.armies[command.armyId] = result.target;
+        }
+        return undefined;
+      }
+      case "NAVAL_HOSPITAL_SUPPORT": {
+        const battle = state.scene.activeNavalBattle;
+        if (!battle || battle.status !== "ACTIVE") return "NO_ACTIVE_NAVAL_BATTLE";
+        const hospital = state.scene.ships?.[command.shipId];
+        if (!hospital) return "SHIP_NOT_FOUND";
+        const target = state.scene.ships?.[command.targetShipId];
+        if (!target) return "TARGET_SHIP_NOT_FOUND";
+        if (
+          hospital.status !== "IN_NAVAL_BATTLE" ||
+          hospital.battleId !== battle.id ||
+          !battle.participantShipIds.includes(command.shipId)
+        ) return "SHIP_NOT_IN_NAVAL_BATTLE";
+        if (
+          target.status !== "IN_NAVAL_BATTLE" ||
+          target.battleId !== battle.id ||
+          !battle.participantShipIds.includes(command.targetShipId)
+        ) return "TARGET_NOT_IN_NAVAL_BATTLE";
+        if (!this.cellForPosition) return "NAVAL_POSITION_UNAVAILABLE";
+        const hospitalPosition = commandPosition(state, command.shipId);
+        const targetPosition = commandPosition(state, command.targetShipId);
+        if (!hospitalPosition || !targetPosition) return "NAVAL_POSITION_UNAVAILABLE";
+        const result = commitHospitalSupport({
+          battle,
+          ships: state.scene.ships ?? {},
+          hospitalId: command.shipId,
+          targetId: command.targetShipId,
+          hospital,
+          target,
+          hospitalCell: this.cellForPosition(hospitalPosition),
+          targetCell: this.cellForPosition(targetPosition),
+          rollD6: this.rollD6
+        });
+        if (!result.ok) return result.reason;
+        state.scene.ships ??= {};
+        state.scene.ships[command.shipId] = {
+          ...hospital,
+          logisticsActionUsedOnTurn: state.scene.turn.turnNumber,
+          revision: hospital.revision + 1
+        };
+        state.scene.ships[command.targetShipId] = result.target;
+        state.scene.activeNavalBattle = result.battle;
+        return undefined;
+      }
+      case "CONFIRM_NAVAL_SHIP_EXIT": {
+        const battle = state.scene.activeNavalBattle;
+        if (!battle || battle.status !== "ACTIVE") return "NO_ACTIVE_NAVAL_BATTLE";
+        const ship = state.scene.ships?.[command.shipId];
+        if (!ship) return "SHIP_NOT_FOUND";
+        if (ship.status !== "IN_NAVAL_BATTLE" || ship.battleId !== battle.id) return "SHIP_NOT_IN_NAVAL_BATTLE";
+        if (ship.hp <= 0) return "SHIP_DESTROYED";
+        try {
+          state.scene.activeNavalBattle = confirmNavalShipExit(
+            battle,
+            state.scene.ships ?? {},
+            command.shipId
+          );
+          if (ship.temporaryHp > 0) {
+            state.scene.ships ??= {};
+            state.scene.ships[command.shipId] = {
+              ...ship,
+              temporaryHp: 0,
+              revision: ship.revision + 1
+            };
+          }
+          return undefined;
+        } catch (error) {
+          return this.navalTacticalFailure(error);
+        }
+      }
+      case "END_NAVAL_SHIP_TURN": {
+        const battle = state.scene.activeNavalBattle;
+        if (!battle || battle.status !== "ACTIVE") return "NO_ACTIVE_NAVAL_BATTLE";
+        const ship = state.scene.ships?.[command.shipId];
+        if (!ship) return "SHIP_NOT_FOUND";
+        if (ship.status !== "IN_NAVAL_BATTLE" || ship.battleId !== battle.id) return "SHIP_NOT_IN_NAVAL_BATTLE";
+        if (ship.hp <= 0) return "SHIP_DESTROYED";
+        if (battle.currentShipId !== command.shipId) return "SHIP_NOT_ACTIVE";
+        try {
+          state.scene.activeNavalBattle = endNavalShipTurn(battle, state.scene.ships ?? {}, command.shipId);
+          return undefined;
+        } catch (error) {
+          return this.navalTacticalFailure(error);
+        }
+      }
+      case "SET_ACTIVE_NAVAL_SHIP": {
+        const battle = state.scene.activeNavalBattle;
+        if (!battle || battle.status !== "ACTIVE") return "NO_ACTIVE_NAVAL_BATTLE";
+        const override = setActiveNavalShipOverride(
+          battle,
+          state.scene.ships ?? {},
+          command.shipId
+        );
+        if (!override.ok) return override.reason;
+        state.scene.activeNavalBattle = override.battle;
+        return undefined;
+      }
+      case "START_NAVAL_BATTLE": {
+        if (!this.cellForPosition) return "SHIP_POSITION_UNAVAILABLE";
+        const snapshots: Record<string, import("../shared/types").NavalBattleShipSnapshot> = {};
+        const normalizedArea = new Map(
+          command.areaCells.map((cell) => [`${cell.x},${cell.y}`, { ...cell }])
+        );
+        for (const shipId of command.participantShipIds) {
+          const ship = state.scene.ships?.[shipId];
+          if (!ship) return "SHIP_NOT_FOUND";
+          const position = state.positions?.[shipId] ?? state.items[shipId]?.position;
+          if (!position) return "SHIP_POSITION_UNAVAILABLE";
+          const strategicCell = this.cellForPosition(position);
+          snapshots[shipId] = {
+            shipId,
+            strategicCell,
+            strategicPosition: { ...position },
+            strategicFacing: ship.facing
+          };
+          normalizedArea.set(`${strategicCell.x},${strategicCell.y}`, { ...strategicCell });
+        }
+        const areaCells = [...normalizedArea.values()];
+        if (areaCells.some((cell) => !cellSupportsDomain(state.scene, cell, "SEA"))) {
+          return "INVALID_NAVAL_BATTLE_AREA";
+        }
+        const sceneRevision = state.scene.revision;
+        try {
+          const started = startNavalBattle(state.scene as NavalSceneState, {
+            battleId: command.battleId,
+            requestId: command.navalRequestId,
+            initiatingShipId: command.initiatingShipId,
+            participantShipIds: command.participantShipIds,
+            areaCells,
+            snapshots,
+            startedAt: this.now().getTime(),
+            rollD20: () => Math.floor(Math.random() * 20) + 1
+          });
+          started.revision = sceneRevision;
+          state.scene = started;
+          return undefined;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (message === "Naval battle already active") return "NAVAL_BATTLE_ALREADY_ACTIVE";
+          if (message.startsWith("Destroyed naval battle participant:")) return "SHIP_DESTROYED";
+          if (message.startsWith("Missing naval battle participant:")) return "SHIP_NOT_FOUND";
+          return "INVALID_NAVAL_BATTLE";
+        }
+      }
+      case "COMPLETE_MOVEMENT_PHASE": {
+        if (state.scene.turn.phase !== "MOVEMENT") return "NOT_MOVEMENT_PHASE";
+        state.positions ??= {};
+        const resolved = resolvePlannedShipRoutes(
+          state.scene,
+          state.items,
+          state.positions,
+          this.cellForPosition,
+          this.positionForCell
+        );
+        if (!resolved.ok) return resolved.reason;
+        state.scene.turn.phase = "POST_MOVEMENT";
+        state.scene.transportEmbarkRequests = [];
+        return undefined;
+      }
+      case "REOPEN_MOVEMENT_PHASE":
+        if (state.scene.turn.phase !== "POST_MOVEMENT") return "NOT_POST_MOVEMENT_PHASE";
+        if (state.scene.activeNavalBattle?.status === "ACTIVE") return "NAVAL_BATTLE_ACTIVE";
+        state.scene.turn.phase = "MOVEMENT";
+        state.scene.navalBattleRequests = [];
+        return undefined;
+      case "COMPLETE_NAVAL_BATTLE": {
+        const battle = state.scene.activeNavalBattle;
+        if (!battle || battle.status !== "ACTIVE") return "NO_ACTIVE_NAVAL_BATTLE";
+        const sceneRevision = state.scene.revision;
+        const completed = completeNavalBattle(state.scene as NavalSceneState);
+        completed.revision = sceneRevision;
+        state.positions ??= {};
+        for (const [shipId, snapshot] of Object.entries(battle.snapshots)) {
+          const ship = completed.ships[shipId];
+          if (!ship) continue;
+          completed.ships[shipId] = {
+            ...ship,
+            facing: snapshot.strategicFacing
+          };
+          state.positions[shipId] = { ...snapshot.strategicPosition };
+        }
+        state.scene = completed;
+        return undefined;
+      }
+      case "SET_SHIP_DETECTION_OVERRIDE": {
+        const ship = state.scene.ships?.[command.shipId];
+        if (!ship) return "SHIP_NOT_FOUND";
+        state.scene.ships ??= {};
+        state.scene.ships[command.shipId] = {
+          ...ship,
+          detectionOverride: command.detectionOverride,
+          revision: ship.revision + 1
+        };
+        return undefined;
+      }
+      case "SET_SHIP_HP": {
+        const ship = state.scene.ships?.[command.shipId];
+        if (!ship) return "SHIP_NOT_FOUND";
+        const maxHp = SHIP_CLASSES[ship.classId].maxHp;
+        if (command.hp > maxHp) return "INVALID_HP";
+        if (command.hp <= 0) {
+          destroyReciprocalTransportCargo(state, command.shipId, ship);
+        }
+        state.scene.ships ??= {};
+        state.scene.ships[command.shipId] = {
+          ...ship,
+          hp: command.hp,
+          embarkedArmyId: command.hp <= 0 && ship.classId === "TRANSPORT"
+            ? null
+            : ship.embarkedArmyId,
+          revision: ship.revision + 1
+        };
         const battle = state.scene.activeNavalBattle;
         if (
           command.hp <= 0 &&
