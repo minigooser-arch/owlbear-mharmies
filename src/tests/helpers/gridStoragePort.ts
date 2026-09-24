@@ -10,9 +10,15 @@ export class GridStoragePort implements MetadataPort {
   failCommit = false;
   failDelete = false;
   beforeItems: (() => void) | undefined;
+  afterItemsRead: (() => void) | undefined;
   afterAdd: (() => void) | undefined;
   async getSceneMetadata() { return structuredClone(this.metadata); }
-  async getSceneItems() { this.beforeItems?.(); this.beforeItems = undefined; return structuredClone(this.items); }
+  async getSceneItems() {
+    this.beforeItems?.(); this.beforeItems = undefined;
+    const items = structuredClone(this.items);
+    this.afterItemsRead?.(); this.afterItemsRead = undefined;
+    return items;
+  }
   async updateSceneItem(id: string, update: Partial<SceneItemRecord>) {
     const item = this.items.find(item => item.id === id);
     if (!item) throw new Error("missing item");

@@ -8,6 +8,8 @@ import {
   RevisionConflict,
   type MetadataPort
 } from "./metadataRepository";
+import { GridStoragePort } from "../tests/helpers/gridStoragePort";
+import { DEFAULT_CELL_STATE } from "../terrain/gridMap";
 
 class MemoryPort implements MetadataPort {
   sceneMetadata: Record<string, unknown> = {};
@@ -83,6 +85,81 @@ function scene(revision: number): SceneState {
 }
 
 describe("MetadataRepository", () => {
+  it("reads one stable item frame and hydrates a grid from the same scene item list", async () => {
+    const port = new GridStoragePort();
+    const repository = new MetadataRepository(port);
+    const initial = await repository.readScene();
+    initial.gridMap.cells = { "0,0": { ...DEFAULT_CELL_STATE, terrainId: "plain" } };
+    initial.gridMap.revision = 1;
+    initial.revision = 1;
+    port.metadata[METADATA_KEYS.scene] = structuredClone(initial);
+    await repository.writeScene({ ...initial, revision: 2 }, 1);
+    port.items.push(
+      { id: "army", type: "IMAGE", position: { x: 0, y: 0 }, metadata: { [METADATA_KEYS.army]: army(1) } },
+      { id: "ship", type: "IMAGE", position: { x: 0, y: 0 }, metadata: { [METADATA_KEYS.ship]: {
+        version: 1, registered: true, sideId: "red", classId: "CRUISER", status: "READY", hp: 25,
+        temporaryHp: 0, facing: "NORTH", plannedRoute: [], plannedFacing: null,
+        globalMovementRemaining: 3, movementSpentThisTurn: false, battleId: null,
+        detectionOverride: null, embarkedArmyId: null, shoreBombardmentUsedOnTurn: null,
+        logisticsActionUsedOnTurn: null, revision: 1
+      } } },
+      { id: "barrier", type: "CURVE", position: { x: 0, y: 0 }, metadata: { [METADATA_KEYS.barrier]: {
+        version: 1, revision: 1, blocksMovement: true, blocksVision: true,
+        visibility: "GM_ONLY", color: "#f00"
+      } } }
+    );
+
+    let itemReads = 0;
+    const readItems = port.getSceneItems.bind(port);
+    port.getSceneItems = async () => { itemReads += 1; return readItems(); };
+    const itemFrame = await repository.readItemFrame();
+    expect(itemReads).toBe(1);
+    expect(itemFrame.items).toHaveLength(4);
+    expect(itemFrame.armies.map((record) => record.item.id)).toEqual(["army"]);
+    expect(itemFrame.ships.map((record) => record.item.id)).toEqual(["ship"]);
+    expect(itemFrame.barriers.map((record) => record.item.id)).toEqual(["barrier"]);
+    expect(itemFrame.sceneMetadata[METADATA_KEYS.gridManifest]).toEqual(port.metadata[METADATA_KEYS.gridManifest]);
+
+    itemReads = 0;
+    const frame = await repository.readFrame(itemFrame);
+    expect(itemReads).toBe(0);
+    expect(frame.scene.gridMap.cells).toEqual(initial.gridMap.cells);
+    expect(frame.items.items).toEqual(itemFrame.items);
+
+    itemReads = 0;
+    await repository.readFrame();
+    expect(itemReads).toBe(1);
+  });
+
+  it("retries an item frame when the grid manifest changes during its item read", async () => {
+    const port = new GridStoragePort();
+    const repository = new MetadataRepository(port);
+    const initial = await repository.readScene();
+    initial.gridMap.cells = { "0,0": { ...DEFAULT_CELL_STATE, terrainId: "plain" } };
+    initial.gridMap.revision = 1;
+    initial.revision = 1;
+    port.metadata[METADATA_KEYS.scene] = structuredClone(initial);
+    await repository.writeScene({ ...initial, revision: 2 }, 1);
+    const oldItems = structuredClone(port.items);
+    const next = await repository.readScene();
+    next.gridMap.cells["0,0"] = { ...DEFAULT_CELL_STATE, terrainId: "forest" };
+    next.gridMap.revision += 1;
+    next.revision += 1;
+    await repository.writeScene(next, 2);
+    const latestMetadata = structuredClone(port.metadata);
+    const latestItems = structuredClone(port.items);
+    port.metadata = { ...latestMetadata, [METADATA_KEYS.scene]: { ...initial, revision: 2, gridMap: { ...initial.gridMap, cells: {} } } };
+    port.items = oldItems;
+    let reads = 0;
+    const readItems = port.getSceneItems.bind(port);
+    port.getSceneItems = async () => { reads += 1; return readItems(); };
+    port.afterItemsRead = () => { port.metadata = latestMetadata; port.items = latestItems; };
+
+    const frame = await repository.readFrame();
+    expect(reads).toBe(2);
+    expect(frame.scene.gridMap.cells["0,0"]?.terrainId).toBe("forest");
+  });
+
   it("creates schema v7 defaults for a new scene", async () => {
     const repository = new MetadataRepository(new MemoryPort());
 

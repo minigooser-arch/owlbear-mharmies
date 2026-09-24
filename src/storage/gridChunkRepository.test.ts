@@ -25,6 +25,18 @@ it("migrates embedded cells and rehydrates through a fresh repository", async ()
   expect(port.items.every(item => item.visible === false && item.locked === true && item.disableHit === true)).toBe(true);
 });
 
+it("hydrates chunk data from the caller's item snapshot without reading items again", async () => {
+  const { port, repository, scene } = await fixture();
+  await repository.writeScene({ ...scene, revision: 2 }, 1);
+  const items = structuredClone(port.items);
+  let calls = 0;
+  port.getSceneItems = async () => { calls += 1; return []; };
+  const grid = await new (await import("./gridChunkRepository")).GridChunkRepository(port)
+    .read(port.metadata, items);
+  expect(grid).toEqual(scene.gridMap);
+  expect(calls).toBe(0);
+});
+
 it("rewrites only the changed chunk and reuses all chunks for non-grid commands", async () => {
   const { port, repository, scene } = await fixture();
   await repository.writeScene({ ...scene, revision: 2 }, 1);

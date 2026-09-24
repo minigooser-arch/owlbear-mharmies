@@ -79,7 +79,7 @@ import {
   type StateRelations,
   type Vector2
 } from "../shared/types";
-import { MetadataRepository, RevisionConflict, type ArmyRecord, type BarrierRecord } from "../storage/metadataRepository";
+import { MetadataRepository, RevisionConflict, type ArmyRecord, type BarrierRecord, type MetadataItemFrame } from "../storage/metadataRepository";
 import { GridStorageError } from "../storage/gridChunkCodec";
 import { buildDetectionGraph } from "../visibility/detectionGraph";
 import { buildSceneDetectionGraph, detectedShipIdsForSide } from "../visibility/sceneDetectionGraph";
@@ -266,6 +266,20 @@ export function extractBarrierSegments(
   });
 }
 
+function isArmyMovementEligible(record: ArmyRecord, scene: SceneState): boolean {
+  const movingNow = record.state.status === "MOVING";
+  const recoverableCoordinatorPause = record.state.status === "PAUSED" &&
+    record.state.stopReason === "COORDINATOR_GAP";
+  if (!movingNow && !recoverableCoordinatorPause) return false;
+  const shipId = record.state.embarkedOnShipId;
+  if (shipId == null) return true;
+  return scene.ships?.[shipId]?.embarkedArmyId !== record.item.id;
+}
+
+export function hasEligibleArmyMovement(armies: readonly ArmyRecord[], scene: SceneState): boolean {
+  return armies.some((record) => isArmyMovementEligible(record, scene));
+}
+
 function relation(scene: SceneState, left: string, right: string): SideRelation {
   return scene.relations[left]?.[right] ?? "NEUTRAL";
 }
@@ -342,12 +356,11 @@ export class ProductionEngine {
   }
 
   async visibilityTick(role: "GM" | "PLAYER", playerId: string): Promise<void> {
-    const [scene, armies, barriers, sceneItems] = await Promise.all([
-      this.repository.readScene(),
-      this.repository.readArmies(),
-      this.repository.readBarriers(),
-      this.port.getSceneItems()
-    ]);
+    const frame = await this.repository.readFrame();
+    const { scene } = frame;
+    const armies = frame.items.armies;
+    const barriers = frame.items.barriers;
+    const sceneItems = frame.items.items;
     const sceneItemById = new Map(sceneItems.map((item) => [item.id, item]));
     const reciprocallyEmbarkedArmyIds = new Set(armies.flatMap(({ item, state }) => {
       if (state.embarkedOnShipId == null) return [];
@@ -420,8 +433,8 @@ export class ProductionEngine {
     );
   }
 
-  movementTick(): Promise<void> {
-    return this.enqueueMutation(() => this.movementTickNow());
+  movementTick(itemFrame?: MetadataItemFrame): Promise<void> {
+    return this.enqueueMutation(() => this.movementTickNow(itemFrame));
   }
 
   turnTick(): Promise<void> {
@@ -433,12 +446,11 @@ export class ProductionEngine {
     const expectedCoordinatorConnectionId = this.activeCoordinatorConnectionId;
     const canCommit = this.captureCoordinatorGuard(expectedCoordinatorConnectionId);
     const now = this.wallClock();
-    const [scene, armyRecords, barrierRecords, sceneItems] = await Promise.all([
-      this.repository.readScene(),
-      this.repository.readArmies(),
-      this.repository.readBarriers(),
-      this.port.getSceneItems()
-    ]);
+    const frame = await this.repository.readFrame();
+    const scene = frame.scene;
+    const armyRecords = frame.items.armies;
+    const barrierRecords = frame.items.barriers;
+    const sceneItems = frame.items.items;
     if (!canCommit()) return;
     const boundary = getDueTurnBoundary(now, scene.turn);
     if (!boundary) return;
@@ -482,27 +494,20 @@ export class ProductionEngine {
     await this.persistCommandState(next, previous, sceneItems);
   }
 
-  private async movementTickNow(): Promise<void> {
+  private async movementTickNow(initialItemFrame?: MetadataItemFrame): Promise<void> {
     if (!this.coordinator) return;
     const expectedCoordinatorConnectionId = this.activeCoordinatorConnectionId;
     const canCommit = this.captureCoordinatorGuard(expectedCoordinatorConnectionId);
     const now = performance.now();
     const deltaSeconds = Math.max(0, (now - this.lastMovementAt) / 1_000);
     this.lastMovementAt = now;
-    const [scene, armies, barriers] = await Promise.all([
-      this.repository.readScene(),
-      this.repository.readArmies(),
-      this.repository.readBarriers()
-    ]);
-    const moving = armies.filter((record) => {
-      const movingNow = record.state.status === "MOVING";
-      const recoverableCoordinatorPause = record.state.status === "PAUSED" &&
-        record.state.stopReason === "COORDINATOR_GAP";
-      if (!movingNow && !recoverableCoordinatorPause) return false;
-      const shipId = record.state.embarkedOnShipId;
-      if (shipId == null) return true;
-      return scene.ships?.[shipId]?.embarkedArmyId !== record.item.id;
-    });
+    const itemFrame = initialItemFrame ?? await this.repository.readItemFrame();
+    if (!hasEligibleArmyMovement(itemFrame.armies, itemFrame.baseScene)) return;
+    const frame = await this.repository.readFrame(itemFrame);
+    const scene = frame.scene;
+    const armies = frame.items.armies;
+    const barriers = frame.items.barriers;
+    const moving = armies.filter((record) => isArmyMovementEligible(record, scene));
     if (moving.length === 0) return;
     const movementBarriers = extractBarrierSegments(barriers, "movement");
     let strategicGrid: StrategicGridAdapter;
@@ -888,12 +893,11 @@ export class ProductionEngine {
       return;
     }
     const command = validation.command;
-    const [scene, armyRecords, barrierRecords, sceneItems] = await Promise.all([
-      this.repository.readScene(),
-      this.repository.readArmies(),
-      this.repository.readBarriers(),
-      this.port.getSceneItems()
-    ]);
+    const frame = await this.repository.readFrame();
+    const scene = frame.scene;
+    const armyRecords = frame.items.armies;
+    const barrierRecords = frame.items.barriers;
+    const sceneItems = frame.items.items;
     const commandState: CommandState = {
       scene,
       armies: Object.fromEntries(armyRecords.map((record) => [record.item.id, record.state])),
@@ -1520,7 +1524,7 @@ export class ProductionEngine {
 
     if (role === "GM" && !this.clearedSharedMapOverlays) {
       const sharedMapOverlayPort = {
-        getLocalItems: () => this.port.getSceneItems(),
+        getLocalItems: async () => [...sceneItems],
         addLocalItems: (items: readonly SceneItemRecord[]) => this.port.addSceneItems(items),
         updateLocalItems: async (items: readonly SceneItemRecord[]) => {
           await Promise.all(items.map(({ id, ...item }) => this.port.updateSceneItem(id, item)));

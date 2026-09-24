@@ -88,6 +88,25 @@ export interface BarrierRecord {
   state: BarrierState;
 }
 
+export interface MetadataItemFrame {
+  readonly items: readonly SceneItemRecord[];
+  readonly armies: readonly ArmyRecord[];
+  readonly ships: readonly ShipRecord[];
+  readonly barriers: readonly BarrierRecord[];
+  readonly sceneMetadata: Readonly<Record<string, unknown>>;
+  readonly baseScene: SceneState;
+}
+
+export interface MetadataReadFrame {
+  readonly items: MetadataItemFrame;
+  readonly scene: SceneState;
+}
+
+function sameSceneAndManifest(left: Record<string, unknown>, right: Record<string, unknown>): boolean {
+  return JSON.stringify([left[METADATA_KEYS.scene], left[METADATA_KEYS.gridManifest]]) ===
+    JSON.stringify([right[METADATA_KEYS.scene], right[METADATA_KEYS.gridManifest]]);
+}
+
 export class MetadataRepository {
   constructor(private readonly port: MetadataPort) {}
 
@@ -106,18 +125,91 @@ export class MetadataRepository {
   private async readSnapshot(): Promise<{ state: SceneState; metadata: Record<string, unknown> }> {
     for (let attempt = 0; attempt < 3; attempt++) {
       const metadata = await this.port.getSceneMetadata();
-      const raw = metadata[METADATA_KEYS.scene] ?? { version: 5 };
-      const state = requireValid(migrateSceneState(raw), METADATA_KEYS.scene);
+      const state = requireValid(
+        migrateSceneState(metadata[METADATA_KEYS.scene] ?? { version: 5 }),
+        METADATA_KEYS.scene
+      );
       if (!readGridManifest(metadata)) return { state, metadata };
       let grid: SceneState["gridMap"] | undefined;
       let failure: unknown;
       try { grid = await new GridChunkRepository(this.port).read(metadata); } catch (error) { failure = error; }
       const latest = await this.port.getSceneMetadata();
-      if (JSON.stringify([latest[METADATA_KEYS.scene], latest[METADATA_KEYS.gridManifest]]) !==
-        JSON.stringify([metadata[METADATA_KEYS.scene], metadata[METADATA_KEYS.gridManifest]])) continue;
+      if (!sameSceneAndManifest(metadata, latest)) continue;
       if (failure) throw failure;
       if (!grid || grid.revision !== state.gridMap.revision) throw new GridStorageError("GRID_CHUNK_INVALID");
       return { state: { ...state, gridMap: grid }, metadata };
+    }
+    throw new GridStorageError("GRID_CHUNK_MISSING");
+  }
+
+  async readItemFrame(): Promise<MetadataItemFrame> {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const sceneMetadata = await this.port.getSceneMetadata();
+      const baseScene = requireValid(
+        migrateSceneState(sceneMetadata[METADATA_KEYS.scene] ?? { version: 5 }),
+        METADATA_KEYS.scene
+      );
+      const items = await this.port.getSceneItems();
+      const latest = await this.port.getSceneMetadata();
+      if (!sameSceneAndManifest(sceneMetadata, latest)) continue;
+
+      const armies: ArmyRecord[] = [];
+      const ships: ShipRecord[] = [];
+      const barriers: BarrierRecord[] = [];
+      for (const item of items) {
+        const rawArmy = item.metadata[METADATA_KEYS.army];
+        if (rawArmy !== undefined) {
+          const result = migrateArmyState(rawArmy);
+          if (result.ok) armies.push({ item, state: result.value });
+        }
+        const rawShip = item.metadata[METADATA_KEYS.ship];
+        if (rawShip !== undefined) {
+          const result = migrateShipState(rawShip);
+          if (result.ok) ships.push({ item, state: result.value });
+        }
+        const rawBarrier = item.metadata[METADATA_KEYS.barrier];
+        if (rawBarrier !== undefined) {
+          const result = migrateBarrierState(rawBarrier);
+          if (result.ok) barriers.push({ item, state: result.value });
+        }
+      }
+      return {
+        items,
+        armies,
+        ships,
+        barriers,
+        sceneMetadata,
+        baseScene
+      };
+    }
+    throw new GridStorageError("GRID_CHUNK_MISSING");
+  }
+
+  async readFrame(frame?: MetadataItemFrame): Promise<MetadataReadFrame> {
+    let items = frame;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      items ??= await this.readItemFrame();
+      let grid: SceneState["gridMap"] | undefined;
+      let failure: unknown;
+      try {
+        grid = await new GridChunkRepository(this.port).read(
+          items.sceneMetadata as Record<string, unknown>, items.items
+        );
+      } catch (error) { failure = error; }
+      const latest = await this.port.getSceneMetadata();
+      if (!sameSceneAndManifest(items.sceneMetadata as Record<string, unknown>, latest)) {
+        items = undefined;
+        continue;
+      }
+      if (failure) throw failure;
+      if (readGridManifest(items.sceneMetadata as Record<string, unknown>) &&
+        (!grid || grid.revision !== items.baseScene.gridMap.revision)) {
+        throw new GridStorageError("GRID_CHUNK_INVALID");
+      }
+      return {
+        items,
+        scene: grid ? { ...items.baseScene, gridMap: grid } : items.baseScene
+      };
     }
     throw new GridStorageError("GRID_CHUNK_MISSING");
   }

@@ -149,3 +149,38 @@ it("lets a GM continue from an empty hydrated scene through map, cities and rebe
     participantFactionIds: ["rebels"]
   }));
 });
+
+it("keeps city map picking and diplomacy available in the GM workflow", () => {
+  const store = mutableServices({
+    ...emptyGmSnapshot(),
+    states: [
+      { id: "russia", name: "Россия", color: "#607d8b", rulingFactionId: "government", active: true },
+      { id: "france", name: "Франция", color: "#445566", rulingFactionId: "france", active: true }
+    ],
+    strategicCities: [{
+      id: "moscow", name: "Москва", cells: [{ x: 1, y: 2 }], recognizedStateId: "russia",
+      deFactoStateId: "russia", factionInfluenceId: "government", mayorId: null,
+      isCapital: true, historicalBuildTypeCount: 1
+    }]
+  });
+  render(<App services={store.services} />);
+
+  fireEvent.click(screen.getByRole("button", { name: "Города" }));
+  expect(screen.getByRole("searchbox", { name: "Поиск городов" })).toBeInTheDocument();
+  expect(screen.getByText("Показать детали города Москва")).toBeInTheDocument();
+  fireEvent.click(screen.getByText("Дополнительные настройки"));
+  fireEvent.change(screen.getByLabelText("Клетки города"), { target: { value: "7,8" } });
+  fireEvent.click(screen.getByRole("button", { name: "Выбрать клетки на карте" }));
+  expect(store.send).toHaveBeenCalledWith({ type: "OPEN_CITY_CELL_PICKER" });
+
+  act(() => store.update({ cityCellPick: { sessionId: "journey-session", cells: [{ x: 3, y: 4 }] } }));
+  expect(screen.getByText("3,4")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Завершить выбор" }));
+  expect(screen.getByLabelText("Клетки города")).toHaveValue("7,8; 3,4");
+  expect(store.send).toHaveBeenCalledWith({ type: "CLOSE_CITY_CELL_PICKER" });
+
+  fireEvent.click(screen.getByRole("button", { name: "Управление" }));
+  fireEvent.click(screen.getByRole("button", { name: "Межгосударственные отношения" }));
+  expect(screen.getByRole("heading", { name: "Дипломатия государств" })).toBeInTheDocument();
+  expect(screen.getByLabelText("Государство для дипломатии")).toBeInTheDocument();
+});

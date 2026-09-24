@@ -1,8 +1,10 @@
 import { METADATA_KEYS } from "../shared/constants";
 import type { ArmyState, SceneItemRecord } from "../shared/types";
 import type { OwlbearPort } from "../owlbear/sdkAdapter";
+import { MetadataRepository } from "../storage/metadataRepository";
 import {
   ProductionEngine as CoreProductionEngine,
+  hasEligibleArmyMovement,
   startBackgroundApplication as startCoreBackgroundApplication
 } from "./applicationCore";
 
@@ -68,9 +70,10 @@ async function rollbackMovementItems(
 
 async function runAtomicMovement<T>(
   port: OwlbearPort,
+  items: readonly SceneItemRecord[],
   operation: () => Promise<T>
 ): Promise<T> {
-  const before = armySnapshots(await port.getSceneItems());
+  const before = armySnapshots(items);
   try {
     return await operation();
   } catch (error) {
@@ -82,7 +85,12 @@ async function runAtomicMovement<T>(
 const originalMovementTick = CoreProductionEngine.prototype.movementTick;
 CoreProductionEngine.prototype.movementTick = function patchedMovementTick(this: CoreProductionEngine): Promise<void> {
   const port = (this as unknown as AtomicMovementEngineInstance).port;
-  return runAtomicMovement(port, () => originalMovementTick.call(this));
+  if (!this.isCoordinator()) return originalMovementTick.call(this);
+  const repository = new MetadataRepository(port);
+  return repository.readItemFrame().then((frame) => {
+    if (!hasEligibleArmyMovement(frame.armies, frame.baseScene)) return;
+    return runAtomicMovement(port, frame.items, () => originalMovementTick.call(this, frame));
+  });
 };
 
 export { CoreProductionEngine as ProductionEngine };

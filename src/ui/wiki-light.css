@@ -517,6 +517,16 @@ button:disabled { opacity: .48; cursor: not-allowed; }
 }
 .color-dot { border-radius: 999px; }
 .relation-row { border-radius: 10px; padding: 10px; }
+.diplomacy-filterbar label { color: #657080; }
+.diplomacy-filterbar input,.diplomacy-filterbar select { background: #fff; color: #263238; border-color: #ccd4da; }
+.diplomacy-row { background: #fff; border-color: #dce2e6; box-shadow: 0 2px 8px #2537460d; }
+.diplomacy-row-trigger { color: #263238; }
+.diplomacy-row-main span,.diplomacy-row-summary,.diplomacy-row-chevron { color: #687780; }
+.strategic-city-card,.strategic-city-create { background: #fff; border-color: #dce2e6; box-shadow: 0 2px 8px #2537460d; color: #263238; }
+.strategic-city-summary-main span,.strategic-city-summary-meta,.strategic-city-summary-label,.strategic-city-details p,.strategic-city-filters label,.strategic-city-form-grid label,.strategic-city-edit-form label,.strategic-city-advanced label { color: #687780; }
+.strategic-city-filters input,.strategic-city-filters select,.strategic-city-form-grid input,.strategic-city-form-grid select,.strategic-city-edit-form input,.strategic-city-edit-form select,.strategic-city-advanced input { background: #fff; color: #263238; border-color: #ccd4da; }
+.strategic-city-advanced { background: #f7f9fa; border-color: #dce2e6; }.strategic-city-actions button,.strategic-city-details>button,.strategic-city-edit-form>button { background: #f6f8f9; color: #263238; border-color: #ccd4da; }
+.strategic-city-picker { background:#f7f9fa; border-color:#dce2e6; }.strategic-city-picker p { color:#687780; }.strategic-city-picker>button,.strategic-city-picker-actions button { background:#f6f8f9; color:#263238; border-color:#ccd4da; }.strategic-city-cell-chip { background:#fff; border-color:#ccd4da; color:#263238; }.strategic-city-cell-chip button { color:#52636c; }.strategic-city-picker-actions button:first-child { background:#d9a441; color:#172033; }
 .diagnostic-row { border-color: var(--wiki-line); background: var(--wiki-panel); color: var(--wiki-text); }
 .diagnostic-row span:last-child { color: var(--wiki-accent); }
 

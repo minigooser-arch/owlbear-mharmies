@@ -24,10 +24,11 @@ export interface StagedGrid { manifest: GridManifest; additions: SceneItemRecord
 export class GridChunkRepository {
   constructor(private readonly port: MetadataPort) {}
 
-  async read(metadata: Record<string, unknown>): Promise<GridMapState | undefined> {
+  async read(metadata: Record<string, unknown>, sceneItems?: readonly SceneItemRecord[]): Promise<GridMapState | undefined> {
     const manifest = readGridManifest(metadata);
     if (!manifest) return undefined;
-    const items = new Map((await this.port.getSceneItems()).map(item => [item.id, item]));
+    const sourceItems = sceneItems ?? await this.port.getSceneItems();
+    const items = new Map(sourceItems.map(item => [item.id, item]));
     const chunks: GridChunk[] = [];
     for (const [key, id] of Object.entries(manifest.chunks)) {
       const item = items.get(id);

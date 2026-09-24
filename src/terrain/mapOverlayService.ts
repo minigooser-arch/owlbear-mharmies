@@ -12,7 +12,7 @@ import type {
   StateEntity,
   TerrainRegistryState
 } from "../shared/types";
-import { buildStateBoundarySegments } from "../states/stateBoundaryOverlay";
+import { buildStateBoundarySegmentsForFields } from "../states/stateBoundaryOverlay";
 
 export type MapOverlayPort = LocalOverlayBatchPort;
 
@@ -154,8 +154,9 @@ export class MapOverlayService {
       }
     }
 
-    for (const [controlField, boundaryKind] of [["recognizedStateId", "STATE_BOUNDARY"], ["deFactoStateId", "DEFACTO_BOUNDARY"]] as const) {
-      for (const segment of buildStateBoundarySegments(source.gridMap, source.states, source.dpi, controlField)) {
+    const boundaries = buildStateBoundarySegmentsForFields(source.gridMap, source.states, source.dpi);
+    for (const [segments, boundaryKind] of [[boundaries.recognized, "STATE_BOUNDARY"], [boundaries.deFacto, "DEFACTO_BOUNDARY"]] as const) {
+      for (const segment of segments) {
         const marker = boundaryMetadata(
           boundaryKind,
           segment.stateId,

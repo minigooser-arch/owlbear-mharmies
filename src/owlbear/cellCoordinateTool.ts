@@ -1,6 +1,12 @@
 import type { Tool, ToolContext, ToolEvent, ToolMode } from "@owlbear-rodeo/sdk";
 import { StrategicGridAdapter } from "../grid/strategicGrid";
-import { METADATA_KEYS, CELL_COORDINATE_TOOL_ID, CELL_COORDINATE_TOOL_MODE_ID } from "../shared/constants";
+import {
+  METADATA_KEYS,
+  CELL_COORDINATE_TOOL_ID,
+  CELL_COORDINATE_TOOL_MODE_ID,
+  CITY_CELL_PICK_CHANNEL,
+  CITY_CELL_PICK_SESSION_KEY
+} from "../shared/constants";
 import type { SceneItemRecord } from "../shared/types";
 import { PointerMoveCoalescer } from "./pointerMoveCoalescer";
 
@@ -18,6 +24,7 @@ export interface CellCoordinateToolPort {
   addLocalItem(item: SceneItemRecord): Promise<void>;
   updateLocalItems(items: readonly SceneItemRecord[]): Promise<void>;
   deleteLocalItems(ids: readonly string[]): Promise<void>;
+  send(channel: string, data: unknown): Promise<void>;
 }
 
 export interface CellCoordinateToolRegistration {
@@ -104,7 +111,7 @@ export async function registerCellCoordinateTool(
     if (!closed) moveCoalescer.push(event.pointerPosition);
   };
 
-  const click = (event: ToolEvent): Promise<void> => enqueue(async () => {
+  const click = (context: ToolContext, event: ToolEvent): Promise<void> => enqueue(async () => {
     if (closed) return;
     moveCoalescer.clear();
     const cell = (await ensureGrid()).sceneToCell(event.pointerPosition);
@@ -117,6 +124,11 @@ export async function registerCellCoordinateTool(
       x: center.x,
       y: center.y - (await port.getGridDpi()) * 0.35
     });
+    const metadata = context.metadata as Record<string, unknown> | undefined;
+    const sessionId = metadata?.[CITY_CELL_PICK_SESSION_KEY];
+    if (typeof sessionId === "string" && sessionId.trim().length > 0) {
+      await port.send(CITY_CELL_PICK_CHANNEL, { sessionId, x: cell.x, y: cell.y });
+    }
   });
 
   const tool: Tool = {
@@ -135,7 +147,7 @@ export async function registerCellCoordinateTool(
       void enqueue(clearOverlays);
     },
     onToolMove: move,
-    onToolClick: (_context, event) => { void click(event); return false; },
+    onToolClick: (context, event) => { void click(context, event); return false; },
     onDeactivate: () => {
       moveCoalescer.clear();
       void enqueue(clearOverlays);

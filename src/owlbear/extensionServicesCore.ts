@@ -14,6 +14,8 @@ import {
   DEFAULT_TERRAIN,
   DEFAULT_TURN_STATE,
   METADATA_KEYS,
+  CELL_COORDINATE_TOOL_ID,
+  CITY_CELL_PICK_CHANNEL,
   MAP_BRUSH_ERASER_TARGET_KEY,
   MAP_BRUSH_IMPASSABLE_VALUE_KEY,
   MAP_BRUSH_MODE_KEY,
@@ -77,6 +79,7 @@ import {
   resolveRegistrationSelection
 } from "./registration";
 import { semanticSnapshotEqual, semanticValueEqual } from "./snapshotEquality";
+import { CityCellPickerSession, type CityCellPickSnapshot } from "./cityCellPickerSession";
 
 export interface SnapshotInput {
   role: "GM" | "PLAYER";
@@ -87,6 +90,10 @@ export interface SnapshotInput {
   ships?: readonly ShipRecord[];
   mapVisibleSourceIds: ReadonlySet<string>;
   gridDpi?: number;
+}
+
+export async function readCoreSnapshotItemFrame(repository: MetadataRepository) {
+  return repository.readItemFrame();
 }
 
 export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapshot {
@@ -550,11 +557,33 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
   let snapshot = LOADING_SNAPSHOT;
   const listeners = new Set<() => void>();
   const unsubscribers: Array<() => void> = [];
+  let cityCellPick: CityCellPickSnapshot | undefined;
 
   const publish = (next: RawExtensionSnapshot) => {
     snapshot = next;
     for (const listener of listeners) listener();
   };
+
+  const cityCellPicker = new CityCellPickerSession({
+    getRole: () => OBR.player.getRole(),
+    getActiveTool: () => OBR.tool.getActiveTool(),
+    getActiveToolMode: () => OBR.tool.getActiveToolMode(),
+    setToolMetadata: (update) => OBR.tool.setMetadata(CELL_COORDINATE_TOOL_ID, update),
+    activateTool: (toolId) => OBR.tool.activateTool(toolId),
+    activateMode: (toolId, modeId) => OBR.tool.activateMode(toolId, modeId),
+    onCellPick: (listener) => adapter.on(CITY_CELL_PICK_CHANNEL, (event) => listener(event.data)),
+    onToolChange: (listener) => OBR.tool.onToolChange?.(listener) ?? (() => undefined),
+    createSessionId: () => crypto.randomUUID(),
+    showError: (message) => adapter.show(message, "ERROR")
+  }, (next) => {
+    cityCellPick = next;
+    const withoutPick = { ...snapshot };
+    delete withoutPick.cityCellPick;
+    publish(next && snapshot.role === "GM"
+      ? { ...withoutPick, cityCellPick: { sessionId: next.sessionId, cells: next.cells.map((cell) => ({ ...cell })) } }
+      : withoutPick);
+  });
+  cityCellPicker.start();
 
   let observedLocalCloneSourceIds = new Set<string>();
   const loadSnapshot = async (): Promise<RawExtensionSnapshot> => {
@@ -595,9 +624,8 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
         players
       };
     }
-    const [armies, ships, localItems, gridDpi] = await Promise.all([
-      repository.readArmies(),
-      repository.readShips(),
+    const [itemFrame, localItems, gridDpi] = await Promise.all([
+      readCoreSnapshotItemFrame(repository),
       adapter.getLocalItems(),
       adapter.getGridDpi().catch(() => undefined)
     ]);
@@ -607,23 +635,26 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
       playerId,
       scene: migrated.value,
       players,
-      armies,
-      ships,
+      armies: itemFrame.armies,
+      ships: itemFrame.ships,
       mapVisibleSourceIds: observedLocalCloneSourceIds,
       ...(gridDpi !== undefined ? { gridDpi } : {})
     });
     const currentDraft = snapshot.navalBattleAreaDraft;
     const keepDraft = role === "GM" && currentDraft !== undefined &&
       nextSnapshot.pendingNavalBattleRequests?.some((request) => request.id === currentDraft.requestId) === true;
-    return keepDraft
-      ? {
-          ...nextSnapshot,
-          navalBattleAreaDraft: {
-            requestId: currentDraft.requestId,
-            cells: currentDraft.cells.map((cell) => ({ ...cell }))
-          }
+    return {
+      ...nextSnapshot,
+      ...(keepDraft ? {
+        navalBattleAreaDraft: {
+          requestId: currentDraft.requestId,
+          cells: currentDraft.cells.map((cell) => ({ ...cell }))
         }
-      : nextSnapshot;
+      } : {}),
+      ...(role === "GM" && cityCellPick ? {
+        cityCellPick: { sessionId: cityCellPick.sessionId, cells: cityCellPick.cells.map((cell) => ({ ...cell })) }
+      } : {})
+    };
   };
   const refreshCoordinator = createRefreshCoordinator(
     loadSnapshot,
@@ -671,6 +702,21 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
         }
         const dpi = await adapter.getGridDpi();
         await peaceTransferOverlay.reconcile(command.cells, recipient.color ?? "#607d8b", dpi);
+        return undefined;
+      }
+      if (command.type === "OPEN_CITY_CELL_PICKER") {
+        if (snapshot.role !== "GM" || !snapshot.sceneReady) {
+          await notifyRussian(adapter, "GM_ONLY");
+          return undefined;
+        }
+        return await cityCellPicker.open();
+      }
+      if (command.type === "CLOSE_CITY_CELL_PICKER") {
+        if (snapshot.role !== "GM") {
+          await notifyRussian(adapter, "GM_ONLY");
+          return undefined;
+        }
+        await cityCellPicker.close(true);
         return undefined;
       }
       if (command.type === "CLEAR_PEACE_TRANSFER_PREVIEW") {
@@ -890,6 +936,7 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
     stop: () => {
       refreshCoordinator.stop();
       gateway.stop();
+      void cityCellPicker.stop();
       unsubscribers.splice(0).forEach((unsubscribe) => unsubscribe());
       void diagnostics.cleanup();
     }

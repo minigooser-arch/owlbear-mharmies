@@ -48,35 +48,46 @@ export function buildStateBoundarySegments(
   dpi: number,
   controlField: "recognizedStateId" | "deFactoStateId" = "recognizedStateId"
 ): StateBoundarySegment[] {
-  if (!Number.isFinite(dpi) || dpi <= 0) return [];
+  const fields = buildStateBoundarySegmentsForFields(gridMap, states, dpi);
+  return controlField === "recognizedStateId" ? fields.recognized : fields.deFacto;
+}
+
+export function buildStateBoundarySegmentsForFields(
+  gridMap: GridMapState,
+  states: readonly StateEntity[],
+  dpi: number
+): { recognized: StateBoundarySegment[]; deFacto: StateBoundarySegment[] } {
+  const empty = { recognized: [], deFacto: [] };
+  if (!Number.isFinite(dpi) || dpi <= 0) return empty;
   const statesById = new Map(states.map((state) => [state.id, state]));
-  const segments: StateBoundarySegment[] = [];
+  const segments = { recognized: [] as StateBoundarySegment[], deFacto: [] as StateBoundarySegment[] };
+  const fields = [
+    ["recognizedStateId", segments.recognized],
+    ["deFactoStateId", segments.deFacto]
+  ] as const;
+  const cells = Object.entries(gridMap.cells).sort(([a], [b]) => a.localeCompare(b)).flatMap(([rawKey, cell]) => {
+    try { return [{ cell, coordinate: parseCellKey(rawKey) }]; } catch { return []; }
+  });
 
-  for (const [rawKey, cell] of Object.entries(gridMap.cells).sort(([a], [b]) => a.localeCompare(b))) {
-    const stateId = cell[controlField];
-    if (!stateId) continue;
-    const state = statesById.get(stateId);
-    if (!state) continue;
-
-    let coordinate;
-    try {
-      coordinate = parseCellKey(rawKey);
-    } catch {
-      continue;
-    }
-
-    for (const edge of EDGES) {
-      const neighbor = gridMap.cells[cellKey({
-        x: coordinate.x + edge.neighborDx,
-        y: coordinate.y + edge.neighborDy
-      })];
-      if (neighbor?.[controlField] === state.id) continue;
-      segments.push({
-        stateId: state.id,
-        from: edge.from(coordinate.x, coordinate.y, dpi),
-        to: edge.to(coordinate.x, coordinate.y, dpi),
-        color: state.color ?? "#607d8b"
-      });
+  for (const { cell, coordinate } of cells) {
+    for (const [controlField, output] of fields) {
+      const stateId = cell[controlField];
+      if (!stateId) continue;
+      const state = statesById.get(stateId);
+      if (!state) continue;
+      for (const edge of EDGES) {
+        const neighbor = gridMap.cells[cellKey({
+          x: coordinate.x + edge.neighborDx,
+          y: coordinate.y + edge.neighborDy
+        })];
+        if (neighbor?.[controlField] === state.id) continue;
+        output.push({
+          stateId: state.id,
+          from: edge.from(coordinate.x, coordinate.y, dpi),
+          to: edge.to(coordinate.x, coordinate.y, dpi),
+          color: state.color ?? "#607d8b"
+        });
+      }
     }
   }
 

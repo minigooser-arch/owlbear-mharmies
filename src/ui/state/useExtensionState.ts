@@ -132,6 +132,7 @@ export interface RawExtensionSnapshot {
   transportEmbarkTargets?: readonly TransportEmbarkTargetView[];
   pendingTransportEmbarkRequests?: readonly TransportEmbarkRequestView[];
   navalBattleAreaDraft?: NavalBattleAreaDraftView;
+  cityCellPick?: { sessionId: string; cells: GridCellCoord[] };
   activeNavalBattle?: NavalBattleView;
   sides: readonly Side[];
   states: readonly StateEntity[];
@@ -166,6 +167,8 @@ export type UiCommand =
   | { type: "OPEN_MAP_BRUSH"; settings: MapBrushUiSettings }
   | { type: "UPDATE_MAP_BRUSH_SETTINGS"; settings: MapBrushUiSettings }
   | { type: "OPEN_NAVAL_BATTLE_AREA"; requestId: string }
+  | { type: "OPEN_CITY_CELL_PICKER" }
+  | { type: "CLOSE_CITY_CELL_PICKER" }
   | { type: "START_NAVAL_BATTLE_FROM_REQUEST"; requestId: string; initiatingShipId: string; targetShipId: string; participantShipIds: string[]; areaCells: GridCellCoord[] }
   | { type: "PREVIEW_PEACE_TRANSFER"; recipientStateId: string; cells: GridCellCoord[] }
   | { type: "CLEAR_PEACE_TRANSFER_PREVIEW" };

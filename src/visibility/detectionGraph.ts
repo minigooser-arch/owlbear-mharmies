@@ -50,26 +50,33 @@ export async function buildDetectionGraph(input: DetectionGraphInput): Promise<D
     observersBySide: new Map()
   };
   for (const unit of input.units) ensureSide(graph, unit.sideId);
-
-  for (const observer of input.units) {
-    for (const target of input.units) {
-      if (observer.id === target.id || observer.sideId === target.sideId) continue;
+  const pairs = input.units.flatMap((observer) => input.units.flatMap((target) =>
+    observer.id === target.id || observer.sideId === target.sideId ? [] : [{ observer, target }]
+  ));
+  const detected = new Uint8Array(pairs.length);
+  let nextPair = 0;
+  const worker = async () => {
+    while (true) {
+      const index = nextPair++;
+      const pair = pairs[index];
+      if (!pair) return;
+      const { observer, target } = pair;
       const distance = await input.distancePort.distance(observer.position, target.position);
       if (distance > observer.detectionRangeCells) continue;
-      if (
-        !observer.ignoresVisionBarriers &&
-        firstBarrierIntersection(
-          { from: observer.position, to: target.position },
-          input.visionBarriers
-        )
-      ) {
-        continue;
-      }
-      recordDetection(graph, observer.sideId, target.id, observer.id);
-      if (input.mode === "MUTUAL") {
-        recordDetection(graph, target.sideId, observer.id, target.id);
-      }
+      if (!observer.ignoresVisionBarriers && firstBarrierIntersection(
+        { from: observer.position, to: target.position }, input.visionBarriers
+      )) continue;
+      detected[index] = 1;
     }
+  };
+  await Promise.all(Array.from({ length: Math.min(8, pairs.length) }, () => worker()));
+  for (let index = 0; index < pairs.length; index += 1) {
+    if (!detected[index]) continue;
+    const pair = pairs[index];
+    if (!pair) continue;
+    const { observer, target } = pair;
+    recordDetection(graph, observer.sideId, target.id, observer.id);
+    if (input.mode === "MUTUAL") recordDetection(graph, target.sideId, observer.id, target.id);
   }
   return graph;
 }

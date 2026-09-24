@@ -85,6 +85,7 @@ it("lets a faction leader plan routes and manage membership without exposing GM 
 
   expect(screen.queryByRole("button", { name: "Карта" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Управление" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Города" })).not.toBeInTheDocument();
   expect(screen.getByText("1-я армия")).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole("button", { name: "Проложить маршрут" }));
@@ -111,6 +112,7 @@ it("keeps an ordinary faction member from planning routes or changing faction me
   expect(screen.getByText("1-я армия")).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Проложить маршрут" })).not.toBeInTheDocument();
   expect(screen.queryByText("Управление фракцией")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Города" })).not.toBeInTheDocument();
 
   fireEvent.click(screen.getByRole("button", { name: "Ход" }));
   expect(screen.queryByRole("button", { name: "Проложить маршрут" })).not.toBeInTheDocument();

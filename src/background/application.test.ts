@@ -213,14 +213,17 @@ function commandPort(
     turn: structuredClone(DEFAULT_TURN_STATE),
     coordinatorLease: { connectionId: "coordinator", epoch: 1, expiresAt: Date.now() + 10_000 }
   };
+  let sceneItemReads = 0;
+  let readsAtFirstSceneWrite: number | undefined;
   const port = {
     getSceneMetadata: async () => ({ [METADATA_KEYS.scene]: structuredClone(scene) }),
     patchSceneMetadata: async (update: Record<string, unknown>) => {
+      if (update[METADATA_KEYS.scene] && readsAtFirstSceneWrite === undefined) readsAtFirstSceneWrite = sceneItemReads;
       if (update[METADATA_KEYS.scene]) {
         scene = structuredClone(update[METADATA_KEYS.scene]) as SceneState;
       }
     },
-    getSceneItems: async () => structuredClone(items),
+    getSceneItems: async () => { sceneItemReads += 1; return structuredClone(items); },
     updateSceneItem: async (id: string, update: Record<string, unknown>) => {
       const item = items.find((candidate) => candidate.id === id);
       if (!item) throw new Error(`Missing item ${id}`);
@@ -261,10 +264,20 @@ function commandPort(
     updateItem: async () => undefined,
     deleteLocalItemsForSource: async () => undefined
   } as unknown as OwlbearPort;
-  return { port, sent, items, get scene() { return scene; } };
+  return {
+    port, sent, items,
+    get scene() { return scene; },
+    get sceneItemReads() { return sceneItemReads; },
+    get readsAtFirstSceneWrite() { return readsAtFirstSceneWrite; }
+  };
 }
 
 describe("ProductionEngine overlay performance", () => {
+  it("loads visibility army, barrier, and position inputs from one item frame", async () => {
+    const fixture = commandPort();
+    await new ProductionEngine(fixture.port).visibilityTick("GM", "gm");
+    expect(fixture.sceneItemReads).toBe(1);
+  });
   it("reads scene.local at most once for all overlay services in one visibility frame", async () => {
     const fixture = commandPort();
     let localReads = 0;
@@ -310,7 +323,41 @@ describe("ProductionEngine overlay performance", () => {
   });
 });
 
+it("loads one command input item frame before fresh persistence checks", async () => {
+  const fixture = commandPort();
+  const engine = new ProductionEngine(fixture.port);
+  engine.setCoordinator(true, "coordinator");
+  await engine.processCommand({
+    connectionId: "gm-connection",
+    data: {
+      protocolVersion: COMMAND_PROTOCOL_VERSION,
+      requestId: "one-input-frame",
+      senderPlayerId: "gm",
+      senderConnectionId: "gm-connection",
+      expectedRevision: fixture.scene.revision,
+      type: "CREATE_SIDE",
+      side: { id: "red", name: "Красные", color: "#f00", playerIds: [], leaderPlayerIds: [] }
+    }
+  }, {
+    role: "GM", playerId: "gm", connectionId: "gm-connection", connectedPlayerIds: new Set(["gm"])
+  });
+  expect(fixture.readsAtFirstSceneWrite).toBe(1);
+  expect(fixture.sceneItemReads).toBe(1);
+});
+
 describe("ProductionEngine command boundary", () => {
+  it("skips grid hydration on idle movement ticks", async () => {
+    const fixture = commandPort();
+    fixture.port.getSceneMetadata = async () => ({
+      [METADATA_KEYS.scene]: structuredClone(fixture.scene),
+      [METADATA_KEYS.gridManifest]: { version: 1, revision: 0, chunks: { "0,0": "missing-chunk" } }
+    });
+    const engine = new ProductionEngine(fixture.port);
+    engine.setCoordinator(true);
+    await expect(engine.movementTick()).resolves.toBeUndefined();
+    expect(fixture.sceneItemReads).toBe(1);
+  });
+
   it("starts an army route at movement phase end and clears it on arrival", async () => {
     const army: ArmyState = {
       version: 3,
@@ -557,11 +604,12 @@ describe("ProductionEngine command boundary", () => {
   it("does not finish an old heartbeat after coordinator shutdown", async () => {
     const fixture = commandPort();
     let releaseRead: (() => void) | undefined;
-    fixture.port.getSceneMetadata = () => new Promise<Record<string, unknown>>((resolve) => {
-      releaseRead = () => resolve({
-        [METADATA_KEYS.scene]: structuredClone(fixture.scene)
-      });
-    });
+    let reads = 0;
+    fixture.port.getSceneMetadata = async () => {
+      reads += 1;
+      if (reads === 1) await new Promise<void>((resolve) => { releaseRead = resolve; });
+      return { [METADATA_KEYS.scene]: structuredClone(fixture.scene) };
+    };
     let writes = 0;
     fixture.port.patchSceneMetadata = async () => { writes += 1; };
     const engine = new ProductionEngine(fixture.port);
@@ -1329,6 +1377,30 @@ describe("ProductionEngine strategic movement costs", () => {
       revision: 1
     };
   }
+
+  it("processes an army that starts moving after an idle probe on the next tick", async () => {
+    const waiting: ArmyState = {
+      ...movingArmyState(), status: "READY", route: [],
+      plannedRoute: { ...movingArmyState().plannedRoute, cells: [], totalCostUnits: 0 }
+    };
+    const fixture = commandPort([{
+      id: "army", type: "IMAGE", position: { x: 50, y: 50 },
+      metadata: { [METADATA_KEYS.army]: waiting }
+    }], async (from, to) => Math.hypot(to.x - from.x, to.y - from.y) / 100);
+    fixture.scene.sides.push({ id: "red", name: "Красные", color: "#f00", playerIds: [], leaderPlayerIds: [], stateId: null });
+    fixture.scene.gridMap.cells["0,0"] = { terrainId: "road", impassable: false, factionTerritoryIds: ["red"], recognizedStateId: null, deFactoStateId: null };
+    fixture.scene.gridMap.cells["1,0"] = { terrainId: "road", impassable: false, factionTerritoryIds: ["red"], recognizedStateId: null, deFactoStateId: null };
+    const engine = new ProductionEngine(fixture.port);
+    engine.setCoordinator(true);
+    await engine.movementTick();
+    const movingItem = fixture.items[0];
+    if (movingItem) movingItem.metadata[METADATA_KEYS.army] = movingArmyState();
+    (engine as unknown as { lastMovementAt: number }).lastMovementAt = performance.now() - 1_000;
+
+    await engine.movementTick();
+
+    expect(fixture.items[0]?.position).toEqual({ x: 150, y: 50 });
+  });
 
   it("charges destination terrain when the army actually enters the cell", async () => {
     const fixture = commandPort(
