@@ -1,5 +1,6 @@
 import { resolveCoordinatorConnectionId } from "../background/coordinator";
 import { StrategicGridAdapter } from "../grid/strategicGrid";
+import { waitForToolActivation } from "./toolActivation";
 import {
   CommandGateway,
   CommandTimeoutError,
@@ -633,10 +634,9 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
         if (command.type === "OPEN_MAP_BRUSH") {
           await OBR.tool.activateTool(MAP_BRUSH_TOOL_ID);
           await OBR.tool.activateMode(MAP_BRUSH_TOOL_ID, MAP_BRUSH_TOOL_MODE_ID);
-          const [activeToolId, activeModeId] = await Promise.all([
-            OBR.tool.getActiveTool(),
-            OBR.tool.getActiveToolMode()
-          ]);
+          const { toolId: activeToolId, modeId: activeModeId } = await waitForToolActivation(
+            OBR.tool, MAP_BRUSH_TOOL_ID, MAP_BRUSH_TOOL_MODE_ID
+          );
           if (activeToolId !== MAP_BRUSH_TOOL_ID || activeModeId !== MAP_BRUSH_TOOL_MODE_ID) {
             await adapter.show(
               `Кисть карты не активировалась в Owlbear (tool: ${activeToolId}, mode: ${activeModeId ?? "нет"}).`,
@@ -657,10 +657,9 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
           });
           await OBR.tool.activateTool(ROUTE_TOOL_ID);
           await OBR.tool.activateMode(ROUTE_TOOL_ID, ROUTE_TOOL_MODE_ID);
-          const [activeToolId, activeModeId] = await Promise.all([
-            OBR.tool.getActiveTool(),
-            OBR.tool.getActiveToolMode()
-          ]);
+          const { toolId: activeToolId, modeId: activeModeId } = await waitForToolActivation(
+            OBR.tool, ROUTE_TOOL_ID, ROUTE_TOOL_MODE_ID
+          );
           if (activeToolId !== ROUTE_TOOL_ID || activeModeId !== ROUTE_TOOL_MODE_ID) {
             await OBR.tool.setMetadata(ROUTE_TOOL_ID, {
               [ROUTE_ARMY_ID_KEY]: null,
