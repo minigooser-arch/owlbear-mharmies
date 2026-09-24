@@ -45,15 +45,17 @@ const EDGES: readonly BoundaryEdge[] = [
 export function buildStateBoundarySegments(
   gridMap: GridMapState,
   states: readonly StateEntity[],
-  dpi: number
+  dpi: number,
+  controlField: "recognizedStateId" | "deFactoStateId" = "recognizedStateId"
 ): StateBoundarySegment[] {
   if (!Number.isFinite(dpi) || dpi <= 0) return [];
   const statesById = new Map(states.map((state) => [state.id, state]));
   const segments: StateBoundarySegment[] = [];
 
   for (const [rawKey, cell] of Object.entries(gridMap.cells).sort(([a], [b]) => a.localeCompare(b))) {
-    if (!cell.recognizedStateId) continue;
-    const state = statesById.get(cell.recognizedStateId);
+    const stateId = cell[controlField];
+    if (!stateId) continue;
+    const state = statesById.get(stateId);
     if (!state) continue;
 
     let coordinate;
@@ -68,7 +70,7 @@ export function buildStateBoundarySegments(
         x: coordinate.x + edge.neighborDx,
         y: coordinate.y + edge.neighborDy
       })];
-      if (neighbor?.recognizedStateId === state.id) continue;
+      if (neighbor?.[controlField] === state.id) continue;
       segments.push({
         stateId: state.id,
         from: edge.from(coordinate.x, coordinate.y, dpi),

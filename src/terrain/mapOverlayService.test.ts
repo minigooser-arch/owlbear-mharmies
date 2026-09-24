@@ -55,26 +55,35 @@ describe("MapOverlayService", () => {
     });
 
     const metadata = test.items().map((item) => item.metadata[METADATA_KEYS.mapOverlay]);
-    expect(test.items()).toHaveLength(8);
+    expect(test.items()).toHaveLength(12);
     expect(metadata).toEqual(expect.arrayContaining([
       expect.objectContaining({ cellKey: "0,0", kind: "TERRAIN" }),
       expect.objectContaining({ cellKey: "0,0", kind: "IMPASSABLE" }),
       expect.objectContaining({ cellKey: "2,1", kind: "TERRAIN" }),
-      expect.objectContaining({ cellKey: "0,0", kind: "DEFACTO_STATE" }),
-      expect.objectContaining({ kind: "STATE_BOUNDARY", stateId: "russia" })
+      expect.objectContaining({ cellKey: "0,0", kind: "RECOGNIZED_STATE_FILL", stateId: "russia" }),
+      expect.objectContaining({ kind: "STATE_BOUNDARY", stateId: "russia" }),
+      expect.objectContaining({ kind: "DEFACTO_BOUNDARY", stateId: "germany" })
     ]));
     expect(metadata).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: "TERRITORY" }),
-      expect.objectContaining({ kind: "RECOGNIZED_STATE" })
+      expect.objectContaining({ kind: "RECOGNIZED_STATE" }),
+      expect.objectContaining({ kind: "DEFACTO_STATE" })
     ]));
     expect(test.items().filter((item) => {
       const value = item.metadata[METADATA_KEYS.mapOverlay] as { kind?: string } | undefined;
       return value?.kind === "STATE_BOUNDARY";
     })).toHaveLength(4);
     expect(test.items().find((item) => item.type === "LABEL" && item.text === "⛔")).toBeDefined();
+    const recognizedFill = test.items().find((item) => (item.metadata[METADATA_KEYS.mapOverlay] as { kind?: string } | undefined)?.kind === "RECOGNIZED_STATE_FILL");
+    expect(recognizedFill).toMatchObject({ type: "CURVE", fillColor: "#b71c1c", fillOpacity: expect.any(Number) });
+    expect(recognizedFill?.fillOpacity).toBeGreaterThan(0);
+    expect(recognizedFill?.fillOpacity).toBeLessThan(1);
     expect(test.items().find((item) => item.type === "LABEL" && item.text === "Т: Красные")).toBeUndefined();
     expect(test.items().find((item) => item.type === "LABEL" && item.text === "Призн.: Российская империя")).toBeUndefined();
-    expect(test.items().find((item) => item.type === "LABEL" && item.text === "Де-факто: Германская империя")).toBeDefined();
+    expect(test.items().find((item) => item.type === "LABEL" && item.text === "Де-факто: Германская империя")).toBeUndefined();
+    const deFactoBorders = test.items().filter((item) => (item.metadata[METADATA_KEYS.mapOverlay] as { kind?: string } | undefined)?.kind === "DEFACTO_BOUNDARY");
+    expect(deFactoBorders).toHaveLength(4);
+    expect(deFactoBorders.every((item) => item.type === "CURVE" && item.fillOpacity === undefined && item.strokeColor === "#1a237e")).toBe(true);
   });
 
   it("clears GM map overlays for a player", async () => {

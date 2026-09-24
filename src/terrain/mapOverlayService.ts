@@ -31,24 +31,34 @@ function mapOverlayKey(item: SceneItemRecord): string | undefined {
   return typeof key === "string" ? key : undefined;
 }
 
-function overlayMetadata(cellKey: string, kind: "TERRAIN" | "IMPASSABLE" | "DEFACTO_STATE") {
+function overlayMetadata(cellKey: string, kind: "TERRAIN" | "IMPASSABLE" | "RECOGNIZED_STATE_FILL", stateId?: string) {
   const key = `${cellKey}/${kind}`;
   return {
     key,
     metadata: {
-      [METADATA_KEYS.mapOverlay]: { key, cellKey, kind }
+      [METADATA_KEYS.mapOverlay]: { key, cellKey, kind, ...(stateId ? { stateId } : {}) }
     }
   };
 }
 
-function boundaryMetadata(stateId: string, fromX: number, fromY: number, toX: number, toY: number) {
-  const key = `STATE_BOUNDARY/${stateId}/${fromX},${fromY}/${toX},${toY}`;
+function boundaryMetadata(kind: "STATE_BOUNDARY" | "DEFACTO_BOUNDARY", stateId: string, fromX: number, fromY: number, toX: number, toY: number) {
+  const key = `${kind}/${stateId}/${fromX},${fromY}/${toX},${toY}`;
   return {
     key,
     metadata: {
-      [METADATA_KEYS.mapOverlay]: { key, kind: "STATE_BOUNDARY", stateId }
+      [METADATA_KEYS.mapOverlay]: { key, kind, stateId }
     }
   };
+}
+
+function cellPoints(x: number, y: number, dpi: number) {
+  return [
+    { x: x * dpi, y: y * dpi },
+    { x: (x + 1) * dpi, y: y * dpi },
+    { x: (x + 1) * dpi, y: (y + 1) * dpi },
+    { x: x * dpi, y: (y + 1) * dpi },
+    { x: x * dpi, y: y * dpi }
+  ];
 }
 
 export class MapOverlayService {
@@ -103,6 +113,30 @@ export class MapOverlayService {
         }
       }
 
+      if (cell.recognizedStateId) {
+        const state = statesById.get(cell.recognizedStateId);
+        if (state) {
+          const marker = overlayMetadata(rawCellKey, "RECOGNIZED_STATE_FILL", state.id);
+          const color = state.color ?? "#607d8b";
+          overlays.push({
+            key: marker.key,
+            item: {
+              type: "CURVE",
+              position: { x: 0, y: 0 },
+              visible: true,
+              disableHit: true,
+              points: cellPoints(coordinate.x, coordinate.y, source.dpi),
+              strokeColor: color,
+              strokeOpacity: 0,
+              strokeWidth: 0,
+              fillColor: color,
+              fillOpacity: 0.32,
+              metadata: marker.metadata
+            }
+          });
+        }
+      }
+
       if (cell.impassable) {
         const marker = overlayMetadata(rawCellKey, "IMPASSABLE");
         overlays.push({
@@ -118,37 +152,32 @@ export class MapOverlayService {
           }
         });
       }
-
-      if (cell.deFactoStateId) {
-        const state = statesById.get(cell.deFactoStateId);
-        if (state) {
-          const marker = overlayMetadata(rawCellKey, "DEFACTO_STATE");
-          overlays.push({ key: marker.key, item: { type: "LABEL", position: { x: center.x, y: center.y - source.dpi * 0.18 }, visible: true, disableHit: true, text: `Де-факто: ${state.name}`, color: state.color ?? "#607d8b", metadata: marker.metadata } });
-        }
-      }
     }
 
-    for (const segment of buildStateBoundarySegments(source.gridMap, source.states, source.dpi)) {
-      const marker = boundaryMetadata(
-        segment.stateId,
-        segment.from.x,
-        segment.from.y,
-        segment.to.x,
-        segment.to.y
-      );
-      overlays.push({
-        key: marker.key,
-        item: {
-          type: "CURVE",
-          position: { x: 0, y: 0 },
-          visible: true,
-          disableHit: true,
-          points: [{ ...segment.from }, { ...segment.to }],
-          strokeColor: segment.color,
-          strokeWidth: Math.max(4, source.dpi * 0.055),
-          metadata: marker.metadata
-        }
-      });
+    for (const [controlField, boundaryKind] of [["recognizedStateId", "STATE_BOUNDARY"], ["deFactoStateId", "DEFACTO_BOUNDARY"]] as const) {
+      for (const segment of buildStateBoundarySegments(source.gridMap, source.states, source.dpi, controlField)) {
+        const marker = boundaryMetadata(
+          boundaryKind,
+          segment.stateId,
+          segment.from.x,
+          segment.from.y,
+          segment.to.x,
+          segment.to.y
+        );
+        overlays.push({
+          key: marker.key,
+          item: {
+            type: "CURVE",
+            position: { x: 0, y: 0 },
+            visible: true,
+            disableHit: true,
+            points: [{ ...segment.from }, { ...segment.to }],
+            strokeColor: segment.color,
+            strokeWidth: Math.max(4, source.dpi * 0.055),
+            metadata: marker.metadata
+          }
+        });
+      }
     }
 
     for (const overlay of overlays) {

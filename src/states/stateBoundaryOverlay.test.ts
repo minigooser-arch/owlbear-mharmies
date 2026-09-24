@@ -43,12 +43,17 @@ describe("buildStateBoundarySegments", () => {
     ]));
   });
 
-  it("ignores de-facto control and unknown recognized state ids", () => {
+  it("builds separate de-facto control borders", () => {
     const segments = buildStateBoundarySegments(grid({
       "0,0": { terrainId: "forest", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: "russia" },
-      "1,0": { terrainId: "forest", impassable: false, factionTerritoryIds: [], recognizedStateId: "missing", deFactoStateId: null }
-    }), states, 100);
+      "1,0": { terrainId: "forest", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: "russia" },
+      "2,0": { terrainId: "forest", impassable: false, factionTerritoryIds: [], recognizedStateId: "missing", deFactoStateId: null }
+    }), states, 100, "deFactoStateId");
 
-    expect(segments).toEqual([]);
+    expect(segments).toHaveLength(6);
+    expect(segments.every((segment) => segment.stateId === "russia" && segment.color === "#b71c1c")).toBe(true);
+    expect(segments).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ from: { x: 100, y: 0 }, to: { x: 100, y: 100 } })
+    ]));
   });
 });
