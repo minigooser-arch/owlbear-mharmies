@@ -694,9 +694,9 @@ describe("extension command feedback", () => {
     expect(serviceHarness.adapter.send).not.toHaveBeenCalled();
   });
 
-  it("reports a live Owlbear activation mismatch instead of silently claiming the brush opened", async () => {
+  it("waits for Owlbear's map brush activation state to update", async () => {
     const running = await startServices();
-    serviceHarness.sdk.tool.getActiveToolMode.mockResolvedValueOnce("wrong-mode");
+    setTimeout(() => { serviceHarness.state.activeMode = MAP_BRUSH_TOOL_MODE_ID; }, 60);
 
     await running.send({
       type: "OPEN_MAP_BRUSH",
@@ -707,8 +707,7 @@ describe("extension command feedback", () => {
     });
 
     expect(serviceHarness.notificationShow).toHaveBeenCalledWith(
-      expect.stringContaining("Кисть карты не активировалась в Owlbear"),
-      "ERROR"
+      "Кисть карты активна — рисуйте по клеткам сцены.", "INFO"
     );
   });
 
