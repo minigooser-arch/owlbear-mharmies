@@ -236,9 +236,10 @@ const serviceHarness = vi.hoisted(() => {
       setMetadata: vi.fn(async () => undefined),
       activateTool: vi.fn(async (toolId: string) => {
         state.activeTool = toolId;
-        if (toolId === ROUTE_TOOL_ID) state.activeMode = ROUTE_TOOL_MODE_ID;
       }),
-      activateMode: vi.fn(async (_toolId: string, modeId: string) => { state.activeMode = modeId; })
+      activateMode: vi.fn(async (toolId: string, modeId: string) => {
+        if (state.activeTool === toolId) state.activeMode = modeId;
+      })
     }
   };
 

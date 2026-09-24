@@ -1,6 +1,6 @@
 import { resolveCoordinatorConnectionId } from "../background/coordinator";
 import { StrategicGridAdapter } from "../grid/strategicGrid";
-import { waitForToolActivation } from "./toolActivation";
+import { activateToolMode, waitForToolActivation } from "./toolActivation";
 import {
   CommandGateway,
   CommandTimeoutError,
@@ -732,13 +732,7 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
             [ROUTE_ARMY_ID_KEY]: command.armyId,
             [ROUTE_RETURN_TOOL_KEY]: returnToolId
           });
-          if (returnToolId === ROUTE_TOOL_ID) {
-            await OBR.tool.activateMode(ROUTE_TOOL_ID, ROUTE_TOOL_MODE_ID);
-          } else {
-            await OBR.tool.activateTool(ROUTE_TOOL_ID);
-            await OBR.tool.activateMode(ROUTE_TOOL_ID, ROUTE_TOOL_MODE_ID);
-          }
-          const { toolId: activeToolId, modeId: activeModeId } = await waitForToolActivation(
+          const { toolId: activeToolId, modeId: activeModeId } = await activateToolMode(
             OBR.tool, ROUTE_TOOL_ID, ROUTE_TOOL_MODE_ID
           );
           if (activeToolId !== ROUTE_TOOL_ID || activeModeId !== ROUTE_TOOL_MODE_ID) {
