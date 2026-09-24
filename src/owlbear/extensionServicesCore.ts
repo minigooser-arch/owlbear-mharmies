@@ -738,12 +738,8 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
             OBR.tool, ROUTE_TOOL_ID, ROUTE_TOOL_MODE_ID
           );
           if (activeToolId !== ROUTE_TOOL_ID || activeModeId !== ROUTE_TOOL_MODE_ID) {
-            await OBR.tool.setMetadata(ROUTE_TOOL_ID, {
-              [ROUTE_ARMY_ID_KEY]: null,
-              [ROUTE_RETURN_TOOL_KEY]: null
-            });
             await adapter.show(
-              `Маршрут не активировался в Owlbear (tool: ${activeToolId}, mode: ${activeModeId ?? "нет"}).`,
+              `Маршрут не активировался в Owlbear (tool: ${activeToolId}, mode: ${activeModeId ?? "нет"}); выберите «Маршрут армии» в панели инструментов.`,
               "ERROR"
             );
             return undefined;

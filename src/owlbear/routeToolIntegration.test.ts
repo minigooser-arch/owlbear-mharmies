@@ -85,6 +85,8 @@ describe("route tool SDK integration", () => {
     const cleanup = await registerRouteTool(f.api, f.port, f.distancePort, "/icon.svg");
 
     expect(f.api.tools[0]?.id).toBe(ROUTE_TOOL_ID);
+    expect(f.api.tools[0]?.icons[0]?.filter).toBeUndefined();
+    expect(f.api.tools[0]?.defaultMode).toBe(ROUTE_TOOL_MODE_ID);
     expect(f.api.modes[0]?.id).toBe(ROUTE_TOOL_MODE_ID);
     expect(f.api.actions.map((candidate) => candidate.id)).toEqual([
       ROUTE_UNDO_ACTION_ID, ROUTE_CLEAR_ACTION_ID, ROUTE_CANCEL_ACTION_ID
