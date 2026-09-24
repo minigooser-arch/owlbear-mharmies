@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 2003)
-Total output lines: 243
-
 import { SubscriptionManager } from "./subscriptions";
 
 export interface BackgroundRuntimePort {
@@ -80,7 +77,73 @@ export class BackgroundRuntime {
     });
   }
 
-  as…503 tokens truncated…ort.onLocalItemsChange(() => undefined));
+  async stop(): Promise<void> {
+    if (!this.started) {
+      await this.whenIdle();
+      return;
+    }
+    this.started = false;
+    this.readyGeneration += 1;
+    this.clearSubscriptions(this.readySubscriptions, "ready-subscription-cleanup");
+    this.trackLifecycle(() => this.closeScene());
+    await this.whenIdle();
+  }
+
+  requestMovementTick(): void {
+    if (!this.sceneOpen) return;
+    if (this.movementRunning) {
+      this.movementPending = true;
+      return;
+    }
+    this.movementRunning = true;
+    this.movementWork = this.runMovementQueue().catch((error: unknown) => {
+      this.reportError(error, "movement-tick");
+    });
+  }
+
+  requestVisibilityTick(): void {
+    if (!this.sceneOpen) return;
+    if (this.visibilityRunning) {
+      this.visibilityPending = true;
+      return;
+    }
+    this.visibilityRunning = true;
+    this.visibilityWork = this.runVisibilityQueue().catch((error: unknown) => {
+      this.reportError(error, "visibility-tick");
+    });
+  }
+
+  requestTurnTick(): void {
+    if (!this.sceneOpen) return;
+    if (this.turnRunning) {
+      this.turnPending = true;
+      return;
+    }
+    this.turnRunning = true;
+    this.turnWork = this.runTurnQueue().catch((error: unknown) => {
+      this.reportError(error, "turn-tick");
+    });
+  }
+
+  async whenIdle(): Promise<void> {
+    await this.lifecycleWork;
+    await Promise.all([this.movementWork, this.visibilityWork, this.turnWork]);
+  }
+
+  private async openScene(): Promise<void> {
+    if (!this.started || this.sceneOpen) return;
+    this.sceneOpen = true;
+    try {
+      this.sceneSubscriptions.add(this.port.onCoordinatorChange((active) => {
+        const lost = this.coordinator && !active;
+        this.coordinator = active;
+        if (active) this.requestTurnTick();
+        if (lost) this.trackLifecycle(() => this.port.pauseMovingArmies());
+      }));
+      this.sceneSubscriptions.add(
+        this.port.onSceneItemsChange(() => this.requestVisibilityTick())
+      );
+      this.sceneSubscriptions.add(this.port.onLocalItemsChange(() => undefined));
       this.sceneSubscriptions.add(
         this.port.onSceneMetadataChange(() => this.requestVisibilityTick())
       );
