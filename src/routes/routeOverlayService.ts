@@ -24,9 +24,9 @@ export interface RouteOverlayViewer {
 }
 
 function routeVisible(route: RouteOverlay, viewer: RouteOverlayViewer): boolean {
-  if (viewer.isGM) return true;
-  if (route.status === "READY") return viewer.leaderSideIds.includes(route.sideId);
-  return viewer.memberSideIds.includes(route.sideId);
+  void route;
+  void viewer;
+  return true;
 }
 
 function routeOverlayKey(item: SceneItemRecord): string | undefined {

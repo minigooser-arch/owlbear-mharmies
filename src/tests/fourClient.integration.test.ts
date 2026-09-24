@@ -119,7 +119,7 @@ describe("four-client room", () => {
     expect(room.status("b-army")).toBe("PAUSED");
   });
 
-  it("supports leaders, registration, private planning, and started-side visibility", async () => {
+  it("supports leaders, registration, and public route visibility", async () => {
     const room = fourClientRoom();
     await room.gm.send(addLeader("red", "leader-1"));
     await room.gm.send(addLeader("red", "leader-2"));
@@ -129,12 +129,12 @@ describe("four-client room", () => {
 
     expect(await room.gm.routeIds()).toContain("red-token");
     expect(await room.leader1.routeIds()).toContain("red-token");
-    expect(await room.member.routeIds()).not.toContain("red-token");
-    expect(await room.other.routeIds()).not.toContain("red-token");
+    expect(await room.member.routeIds()).toContain("red-token");
+    expect(await room.other.routeIds()).toContain("red-token");
 
     await room.gm.send({ type: "COMPLETE_MOVEMENT_PHASE" });
     await room.gm.send({ type: "COMPLETE_TURN_NOW" });
     expect(await room.member.routeIds()).toContain("red-token");
-    expect(await room.other.routeIds()).not.toContain("red-token");
+    expect(await room.other.routeIds()).toContain("red-token");
   });
 });

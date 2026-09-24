@@ -352,14 +352,14 @@ it("derives leader sides by internal id and hides legacy direct ownership", () =
 });
 
 it.each([
-  ["GM", "gm", "READY", true],
-  ["PLAYER", "leader", "READY", true],
-  ["PLAYER", "member", "READY", false],
-  ["PLAYER", "member", "MOVING", true],
-  ["PLAYER", "outsider", "MOVING", false]
+  ["GM", "gm", "READY"],
+  ["PLAYER", "leader", "READY"],
+  ["PLAYER", "member", "READY"],
+  ["PLAYER", "member", "MOVING"],
+  ["PLAYER", "outsider", "MOVING"]
 ] as const)(
-  "filters %s %s route coordinates for a %s army",
-  (role, playerId, status, routeVisible) => {
+  "shows %s %s the route coordinates for a %s army",
+  (role, playerId, status) => {
     const scene = sceneState([{
       id: "A", name: "Красные", color: "#f00", playerIds: ["leader", "member"], leaderPlayerIds: ["leader"], stateId: null
     }]);
@@ -382,9 +382,7 @@ it.each([
     });
 
     expect(snapshot.armies[0]?.route).toEqual(
-      role === "PLAYER" && playerId === "outsider"
-        ? undefined
-        : routeVisible ? [{ x: 3, y: 4 }] : []
+      role === "PLAYER" && playerId === "outsider" ? undefined : [{ x: 3, y: 4 }]
     );
   }
 );
@@ -791,6 +789,23 @@ describe("extension command feedback", () => {
       notificationMessage("UNKNOWN"),
       "ERROR"
     );
+  });
+
+  it("reports when Owlbear accepts the route calls but leaves another tool active", async () => {
+    const running = await startServices();
+    serviceHarness.sdk.tool.activateTool.mockImplementationOnce(async () => undefined);
+    serviceHarness.sdk.tool.activateMode.mockImplementationOnce(async () => undefined);
+
+    await running.send({ type: "EDIT_ROUTE", armyId: "army-a" });
+
+    expect(serviceHarness.notificationShow).toHaveBeenCalledWith(
+      expect.stringContaining("Маршрут не активировался в Owlbear"),
+      "ERROR"
+    );
+    expect(serviceHarness.sdk.tool.setMetadata).toHaveBeenLastCalledWith(ROUTE_TOOL_ID, {
+      [ROUTE_ARMY_ID_KEY]: null,
+      [ROUTE_RETURN_TOOL_KEY]: null
+    });
   });
 
   it("shows a selection error without broadcasting an invalid registration", async () => {

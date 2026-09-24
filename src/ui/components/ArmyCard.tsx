@@ -20,16 +20,21 @@ interface ArmyCardProps {
 
 function ArmyHealthEditor({ army, onAction }: { army: ArmyView; onAction(command: UiCommand): void }) {
   const [draft, setDraft] = useState(String(army.healthHp));
+  const [maxDraft, setMaxDraft] = useState(String(army.healthMaxHp));
   useEffect(() => setDraft(String(army.healthHp)), [army.healthHp]);
+  useEffect(() => setMaxDraft(String(army.healthMaxHp)), [army.healthMaxHp]);
   const parsed = Number(draft);
+  const parsedMax = Number(maxDraft);
   const canSubmit = draft.trim().length > 0
     && Number.isInteger(parsed)
     && parsed >= 0
-    && parsed <= army.healthMaxHp
-    && parsed !== army.healthHp;
+    && Number.isInteger(parsedMax)
+    && parsedMax > 0
+    && (parsed <= parsedMax || parsedMax !== army.healthMaxHp)
+    && (parsed !== army.healthHp || parsedMax !== army.healthMaxHp);
   const setHp = () => {
     if (!canSubmit) return;
-    onAction({ type: "SET_ARMY_HP", armyId: army.id, hp: parsed });
+    onAction({ type: "SET_ARMY_HP", armyId: army.id, hp: Math.min(parsed, parsedMax), maxHp: parsedMax });
   };
   return (
     <div className="hp-editor" aria-label="Управление HP">
@@ -38,11 +43,14 @@ function ArmyHealthEditor({ army, onAction }: { army: ArmyView; onAction(command
         aria-label={`Текущее HP ${army.name}`}
         type="number"
         min="0"
-        max={army.healthMaxHp}
+        max={parsedMax}
         step="1"
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
       />
+      <label>Максимум HP
+        <input aria-label={`Максимальное HP ${army.name}`} type="number" min="1" step="1" value={maxDraft} onChange={(event) => setMaxDraft(event.target.value)} />
+      </label>
       <button className="button subtle wide" type="button" disabled={!canSubmit} onClick={setHp}>Зафиксировать</button>
     </div>
   );
@@ -76,6 +84,7 @@ export function ArmyCard({ army, sideColor = "#687F91", isGM, canEditRoute, canR
         <span className={army.supplied ? "state-good" : "state-warning"}>{army.supplied ? "✓ Снабжение" : "⚠ Окружена"}</span>
         <span>{hasRoute ? `Маршрут: ${formatMovementUnits(army.routeCostUnits)} ОП` : "Маршрут не задан"}</span>
       </div>
+      {army.cell ? <p className="helper-text">Клетка: {army.cell.x},{army.cell.y} <button type="button" onClick={() => void navigator.clipboard?.writeText(`${army.cell?.x},${army.cell?.y}`)}>Копировать</button></p> : null}
 
       {!army.supplied && <p className="route-warning">В начале следующего хода: −{encirclementDamage} HP. Лечение недоступно.</p>}
       {army.forcedExitStartedOnTurn !== undefined && (

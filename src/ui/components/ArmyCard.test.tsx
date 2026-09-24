@@ -99,7 +99,7 @@ describe("ArmyCard capabilities", () => {
     const hpInput = screen.getByRole("spinbutton", { name: "Текущее HP Первая армия" });
     fireEvent.change(hpInput, { target: { value: "27" } });
     fireEvent.click(screen.getByRole("button", { name: "Зафиксировать" }));
-    expect(onAction).toHaveBeenCalledWith({ type: "SET_ARMY_HP", armyId: "army-red", hp: 27 });
+    expect(onAction).toHaveBeenCalledWith({ type: "SET_ARMY_HP", armyId: "army-red", hp: 27, maxHp: 50 });
     expect(screen.queryByRole("button", { name: "+5 HP" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "-5 HP" })).not.toBeInTheDocument();
   });

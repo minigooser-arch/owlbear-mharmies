@@ -294,7 +294,7 @@ export class CommandProcessor {
           route: [],
           plannedRoute: emptyPlannedRoute(),
           movement: { maxUnits, remainingUnits: maxUnits, enteredRouteCellCount: 0 },
-          health: { hp: 50, maxHp: 50 },
+          health: { hp: 40, maxHp: 40 },
           supply: { supplied: true, checkedOnTurn: 0 },
           disband: { pending: false, requestedOnTurn: null, requestedByPlayerId: null },
           currentWaypointIndex: 0,

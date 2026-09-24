@@ -37,9 +37,9 @@ export function validateStrategicCity(
     return { ok: false, reason: "CITY_BUILD_COUNT_INVALID" };
   }
 
-  if (keys.some((key) => gridMap.cells[key] === undefined)) {
-    return { ok: false, reason: "CITY_CELL_NOT_FOUND" };
-  }
+  // Missing cell entries are implicit sea cells in the sparse grid model.
+  // City coordinates are valid anywhere on that grid; callers validate the
+  // coordinates as integer cells before reaching this domain operation.
 
   return { ok: true };
 }

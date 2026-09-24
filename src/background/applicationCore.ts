@@ -296,6 +296,7 @@ export class ProductionEngine {
   private lastMovementAt = performance.now();
   private mutationTail: Promise<void> = Promise.resolve();
   private lastMapOverlaySignature: string | undefined;
+  private clearedLegacyMapOverlays = false;
 
   constructor(
     private readonly port: OwlbearPort,
@@ -1482,18 +1483,24 @@ export class ProductionEngine {
       }
     }
 
-    const mapOverlayService = new MapOverlayService(overlayPort);
-    if (role !== "GM") {
-      const signature = "PLAYER";
-      if (this.lastMapOverlaySignature === signature) return;
-      await mapOverlayService.reconcile(undefined);
-      this.lastMapOverlaySignature = signature;
-      return;
+    if (role !== "GM") return;
+    if (!this.clearedLegacyMapOverlays) {
+      // Remove legacy GM-only local overlays left by earlier versions.
+      await new MapOverlayService(overlayPort).reconcile(undefined);
+      this.clearedLegacyMapOverlays = true;
     }
+    const mapOverlayService = new MapOverlayService({
+      getLocalItems: () => this.port.getSceneItems(),
+      addLocalItems: (items) => this.port.addSceneItems(items),
+      updateLocalItems: async (items) => {
+        await Promise.all(items.map(({ id, ...item }) => this.port.updateSceneItem(id, item)));
+      },
+      deleteLocalItems: (ids) => this.port.deleteSceneItems(ids),
+      createId: () => crypto.randomUUID()
+    });
     try {
       const dpi = await this.grid.getDpi();
       const signature = JSON.stringify([
-        "GM",
         dpi,
         scene.gridMap.revision,
         Object.values(scene.terrain.types)
