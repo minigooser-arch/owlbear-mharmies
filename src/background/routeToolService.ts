@@ -201,12 +201,25 @@ export class RouteToolService implements RouteToolIntegrationPort {
       startCell: { ...startCell },
       cells: cells.map((cell) => ({ ...cell }))
     };
-    const ack = await this.gateway.send(command);
+    const ack = await this.sendRouteCommandWhenReady(command);
     if (ack.status === "REJECTED") {
       throw new RouteToolAuthorizationError(ack.reason ?? "INVALID_COMMAND");
     }
     if (ack.status === "CONFLICT") {
       throw new RouteToolAuthorizationError("REVISION_CONFLICT");
+    }
+  }
+
+  private async sendRouteCommandWhenReady(command: ArmyCommand): Promise<CommandAck> {
+    const retryDelaysMs = [100, 200, 400, 800];
+    let current = command;
+    for (let attempt = 0; ; attempt += 1) {
+      const ack = await this.gateway.send(current);
+      if (ack.status !== "REJECTED" || ack.reason !== "BACKGROUND_NOT_READY") return ack;
+      const delayMs = retryDelaysMs[attempt];
+      if (delayMs === undefined) return ack;
+      await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+      current = { ...current, requestId: crypto.randomUUID() } as ArmyCommand;
     }
   }
 

@@ -72,6 +72,7 @@ import {
   COMMAND_PROTOCOL_VERSION,
   type ArmyState,
   type BattleGroup,
+  type GridCellCoord,
   type SceneItemRecord,
   type SceneState,
   type SideRelation,
@@ -516,6 +517,7 @@ export class ProductionEngine {
       from: Vector2;
       to: Vector2;
       state: ArmyState;
+      reachedRouteCell?: GridCellCoord | undefined;
     }> = [];
     const movingIds = new Set(moving.map((record) => record.item.id));
     const strategicConflictEdges = findStrategicConflictEdges(
@@ -750,6 +752,10 @@ export class ProductionEngine {
             enteredRouteCellCount: progress.enteredRouteCellCount
           }
         };
+        frame.reachedRouteCell = frame.state.plannedRoute.cells[progress.enteredRouteCellCount - 1];
+        const completedRoute = frame.state.status === "READY" &&
+          frame.state.currentWaypointIndex >= frame.record.state.route.length &&
+          progress.enteredRouteCellCount === frame.state.plannedRoute.cells.length;
         const enteredCells = frame.state.plannedRoute.cells.slice(
           frame.record.state.movement.enteredRouteCellCount,
           progress.enteredRouteCellCount
@@ -774,6 +780,24 @@ export class ProductionEngine {
           );
           if (annexingStateId) annexOperations.push({ cell, patch: { deFactoStateId: annexingStateId } });
         }
+        if (completedRoute) {
+          const destination = frame.reachedRouteCell ?? frame.state.plannedRoute.startCell;
+          frame.state = {
+            ...frame.state,
+            route: [],
+            plannedRoute: {
+              startCell: { ...destination },
+              executeOnTurn: 0,
+              cells: [],
+              totalCostUnits: 0,
+              validatedRevision: scene.revision,
+              requiresReplan: false
+            },
+            movement: { ...frame.state.movement, enteredRouteCellCount: 0 },
+            currentWaypointIndex: 0,
+            segmentProgressCells: 0
+          };
+        }
       }
       if (!canCommit()) return;
       await this.port.patchSceneItemMetadata(
@@ -787,7 +811,7 @@ export class ProductionEngine {
     const nextForcedExits = (scene.forcedExitStates ?? []).filter((entry) => {
       const frame = frames.find((candidate) => candidate.record.item.id === entry.armyId);
       if (!frame) return true;
-      const reached = frame.state.plannedRoute.cells[frame.state.movement.enteredRouteCellCount - 1];
+      const reached = frame.reachedRouteCell ?? frame.state.plannedRoute.cells[frame.state.movement.enteredRouteCellCount - 1];
       return !reached || !hasRightToRemain(scene, frame.state, reached);
     });
     const forcedExitsChanged = nextForcedExits.length !== (scene.forcedExitStates ?? []).length;
