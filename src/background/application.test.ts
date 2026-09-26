@@ -293,11 +293,11 @@ describe("ProductionEngine overlay performance", () => {
     expect(localReads).toBeLessThanOrEqual(2);
   });
 
-  it("renders map overlays locally for players instead of adding them to shared scene items", async () => {
+  it("removes local terrain after a GM-to-PLAYER role switch but keeps route-related markers", async () => {
     const fixture = commandPort();
     fixture.scene.gridMap.cells["0,0"] = {
       terrainId: "plain",
-      impassable: false,
+      impassable: true,
       factionTerritoryIds: [],
       recognizedStateId: null,
       deFactoStateId: null
@@ -316,9 +316,21 @@ describe("ProductionEngine overlay performance", () => {
       }
     };
 
-    await new ProductionEngine(fixture.port).visibilityTick("PLAYER", "player");
+    const engine = new ProductionEngine(fixture.port);
+    await engine.visibilityTick("GM", "gm");
+    expect(localItems.some((item) =>
+      (item.metadata[METADATA_KEYS.mapOverlay] as { kind?: string } | undefined)?.kind === "TERRAIN"
+    )).toBe(true);
+
+    await engine.visibilityTick("PLAYER", "player");
 
     expect(localItems.some((item) => item.metadata[METADATA_KEYS.mapOverlay])).toBe(true);
+    expect(localItems.some((item) =>
+      (item.metadata[METADATA_KEYS.mapOverlay] as { kind?: string } | undefined)?.kind === "TERRAIN"
+    )).toBe(false);
+    expect(localItems.some((item) =>
+      (item.metadata[METADATA_KEYS.mapOverlay] as { kind?: string } | undefined)?.kind === "IMPASSABLE"
+    )).toBe(true);
     expect(fixture.items.some((item) => item.metadata[METADATA_KEYS.mapOverlay])).toBe(false);
   });
 });

@@ -30,6 +30,7 @@ describe("MapOverlayService", () => {
   it("renders terrain, de-facto control and recognized state perimeter without legacy faction territory", async () => {
     const test = harness();
     await new MapOverlayService(test.port).reconcile({
+      viewerRole: "GM",
       dpi: 100,
       gridMap: {
         version: 1,
@@ -57,10 +58,10 @@ describe("MapOverlayService", () => {
     const metadata = test.items().map((item) => item.metadata[METADATA_KEYS.mapOverlay]);
     expect(test.items()).toHaveLength(12);
     expect(metadata).toEqual(expect.arrayContaining([
-      expect.objectContaining({ cellKey: "0,0", kind: "TERRAIN" }),
+      expect.objectContaining({ key: "TERRAIN/forest/0,0/0,0", kind: "TERRAIN" }),
       expect.objectContaining({ cellKey: "0,0", kind: "IMPASSABLE" }),
-      expect.objectContaining({ cellKey: "2,1", kind: "TERRAIN" }),
-      expect.objectContaining({ cellKey: "0,0", kind: "RECOGNIZED_STATE_FILL", stateId: "russia" }),
+      expect.objectContaining({ key: "TERRAIN/road/2,1/2,1", kind: "TERRAIN" }),
+      expect.objectContaining({ key: "RECOGNIZED_STATE_FILL/russia/0,0/0,0", kind: "RECOGNIZED_STATE_FILL", stateId: "russia" }),
       expect.objectContaining({ kind: "STATE_BOUNDARY", stateId: "russia" }),
       expect.objectContaining({ kind: "DEFACTO_BOUNDARY", stateId: "germany" })
     ]));
@@ -86,9 +87,10 @@ describe("MapOverlayService", () => {
     expect(deFactoBorders.every((item) => item.type === "CURVE" && item.fillOpacity === undefined && item.strokeColor === "#1a237e")).toBe(true);
   });
 
-  it("clears GM map overlays for a player", async () => {
+  it("removes GM terrain when the same local collection switches to PLAYER", async () => {
     const test = harness();
     await new MapOverlayService(test.port).reconcile({
+      viewerRole: "GM",
       dpi: 100,
       gridMap: {
         version: 1,
@@ -104,7 +106,73 @@ describe("MapOverlayService", () => {
     });
     expect(test.items()).toHaveLength(1);
 
-    await new MapOverlayService(test.port).reconcile(undefined);
+    await new MapOverlayService(test.port).reconcile({
+      viewerRole: "PLAYER",
+      dpi: 100,
+      gridMap: {
+        version: 1,
+        revision: 1,
+        cells: { "0,0": { terrainId: "forest", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null } }
+      },
+      terrain: {
+        defaultTerrainId: "plain",
+        types: { forest: { id: "forest", name: "Лес", movementCostUnits: 4, enabled: true, color: "#66bb6a" } }
+      },
+      sides: [],
+      states: []
+    });
     expect(test.items()).toEqual([]);
+  });
+
+  it("compacts a homogeneous 61 by 115 GM terrain layer into one stable rectangle", async () => {
+    const test = harness();
+    const cells = Object.fromEntries(Array.from({ length: 61 * 115 }, (_, index) => [
+      `${index % 61},${Math.floor(index / 61)}`,
+      { terrainId: "plain", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null }
+    ]));
+    await new MapOverlayService(test.port).reconcile({
+      viewerRole: "GM",
+      dpi: 100,
+      gridMap: { version: 1, revision: 1, cells },
+      terrain: { defaultTerrainId: "plain", types: { plain: { id: "plain", name: "Равнина", movementCostUnits: 2, enabled: true, color: "#999999" } } },
+      sides: [],
+      states: []
+    });
+
+    expect(test.items()).toHaveLength(1);
+    expect(test.items()[0]).toMatchObject({
+      type: "CURVE",
+      points: [
+        { x: 0, y: 0 }, { x: 6100, y: 0 }, { x: 6100, y: 11500 },
+        { x: 0, y: 11500 }, { x: 0, y: 0 }
+      ],
+      metadata: { [METADATA_KEYS.mapOverlay]: { key: "TERRAIN/plain/0,0/60,114", kind: "TERRAIN" } }
+    });
+  });
+
+  it("keeps political and impassable overlays for PLAYER but hides terrain", async () => {
+    const test = harness();
+    await new MapOverlayService(test.port).reconcile({
+      viewerRole: "PLAYER",
+      dpi: 100,
+      gridMap: { version: 1, revision: 1, cells: {
+        "0,0": { terrainId: "forest", impassable: true, factionTerritoryIds: [], recognizedStateId: "russia", deFactoStateId: "germany" },
+        "1,0": { terrainId: "forest", impassable: false, factionTerritoryIds: [], recognizedStateId: "russia", deFactoStateId: "germany" },
+        "invalid": { terrainId: "forest", impassable: false, factionTerritoryIds: [], recognizedStateId: "missing", deFactoStateId: null }
+      } },
+      terrain: { defaultTerrainId: "forest", types: { forest: { id: "forest", name: "Лес", movementCostUnits: 4, enabled: true, color: "#66bb6a" } } },
+      sides: [],
+      states: [
+        { id: "russia", name: "Россия", color: "#f00", rulingFactionId: null, active: true },
+        { id: "germany", name: "Германия", color: "#00f", rulingFactionId: null, active: true }
+      ]
+    });
+
+    const kinds = test.items().map((item) => (item.metadata[METADATA_KEYS.mapOverlay] as { kind?: string }).kind);
+    expect(kinds).not.toContain("TERRAIN");
+    expect(kinds).toEqual(expect.arrayContaining(["IMPASSABLE", "RECOGNIZED_STATE_FILL", "STATE_BOUNDARY", "DEFACTO_BOUNDARY"]));
+    expect(test.items().find((item) => (item.metadata[METADATA_KEYS.mapOverlay] as { kind?: string }).kind === "RECOGNIZED_STATE_FILL")).toMatchObject({
+      points: [{ x: 0, y: 0 }, { x: 200, y: 0 }, { x: 200, y: 100 }, { x: 0, y: 100 }, { x: 0, y: 0 }]
+    });
   });
 });

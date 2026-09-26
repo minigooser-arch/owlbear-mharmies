@@ -52,6 +52,7 @@ describe("terrain overlay visibility", () => {
       deleteLocalItems: async () => undefined,
       createId: () => "terrain-overlay"
     }).reconcile({
+      viewerRole: "GM",
       dpi: 100,
       gridMap: { version: 1, revision: 1, cells: { "0,0": { terrainId: "forest", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null } } },
       terrain: DEFAULT_TERRAIN,

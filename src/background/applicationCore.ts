@@ -1556,6 +1556,7 @@ export class ProductionEngine {
     try {
       const dpi = await this.grid.getDpi();
       const signature = JSON.stringify([
+        role,
         dpi,
         scene.gridMap.revision,
         Object.values(scene.terrain.types)
@@ -1567,6 +1568,7 @@ export class ProductionEngine {
       ]);
       if (this.lastMapOverlaySignature === signature) return;
       await mapOverlayService.reconcile({
+        viewerRole: role,
         dpi,
         gridMap: scene.gridMap,
         terrain: scene.terrain,

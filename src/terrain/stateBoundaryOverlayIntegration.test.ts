@@ -28,6 +28,7 @@ describe("state boundary overlay integration", () => {
   it("keeps terrain fills visible while drawing the recognized-state perimeter", async () => {
     const test = harness();
     await new MapOverlayService(test.port).reconcile({
+      viewerRole: "GM",
       dpi: 100,
       gridMap: {
         version: 1,
@@ -58,7 +59,11 @@ describe("state boundary overlay integration", () => {
     });
 
     expect(terrain).toHaveLength(2);
-    expect(boundaries).toHaveLength(6);
+    expect(boundaries).toHaveLength(4);
+    expect(boundaries).toEqual(expect.arrayContaining([
+      expect.objectContaining({ points: [{ x: 0, y: 0 }, { x: 200, y: 0 }] }),
+      expect.objectContaining({ points: [{ x: 0, y: 100 }, { x: 200, y: 100 }] })
+    ]));
     expect(boundaries.every((item) => item.type === "CURVE" && item.strokeColor === "#b71c1c")).toBe(true);
     expect(test.items().some((item) =>
       item.type === "LABEL" &&

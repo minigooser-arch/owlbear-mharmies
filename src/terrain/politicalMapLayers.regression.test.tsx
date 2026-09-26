@@ -128,6 +128,7 @@ describe("independent political map layers", () => {
   it("ignores legacy faction territory when rendering current overlays", async () => {
     const test = overlayHarness();
     await new MapOverlayService(test.port).reconcile({
+      viewerRole: "GM",
       dpi: 100,
       gridMap: {
         version: 1,
