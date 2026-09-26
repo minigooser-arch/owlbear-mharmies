@@ -227,7 +227,7 @@ export function StrategicCityEditor({
   };
 
   const finishCellPick = () => {
-    const existing = parseCells(cityCellsText);
+    const existing = cityCellsText.trim() === "" ? [] : parseCells(cityCellsText);
     if (!existing) {
       setError("Сначала исправьте координаты или удалите их в дополнительных настройках.");
       return;

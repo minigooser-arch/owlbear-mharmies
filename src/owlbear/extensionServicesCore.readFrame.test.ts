@@ -3,7 +3,7 @@ import { METADATA_KEYS } from "../shared/constants";
 import { GridStoragePort } from "../tests/helpers/gridStoragePort";
 import { DEFAULT_CELL_STATE } from "../terrain/gridMap";
 import { MetadataRepository } from "../storage/metadataRepository";
-import { readCoreSnapshotItemFrame } from "./extensionServicesCore";
+import { buildRoleSafeSnapshotFromItemFrame, readCoreSnapshotItemFrame } from "./extensionServicesCore";
 
 it("loads army and ship UI snapshot records from one indexed item frame", async () => {
   const port = new GridStoragePort();
@@ -37,4 +37,35 @@ it("loads army and ship UI snapshot records from one indexed item frame", async 
   expect(getSceneItems).toHaveBeenCalledTimes(1);
   expect(frame.armies.map((record) => record.item.id)).toEqual(["army"]);
   expect(frame.ships.map((record) => record.item.id)).toEqual(["ship"]);
+});
+
+it("builds authorization from the scene captured with the item frame", async () => {
+  const port = new GridStoragePort();
+  const repository = new MetadataRepository(port);
+  const staleScene = await repository.readScene();
+  staleScene.sides = [];
+  port.metadata[METADATA_KEYS.scene] = structuredClone(staleScene);
+  const currentScene = { ...structuredClone(staleScene), revision: staleScene.revision + 1 };
+  currentScene.sides = [{
+    id: "red", name: "Red", color: "#f00", stateId: null, playerIds: ["player"], leaderPlayerIds: []
+  }];
+  port.metadata[METADATA_KEYS.scene] = structuredClone(currentScene);
+  port.items.push({
+    id: "army", type: "IMAGE", position: { x: 0, y: 0 }, metadata: { [METADATA_KEYS.army]: {
+      version: 4, registered: true, sideId: "red", status: "READY", overrides: {}, route: [],
+      plannedRoute: null, movement: { maxUnits: 10, remainingUnits: 10, enteredRouteCellCount: 0 },
+      health: { hp: 40, maxHp: 40 }, supply: { supplied: true, checkedOnTurn: 1 },
+      disband: { pending: false, requestedOnTurn: null, requestedByPlayerId: null },
+      embarkedOnShipId: null, currentWaypointIndex: 0, segmentProgressCells: 0,
+      ignoresMovementBarriers: false, ignoresVisionBarriers: false, revision: 1
+    } }
+  });
+
+  const frame = await readCoreSnapshotItemFrame(repository);
+  const snapshot = buildRoleSafeSnapshotFromItemFrame({
+    role: "PLAYER", playerId: "player", players: [], mapVisibleSourceIds: new Set()
+  }, frame);
+
+  expect(snapshot.memberSideIds).toEqual(new Set(["red"]));
+  expect(snapshot.armies.map((army) => army.id)).toEqual(["army"]);
 });

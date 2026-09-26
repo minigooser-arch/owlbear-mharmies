@@ -437,6 +437,12 @@ export class ProductionEngine {
     return this.enqueueMutation(() => this.movementTickNow(itemFrame));
   }
 
+  movementTickTransaction(
+    transaction: (run: (itemFrame: MetadataItemFrame) => Promise<void>) => Promise<void>
+  ): Promise<void> {
+    return this.enqueueMutation(() => transaction((itemFrame) => this.movementTickNow(itemFrame)));
+  }
+
   turnTick(): Promise<void> {
     return this.enqueueMutation(() => this.turnTickNow());
   }

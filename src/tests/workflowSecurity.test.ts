@@ -5,7 +5,8 @@ import { expect, it } from "vitest";
 const workflowsDirectory = fileURLToPath(new URL("../../.github/workflows/", import.meta.url));
 
 function workflow(name: string): string {
-  return readFileSync(new URL(`../../.github/workflows/${name}`, import.meta.url), "utf8");
+  return readFileSync(new URL(`../../.github/workflows/${name}`, import.meta.url), "utf8")
+    .replaceAll("\r\n", "\n");
 }
 
 it("pins every external GitHub Action to an immutable 40-character commit SHA", () => {

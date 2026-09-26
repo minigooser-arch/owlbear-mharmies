@@ -114,6 +114,23 @@ describe("StrategicCityEditor", () => {
     expect(onCloseCellPicker).toHaveBeenCalledOnce();
   });
 
+  it("finishes map selection when the manual coordinate draft is empty", () => {
+    const onCloseCellPicker = vi.fn();
+    render(<StrategicCityEditor
+      role="GM" states={states} cities={[]} onCreate={vi.fn()} onUpdate={vi.fn()} onDelete={vi.fn()}
+      onCloseCellPicker={onCloseCellPicker}
+      pickerSessionId="session-empty" canPickCells
+      pickedCells={[{ x: 4, y: 5 }]}
+    />);
+    fireEvent.click(screen.getByText("Дополнительные настройки"));
+
+    expect(screen.getByLabelText("Клетки города")).toHaveValue("");
+    fireEvent.click(screen.getByRole("button", { name: "Завершить выбор" }));
+
+    expect(screen.getByLabelText("Клетки города")).toHaveValue("4,5");
+    expect(onCloseCellPicker).toHaveBeenCalledOnce();
+  });
+
   it("keeps the original coordinate draft when map selection is cancelled", () => {
     const onOpenCellPicker = vi.fn();
     const onCloseCellPicker = vi.fn();

@@ -87,9 +87,10 @@ CoreProductionEngine.prototype.movementTick = function patchedMovementTick(this:
   const port = (this as unknown as AtomicMovementEngineInstance).port;
   if (!this.isCoordinator()) return originalMovementTick.call(this);
   const repository = new MetadataRepository(port);
-  return repository.readItemFrame().then((frame) => {
+  return this.movementTickTransaction(async (run) => {
+    const frame = await repository.readItemFrame();
     if (!hasEligibleArmyMovement(frame.armies, frame.baseScene)) return;
-    return runAtomicMovement(port, frame.items, () => originalMovementTick.call(this, frame));
+    return runAtomicMovement(port, frame.items, () => run(frame));
   });
 };
 

@@ -54,7 +54,7 @@ import { migrateSceneState } from "../storage/migrations";
 import { getRebellionCapitalController, getRebellionFactionStrength } from "../rebellions/rebellionService";
 import { territorialCityContributions } from "../wars/territorialScore";
 import { isFactionStateAtWar } from "../states/stateRules";
-import { MetadataRepository, type ArmyRecord, type ShipRecord } from "../storage/metadataRepository";
+import { MetadataRepository, type ArmyRecord, type MetadataItemFrame, type ShipRecord } from "../storage/metadataRepository";
 import type {
   ArmyView,
   ExtensionServices,
@@ -94,6 +94,18 @@ export interface SnapshotInput {
 
 export async function readCoreSnapshotItemFrame(repository: MetadataRepository) {
   return repository.readItemFrame();
+}
+
+export function buildRoleSafeSnapshotFromItemFrame(
+  input: Omit<SnapshotInput, "scene" | "armies" | "ships">,
+  frame: MetadataItemFrame
+): RawExtensionSnapshot {
+  return buildRoleSafeSnapshot({
+    ...input,
+    scene: frame.baseScene,
+    armies: frame.armies,
+    ships: frame.ships
+  });
 }
 
 export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapshot {
@@ -630,16 +642,13 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
       adapter.getGridDpi().catch(() => undefined)
     ]);
     observedLocalCloneSourceIds = localCloneSourceIds(localItems);
-    const nextSnapshot = buildRoleSafeSnapshot({
+    const nextSnapshot = buildRoleSafeSnapshotFromItemFrame({
       role,
       playerId,
-      scene: migrated.value,
       players,
-      armies: itemFrame.armies,
-      ships: itemFrame.ships,
       mapVisibleSourceIds: observedLocalCloneSourceIds,
       ...(gridDpi !== undefined ? { gridDpi } : {})
-    });
+    }, itemFrame);
     const currentDraft = snapshot.navalBattleAreaDraft;
     const keepDraft = role === "GM" && currentDraft !== undefined &&
       nextSnapshot.pendingNavalBattleRequests?.some((request) => request.id === currentDraft.requestId) === true;

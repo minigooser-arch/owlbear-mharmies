@@ -118,3 +118,33 @@ it("reports a grid failure that prevents movement processing", async () => {
 
   expect(report).toHaveBeenCalledWith(expect.any(Error), "movement-grid-unavailable");
 });
+
+it("captures each atomic movement snapshot inside the serialized mutation queue", async () => {
+  const movingArmy = validArmy("MOVING");
+  const items: SceneItemRecord[] = [{
+    id: "army",
+    type: "IMAGE",
+    position: { x: 0, y: 0 },
+    metadata: { [METADATA_KEYS.army]: movingArmy }
+  }];
+  const port = failingGridPort(items);
+  let releaseFirstRead: (() => void) | undefined;
+  const firstRead = new Promise<void>((resolve) => { releaseFirstRead = resolve; });
+  let reads = 0;
+  port.getSceneItems = vi.fn(async () => {
+    reads += 1;
+    if (reads === 1) await firstRead;
+    return structuredClone(items);
+  });
+  const engine = new ProductionEngine(port, () => new Date(), vi.fn());
+  engine.setCoordinator(true, "coordinator");
+
+  const first = engine.movementTick();
+  const second = engine.movementTick();
+  await Promise.resolve();
+  await Promise.resolve();
+
+  expect(port.getSceneItems).toHaveBeenCalledTimes(1);
+  releaseFirstRead?.();
+  await Promise.all([first, second]);
+});
