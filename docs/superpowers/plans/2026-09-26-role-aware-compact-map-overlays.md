@@ -357,3 +357,14 @@ Expected: no whitespace errors; every remaining per-cell count or key assertion 
 git add src/owlbear/chunkStorageAdapter.test.ts src/ui/PlayerUserJourney.test.tsx src/ui/GmUserJourney.test.tsx docs/superpowers/plans/2026-09-26-role-aware-compact-map-overlays.md
 git commit -m "test: verify compact role-aware map rendering"
 ```
+
+## Verification Results
+
+- Focused map, coordinate, route, movement, and UI suite: 15 files / 100 tests passed in 6.16s.
+- Compact rendering suite: 3 files / 15 tests passed in 3.74s.
+- Homogeneous 61×115 GM terrain: 1 local terrain overlay; measured test duration 35ms.
+- Homogeneous 61×115 PLAYER terrain: 0 local terrain overlays.
+- Homogeneous recognized-state fill: 1 rectangle.
+- Straight 115-edge political boundary: 1 segment per boundary kind and state; measured unit test duration below 1ms.
+- Full `npm.cmd run check`: typecheck, ESLint, 283 files / 1325 tests, production build, dist verification, and built-popover smoke test all passed.
+- Scope scan: no remaining `toHaveLength(7015)` assertions; legacy `/TERRAIN` strings remain only in SDK adapter compatibility fixtures.

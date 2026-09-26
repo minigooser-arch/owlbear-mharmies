@@ -51,12 +51,12 @@ function mapOverlayKey(item: SceneItemRecord): string | undefined {
   return typeof key === "string" ? key : undefined;
 }
 
-function overlayMetadata(cellKey: string, kind: "TERRAIN" | "IMPASSABLE" | "RECOGNIZED_STATE_FILL", stateId?: string) {
+function overlayMetadata(cellKey: string, kind: "IMPASSABLE") {
   const key = `${cellKey}/${kind}`;
   return {
     key,
     metadata: {
-      [METADATA_KEYS.mapOverlay]: { key, cellKey, kind, ...(stateId ? { stateId } : {}) }
+      [METADATA_KEYS.mapOverlay]: { key, cellKey, kind }
     }
   };
 }

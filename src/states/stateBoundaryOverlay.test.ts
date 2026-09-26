@@ -105,13 +105,13 @@ describe("compactBoundarySegments", () => {
 
   it("is independent of insertion order and endpoint direction", () => {
     const expected = [segment("russia", "#f00", 0, 0, 300, 0)];
-    const ordered = [
+    const ordered: [StateBoundarySegment, StateBoundarySegment, StateBoundarySegment] = [
       segment("russia", "#f00", 0, 0, 100, 0),
       segment("russia", "#f00", 100, 0, 200, 0),
       segment("russia", "#f00", 200, 0, 300, 0)
     ];
     expect(compactBoundarySegments(ordered)).toEqual(expected);
-    expect(compactBoundarySegments([ordered[2]!, segment("russia", "#f00", 200, 0, 100, 0), ordered[0]!])).toEqual(expected);
+    expect(compactBoundarySegments([ordered[2], segment("russia", "#f00", 200, 0, 100, 0), ordered[0]])).toEqual(expected);
   });
 
   it("does not merge across gaps, corners, states, or colors", () => {
