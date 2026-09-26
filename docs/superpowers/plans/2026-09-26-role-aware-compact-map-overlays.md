@@ -366,5 +366,5 @@ git commit -m "test: verify compact role-aware map rendering"
 - Homogeneous 61×115 PLAYER terrain: 0 local terrain overlays.
 - Homogeneous recognized-state fill: 1 rectangle.
 - Straight 115-edge political boundary: 1 segment per boundary kind and state; measured unit test duration below 1ms.
-- Full `npm.cmd run check`: typecheck, ESLint, 283 files / 1325 tests, production build, dist verification, and built-popover smoke test all passed.
+- Full `npm.cmd run check`: typecheck, ESLint, 283 files / 1327 tests, production build, dist verification, and built-popover smoke test all passed after review fixes.
 - Scope scan: no remaining `toHaveLength(7015)` assertions; legacy `/TERRAIN` strings remain only in SDK adapter compatibility fixtures.
