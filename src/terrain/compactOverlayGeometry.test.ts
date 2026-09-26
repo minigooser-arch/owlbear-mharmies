@@ -39,7 +39,7 @@ describe("compactCellRectangles", () => {
       { styleKey: "road", minX: 4, minY: 2, maxX: 4, maxY: 2 }
     ];
     const ordered = [cell(0, 0, "forest"), cell(1, 0, "forest"), cell(0, 1, "forest"), cell(1, 1, "forest"), cell(4, 2, "road")];
-    const shuffled = [ordered[4], ordered[2], ordered[0], ordered[3], ordered[1], ordered[0]];
+    const shuffled = [ordered[4]!, ordered[2]!, ordered[0]!, ordered[3]!, ordered[1]!, ordered[0]!];
     expect(compactCellRectangles(ordered)).toEqual(expected);
     expect(compactCellRectangles(shuffled)).toEqual(expected);
   });

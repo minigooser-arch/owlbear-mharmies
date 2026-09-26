@@ -111,7 +111,7 @@ describe("compactBoundarySegments", () => {
       segment("russia", "#f00", 200, 0, 300, 0)
     ];
     expect(compactBoundarySegments(ordered)).toEqual(expected);
-    expect(compactBoundarySegments([ordered[2], segment("russia", "#f00", 200, 0, 100, 0), ordered[0]])).toEqual(expected);
+    expect(compactBoundarySegments([ordered[2]!, segment("russia", "#f00", 200, 0, 100, 0), ordered[0]!])).toEqual(expected);
   });
 
   it("does not merge across gaps, corners, states, or colors", () => {

@@ -17,6 +17,9 @@ it("shows hovered coordinates, pins a clicked cell, and clears both labels on ex
   };
   const port = {
     getGridDpi: async () => 100,
+    describeCell: async (cell: { x: number; y: number }) => cell.x === 2 && cell.y === 3
+      ? { terrainId: "forest", terrainName: "Лес" }
+      : { terrainId: null, terrainName: "неизвестна" },
     createId: (() => { let next = 0; return () => `coordinate-${++next}`; })(),
     getLocalItems: async () => items,
     addLocalItem: async (item: SceneItemRecord) => { items.push(structuredClone(item)); },
@@ -32,17 +35,17 @@ it("shows hovered coordinates, pins a clicked cell, and clears both labels on ex
   const context = { metadata: {} } as never;
   mode?.onToolMove?.(context, { pointerPosition: { x: 250, y: 350 } } as never);
   await new Promise((resolve) => setTimeout(resolve, 20));
-  expect(items.some((item) => item.text === "X: 2, Y: 3")).toBe(true);
+  expect(items.some((item) => item.text === "X: 2, Y: 3\nМестность: Лес")).toBe(true);
 
   mode?.onToolClick?.(context, { pointerPosition: { x: 250, y: 350 } } as never);
   await new Promise((resolve) => setTimeout(resolve, 20));
-  expect(items.some((item) => item.text === "Выбрано: 2, 3")).toBe(true);
+  expect(items.some((item) => item.text === "Выбрано: 2, 3\nМестность: Лес")).toBe(true);
   expect(messages).toEqual([]);
 
   mode?.onToolMove?.(context, { pointerPosition: { x: 450, y: 150 } } as never);
   await new Promise((resolve) => setTimeout(resolve, 20));
-  expect(items.some((item) => item.text === "X: 4, Y: 1")).toBe(true);
-  expect(items.some((item) => item.text === "Выбрано: 2, 3")).toBe(true);
+  expect(items.some((item) => item.text === "X: 4, Y: 1\nМестность: неизвестна")).toBe(true);
+  expect(items.some((item) => item.text === "Выбрано: 2, 3\nМестность: Лес")).toBe(true);
 
   mode?.onDeactivate?.({} as never);
   await new Promise((resolve) => setTimeout(resolve, 20));
@@ -61,6 +64,7 @@ it("broadcasts clicked cells only for a valid city-picker session", async () => 
   };
   const port = {
     getGridDpi: async () => 100,
+    describeCell: async () => ({ terrainId: "forest", terrainName: "Лес" }),
     createId: () => "coordinate",
     getLocalItems: async () => [],
     addLocalItem: async () => undefined,

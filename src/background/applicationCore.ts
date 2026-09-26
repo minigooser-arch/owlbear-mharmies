@@ -26,6 +26,7 @@ import { findStrategicConflictEdges } from "../movement/movementIntent";
 import { applyCellPatchBatch, readCell, type CellPatchOperation } from "../terrain/gridMap";
 import { annexingStateForEntry } from "../annexation/annexationRules";
 import { MapOverlayService } from "../terrain/mapOverlayService";
+import { CachedCellTerrainLookup } from "../terrain/cellTerrainLookup";
 import { HealthOverlayService } from "../health/healthOverlayService";
 import { NavalShipOverlayService } from "../naval/ships/navalShipOverlayService";
 import { InterceptionOverlayService } from "../naval/interception/interceptionOverlayService";
@@ -1618,6 +1619,9 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
     )
   );
   routeGateway.start();
+  const cellTerrainLookup = new CachedCellTerrainLookup(
+    () => new MetadataRepository(port).readScene()
+  );
   const toolPort = Object.assign(port, {
     getPlayerIdentity: async () => {
       const [id, role, currentConnectionId] = await Promise.all([
@@ -1628,6 +1632,7 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
       return { id, role, connectionId: currentConnectionId };
     },
     getSceneRevision: async () => (await new MetadataRepository(port).readScene()).revision,
+    describeCell: (cell: GridCellCoord) => cellTerrainLookup.describeCell(cell),
     createId: () => crypto.randomUUID(),
     activateTool: (toolId: string) => OBR.tool.activateTool(toolId)
   });
@@ -1741,6 +1746,7 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
     isSceneReady: () => OBR.scene.isReady(),
     onSceneReady: (callback) => OBR.scene.onReadyChange(callback),
     onSceneOpen: async () => {
+      cellTerrainLookup.invalidate();
       gridErrors.reset();
       engine.invalidateOverlayCaches();
       lease.start();
@@ -1758,6 +1764,7 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
       commandReady = true;
     },
     onSceneClose: async () => {
+      cellTerrainLookup.invalidate();
       commandReady = false;
       engine.invalidateOverlayCaches();
       await lease.stop();
@@ -1779,10 +1786,19 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
       coordinatorListeners.add(callback);
       return () => coordinatorListeners.delete(callback);
     },
-    onSceneItemsChange: (callback) => OBR.scene.items.onChange(callback),
+    onSceneItemsChange: (callback) => OBR.scene.items.onChange(() => {
+      cellTerrainLookup.invalidate();
+      callback();
+    }),
     onLocalItemsChange: (callback) => OBR.scene.local.onChange(callback),
-    onSceneMetadataChange: (callback) => OBR.scene.onMetadataChange(callback),
-    onGridChange: (callback) => OBR.scene.grid.onChange(callback),
+    onSceneMetadataChange: (callback) => OBR.scene.onMetadataChange(() => {
+      cellTerrainLookup.invalidate();
+      callback();
+    }),
+    onGridChange: (callback) => OBR.scene.grid.onChange(() => {
+      cellTerrainLookup.invalidate();
+      callback();
+    }),
     onPlayerChange: (callback) => OBR.player.onChange(callback),
     onPartyChange: (callback) => OBR.party.onChange(callback),
     onBroadcast: (callback) => OBR.broadcast.onMessage(CommandGateway.COMMAND_CHANNEL, (event) => {

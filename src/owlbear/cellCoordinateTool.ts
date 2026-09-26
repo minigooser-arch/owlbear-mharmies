@@ -7,7 +7,8 @@ import {
   CITY_CELL_PICK_CHANNEL,
   CITY_CELL_PICK_SESSION_KEY
 } from "../shared/constants";
-import type { SceneItemRecord } from "../shared/types";
+import type { GridCellCoord, SceneItemRecord } from "../shared/types";
+import type { CellTerrainInfo } from "../terrain/cellTerrainLookup";
 import { PointerMoveCoalescer } from "./pointerMoveCoalescer";
 
 export interface CellCoordinateToolApi {
@@ -19,6 +20,7 @@ export interface CellCoordinateToolApi {
 
 export interface CellCoordinateToolPort {
   getGridDpi(): Promise<number>;
+  describeCell(cell: GridCellCoord): Promise<CellTerrainInfo>;
   createId(): string;
   getLocalItems(): Promise<SceneItemRecord[]>;
   addLocalItem(item: SceneItemRecord): Promise<void>;
@@ -34,6 +36,13 @@ export interface CellCoordinateToolRegistration {
 
 const OVERLAY_KEY = METADATA_KEYS.coordinateOverlay;
 type CoordinateOverlayKind = "HOVER" | "PINNED";
+
+function coordinateLabel(kind: CoordinateOverlayKind, cell: GridCellCoord, terrain: CellTerrainInfo): string {
+  const coordinates = kind === "HOVER"
+    ? `X: ${cell.x}, Y: ${cell.y}`
+    : `Выбрано: ${cell.x}, ${cell.y}`;
+  return `${coordinates}\nМестность: ${terrain.terrainName}`;
+}
 
 export async function registerCellCoordinateTool(
   api: CellCoordinateToolApi,
@@ -89,7 +98,8 @@ export async function registerCellCoordinateTool(
   const drawHover = async (point: { x: number; y: number }): Promise<void> => {
     if (closed) return;
     const cell = (await ensureGrid()).sceneToCell(point);
-    hoverId = await renderLabel("HOVER", hoverId, `X: ${cell.x}, Y: ${cell.y}`, { x: point.x + 18, y: point.y + 18 });
+    const terrain = await port.describeCell(cell);
+    hoverId = await renderLabel("HOVER", hoverId, coordinateLabel("HOVER", cell, terrain), { x: point.x + 18, y: point.y + 18 });
   };
 
   const moveCoalescer = new PointerMoveCoalescer(1_000 / 30, (point) => enqueue(() => drawHover(point)));
@@ -115,12 +125,13 @@ export async function registerCellCoordinateTool(
     if (closed) return;
     moveCoalescer.clear();
     const cell = (await ensureGrid()).sceneToCell(event.pointerPosition);
-    hoverId = await renderLabel("HOVER", hoverId, `X: ${cell.x}, Y: ${cell.y}`, {
+    const terrain = await port.describeCell(cell);
+    hoverId = await renderLabel("HOVER", hoverId, coordinateLabel("HOVER", cell, terrain), {
       x: event.pointerPosition.x + 18,
       y: event.pointerPosition.y + 18
     });
     const center = (await ensureGrid()).cellToSceneCenter(cell);
-    pinnedId = await renderLabel("PINNED", pinnedId, `Выбрано: ${cell.x}, ${cell.y}`, {
+    pinnedId = await renderLabel("PINNED", pinnedId, coordinateLabel("PINNED", cell, terrain), {
       x: center.x,
       y: center.y - (await port.getGridDpi()) * 0.35
     });
