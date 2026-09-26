@@ -61,8 +61,9 @@ describe("compactCellRectangles", () => {
     ).flat();
     const rectangles = compactCellRectangles(cells);
     expect(rectangles).toHaveLength(115);
-    expect(rectangles[0]).toEqual({ styleKey: "plain", minX: 0, minY: 0, maxX: 60, maxY: 0 });
-    expect(rectangles[1]).toEqual({ styleKey: "forest", minX: 0, minY: 1, maxX: 60, maxY: 1 });
+    expect(rectangles[0]).toEqual({ styleKey: "forest", minX: 0, minY: 1, maxX: 60, maxY: 1 });
+    expect(rectangles[56]).toEqual({ styleKey: "forest", minX: 0, minY: 113, maxX: 60, maxY: 113 });
+    expect(rectangles[57]).toEqual({ styleKey: "plain", minX: 0, minY: 0, maxX: 60, maxY: 0 });
     expect(rectangles[114]).toEqual({ styleKey: "plain", minX: 0, minY: 114, maxX: 60, maxY: 114 });
   });
 

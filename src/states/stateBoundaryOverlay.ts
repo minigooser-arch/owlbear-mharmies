@@ -76,14 +76,25 @@ export function compactBoundarySegments(segments: readonly StateBoundarySegment[
     }
   }
 
-  return compacted.sort((a, b) =>
-    a.from.y - b.from.y
-    || a.from.x - b.from.x
-    || a.to.y - b.to.y
-    || a.to.x - b.to.x
-    || a.stateId.localeCompare(b.stateId)
-    || a.color.localeCompare(b.color)
-  );
+  const order = (segment: StateBoundarySegment) => {
+    if (segment.from.y === segment.to.y) {
+      return { orientation: 0, fixed: segment.from.y, start: segment.from.x, end: segment.to.x };
+    }
+    if (segment.from.x === segment.to.x) {
+      return { orientation: 1, fixed: segment.from.x, start: segment.from.y, end: segment.to.y };
+    }
+    return { orientation: 2, fixed: segment.from.y, start: segment.from.x, end: segment.to.x };
+  };
+  return compacted.sort((a, b) => {
+    const left = order(a);
+    const right = order(b);
+    return a.stateId.localeCompare(b.stateId)
+      || a.color.localeCompare(b.color)
+      || left.orientation - right.orientation
+      || left.fixed - right.fixed
+      || left.start - right.start
+      || left.end - right.end;
+  });
 }
 
 interface BoundaryEdge {

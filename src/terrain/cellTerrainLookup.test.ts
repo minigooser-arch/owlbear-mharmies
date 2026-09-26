@@ -80,4 +80,26 @@ describe("CachedCellTerrainLookup", () => {
     await Promise.all([third, fourth]);
     expect(loadScene).toHaveBeenCalledTimes(2);
   });
+
+  it("retries when an invalidated in-flight load resolves with stale scene data", async () => {
+    const resolvers: Array<(value: SceneState) => void> = [];
+    const loadScene = vi.fn(() => new Promise<SceneState>((resolve) => { resolvers.push(resolve); }));
+    const lookup = new CachedCellTerrainLookup(loadScene);
+    const description = lookup.describeCell({ x: 2, y: 3 });
+
+    lookup.invalidate();
+    resolvers[0]?.(scene());
+    await vi.waitFor(() => expect(loadScene).toHaveBeenCalledTimes(2));
+    const updated = scene();
+    updated.gridMap.cells["2,3"] = {
+      terrainId: "mountains",
+      impassable: false,
+      factionTerritoryIds: [],
+      recognizedStateId: null,
+      deFactoStateId: null
+    };
+    resolvers[1]?.(updated);
+
+    await expect(description).resolves.toEqual({ terrainId: "mountains", terrainName: "Горы" });
+  });
 });

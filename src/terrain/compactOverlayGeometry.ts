@@ -77,9 +77,9 @@ export function compactCellRectangles(cells: readonly StyledCell[]): CellRectang
   }
 
   return rectangles.sort((a, b) =>
-    a.minY - b.minY
+    a.styleKey.localeCompare(b.styleKey)
+    || a.minY - b.minY
     || a.minX - b.minX
-    || a.styleKey.localeCompare(b.styleKey)
     || a.maxY - b.maxY
     || a.maxX - b.maxX
   );

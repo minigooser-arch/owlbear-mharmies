@@ -133,4 +133,16 @@ describe("compactBoundarySegments", () => {
       segment("russia", "#f00", 6100, 0, 6100, 11500)
     ]);
   });
+
+  it("sorts by state, color, and horizontal-before-vertical group order", () => {
+    expect(compactBoundarySegments([
+      segment("russia", "#f00", 0, 0, 0, 100),
+      segment("germany", "#00f", 0, 100, 100, 100),
+      segment("russia", "#f00", 0, 200, 100, 200)
+    ])).toEqual([
+      segment("germany", "#00f", 0, 100, 100, 100),
+      segment("russia", "#f00", 0, 200, 100, 200),
+      segment("russia", "#f00", 0, 0, 0, 100)
+    ]);
+  });
 });

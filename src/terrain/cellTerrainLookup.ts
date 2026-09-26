@@ -43,7 +43,8 @@ export class CachedCellTerrainLookup {
 
     const generation = this.generation;
     const request = this.loadScene().then((scene) => {
-      if (this.generation === generation) this.scene = scene;
+      if (this.generation !== generation) return this.getScene();
+      this.scene = scene;
       return scene;
     }).finally(() => {
       if (this.inFlight === request) this.inFlight = undefined;
