@@ -56,10 +56,9 @@ describe("MapOverlayService", () => {
     });
 
     const metadata = test.items().map((item) => item.metadata[METADATA_KEYS.mapOverlay]);
-    expect(test.items()).toHaveLength(12);
+    expect(test.items()).toHaveLength(11);
     expect(metadata).toEqual(expect.arrayContaining([
       expect.objectContaining({ key: "TERRAIN/forest/0,0/0,0", kind: "TERRAIN" }),
-      expect.objectContaining({ cellKey: "0,0", kind: "IMPASSABLE" }),
       expect.objectContaining({ key: "TERRAIN/road/2,1/2,1", kind: "TERRAIN" }),
       expect.objectContaining({ key: "RECOGNIZED_STATE_FILL/russia/0,0/0,0", kind: "RECOGNIZED_STATE_FILL", stateId: "russia" }),
       expect.objectContaining({ kind: "STATE_BOUNDARY", stateId: "russia" }),
@@ -74,7 +73,10 @@ describe("MapOverlayService", () => {
       const value = item.metadata[METADATA_KEYS.mapOverlay] as { kind?: string } | undefined;
       return value?.kind === "STATE_BOUNDARY";
     })).toHaveLength(4);
-    expect(test.items().find((item) => item.type === "LABEL" && item.text === "⛔")).toBeDefined();
+    expect(test.items().find((item) => item.type === "LABEL" && item.text === "⛔")).toBeUndefined();
+    expect(metadata).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "IMPASSABLE" })
+    ]));
     const recognizedFill = test.items().find((item) => (item.metadata[METADATA_KEYS.mapOverlay] as { kind?: string } | undefined)?.kind === "RECOGNIZED_STATE_FILL");
     expect(recognizedFill).toMatchObject({ type: "CURVE", fillColor: "#b71c1c", fillOpacity: expect.any(Number) });
     expect(recognizedFill?.fillOpacity).toBeGreaterThan(0);
@@ -170,7 +172,8 @@ describe("MapOverlayService", () => {
 
     const kinds = test.items().map((item) => (item.metadata[METADATA_KEYS.mapOverlay] as { kind?: string }).kind);
     expect(kinds).not.toContain("TERRAIN");
-    expect(kinds).toEqual(expect.arrayContaining(["IMPASSABLE", "RECOGNIZED_STATE_FILL", "STATE_BOUNDARY", "DEFACTO_BOUNDARY"]));
+    expect(kinds).toEqual(expect.arrayContaining(["RECOGNIZED_STATE_FILL", "STATE_BOUNDARY", "DEFACTO_BOUNDARY"]));
+    expect(kinds).not.toContain("IMPASSABLE");
     expect(test.items().find((item) => (item.metadata[METADATA_KEYS.mapOverlay] as { kind?: string }).kind === "RECOGNIZED_STATE_FILL")).toMatchObject({
       points: [{ x: 0, y: 0 }, { x: 200, y: 0 }, { x: 200, y: 100 }, { x: 0, y: 100 }, { x: 0, y: 0 }]
     });

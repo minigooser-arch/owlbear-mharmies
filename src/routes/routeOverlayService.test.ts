@@ -41,11 +41,11 @@ it.each([
   ["GM", "READY", true],
   ["LEADER", "READY", true],
   ["MEMBER", "READY", true],
-  ["OTHER", "READY", true],
+  ["OTHER", "READY", false],
   ["GM", "MOVING", true],
   ["LEADER", "MOVING", true],
   ["MEMBER", "MOVING", true],
-  ["OTHER", "MOVING", true],
+  ["OTHER", "MOVING", false],
   ["MEMBER", "PAUSED", true],
   ["MEMBER", "IN_BATTLE", true]
 ] as const)("shows %s viewer the %s route", async (viewerKind, status, visible) => {
@@ -65,6 +65,25 @@ it.each([
   );
   expect(port.items.length > 0).toBe(visible);
   expect(port.items.every((item) => item.disableHit === true)).toBe(true);
+});
+
+it("removes an existing route when the viewer loses side membership", async () => {
+  const port = new MemoryOverlayPort();
+  const service = new RouteOverlayService(port);
+  const routes = [{
+    armyId: "a",
+    sideId: "red",
+    status: "MOVING" as const,
+    color: "#f00",
+    start: { x: 0, y: 0 },
+    waypoints: [{ x: 2, y: 0 }]
+  }];
+
+  await service.reconcile(routes, viewer("MEMBER"));
+  expect(port.items.length).toBeGreaterThan(0);
+
+  await service.reconcile(routes, viewer("OTHER"));
+  expect(port.items).toEqual([]);
 });
 
 it("renders no overlay for an empty route", async () => {

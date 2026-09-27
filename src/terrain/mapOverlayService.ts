@@ -1,4 +1,4 @@
-import { StrategicGridAdapter, parseCellKey } from "../grid/strategicGrid";
+import { parseCellKey } from "../grid/strategicGrid";
 import {
   reconcileLocalOverlays,
   type DesiredLocalOverlay,
@@ -51,16 +51,6 @@ function mapOverlayKey(item: SceneItemRecord): string | undefined {
   return typeof key === "string" ? key : undefined;
 }
 
-function overlayMetadata(cellKey: string, kind: "IMPASSABLE") {
-  const key = `${cellKey}/${kind}`;
-  return {
-    key,
-    metadata: {
-      [METADATA_KEYS.mapOverlay]: { key, cellKey, kind }
-    }
-  };
-}
-
 function boundaryMetadata(kind: "STATE_BOUNDARY" | "DEFACTO_BOUNDARY", stateId: string, fromX: number, fromY: number, toX: number, toY: number) {
   const key = `${kind}/${stateId}/${fromX},${fromY}/${toX},${toY}`;
   return {
@@ -94,7 +84,6 @@ export class MapOverlayService {
       return;
     }
 
-    const grid = new StrategicGridAdapter({ dpi: source.dpi, offset: { x: 0, y: 0 } });
     const statesById = new Map(source.states.map((state) => [state.id, state]));
     const overlays: DesiredLocalOverlay[] = [];
     const terrainCells: StyledCell[] = [];
@@ -107,8 +96,6 @@ export class MapOverlayService {
       } catch {
         continue;
       }
-      const center = grid.cellToSceneCenter(coordinate);
-
       if (source.viewerRole === "GM" && cell.terrainId !== null) {
         const terrain = source.terrain.types[cell.terrainId];
         if (terrain?.enabled) {
@@ -123,21 +110,6 @@ export class MapOverlayService {
         }
       }
 
-      if (cell.impassable) {
-        const marker = overlayMetadata(rawCellKey, "IMPASSABLE");
-        overlays.push({
-          key: marker.key,
-          item: {
-            type: "LABEL",
-            position: { ...center },
-            visible: true,
-            disableHit: true,
-            text: "⛔",
-            color: "#ef5350",
-            metadata: marker.metadata
-          }
-        });
-      }
     }
 
     for (const rectangle of compactCellRectangles(terrainCells)) {
