@@ -199,6 +199,7 @@ function commandPort(
 ) {
   const sent: Array<{ channel: string; data: unknown }> = [];
   const items = structuredClone(initialItems);
+  const extraMetadata: Record<string, unknown> = {};
   let scene: SceneState = {
     version: 5,
     revision: 2,
@@ -216,14 +217,19 @@ function commandPort(
   let sceneItemReads = 0;
   let readsAtFirstSceneWrite: number | undefined;
   const port = {
-    getSceneMetadata: async () => ({ [METADATA_KEYS.scene]: structuredClone(scene) }),
+    getSceneMetadata: async () => ({ ...structuredClone(extraMetadata), [METADATA_KEYS.scene]: structuredClone(scene) }),
     patchSceneMetadata: async (update: Record<string, unknown>) => {
       if (update[METADATA_KEYS.scene] && readsAtFirstSceneWrite === undefined) readsAtFirstSceneWrite = sceneItemReads;
       if (update[METADATA_KEYS.scene]) {
         scene = structuredClone(update[METADATA_KEYS.scene]) as SceneState;
       }
+      for (const [key, value] of Object.entries(update)) {
+        if (key !== METADATA_KEYS.scene) extraMetadata[key] = structuredClone(value);
+      }
     },
     getSceneItems: async () => { sceneItemReads += 1; return structuredClone(items); },
+    addSceneItems: async (newItems: readonly SceneItemRecord[]) => { items.push(...structuredClone(newItems)); },
+    deleteSceneItems: async (ids: readonly string[]) => { for (const id of ids) { const index = items.findIndex((item) => item.id === id); if (index >= 0) items.splice(index, 1); } },
     updateSceneItem: async (id: string, update: Record<string, unknown>) => {
       const item = items.find((candidate) => candidate.id === id);
       if (!item) throw new Error(`Missing item ${id}`);
@@ -487,6 +493,58 @@ describe("ProductionEngine command boundary", () => {
       position: { x: 50, y: 50 },
       metadata: { [METADATA_KEYS.army]: { sideId: "red", registered: true } }
     });
+  });
+
+  it("spawns a configured city army token in the scene", async () => {
+    const fixture = commandPort();
+    fixture.scene.version = 8;
+    fixture.scene.sides.push({
+      id: "red",
+      name: "Красные",
+      color: "#f00",
+      playerIds: ["leader"],
+      leaderPlayerIds: ["leader"],
+      stateId: "red-state",
+      armyTokenAsset: {
+        name: "Красный жетон",
+        image: { width: 64, height: 64, mime: "image/png", url: "https://example.test/red.png" },
+        grid: { dpi: 100, offset: { x: 0, y: 0 } }
+      }
+    });
+    fixture.scene.states = [{ id: "red-state", name: "Красное государство", rulingFactionId: "red", active: true }];
+    fixture.scene.gridMap.cells["0,0"] = {
+      terrainId: "plain", impassable: false, factionTerritoryIds: ["red"], recognizedStateId: "red-state", deFactoStateId: "red-state"
+    };
+    fixture.scene.strategicCities = [{
+      id: "city-red", name: "Красный город", cells: [{ x: 0, y: 0 }], recognizedStateId: "red-state", deFactoStateId: "red-state",
+      factionInfluenceId: "red", mayorId: null, isCapital: false, historicalBuildTypeCount: 0,
+      buildings: [{ id: "military-department", type: "MILITARY_DEPARTMENT", cell: { x: 0, y: 0 } }]
+    }];
+    const engine = new ProductionEngine(fixture.port);
+    engine.setCoordinator(true);
+
+    await engine.processCommand({
+      connectionId: "leader-connection",
+      data: {
+        protocolVersion: COMMAND_PROTOCOL_VERSION,
+        requestId: "spawn-city-army",
+        senderPlayerId: "leader",
+        senderConnectionId: "leader-connection",
+        expectedRevision: 2,
+        type: "CREATE_CITY_ARMY",
+        cityId: "city-red",
+        sideId: "red"
+      }
+    }, {
+      role: "PLAYER",
+      playerId: "leader",
+      connectionId: "leader-connection",
+      connectedPlayerIds: new Set(["leader"])
+    });
+
+    expect(fixture.sent.at(-1)).toMatchObject({ data: { status: "ACCEPTED" } });
+    const spawned = fixture.items.find((item) => item.id === "army-spawn-city-army");
+    expect(spawned).toMatchObject({ type: "IMAGE", position: { x: 50, y: 50 }, metadata: { [METADATA_KEYS.army]: { sideId: "red" } } });
   });
 
   it("does not snap or move an army when registration is rejected", async () => {

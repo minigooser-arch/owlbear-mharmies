@@ -167,6 +167,19 @@ export function SidesPage({
                   })}
                 </div>
               )}
+              {role === "GM" && (
+                <div className="card-actions">
+                  <button
+                    type="button"
+                    className="button subtle"
+                    aria-label={`${side.armyTokenAsset ? "Изменить" : "Задать"} токен армии для ${side.name}`}
+                    onClick={() => onAction({ type: "SET_SIDE_ARMY_TOKEN", sideId: side.id })}
+                  >
+                    {side.armyTokenAsset ? "Изменить токен армии" : "Задать токен армии"}
+                  </button>
+                  {side.armyTokenAsset && <small>Ассет: {side.armyTokenAsset.name}</small>}
+                </div>
+              )}
             </article>
           );
         })}

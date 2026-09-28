@@ -114,8 +114,8 @@ export function ArmiesPage({
         <section className="registration-card" aria-label="Создание армии через город">
           <div className="registration-copy">
             <span className="registration-kicker">Городское формирование</span>
-            <strong>Создать армию из выбранного токена</strong>
-            <small>Выберите город с действующим Военным ведомством и токен в его территории.</small>
+            <strong>Создать армию из ассета фракции</strong>
+            <small>Выберите город с действующим Военным ведомством. Токен армии появится в центре города.</small>
           </div>
           <div className="registration-actions">
             <select aria-label="Город формирования армии" defaultValue={availableCities[0]?.id}>

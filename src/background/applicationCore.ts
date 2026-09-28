@@ -1207,10 +1207,19 @@ export class ProductionEngine {
     items: readonly SceneItemRecord[]
   ): Promise<void> {
     const itemById = new Map(items.map((item) => [item.id, item]));
+    const createdItemIds: string[] = [];
     const applied: AppliedMetadataWrite[] = [];
     const expectedCoordinatorConnectionId = this.activeCoordinatorConnectionId;
     const canCommit = this.captureCoordinatorGuard(expectedCoordinatorConnectionId);
     try {
+      const newItems = Object.values(next.items).filter((item) => previous.items[item.id] === undefined);
+      if (newItems.length > 0) {
+        if (!this.port.addSceneItems) throw new Error("SCENE_ITEM_CREATION_UNAVAILABLE");
+        if (!canCommit()) throw new Error("Coordinator stopped during persistence");
+        await this.port.addSceneItems(newItems);
+        createdItemIds.push(...newItems.map((item) => item.id));
+        for (const item of newItems) itemById.set(item.id, item);
+      }
       const armyIds = new Set([...Object.keys(previous.armies), ...Object.keys(next.armies)]);
       for (const armyId of armyIds) {
         const previousState = previous.armies[armyId];
@@ -1341,6 +1350,13 @@ export class ProductionEngine {
           );
         } catch {
           // A newer item revision wins over this guarded compensation.
+        }
+      }
+      if (createdItemIds.length > 0 && this.port.deleteSceneItems) {
+        try {
+          await this.port.deleteSceneItems(createdItemIds);
+        } catch {
+          // A failed compensation is reported by the original persistence error.
         }
       }
       throw error;

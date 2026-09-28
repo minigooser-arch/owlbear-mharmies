@@ -239,6 +239,24 @@ export function createSdkLocalItem(
   source: SceneItemRecord,
   builders: LocalOverlayBuilderFactory = DEFAULT_OVERLAY_BUILDERS
 ): SceneItemRecord {
+  if (source.type === "IMAGE" && typeof source.image === "object" && source.image !== null &&
+      typeof source.grid === "object" && source.grid !== null) {
+    const builder = buildImage(source.image as Parameters<typeof buildImage>[0], source.grid as Parameters<typeof buildImage>[1])
+      .id(source.id)
+      .name(source.name ?? "Армия")
+      .position(source.position)
+      .rotation(source.rotation ?? 0)
+      .scale(source.scale ?? { x: 1, y: 1 })
+      .layer((source.layer ?? "CHARACTER") as Layer)
+      .zIndex(source.zIndex ?? Date.now())
+      .visible(source.visible ?? true)
+      .locked(source.locked ?? false)
+      .metadata(source.metadata as Metadata);
+    if (source.text && typeof source.text === "object") builder.text(source.text as Parameters<typeof builder.text>[0]);
+    if (source.textItemType === "LABEL" || source.textItemType === "TEXT") builder.textItemType(source.textItemType);
+    if (typeof source.description === "string") builder.description(source.description);
+    return builder.build() as unknown as SceneItemRecord;
+  }
   if (source.type === "CURVE" && typeof source.style !== "object") {
     const points = Array.isArray(source.points) ? source.points as Vector2[] : [];
     return builders.curve()

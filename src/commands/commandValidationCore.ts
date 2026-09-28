@@ -11,6 +11,7 @@ import type {
   Vector2
 } from "../shared/types";
 import { COMMAND_PROTOCOL_VERSION } from "../shared/types";
+import { parseArmyTokenAsset } from "../shared/armyTokenAsset";
 
 type UnknownRecord = Record<string, unknown>;
 type CommandType = ArmyCommandPayload["type"];
@@ -184,13 +185,15 @@ function parseSide(value: unknown): Side | undefined {
     ? null
     : sideId(value.stateId) ? value.stateId : undefined;
   if (parsedStateId === undefined) return undefined;
+  const armyTokenAsset = parseArmyTokenAsset(value.armyTokenAsset);
   return {
     id: value.id,
     name: value.name,
     color: value.color,
     playerIds,
     leaderPlayerIds,
-    stateId: parsedStateId
+    stateId: parsedStateId,
+    ...(armyTokenAsset ? { armyTokenAsset } : {})
   };
 }
 
@@ -290,8 +293,8 @@ const sidePlayer = (value: UnknownRecord): { sideId: string; playerId: string } 
 const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
   REGISTER_ARMY: (value) => boundedString(value.itemId) && sideId(value.sideId)
     ? { type: "REGISTER_ARMY", itemId: value.itemId, sideId: value.sideId } : undefined,
-  CREATE_CITY_ARMY: (value) => boundedString(value.itemId) && boundedString(value.cityId) && sideId(value.sideId)
-    ? { type: "CREATE_CITY_ARMY", itemId: value.itemId, cityId: value.cityId, sideId: value.sideId } : undefined,
+  CREATE_CITY_ARMY: (value) => boundedString(value.cityId) && sideId(value.sideId) && (value.itemId === undefined || boundedString(value.itemId))
+    ? { type: "CREATE_CITY_ARMY", ...(value.itemId !== undefined ? { itemId: value.itemId } : {}), cityId: value.cityId, sideId: value.sideId } : undefined,
   FORM_ARMY: (value) => boundedString(value.armyId) && nonNegativeInteger(value.hp) && value.hp > 0
     ? { type: "FORM_ARMY", armyId: value.armyId, hp: value.hp } : undefined,
   UNREGISTER_ARMY: (value) => {
@@ -435,6 +438,10 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
   },
   RENAME_SIDE: (value) => sideId(value.sideId) && boundedString(value.name)
     ? { type: "RENAME_SIDE", sideId: value.sideId, name: value.name } : undefined,
+  SET_SIDE_ARMY_TOKEN: (value) => {
+    const asset = parseArmyTokenAsset(value.asset);
+    return sideId(value.sideId) && asset ? { type: "SET_SIDE_ARMY_TOKEN", sideId: value.sideId, asset } : undefined;
+  },
   DELETE_SIDE: (value) => {
     if (!sideId(value.sideId)) return undefined;
     if (value.strategy === "UNREGISTER_ARMIES") return { type: "DELETE_SIDE", sideId: value.sideId, strategy: value.strategy };

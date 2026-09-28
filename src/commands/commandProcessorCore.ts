@@ -343,10 +343,6 @@ export class CommandProcessor {
         return undefined;
       }
       case "CREATE_CITY_ARMY": {
-        const item = state.items[command.itemId];
-        if (!item) return "ITEM_NOT_FOUND";
-        if (item.type !== "IMAGE") return "IMAGE_REQUIRED";
-        if (state.armies[command.itemId] || item.metadata[METADATA_KEYS.army] !== undefined) return "ALREADY_REGISTERED";
         const city = (state.scene.strategicCities ?? []).find((candidate) => candidate.id === command.cityId);
         if (!city) return "CITY_NOT_FOUND";
         const militaryDepartment = (city.buildings ?? []).find((building) => building.type === "MILITARY_DEPARTMENT");
@@ -354,17 +350,49 @@ export class CommandProcessor {
             !isCityBuildingActive(city, militaryDepartment, state.scene.gridMap, state.scene.states, state.scene.sides)) {
           return "MILITARY_DEPARTMENT_REQUIRED";
         }
+        const side = state.scene.sides.find((candidate) => candidate.id === command.sideId);
+        if (!side) return "SIDE_NOT_FOUND";
+        const existingItem = command.itemId ? state.items[command.itemId] : undefined;
+        if (command.itemId && (!existingItem || existingItem.type !== "IMAGE")) return existingItem ? "IMAGE_REQUIRED" : "ITEM_NOT_FOUND";
+        const armyId = command.itemId ?? `army-${command.requestId}`;
+        if (state.armies[armyId] || state.items[armyId]?.metadata[METADATA_KEYS.army] !== undefined) return "ALREADY_REGISTERED";
         if (!this.cellForPosition) return "CITY_POSITION_UNAVAILABLE";
-        const itemCell = this.cellForPosition(item.position);
-        if (!city.cells.some((cell) => sameCell(cell, itemCell))) return "ARMY_MUST_BE_IN_CITY";
-        const army = createFormationArmy({ armyId: command.itemId, sideId: command.sideId, status: "READY", maxUnits: 10, turnNumber: state.scene.turn.turnNumber, experience: (city.buildings ?? []).reduce((total, building) => total + (building.type === "TRAINING_GROUND" || building.type === "MILITARY_ACADEMY" ? 0.5 : 0), 0) });
+        const cityCell = city.cells[0];
+        if (!cityCell) return "CITY_POSITION_UNAVAILABLE";
+        const itemPosition = existingItem?.position ?? this.positionForCell?.(cityCell);
+        if (!itemPosition) return "CITY_POSITION_UNAVAILABLE";
+        const existingCell = existingItem ? this.cellForPosition(existingItem.position) : undefined;
+        if (existingItem && (!existingCell || !city.cells.some((cell) => sameCell(cell, existingCell)))) return "ARMY_MUST_BE_IN_CITY";
+        if (!existingItem && !side.armyTokenAsset) return "ARMY_TOKEN_NOT_CONFIGURED";
+        const army = createFormationArmy({ armyId, sideId: command.sideId, status: "READY", maxUnits: 10, turnNumber: state.scene.turn.turnNumber, experience: (city.buildings ?? []).reduce((total, building) => total + (building.type === "TRAINING_GROUND" || building.type === "MILITARY_ACADEMY" ? 0.5 : 0), 0) });
         army.formation = { active: true, cityId: city.id, hpAddedThisTurn: 5, checkedOnTurn: state.scene.turn.turnNumber };
-        state.armies[command.itemId] = army;
-        state.items[command.itemId] = { ...item, metadata: { ...item.metadata, [METADATA_KEYS.army]: { sideId: command.sideId, registered: true } } };
+        state.armies[armyId] = army;
+        if (!existingItem && side.armyTokenAsset) {
+          state.items[armyId] = {
+            id: armyId,
+            type: "IMAGE",
+            name: side.armyTokenAsset.name,
+            position: itemPosition,
+            rotation: side.armyTokenAsset.rotation ?? 0,
+            scale: side.armyTokenAsset.scale ?? { x: 1, y: 1 },
+            layer: "CHARACTER",
+            visible: true,
+            locked: false,
+            metadata: {},
+            image: structuredClone(side.armyTokenAsset.image),
+            grid: structuredClone(side.armyTokenAsset.grid),
+            ...(side.armyTokenAsset.description ? { description: side.armyTokenAsset.description } : {})
+          };
+          state.positions ??= {};
+          state.positions[armyId] = itemPosition;
+        } else if (existingItem) {
+          state.items[armyId] = { ...existingItem, position: itemPosition };
+        }
+        state.items[armyId] = { ...state.items[armyId], metadata: { ...state.items[armyId]?.metadata, [METADATA_KEYS.army]: army } } as SceneItemRecord;
         state.scene.lrTransactions = appendLRTransaction(state.scene.lrTransactions ?? [], {
           id: `${command.requestId}:formation`, requestId: command.requestId, createdAt: this.now().toISOString(), turnNumber: state.scene.turn.turnNumber,
           actorPlayerId: command.senderPlayerId, sideId: command.sideId, sideName: state.scene.sides.find((side) => side.id === command.sideId)?.name ?? command.sideId,
-          cityId: city.id, cityName: city.name, armyId: command.itemId, armyName: item.name ?? command.itemId, kind: "FORMATION", hp: 5,
+          cityId: city.id, cityName: city.name, armyId, armyName: state.items[armyId]?.name ?? armyId, kind: "FORMATION", hp: 5,
           ratePerHp: state.scene.settings.armyFormationCostPerHp ?? 5000, amount: 5 * (state.scene.settings.armyFormationCostPerHp ?? 5000)
         });
         return undefined;
@@ -1276,6 +1304,12 @@ export class CommandProcessor {
       case "UPDATE_SETTINGS":
         state.scene.settings = { ...state.scene.settings, ...command.settings };
         return undefined;
+      case "SET_SIDE_ARMY_TOKEN": {
+        const side = state.scene.sides.find((candidate) => candidate.id === command.sideId);
+        if (!side) return "SIDE_NOT_FOUND";
+        side.armyTokenAsset = structuredClone(command.asset);
+        return undefined;
+      }
       case "MARK_LR_TRANSACTION_RECORDED": {
         if (!(state.scene.lrTransactions ?? []).some((entry) => entry.id === command.transactionId)) return "TRANSACTION_NOT_FOUND";
         state.scene.lrTransactions = markLRTransactionRecorded(state.scene.lrTransactions ?? [], command.transactionId, command.senderPlayerId, this.now().toISOString());

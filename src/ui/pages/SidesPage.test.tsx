@@ -113,4 +113,21 @@ describe("SidesPage", () => {
     expect(screen.getByText("Недоступен: offline")).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Участник Алекс (leader)" })).toBeDisabled();
   });
+
+  it("offers the GM a faction token asset action", () => {
+    const onAction = vi.fn();
+    render(
+      <SidesPage
+        role="GM"
+        playerId="gm"
+        sides={[red]}
+        players={players}
+        leaderSideIds={new Set()}
+        onAction={onAction}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Задать токен армии для Красные" }));
+    expect(onAction).toHaveBeenCalledWith({ type: "SET_SIDE_ARMY_TOKEN", sideId: "red" });
+  });
 });

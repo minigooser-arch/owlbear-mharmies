@@ -112,6 +112,24 @@ function context(
 describe("CommandProcessor", () => {
   const processor = new CommandProcessor();
 
+  it("stores the configured army token asset on a faction", () => {
+    const current = state();
+    const asset = {
+      name: "Красный жетон",
+      image: { width: 64, height: 64, mime: "image/png", url: "https://example.test/red.png" },
+      grid: { dpi: 100, offset: { x: 0, y: 0 } }
+    };
+    const result = processor.execute(
+      context("GM", "gm", current),
+      command({ type: "SET_SIDE_ARMY_TOKEN", sideId: "red", asset })
+    );
+
+    expect(result.status).toBe("ACCEPTED");
+    if (result.status === "ACCEPTED") {
+      expect(result.state.scene.sides.find((side) => side.id === "red")?.armyTokenAsset).toEqual(asset);
+    }
+  });
+
   it("rejects a crafted route into closed foreign land for a non-ruling faction", () => {
     const current = state();
     current.scene.version = 7;
@@ -329,6 +347,8 @@ describe("CommandProcessor", () => {
     current.scene.gridMap.cells["0,0"] = {
       terrainId: "plain", impassable: false, factionTerritoryIds: ["red"], recognizedStateId: "red-state", deFactoStateId: "red-state"
     };
+    current.scene.sides = current.scene.sides.map((side) => side.id === "red" ? { ...side, stateId: "red-state" } : side);
+    current.scene.states = [{ id: "red-state", name: "Красное государство", rulingFactionId: "red", active: true }];
     current.scene.strategicCities = [{
       id: "city-red", name: "Красный город", cells: [{ x: 0, y: 0 }], recognizedStateId: "red-state", deFactoStateId: "red-state",
       factionInfluenceId: "red", mayorId: null, isCapital: false, historicalBuildTypeCount: 0,
@@ -341,6 +361,36 @@ describe("CommandProcessor", () => {
       .execute(context("PLAYER", "leader", current), command({ type: "CREATE_CITY_ARMY", itemId: "candidate-image", cityId: "city-red", sideId: "red" }, "leader"));
     expect(result.status).toBe("ACCEPTED");
     if (result.status === "ACCEPTED") expect(result.state.armies["candidate-image"]).toMatchObject({ sideId: "red", health: { hp: 5, maxHp: 40 }, formation: { active: true, cityId: "city-red" } });
+  });
+
+  it("spawns the configured faction token in the city when no token is selected", () => {
+    const current = state();
+    const asset = {
+      name: "Красный жетон",
+      image: { width: 64, height: 64, mime: "image/png", url: "https://example.test/red.png" },
+      grid: { dpi: 100, offset: { x: 0, y: 0 } }
+    };
+    current.scene.sides = current.scene.sides.map((side) => side.id === "red" ? { ...side, armyTokenAsset: asset } : side);
+    current.scene.sides = current.scene.sides.map((side) => side.id === "red" ? { ...side, stateId: "red-state" } : side);
+    current.scene.states = [{ id: "red-state", name: "Красное государство", rulingFactionId: "red", active: true }];
+    current.scene.gridMap.cells["0,0"] = {
+      terrainId: "plain", impassable: false, factionTerritoryIds: ["red"], recognizedStateId: "red-state", deFactoStateId: "red-state"
+    };
+    current.scene.strategicCities = [{
+      id: "city-red", name: "Красный город", cells: [{ x: 0, y: 0 }], recognizedStateId: "red-state", deFactoStateId: "red-state",
+      factionInfluenceId: "red", mayorId: null, isCapital: false, historicalBuildTypeCount: 0,
+      buildings: [{ id: "military-department", type: "MILITARY_DEPARTMENT", cell: { x: 0, y: 0 } }]
+    }];
+    const result = new CommandProcessor(
+      () => new Date(),
+      (position) => ({ x: Math.floor(position.x / 100), y: Math.floor(position.y / 100) }),
+      (cell) => ({ x: cell.x * 100 + 50, y: cell.y * 100 + 50 })
+    ).execute(context("PLAYER", "leader", current), command({ type: "CREATE_CITY_ARMY", cityId: "city-red", sideId: "red" }, "leader"));
+    expect(result.status).toBe("ACCEPTED");
+    if (result.status === "ACCEPTED") {
+      expect(result.state.armies["army-request"]).toMatchObject({ sideId: "red", health: { hp: 5, maxHp: 40 } });
+      expect(result.state.items["army-request"]).toMatchObject({ type: "IMAGE", position: { x: 50, y: 50 }, image: asset.image, grid: asset.grid });
+    }
   });
 
   it("schedules healing instead of changing HP immediately", () => {

@@ -23,6 +23,8 @@ export type NotificationCode =
   | "SELECTION_MULTIPLE"
   | "ITEM_NOT_FOUND"
   | "IMAGE_REQUIRED"
+  | "ARMY_TOKEN_NOT_CONFIGURED"
+  | "ARMY_TOKEN_NOT_SELECTED"
   | "ALREADY_REGISTERED"
   | "SIDE_NOT_FOUND"
   | "ARMY_NOT_READY"
@@ -99,6 +101,8 @@ const RUSSIAN_MESSAGES: Readonly<Record<NotificationCode, string>> = {
   SELECTION_MULTIPLE: "Выберите только одно изображение.",
   ITEM_NOT_FOUND: "Выбранный объект не найден на сцене.",
   IMAGE_REQUIRED: "Для армии необходимо выбрать изображение.",
+  ARMY_TOKEN_NOT_CONFIGURED: "Для этой фракции не задан токен армии. Настройте его в разделе «Фракции».",
+  ARMY_TOKEN_NOT_SELECTED: "В Assets Manager не выбран токен армии.",
   ALREADY_REGISTERED: "Выбранное изображение уже зарегистрировано как армия.",
   SIDE_NOT_FOUND: "Выбранная сторона не найдена.",
   ARMY_NOT_READY: "Сначала остановите армию, чтобы изменить её маршрут.",

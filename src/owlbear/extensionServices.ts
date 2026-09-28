@@ -790,9 +790,32 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
       } else if (command.type === "CREATE_SELECTED_CITY_ARMY") {
         payload = {
           type: "CREATE_CITY_ARMY",
-          itemId: resolveRegistrationSelection({ selection: (await OBR.player.getSelection()) ?? [], items: await adapter.getSceneItems() }).id,
           cityId: command.cityId,
           sideId: command.sideId
+        };
+      } else if (command.type === "SET_SIDE_ARMY_TOKEN") {
+        if (snapshot.role !== "GM") {
+          await notifyRussian(adapter, "GM_ONLY");
+          return undefined;
+        }
+        const side = snapshot.sides.find((candidate) => candidate.id === command.sideId);
+        const selected = await OBR.assets.downloadImages(false, side?.name ?? "Токен армии", "CHARACTER");
+        const asset = selected[0];
+        if (!asset) {
+          await notifyRussian(adapter, "ARMY_TOKEN_NOT_SELECTED");
+          return undefined;
+        }
+        payload = {
+          type: "SET_SIDE_ARMY_TOKEN",
+          sideId: command.sideId,
+          asset: {
+            name: asset.name,
+            image: asset.image,
+            grid: asset.grid,
+            ...(asset.scale ? { scale: asset.scale } : {}),
+            ...(asset.rotation !== undefined ? { rotation: asset.rotation } : {}),
+            ...(asset.description ? { description: asset.description } : {})
+          }
         };
       } else if (command.type === "REGISTER_SELECTED_CITY") {
         const selected = resolveRegistrationSelection({ selection: (await OBR.player.getSelection()) ?? [], items: await adapter.getSceneItems() });

@@ -40,6 +40,7 @@ import type {
   VisibilityRecalculationMode,
   WarState
 } from "./types";
+import { parseArmyTokenAsset } from "./armyTokenAsset";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -191,13 +192,15 @@ function normalizeSide(value: unknown): Side | undefined {
   if (!isRecord(value) || !nonEmptyString(value.id) || !nonEmptyString(value.name)) return undefined;
   const playerIds = uniqueStrings(value.playerIds);
   const leaderPlayerIds = uniqueStrings(value.leaderPlayerIds);
+  const armyTokenAsset = parseArmyTokenAsset(value.armyTokenAsset);
   return {
     id: value.id,
     name: value.name,
     color: nonEmptyString(value.color) ? value.color : "#607d8b",
     playerIds: [...new Set([...playerIds, ...leaderPlayerIds])],
     leaderPlayerIds,
-    stateId: value.stateId === null || nonEmptyString(value.stateId) ? value.stateId as string | null : null
+    stateId: value.stateId === null || nonEmptyString(value.stateId) ? value.stateId as string | null : null,
+    ...(armyTokenAsset ? { armyTokenAsset } : {})
   };
 }
 

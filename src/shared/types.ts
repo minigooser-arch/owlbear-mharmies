@@ -37,6 +37,15 @@ export interface SceneSettings {
   hospitalHealingCostPerHp?: number;
 }
 
+export interface ArmyTokenAsset {
+  name: string;
+  image: { width: number; height: number; mime: string; url: string };
+  grid: { dpi: number; offset: Vector2 };
+  scale?: Vector2;
+  rotation?: number;
+  description?: string;
+}
+
 export interface Side {
   id: string;
   name: string;
@@ -45,6 +54,7 @@ export interface Side {
   leaderPlayerIds: string[];
   /** State the faction belongs to. Null for stateless factions. */
   stateId: string | null;
+  armyTokenAsset?: ArmyTokenAsset;
 }
 
 /** Boundary-compatible state entity; v7 scene migration always materializes color. */
@@ -504,7 +514,7 @@ export type CellPropertyTarget = "TERRAIN" | "IMPASSABLE" | "RECOGNIZED_STATE" |
 export type ArmyCommandPayload =
   (
     | { type: "REGISTER_ARMY"; itemId: string; sideId: string }
-    | { type: "CREATE_CITY_ARMY"; itemId: string; cityId: string; sideId: string }
+    | { type: "CREATE_CITY_ARMY"; itemId?: string; cityId: string; sideId: string }
     | { type: "FORM_ARMY"; armyId: string; hp: number }
     | { type: "UNREGISTER_ARMY"; armyId: string }
     | { type: "REGISTER_SHIP"; itemId: string; sideId: string; classId: ShipClassId; facing: ShipFacing }
@@ -540,6 +550,7 @@ export type ArmyCommandPayload =
     | { type: "REOPEN_MOVEMENT_PHASE" }
     | { type: "CREATE_SIDE"; side: Side }
     | { type: "RENAME_SIDE"; sideId: string; name: string }
+    | { type: "SET_SIDE_ARMY_TOKEN"; sideId: string; asset: ArmyTokenAsset }
     | {
         type: "DELETE_SIDE";
         sideId: string;

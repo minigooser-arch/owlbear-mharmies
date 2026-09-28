@@ -74,6 +74,7 @@ export function authorizeArmyCommand(
   }
 
   if (command.type === "CREATE_CITY_ARMY") return ledBy(context, command.sideId);
+  if (command.type === "SET_SIDE_ARMY_TOKEN") return { allowed: false, reason: "GM_ONLY" };
   if (command.type === "REGISTER_CITY_SHIP") return ledBy(context, command.sideId);
   if (command.type === "FORM_ARMY" || command.type === "HEAL_ARMY") {
     const army = context.armies.get(command.armyId);

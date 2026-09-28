@@ -168,6 +168,7 @@ export type UiCommand =
   | ArmyCommandPayload
   | { type: "REGISTER_SELECTED_ARMY"; sideId: string }
   | { type: "CREATE_SELECTED_CITY_ARMY"; cityId: string; sideId: string }
+  | { type: "SET_SIDE_ARMY_TOKEN"; sideId: string }
   | { type: "REGISTER_SELECTED_CITY"; city: StrategicCity }
   | { type: "REGISTER_SELECTED_SHIP"; sideId: string; classId: ShipClassId; facing: ShipFacing }
   | { type: "REGISTER_SELECTED_CITY_SHIP"; cityId: string; sideId: string; classId: ShipClassId; facing: ShipFacing }

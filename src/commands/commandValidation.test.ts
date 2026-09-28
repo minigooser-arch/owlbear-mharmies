@@ -151,6 +151,7 @@ describe("validateArmyCommand", () => {
 
   it.each([
     { type: "REGISTER_ARMY", itemId: "image", sideId: "red" },
+    { type: "CREATE_CITY_ARMY", cityId: "city-red", sideId: "red" },
     { type: "UNREGISTER_ARMY", armyId: "army" },
     { type: "ADD_SIDE_PLAYER", sideId: "red", playerId: "member" },
     { type: "REMOVE_SIDE_PLAYER", sideId: "red", playerId: "member" },
