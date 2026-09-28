@@ -420,6 +420,21 @@ describe("CommandProcessor", () => {
     }
   });
 
+  it("creates a missing demographic record on the first GM correction", () => {
+    const current = state();
+    current.scene.states = [{ id: "red-state", name: "Красное государство", rulingFactionId: "red", active: true }];
+
+    const result = processor.execute(context("GM", "gm", current), command({
+      type: "UPDATE_STATE_DEMOGRAPHY",
+      stateId: "red-state",
+      patch: { population: 1_000_000, populationGrowthFactor: 1.003, humanResource: 100_000 },
+      reason: "Создание записи"
+    }, "gm"));
+
+    expect(result.status).toBe("ACCEPTED");
+    if (result.status === "ACCEPTED") expect(result.state.scene.demographics?.[0]).toMatchObject({ stateId: "red-state", population: 1_000_000, humanResource: 100_000 });
+  });
+
   it("spawns the configured faction token in the city when no token is selected", () => {
     const current = state();
     const asset = {

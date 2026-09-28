@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { LRTransaction, SceneSettings, Side, SideRelation, StateEntity, StateRelations, StrategicCity } from "../../shared/types";
+import type { ConscriptionLaw, LRTransaction, SceneSettings, Side, SideRelation, StateDemography, StateEntity, StateRelations, StrategicCity } from "../../shared/types";
 import type { DiagnosticTestId } from "../../owlbear/diagnostics";
 import type { PartyPlayerView, RebellionStatusView, UiCommand } from "../state/useExtensionState";
 import { DiagnosticsPage } from "./DiagnosticsPage";
@@ -10,21 +10,23 @@ import { SidesPage } from "./SidesPage";
 import { StateDiplomacyPage } from "./StateDiplomacyPage";
 import { StatesPage } from "./StatesPage";
 import { LRLedgerPage } from "./LRLedgerPage";
+import { PopulationPage } from "./PopulationPage";
 
-type ManagementSection = "SIDES" | "STATES" | "STATE_DIPLOMACY" | "RELATIONS" | "REBELLIONS" | "LR" | "SETTINGS" | "DIAGNOSTICS";
+type ManagementSection = "SIDES" | "STATES" | "STATE_DIPLOMACY" | "RELATIONS" | "REBELLIONS" | "POPULATION" | "LR" | "SETTINGS" | "DIAGNOSTICS";
 const LABELS: Record<ManagementSection, string> = {
   SIDES: "Фракции",
   STATES: "Государства",
   STATE_DIPLOMACY: "Межгосударственные отношения",
   RELATIONS: "Отношения фракций",
   REBELLIONS: "Восстания",
+  POPULATION: "Население и ЛР",
   LR: "Журнал ЛР",
   SETTINGS: "Настройки",
   DIAGNOSTICS: "Диагностика"
 };
 
 export function ManagementPage({
-  playerId, sides, states, strategicCities, rebellionStatuses, lrTransactions, players, relations, stateRelations, settings, leaderSideIds, onAction, runDiagnostic
+  playerId, sides, states, strategicCities, rebellionStatuses, lrTransactions, demographics, conscriptionLaws, players, relations, stateRelations, settings, leaderSideIds, onAction, runDiagnostic
 }: {
   playerId: string;
   sides: readonly Side[];
@@ -32,6 +34,8 @@ export function ManagementPage({
   strategicCities: readonly StrategicCity[];
   rebellionStatuses: readonly RebellionStatusView[];
   lrTransactions: readonly LRTransaction[];
+  demographics: readonly StateDemography[];
+  conscriptionLaws: readonly ConscriptionLaw[];
   players: readonly PartyPlayerView[];
   relations: Readonly<Record<string, Record<string, SideRelation>>>;
   stateRelations: StateRelations;
@@ -53,6 +57,7 @@ export function ManagementPage({
         {section === "STATE_DIPLOMACY" && <StateDiplomacyPage states={states} stateRelations={stateRelations} onAction={onAction} />}
         {section === "RELATIONS" && <RelationsPage sides={sides} relations={relations} onAction={onAction} />}
         {section === "REBELLIONS" && <RebellionsPage states={states} sides={sides} cities={strategicCities} statuses={rebellionStatuses} onAction={onAction} />}
+        {section === "POPULATION" && <PopulationPage states={states} demographics={demographics} conscriptionLaws={conscriptionLaws} onAction={onAction} />}
         {section === "LR" && <LRLedgerPage transactions={lrTransactions} onAction={onAction} />}
         {section === "SETTINGS" && <SettingsPage settings={settings} onAction={onAction} />}
         {section === "DIAGNOSTICS" && <DiagnosticsPage run={runDiagnostic} />}

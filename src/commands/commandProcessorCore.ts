@@ -1356,15 +1356,31 @@ export class CommandProcessor {
         state.scene.settings = { ...state.scene.settings, ...command.settings };
         return undefined;
       case "UPDATE_STATE_DEMOGRAPHY": {
-        const record = state.scene.demographics?.find((candidate) => candidate.stateId === command.stateId);
-        if (!record) return "STATE_DEMOGRAPHY_NOT_FOUND";
+        const stateEntity = state.scene.states.find((candidate) => candidate.id === command.stateId);
+        if (!stateEntity) return "STATE_NOT_FOUND";
+        const existingRecord = state.scene.demographics?.find((candidate) => candidate.stateId === command.stateId);
+        const defaultLaw = state.scene.conscriptionLaws?.find((law) => law.active) ?? {
+          id: "GENERAL_MOBILIZATION", name: "Всеобщая мобилизация", rate: 0.24, active: true
+        };
+        const record = existingRecord ?? {
+          stateId: command.stateId,
+          population: 0,
+          populationGrowthFactor: 1,
+          humanResource: 0,
+          conscriptionLawId: defaultLaw.id,
+          conscriptionRate: defaultLaw.rate,
+          humanResourceCapacity: 0,
+          lastPopulationCalculationDate: null
+        };
         let corrected: ReturnType<typeof applyDemographyCorrection>;
         try {
           corrected = applyDemographyCorrection(record, command.patch, command.reason, command.senderPlayerId, this.now().toISOString());
         } catch {
           return "DEMOGRAPHY_CORRECTION_REASON_REQUIRED";
         }
-        state.scene.demographics = (state.scene.demographics ?? []).map((candidate) => candidate.stateId === command.stateId ? corrected.record : candidate);
+        state.scene.demographics = existingRecord
+          ? (state.scene.demographics ?? []).map((candidate) => candidate.stateId === command.stateId ? corrected.record : candidate)
+          : [...(state.scene.demographics ?? []), corrected.record];
         state.scene.demographyAudit = [...(state.scene.demographyAudit ?? []), corrected.entry];
         return undefined;
       }

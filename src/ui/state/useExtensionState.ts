@@ -15,6 +15,9 @@ import type {
   StateRelations,
   StrategicCity,
   LRTransaction,
+  ConscriptionLaw,
+  DemographyAuditEntry,
+  StateDemography,
   TerrainRegistryState,
   TurnState,
   Vector2,
@@ -144,6 +147,9 @@ export interface RawExtensionSnapshot {
   states: readonly StateEntity[];
   strategicCities?: readonly StrategicCity[];
   lrTransactions?: readonly LRTransaction[];
+  demographics?: readonly StateDemography[];
+  conscriptionLaws?: readonly ConscriptionLaw[];
+  demographyAudit?: readonly DemographyAuditEntry[];
   territorialScores?: readonly TerritorialScoreView[];
   rebellionStatuses?: readonly RebellionStatusView[];
   relations: Readonly<Record<string, Record<string, import("../../shared/types").SideRelation>>>;

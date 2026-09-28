@@ -3,7 +3,7 @@ import { METADATA_KEYS } from "../shared/constants";
 import { GridStoragePort } from "../tests/helpers/gridStoragePort";
 import { DEFAULT_CELL_STATE } from "../terrain/gridMap";
 import { MetadataRepository } from "../storage/metadataRepository";
-import { buildRoleSafeSnapshotFromItemFrame, readCoreSnapshotItemFrame } from "./extensionServicesCore";
+import { buildRoleSafeSnapshot, buildRoleSafeSnapshotFromItemFrame, readCoreSnapshotItemFrame } from "./extensionServicesCore";
 
 it("loads army and ship UI snapshot records from one indexed item frame", async () => {
   const port = new GridStoragePort();
@@ -68,4 +68,23 @@ it("builds authorization from the scene captured with the item frame", async () 
 
   expect(snapshot.memberSideIds).toEqual(new Set(["red"]));
   expect(snapshot.armies.map((army) => army.id)).toEqual(["army"]);
+});
+
+it("exposes demographic balances only in the GM snapshot", async () => {
+  const port = new GridStoragePort();
+  const repository = new MetadataRepository(port);
+  const scene = await repository.readScene();
+  scene.demographics = [{
+    stateId: "state-1", population: 1_000_000, populationGrowthFactor: 1.003, humanResource: 100_000,
+    conscriptionLawId: "GENERAL_MOBILIZATION", conscriptionRate: 0.24, humanResourceCapacity: 240_000,
+    lastPopulationCalculationDate: "2026-09-28"
+  }];
+  scene.conscriptionLaws = [{ id: "GENERAL_MOBILIZATION", name: "Всеобщая мобилизация", rate: 0.24, active: true }];
+  const input = { scene, players: [], armies: [], ships: [], mapVisibleSourceIds: new Set<string>() };
+
+  const gm = buildRoleSafeSnapshot({ ...input, role: "GM", playerId: "gm" });
+  const player = buildRoleSafeSnapshot({ ...input, role: "PLAYER", playerId: "player" });
+
+  expect(gm.demographics).toHaveLength(1);
+  expect(player.demographics).toEqual([]);
 });
