@@ -35,6 +35,8 @@ export interface SceneSettings {
   armyFormationCostPerHp?: number;
   armyHealingCostPerHp?: number;
   hospitalHealingCostPerHp?: number;
+  /** IANA timezone used for real-date population growth. */
+  populationTimeZone?: string;
 }
 
 export interface ArmyTokenAsset {
@@ -90,6 +92,33 @@ export interface CityBuilding {
   cell: GridCellCoord;
 }
 
+export interface StateDemography {
+  stateId: string;
+  population: number;
+  populationGrowthFactor: number;
+  humanResource: number;
+  conscriptionLawId: string;
+  conscriptionRate: number;
+  humanResourceCapacity: number;
+  lastPopulationCalculationDate: string | null;
+}
+
+export interface ConscriptionLaw {
+  id: string;
+  name: string;
+  rate: number;
+  active: boolean;
+}
+
+export interface DemographyAuditEntry {
+  id: string;
+  stateId: string;
+  actorPlayerId: string;
+  reason: string;
+  changes: Record<string, { before: number | string; after: number | string }>;
+  createdAt: string;
+}
+
 export type LRTransactionKind = "FORMATION" | "COMPLETION" | "HEALING";
 export type LRTransactionStatus = "PENDING" | "RECORDED";
 
@@ -109,6 +138,12 @@ export interface LRTransaction {
   hp: number;
   ratePerHp: number;
   amount: number;
+  stateId?: string | null;
+  stateName?: string | null;
+  factionId?: string | null;
+  factionName?: string | null;
+  balanceBefore?: number;
+  balanceAfter?: number;
   status: LRTransactionStatus;
   recordedByPlayerId?: string;
   recordedAt?: string;
@@ -328,7 +363,7 @@ export interface NavalBattleState {
  * migration fixtures remain representable; scene migration upgrades persisted state to v7.
  */
 export interface SceneState {
-  version: 5 | 6 | 7 | 8;
+  version: 5 | 6 | 7 | 8 | 9;
   revision: number;
   settings: SceneSettings;
   sides: Side[];
@@ -353,11 +388,14 @@ export interface SceneState {
   turnCheckpoint?: TurnCheckpointState | null;
   coordinatorLease?: CoordinatorLease;
   lrTransactions?: LRTransaction[];
+  demographics?: StateDemography[];
+  conscriptionLaws?: ConscriptionLaw[];
+  demographyAudit?: DemographyAuditEntry[];
 }
 
 /** Boundary-compatible naval scene shape used by existing tactical code and fixtures. */
 export interface NavalSceneState extends SceneState {
-  version: 6 | 7 | 8;
+  version: 6 | 7 | 8 | 9;
   ships: Record<string, ShipState>;
   navalBattleRequests: NavalBattleRequest[];
   activeNavalBattle: NavalBattleState | null;
@@ -368,7 +406,7 @@ export interface NavalSceneState extends SceneState {
 
 /** Fully normalized v7 scene. */
 export interface StrategicSceneState extends NavalSceneState {
-  version: 7 | 8;
+  version: 7 | 8 | 9;
   states: NormalizedStateEntity[];
   transportEmbarkRequests: TransportEmbarkRequest[];
   stateRelations: StateRelations;
@@ -378,6 +416,9 @@ export interface StrategicSceneState extends NavalSceneState {
   rebellions: RebellionState[];
   turnCheckpoint: TurnCheckpointState | null;
   lrTransactions?: LRTransaction[];
+  demographics?: StateDemography[];
+  conscriptionLaws?: ConscriptionLaw[];
+  demographyAudit?: DemographyAuditEntry[];
 }
 
 export interface ArmyOverrides {

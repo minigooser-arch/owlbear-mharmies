@@ -1,4 +1,4 @@
-import type { SceneSettings, TerrainRegistryState, TurnState } from "./types";
+import type { ConscriptionLaw, SceneSettings, TerrainRegistryState, TurnState } from "./types";
 
 export const EXTENSION_ID = "com.letopis.army-control";
 export const PROGRAMMATIC_ONLY_TOOL_FILTER = {
@@ -89,8 +89,18 @@ export const DEFAULT_SETTINGS: SceneSettings = {
   interpolationEnabled: true,
   armyFormationCostPerHp: 5000,
   armyHealingCostPerHp: 5000,
-  hospitalHealingCostPerHp: 2500
+  hospitalHealingCostPerHp: 2500,
+  populationTimeZone: "Europe/Moscow"
 };
+
+export const DEFAULT_CONSCRIPTION_LAWS: ConscriptionLaw[] = [
+  { id: "DEMILITARIZED", name: "Демилитаризация", rate: 0, active: true },
+  { id: "CONTRACT_SERVICE", name: "Контрактная служба", rate: 0.02, active: true },
+  { id: "URGENT_CONSCRIPTION", name: "Срочный призыв", rate: 0.04, active: true },
+  { id: "PARTIAL_MOBILIZATION", name: "Частичная мобилизация", rate: 0.08, active: true },
+  { id: "MASS_MOBILIZATION", name: "Массовая мобилизация", rate: 0.18, active: true },
+  { id: "GENERAL_MOBILIZATION", name: "Всеобщая мобилизация", rate: 0.24, active: true }
+];
 
 export const DEFAULT_TERRAIN: TerrainRegistryState = {
   defaultTerrainId: "sea",

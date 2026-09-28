@@ -316,7 +316,7 @@ function normalizeStrategicSceneState(raw: UnknownRecord): ValidationResult<Scen
     ok: true,
     value: {
       ...core.value,
-       version: 8,
+       version: 9,
       states,
       gridMap,
       stateRelations: normalizeStateRelations(raw.stateRelations, stateIds),
@@ -335,7 +335,7 @@ export function migrateSceneState(raw: unknown): ValidationResult<SceneState> {
     return { ok: false, issue: { code: "INVALID_VALUE", path: "version" } };
   }
   const version = versionOf(raw);
-  if (version !== undefined && version > 8) {
+  if (version !== undefined && version > 9) {
     return { ok: false, issue: { code: "FUTURE_VERSION", version } };
   }
   if (!isRecord(raw)) return normalizeSceneState(raw);
@@ -428,6 +428,9 @@ export function migrateSceneState(raw: unknown): ValidationResult<SceneState> {
     migrated = { ...migrated, version: 8, terrain: ensureBuiltInTerrains(migrated.terrain), lrTransactions: [] };
   }
   if (migrated.version === 8) {
+    migrated = { ...migrated, version: 9, terrain: ensureBuiltInTerrains(migrated.terrain), lrTransactions: migrated.lrTransactions ?? [] };
+  }
+  if (migrated.version === 9) {
     migrated = { ...migrated, terrain: ensureBuiltInTerrains(migrated.terrain), lrTransactions: migrated.lrTransactions ?? [] };
     const result = normalizeStrategicSceneState(migrated);
     if (!result.ok) return result;

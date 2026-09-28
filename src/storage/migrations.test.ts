@@ -43,7 +43,7 @@ describe("metadata migrations", () => {
     expect(result).toMatchObject({
       ok: true,
       value: {
-        version: 8,
+        version: 9,
         battleGroups: [
           { battleId: "a", name: "Бой 1" },
           { battleId: "z", name: "Бой 2" }
@@ -96,7 +96,7 @@ describe("metadata migrations", () => {
     expect(result).toMatchObject({
       ok: true,
       value: {
-        version: 8,
+        version: 9,
         revision: 7,
         sides: [
           {
@@ -121,7 +121,7 @@ describe("metadata migrations", () => {
     })).toMatchObject({
       ok: true,
       value: {
-        version: 8,
+        version: 9,
         revision: 4,
         sides: [{ id: "red", playerIds: ["p1"], leaderPlayerIds: [] }],
         turn: { phase: "MOVEMENT" },
@@ -180,7 +180,7 @@ it("migrates v4 scene through state territory and strategic war schemas", () => 
   expect(result).toMatchObject({
     ok: true,
     value: {
-      version: 8,
+      version: 9,
       states: [],
       sides: [{ id: "red", stateId: null }],
       terrain: {
@@ -204,6 +204,77 @@ it("migrates v4 scene through state territory and strategic war schemas", () => 
       wars: [{ id: "war", participantStateIds: [] }],
       turn: { phase: "MOVEMENT" },
       ships: {}
+    }
+  });
+});
+
+it("normalizes demographic records and preserves legacy LR transactions", () => {
+  const result = migrateSceneState({
+    version: 8,
+    revision: 12,
+    settings: { ...DEFAULT_SETTINGS, populationTimeZone: "Europe/Moscow" },
+    sides: [{ id: "red", name: "Красные", color: "#f00", playerIds: [], leaderPlayerIds: [], stateId: "state-1" }],
+    states: [{ id: "state-1", name: "Государство", color: "#f00", rulingFactionId: "red", active: true }],
+    relations: {},
+    battleGroups: [],
+    terrain: DEFAULT_SETTINGS,
+    gridMap: { version: 1, cells: {}, revision: 0 },
+    wars: [],
+    turn: { ...DEFAULT_SETTINGS, turnNumber: 1 },
+    demographics: [{
+      stateId: "state-1",
+      population: 1000,
+      populationGrowthFactor: 1.003,
+      humanResource: 240,
+      conscriptionLawId: "general",
+      conscriptionRate: 0.24,
+      humanResourceCapacity: 240,
+      lastPopulationCalculationDate: null
+    }],
+    conscriptionLaws: [{ id: "general", name: "Всеобщая мобилизация", rate: 0.24, active: true }],
+    lrTransactions: [{
+      id: "tx-1",
+      requestId: "request-1",
+      createdAt: "2026-09-27T12:00:00.000Z",
+      turnNumber: 1,
+      actorPlayerId: "leader",
+      sideId: "red",
+      sideName: "Красные",
+      cityId: null,
+      cityName: null,
+      armyId: "army-1",
+      armyName: "Армия",
+      kind: "FORMATION",
+      hp: 5,
+      ratePerHp: 5000,
+      amount: 25000,
+      status: "PENDING"
+    }]
+  });
+
+  expect(result).toMatchObject({
+    ok: true,
+    value: {
+      version: 9,
+      demographics: [{ stateId: "state-1", population: 1000, humanResource: 240 }],
+      conscriptionLaws: [{ id: "general", rate: 0.24 }],
+      lrTransactions: [{ id: "tx-1", amount: 25000 }]
+    }
+  });
+});
+
+it("creates safe empty demographic collections when migrating an old scene", () => {
+  const result = migrateSceneState({ version: 8 });
+
+  expect(result).toMatchObject({
+    ok: true,
+    value: {
+      version: 9,
+      demographics: [],
+      conscriptionLaws: expect.arrayContaining([
+        expect.objectContaining({ id: "GENERAL_MOBILIZATION", rate: 0.24 })
+      ]),
+      demographyAudit: []
     }
   });
 });

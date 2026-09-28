@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE } from "./constants";
+import { DEFAULT_CONSCRIPTION_LAWS, DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE } from "./constants";
 import type {
   ArmyMovementState,
   ArmyOverrides,
@@ -8,6 +8,8 @@ import type {
   BarrierVisibility,
   BattleGroup,
   CellState,
+  ConscriptionLaw,
+  DemographyAuditEntry,
   DetectionMode,
   GridCellCoord,
   GridMapState,
@@ -29,6 +31,7 @@ import type {
   ShipStatus,
   Side,
   SideRelation,
+  StateDemography,
   StateEntity,
   TerrainRegistryState,
   TerrainType,
@@ -74,6 +77,16 @@ function nonEmptyString(value: unknown): value is string {
 
 function enumValue<T extends string>(value: unknown, allowed: readonly T[]): value is T {
   return typeof value === "string" && allowed.includes(value as T);
+}
+
+function validTimeZone(value: unknown, fallback: string): string {
+  if (!nonEmptyString(value)) return fallback;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: value }).format();
+    return value;
+  } catch {
+    return fallback;
+  }
 }
 
 function uniqueStrings(value: unknown): string[] {
@@ -152,8 +165,77 @@ function normalizeSettings(value: unknown): SceneSettings {
         : DEFAULT_SETTINGS.interpolationEnabled,
     armyFormationCostPerHp,
     armyHealingCostPerHp,
-    hospitalHealingCostPerHp
+    hospitalHealingCostPerHp,
+    populationTimeZone: validTimeZone(value.populationTimeZone, DEFAULT_SETTINGS.populationTimeZone ?? "Europe/Moscow")
   };
+}
+
+function normalizeConscriptionLaw(value: unknown): ConscriptionLaw | undefined {
+  if (!isRecord(value) || !nonEmptyString(value.id) || !nonEmptyString(value.name) || !nonNegative(value.rate)) return undefined;
+  return {
+    id: value.id.trim(),
+    name: value.name.trim(),
+    rate: Math.min(1, value.rate),
+    active: value.active !== false
+  };
+}
+
+function normalizeConscriptionLaws(value: unknown): ConscriptionLaw[] {
+  const laws = Array.isArray(value)
+    ? value.map(normalizeConscriptionLaw).filter((law): law is ConscriptionLaw => law !== undefined)
+    : [];
+  return laws.length > 0
+    ? [...new Map(laws.map((law) => [law.id, law])).values()]
+    : structuredClone(DEFAULT_CONSCRIPTION_LAWS);
+}
+
+function normalizeStateDemography(value: unknown): StateDemography | undefined {
+  if (!isRecord(value) || !nonEmptyString(value.stateId) || !nonNegative(value.population) ||
+      !positive(value.populationGrowthFactor) || !nonNegative(value.humanResource) ||
+      !nonEmptyString(value.conscriptionLawId) || !nonNegative(value.conscriptionRate) ||
+      !nonNegative(value.humanResourceCapacity)) return undefined;
+  return {
+    stateId: value.stateId.trim(),
+    population: value.population,
+    populationGrowthFactor: value.populationGrowthFactor,
+    humanResource: Math.min(value.humanResource, value.humanResourceCapacity),
+    conscriptionLawId: value.conscriptionLawId.trim(),
+    conscriptionRate: Math.min(1, value.conscriptionRate),
+    humanResourceCapacity: value.humanResourceCapacity,
+    lastPopulationCalculationDate: value.lastPopulationCalculationDate === null || nonEmptyString(value.lastPopulationCalculationDate)
+      ? value.lastPopulationCalculationDate as string | null
+      : null
+  };
+}
+
+function normalizeDemographics(value: unknown): StateDemography[] {
+  const records = Array.isArray(value)
+    ? value.map(normalizeStateDemography).filter((record): record is StateDemography => record !== undefined)
+    : [];
+  return [...new Map(records.map((record) => [record.stateId, record])).values()];
+}
+
+function normalizeDemographyAuditEntry(value: unknown): DemographyAuditEntry | undefined {
+  if (!isRecord(value) || !nonEmptyString(value.id) || !nonEmptyString(value.stateId) ||
+      !nonEmptyString(value.actorPlayerId) || !nonEmptyString(value.reason) || !nonEmptyString(value.createdAt) ||
+      !isRecord(value.changes)) return undefined;
+  const changes: DemographyAuditEntry["changes"] = {};
+  for (const [key, rawChange] of Object.entries(value.changes)) {
+    if (!isRecord(rawChange)) continue;
+    const before = rawChange.before;
+    const after = rawChange.after;
+    if ((finiteNumber(before) || nonEmptyString(before)) && (finiteNumber(after) || nonEmptyString(after))) {
+      changes[key] = { before: before as number | string, after: after as number | string };
+    }
+  }
+  return { id: value.id, stateId: value.stateId, actorPlayerId: value.actorPlayerId, reason: value.reason, changes, createdAt: value.createdAt };
+}
+
+function normalizeDemographyAudit(value: unknown): DemographyAuditEntry[] {
+  const entries = Array.isArray(value)
+    ? value.map(normalizeDemographyAuditEntry).filter((entry): entry is DemographyAuditEntry => entry !== undefined)
+    : [];
+  return [...new Map(entries.map((entry) => [entry.id, entry])).values()];
 }
 
 function normalizeLRTransaction(value: unknown): LRTransaction | undefined {
@@ -185,6 +267,12 @@ function normalizeLRTransaction(value: unknown): LRTransaction | undefined {
   };
   if (nonEmptyString(value.recordedByPlayerId)) transaction.recordedByPlayerId = value.recordedByPlayerId;
   if (nonEmptyString(value.recordedAt)) transaction.recordedAt = value.recordedAt;
+  if (value.stateId === null || nonEmptyString(value.stateId)) transaction.stateId = value.stateId as string | null;
+  if (value.stateName === null || nonEmptyString(value.stateName)) transaction.stateName = value.stateName as string | null;
+  if (value.factionId === null || nonEmptyString(value.factionId)) transaction.factionId = value.factionId as string | null;
+  if (value.factionName === null || nonEmptyString(value.factionName)) transaction.factionName = value.factionName as string | null;
+  if (nonNegative(value.balanceBefore)) transaction.balanceBefore = value.balanceBefore;
+  if (nonNegative(value.balanceAfter)) transaction.balanceAfter = value.balanceAfter;
   return transaction;
 }
 
@@ -681,7 +769,10 @@ export function normalizeSceneState(raw: unknown): ValidationResult<SceneState> 
     activeNavalBattle,
     navalBattleHistory,
     navalRevealUntilTurn: normalizeNavalRevealMap(raw.navalRevealUntilTurn),
-    lrTransactions
+    lrTransactions,
+    demographics: normalizeDemographics(raw.demographics),
+    conscriptionLaws: normalizeConscriptionLaws(raw.conscriptionLaws),
+    demographyAudit: normalizeDemographyAudit(raw.demographyAudit)
   };
   if (isRecord(raw.coordinatorLease) && nonEmptyString(raw.coordinatorLease.connectionId)) {
     const { epoch, expiresAt } = raw.coordinatorLease;
