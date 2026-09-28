@@ -1,6 +1,6 @@
 import { joinReinforcements, releaseBattleGroup } from "../battles/battleGroupService";
 import { destroyArmy } from "../armies/armyLifecycle";
-import { healArmyForTurn } from "../health/armyHealth";
+import { canHealArmy, requestArmyHealing } from "../health/armyHealth";
 import { applyFormationHp, createFormationArmy, interruptFormation } from "../armies/armyFormation";
 import { appendLRTransaction } from "../finance/lrLedger";
 import { markLRTransactionRecorded } from "../finance/lrLedger";
@@ -1701,47 +1701,11 @@ export class CommandProcessor {
       case "HEAL_ARMY": {
         const army = state.armies[command.armyId];
         if (!army) return "ARMY_NOT_FOUND";
-        let armyForHealing = army;
-        let hospitalRate = state.scene.settings.armyHealingCostPerHp ?? 5000;
-        const requestedHospitalCityId = command.hospitalCityId ?? army.healing?.hospitalCityId ?? null;
-        let healingCityId: string | null = null;
-        let healingCityName: string | null = null;
-        if (requestedHospitalCityId) {
-          if (!this.cellForPosition) return "ARMY_POSITION_UNAVAILABLE";
-          const position = commandPosition(state, command.armyId);
-          if (!position) return "ARMY_POSITION_UNAVAILABLE";
-          const armyCell = this.cellForPosition(position);
-          const hospitalCity = (state.scene.strategicCities ?? []).find((city) => city.id === requestedHospitalCityId);
-          const hospital = hospitalCity?.buildings?.find((building) => building.type === "MILITARY_HOSPITAL");
-          if (!hospitalCity || !hospital || !isCityBuildingActive(hospitalCity, hospital, state.scene.gridMap, state.scene.states, state.scene.sides)) return "MILITARY_HOSPITAL_REQUIRED";
-          if (!hospitalCity.cells.some((cell) => sameCell(cell, armyCell))) return "ARMY_MUST_BE_IN_CITY";
-          const hospitalInUse = Object.entries(state.armies).some(([otherArmyId, otherArmy]) =>
-            otherArmyId !== command.armyId && otherArmy.healing?.checkedOnTurn === state.scene.turn.turnNumber &&
-            otherArmy.healing.hospitalCityId === requestedHospitalCityId
-          );
-          if (hospitalInUse) return "MILITARY_HOSPITAL_IN_USE";
-          armyForHealing = {
-            ...army,
-            healing: {
-              hpHealedThisTurn: army.healing?.checkedOnTurn === state.scene.turn.turnNumber ? army.healing.hpHealedThisTurn : 0,
-              checkedOnTurn: state.scene.turn.turnNumber,
-              hospitalCityId: requestedHospitalCityId
-            }
-          };
-          hospitalRate = state.scene.settings.hospitalHealingCostPerHp ?? 2500;
-          healingCityId = hospitalCity.id;
-          healingCityName = hospitalCity.name;
-        }
-        const healed = healArmyForTurn(armyForHealing, command.amount, state.scene.turn.turnNumber);
-        if (!healed) return army.supply.supplied ? "ARMY_DESTROYED" : "ARMY_ENCIRCLED";
-        state.armies[command.armyId] = healed;
-        const actualHp = healed.health.hp - army.health.hp;
-        state.scene.lrTransactions = appendLRTransaction(state.scene.lrTransactions ?? [], {
-          id: `${command.requestId}:healing`, requestId: command.requestId, createdAt: this.now().toISOString(), turnNumber: state.scene.turn.turnNumber,
-          actorPlayerId: command.senderPlayerId, sideId: army.sideId, sideName: state.scene.sides.find((side) => side.id === army.sideId)?.name ?? army.sideId,
-          cityId: healingCityId, cityName: healingCityName, armyId: command.armyId, armyName: command.armyId, kind: "HEALING", hp: actualHp,
-          ratePerHp: hospitalRate, amount: actualHp * hospitalRate
-        });
+        const permission = canHealArmy(army);
+        if (!permission.allowed) return permission.reason;
+        const requested = requestArmyHealing(army, state.scene.turn.turnNumber, command.senderPlayerId);
+        if (!requested) return army.healing?.pending ? "HEALING_ALREADY_REQUESTED" : "HEALING_UNAVAILABLE";
+        state.armies[command.armyId] = requested;
         return undefined;
       }
       case "REQUEST_ARMY_DISBAND": {

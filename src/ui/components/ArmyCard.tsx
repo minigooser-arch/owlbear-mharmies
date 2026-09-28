@@ -93,6 +93,7 @@ export function ArmyCard({ army, sideColor = "#687F91", isGM, canEditRoute, canR
         <p className="route-warning">⚠ Обязательный выход с хода {army.forcedExitStartedOnTurn}. Проложите кратчайший путь на разрешённую территорию.</p>
       )}
       {army.disbandPending && <p className="route-warning">⚠ Будет распущена в начале следующего хода. Отменить роспуск нельзя.</p>}
+      {army.healingPending && <p className="route-warning">⚕ Лечение запланировано на начало следующего хода.</p>}
       {army.routeRequiresReplan && <p className="route-warning">⚠ Старый маршрут нужно проложить заново по стратегической сетке.</p>}
       {invalidMessage && <p className="route-warning">⚠ {invalidMessage}</p>}
 
@@ -103,8 +104,8 @@ export function ArmyCard({ army, sideColor = "#687F91", isGM, canEditRoute, canR
         </div>
       )}
 
-      {army.supplied && army.status !== "IN_BATTLE" && !army.formationActive && army.healthHp < army.healthMaxHp && (
-        <p className="helper-text">После завершения глобального хода армия восстановит до 10 HP бесплатно.</p>
+      {canEditRoute && army.supplied && army.status !== "IN_BATTLE" && !army.formationActive && army.healthHp < army.healthMaxHp && !army.healingPending && (
+        <div className="card-actions"><button className="button subtle" type="button" onClick={() => onAction({ type: "HEAL_ARMY", armyId: army.id, amount: 10 })}>Лечить армию (+10 HP)</button></div>
       )}
 
       {(isGM || canRequestDisband) && (

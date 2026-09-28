@@ -117,3 +117,16 @@ it("shows irreversible disband state and disables a second request", () => {
   expect(screen.getByText(/Будет распущена в начале следующего хода/)).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Распустить армию" })).not.toBeInTheDocument();
 });
+
+it("schedules healing for the next global turn", () => {
+  const onAction = vi.fn();
+  render(<ArmyCard army={{ ...redArmy, supplied: true }} isGM={false} canEditRoute canRequestDisband onAction={onAction} />);
+  fireEvent.click(screen.getByRole("button", { name: /лечить армию/i }));
+  expect(onAction).toHaveBeenCalledWith({ type: "HEAL_ARMY", armyId: "army-red", amount: 10 });
+});
+
+it("shows a pending healing request without offering a second request", () => {
+  render(<ArmyCard army={{ ...redArmy, supplied: true, healingPending: true }} isGM={false} canEditRoute canRequestDisband onAction={vi.fn()} />);
+  expect(screen.getByText(/Лечение запланировано/)).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /лечить армию/i })).not.toBeInTheDocument();
+});

@@ -271,6 +271,7 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
       formationActive: state.formation?.active ?? false,
       formationHpAddedThisTurn: state.formation?.hpAddedThisTurn ?? 0,
       healingHpHealedThisTurn: state.healing?.hpHealedThisTurn ?? 0,
+      healingPending: state.healing?.pending ?? false,
       supplied: state.supply.supplied,
       supplyCheckedOnTurn: state.supply.checkedOnTurn,
       disbandPending: state.disband.pending,

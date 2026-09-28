@@ -322,6 +322,37 @@ describe("CommandProcessor", () => {
     }
   });
 
+  it("creates a formation army from a selected token in an active influenced city", () => {
+    const current = state();
+    current.scene.sides = current.scene.sides.map((side) => side.id === "red" ? { ...side, stateId: "red-state" } : side);
+    current.scene.states = [{ id: "red-state", name: "Красное государство", rulingFactionId: "red", active: true }];
+    current.scene.gridMap.cells["0,0"] = {
+      terrainId: "plain", impassable: false, factionTerritoryIds: ["red"], recognizedStateId: "red-state", deFactoStateId: "red-state"
+    };
+    current.scene.strategicCities = [{
+      id: "city-red", name: "Красный город", cells: [{ x: 0, y: 0 }], recognizedStateId: "red-state", deFactoStateId: "red-state",
+      factionInfluenceId: "red", mayorId: null, isCapital: false, historicalBuildTypeCount: 0,
+      buildings: [{ id: "military-department", type: "MILITARY_DEPARTMENT", cell: { x: 0, y: 0 } }]
+    }];
+    const candidate = current.items["candidate-image"];
+    if (!candidate) throw new Error("candidate image missing");
+    current.items["candidate-image"] = { ...candidate, position: { x: 10, y: 10 } };
+    const result = new CommandProcessor(() => new Date(), (position) => ({ x: Math.floor(position.x / 100), y: Math.floor(position.y / 100) }))
+      .execute(context("PLAYER", "leader", current), command({ type: "CREATE_CITY_ARMY", itemId: "candidate-image", cityId: "city-red", sideId: "red" }, "leader"));
+    expect(result.status).toBe("ACCEPTED");
+    if (result.status === "ACCEPTED") expect(result.state.armies["candidate-image"]).toMatchObject({ sideId: "red", health: { hp: 5, maxHp: 40 }, formation: { active: true, cityId: "city-red" } });
+  });
+
+  it("schedules healing instead of changing HP immediately", () => {
+    const current = state();
+    const redArmy = current.armies["army-red"];
+    if (!redArmy) throw new Error("red army missing");
+    current.armies["army-red"] = { ...redArmy, health: { hp: 30, maxHp: 50 } };
+    const result = processor.execute(context("PLAYER", "leader", current), command({ type: "HEAL_ARMY", armyId: "army-red", amount: 10 }, "leader"));
+    expect(result.status).toBe("ACCEPTED");
+    if (result.status === "ACCEPTED") expect(result.state.armies["army-red"]).toMatchObject({ health: { hp: 30, maxHp: 50 }, healing: { pending: true } });
+  });
+
   it("rejects a crafted player registration without mutating state", () => {
     const playerContext = context("PLAYER", "member");
     const before = structuredClone(playerContext.state);

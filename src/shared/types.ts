@@ -112,6 +112,9 @@ export interface ArmyFormationState {
 }
 
 export interface ArmyHealingState {
+  pending?: boolean;
+  requestedOnTurn?: number | null;
+  requestedByPlayerId?: string | null;
   hpHealedThisTurn: number;
   checkedOnTurn: number;
   hospitalCityId: string | null;

@@ -1,5 +1,5 @@
 import { destroyArmy } from "../armies/armyLifecycle";
-import { applyAutomaticTurnHealing } from "../health/armyHealth";
+import { applyPendingTurnHealing } from "../health/armyHealth";
 import { validatePlannedRoute } from "../movement/movementRules";
 import { politicalRouteGate } from "../movement/authoritativeStateMovement";
 import { forcedExitRouteGate, forcedExitTurnRoute } from "../movement/forcedExitService";
@@ -47,7 +47,7 @@ function prepareArmyForNewTurn(
     ...army,
     movement: { maxUnits: 10, remainingUnits: army.formation?.active ? 0 : 10, enteredRouteCellCount: 0 },
     ...(army.formation ? { formation: { ...army.formation, hpAddedThisTurn: 0, checkedOnTurn: nextTurn } } : {}),
-    ...(army.healing ? { healing: { ...army.healing, hpHealedThisTurn: 0, checkedOnTurn: nextTurn, hospitalCityId: null } } : {}),
+    ...(army.healing ? { healing: { ...army.healing, pending: false, requestedOnTurn: null, requestedByPlayerId: null, hpHealedThisTurn: 0, checkedOnTurn: nextTurn, hospitalCityId: null } } : {}),
     revision: army.revision + 1
   };
 
@@ -179,10 +179,10 @@ export function completeTurn(
   nextScene = checkpoint.scene;
   nextArmies = checkpoint.armies;
 
-  // Base recovery is applied after the turn checkpoint (including supply damage)
+  // Requested free recovery is applied after the turn checkpoint (including supply damage)
   // and before the new movement phase becomes available.
   for (const [armyId, army] of Object.entries(nextArmies)) {
-    nextArmies[armyId] = applyAutomaticTurnHealing(army);
+    nextArmies[armyId] = applyPendingTurnHealing(army);
   }
 
   // Open the new movement phase only after every strategic checkpoint effect completed.

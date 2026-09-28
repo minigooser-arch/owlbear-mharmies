@@ -31,7 +31,7 @@ export function createFormationArmy(options: CreateFormationArmyOptions): ArmySt
     ...(options.directOwnerPlayerId ? { directOwnerPlayerId: options.directOwnerPlayerId } : {}),
     experience: options.experience,
     formation: { active: true, cityId: null, hpAddedThisTurn: 5, checkedOnTurn: options.turnNumber },
-    healing: { hpHealedThisTurn: 0, checkedOnTurn: options.turnNumber, hospitalCityId: null }
+    healing: { pending: false, requestedOnTurn: null, requestedByPlayerId: null, hpHealedThisTurn: 0, checkedOnTurn: options.turnNumber, hospitalCityId: null }
   };
 }
 

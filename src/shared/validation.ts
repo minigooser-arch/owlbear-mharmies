@@ -747,6 +747,13 @@ export function normalizeArmyState(raw: unknown): ValidationResult<ArmyState> {
     healing: (() => {
       const healing = isRecord(raw.healing) ? raw.healing : {};
       return {
+        pending: typeof healing.pending === "boolean" ? healing.pending : false,
+        requestedOnTurn: healing.requestedOnTurn === null || (Number.isInteger(healing.requestedOnTurn) && nonNegative(healing.requestedOnTurn))
+          ? healing.requestedOnTurn as number | null
+          : null,
+        requestedByPlayerId: healing.requestedByPlayerId === null || nonEmptyString(healing.requestedByPlayerId)
+          ? healing.requestedByPlayerId as string | null
+          : null,
         hpHealedThisTurn: nonNegativeInteger(healing.hpHealedThisTurn) ? healing.hpHealedThisTurn : 0,
         checkedOnTurn: nonNegativeInteger(healing.checkedOnTurn) ? healing.checkedOnTurn : 0,
         hospitalCityId: healing.hospitalCityId === null || nonEmptyString(healing.hospitalCityId)

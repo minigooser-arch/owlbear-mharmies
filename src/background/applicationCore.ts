@@ -929,7 +929,8 @@ export class ProductionEngine {
       command.type === "NAVAL_SHORE_BOMBARDMENT" ||
       command.type === "EMBARK_ARMY" ||
       command.type === "ACCEPT_EMBARK_ARMY" ||
-      command.type === "DISEMBARK_ARMY"
+      command.type === "DISEMBARK_ARMY" ||
+      command.type === "CREATE_CITY_ARMY"
     ) {
       try {
         const grid = new StrategicGridAdapter({ dpi: await this.grid.getDpi(), offset: { x: 0, y: 0 } });

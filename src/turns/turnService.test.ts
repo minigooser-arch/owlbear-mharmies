@@ -38,7 +38,7 @@ it("starts a new turn with exactly five OP and starts only routes due on that tu
 });
 
 it("heals a supplied army after the global turn is completed", () => {
-  const damaged = { ...army(17), health: { hp: 30, maxHp: 50 } };
+  const damaged = { ...army(17), health: { hp: 30, maxHp: 50 }, healing: { pending: true, requestedOnTurn: 1, requestedByPlayerId: "leader", hpHealedThisTurn: 0, checkedOnTurn: 1, hospitalCityId: null } };
   const result = completeTurn(scene(), { a: damaged }, {
     source: "MANUAL",
     completedAt: new Date("2026-09-06T12:00:00.000Z"),
