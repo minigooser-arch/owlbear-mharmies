@@ -35,8 +35,10 @@ describe("CachedCellTerrainLookup", () => {
 
   it("returns movement cost and recognized state name for a cell", async () => {
     const current = scene();
+    const cell = current.gridMap.cells["2,3"];
+    if (!cell) throw new Error("test cell missing");
     current.gridMap.cells["2,3"] = {
-      ...current.gridMap.cells["2,3"]!,
+      ...cell,
       recognizedStateId: "russia"
     };
     const lookup = new CachedCellTerrainLookup(async () => current);
