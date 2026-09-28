@@ -3,6 +3,7 @@ import { validatePlannedRoute } from "../movement/movementRules";
 import { politicalRouteGate } from "../movement/authoritativeStateMovement";
 import { forcedExitRouteGate, forcedExitTurnRoute } from "../movement/forcedExitService";
 import { SHIP_CLASSES } from "../naval/ships/shipClasses";
+import { shipBunkeringBonusAtCell } from "../cities/cityEffects";
 import { readCell } from "../terrain/gridMap";
 import type { ArmyState, GridCellCoord, SceneState, TurnState, Vector2 } from "../shared/types";
 import { runTurnCheckpoint } from "./turnCheckpointPipeline";
@@ -17,6 +18,8 @@ export interface CompleteTurnInput {
   boundaryId?: string;
   /** Current strategic cells, resolved from authoritative Owlbear item positions. */
   armyCells: Readonly<Record<string, GridCellCoord>>;
+  /** Current strategic cells for registered ships, resolved from authoritative item positions. */
+  shipCells?: Readonly<Record<string, GridCellCoord>>;
   positionForCell?: (cell: GridCellCoord) => Vector2;
 }
 
@@ -41,7 +44,9 @@ function prepareArmyForNewTurn(
 ): ArmyState {
   let next: ArmyState = {
     ...army,
-    movement: { maxUnits: 10, remainingUnits: 10, enteredRouteCellCount: 0 },
+    movement: { maxUnits: 10, remainingUnits: army.formation?.active ? 0 : 10, enteredRouteCellCount: 0 },
+    ...(army.formation ? { formation: { ...army.formation, hpAddedThisTurn: 0, checkedOnTurn: nextTurn } } : {}),
+    ...(army.healing ? { healing: { ...army.healing, hpHealedThisTurn: 0, checkedOnTurn: nextTurn, hospitalCityId: null } } : {}),
     revision: army.revision + 1
   };
 
@@ -110,6 +115,7 @@ function prepareArmyForNewTurn(
   }
 
   const routeStartable = routeDue &&
+    !next.formation?.active &&
     next.status !== "IN_BATTLE" &&
     !next.plannedRoute.requiresReplan &&
     !next.plannedRoute.invalidReason &&
@@ -189,7 +195,7 @@ export function completeTurn(
     for (const [shipId, ship] of Object.entries(nextScene.ships)) {
       nextScene.ships[shipId] = {
         ...ship,
-        globalMovementRemaining: SHIP_CLASSES[ship.classId].movement,
+        globalMovementRemaining: SHIP_CLASSES[ship.classId].movement + (input.shipCells?.[shipId] ? shipBunkeringBonusAtCell(nextScene, input.shipCells[shipId]) : 0),
         movementSpentThisTurn: false,
         revision: ship.revision + 1
       };
@@ -279,7 +285,8 @@ export function renumberSceneTurn(
       },
       supply: {
         ...army.supply,
-        checkedOnTurn: rebaseTurnIndex(army.supply.checkedOnTurn, delta)
+        checkedOnTurn: rebaseTurnIndex(army.supply.checkedOnTurn, delta),
+        ...(army.supply.unsuppliedSinceTurn !== undefined ? { unsuppliedSinceTurn: rebaseTurnIndex(army.supply.unsuppliedSinceTurn, delta) } : {})
       },
       disband: {
         ...army.disband,

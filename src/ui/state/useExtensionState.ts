@@ -14,6 +14,7 @@ import type {
   StateEntity,
   StateRelations,
   StrategicCity,
+  LRTransaction,
   TerrainRegistryState,
   TurnState,
   Vector2,
@@ -38,6 +39,10 @@ export interface ArmyView {
   atWar: boolean;
   healthHp: number;
   healthMaxHp: number;
+  experience?: number;
+  formationActive?: boolean;
+  formationHpAddedThisTurn?: number;
+  healingHpHealedThisTurn?: number;
   supplied: boolean;
   supplyCheckedOnTurn: number;
   disbandPending: boolean;
@@ -137,6 +142,7 @@ export interface RawExtensionSnapshot {
   sides: readonly Side[];
   states: readonly StateEntity[];
   strategicCities?: readonly StrategicCity[];
+  lrTransactions?: readonly LRTransaction[];
   territorialScores?: readonly TerritorialScoreView[];
   rebellionStatuses?: readonly RebellionStatusView[];
   relations: Readonly<Record<string, Record<string, import("../../shared/types").SideRelation>>>;
@@ -160,7 +166,10 @@ export interface MapBrushUiSettings {
 export type UiCommand =
   | ArmyCommandPayload
   | { type: "REGISTER_SELECTED_ARMY"; sideId: string }
+  | { type: "CREATE_SELECTED_CITY_ARMY"; cityId: string; sideId: string }
+  | { type: "REGISTER_SELECTED_CITY"; city: StrategicCity }
   | { type: "REGISTER_SELECTED_SHIP"; sideId: string; classId: ShipClassId; facing: ShipFacing }
+  | { type: "REGISTER_SELECTED_CITY_SHIP"; cityId: string; sideId: string; classId: ShipClassId; facing: ShipFacing }
   | { type: "EDIT_ROUTE"; armyId: string }
   | { type: "EDIT_SHIP_ROUTE"; shipId: string }
   | { type: "OPEN_TRANSPORT_LANDING"; shipId: string; armyId: string }

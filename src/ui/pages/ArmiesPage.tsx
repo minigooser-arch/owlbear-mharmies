@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { Side } from "../../shared/types";
+import type { Side, StrategicCity } from "../../shared/types";
 import { ArmyCard } from "../components/ArmyCard";
 import type { ArmyView, TransportEmbarkRequestView, UiCommand } from "../state/useExtensionState";
 
@@ -9,6 +9,7 @@ interface ArmiesPageProps {
   role: "GM" | "PLAYER";
   playerId: string;
   leaderSideIds: ReadonlySet<string>;
+  strategicCities?: readonly StrategicCity[];
   pendingTransportEmbarkRequests?: readonly TransportEmbarkRequestView[];
   onAction(command: UiCommand): void;
 }
@@ -18,6 +19,7 @@ export function ArmiesPage({
   sides,
   role,
   leaderSideIds,
+  strategicCities = [],
   pendingTransportEmbarkRequests = [],
   onAction
 }: ArmiesPageProps) {
@@ -37,6 +39,10 @@ export function ArmiesPage({
   const selectedRegistrationSideId = sides.some((side) => side.id === registrationSideId)
     ? registrationSideId
     : (sides[0]?.id ?? "");
+  const availableCities = strategicCities.filter((city) =>
+    (role === "GM" || (city.factionInfluenceId !== null && leaderSideIds.has(city.factionInfluenceId))) &&
+    (city.buildings ?? []).some((building) => building.type === "MILITARY_DEPARTMENT")
+  );
   const filtered = useMemo(
     () => armies.filter((army) =>
       (selectedFilterSideId === "ALL" || army.sideId === selectedFilterSideId) &&
@@ -104,6 +110,33 @@ export function ArmiesPage({
         </section>
       )}
 
+      {availableCities.length > 0 && (
+        <section className="registration-card" aria-label="Создание армии через город">
+          <div className="registration-copy">
+            <span className="registration-kicker">Городское формирование</span>
+            <strong>Создать армию из выбранного токена</strong>
+            <small>Выберите город с действующим Военным ведомством и токен в его территории.</small>
+          </div>
+          <div className="registration-actions">
+            <select aria-label="Город формирования армии" defaultValue={availableCities[0]?.id}>
+              {availableCities.map((city) => <option key={city.id} value={city.id}>{city.name}</option>)}
+            </select>
+            <button
+              className="button primary"
+              type="button"
+              onClick={(event) => {
+                const select = event.currentTarget.previousElementSibling as HTMLSelectElement | null;
+                const cityId = select?.value ?? availableCities[0]?.id;
+                const city = availableCities.find((candidate) => candidate.id === cityId);
+                if (city?.factionInfluenceId) onAction({ type: "CREATE_SELECTED_CITY_ARMY", cityId: city.id, sideId: city.factionInfluenceId });
+              }}
+            >
+              Создать армию
+            </button>
+          </div>
+        </section>
+      )}
+
       {pendingTransportEmbarkRequests.length > 0 && (
         <section className="registration-card" aria-labelledby="transport-consent-title">
           <div className="registration-copy">
@@ -145,6 +178,7 @@ export function ArmiesPage({
               isGM={role === "GM"}
               canEditRoute={role === "GM" || leaderSideIds.has(army.sideId)}
               canRequestDisband={role === "GM" || leaderSideIds.has(army.sideId)}
+              hospitalCities={strategicCities.filter((city) => army.cell && city.cells.some((cell) => cell.x === army.cell?.x && cell.y === army.cell?.y) && (city.buildings ?? []).some((building) => building.type === "MILITARY_HOSPITAL"))}
               onAction={onAction}
             />
           );

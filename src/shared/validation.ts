@@ -11,6 +11,9 @@ import type {
   DetectionMode,
   GridCellCoord,
   GridMapState,
+  LRTransaction,
+  LRTransactionKind,
+  LRTransactionStatus,
   MovementDomain,
   NavalBattleRequest,
   NavalBattleShipSnapshot,
@@ -95,6 +98,15 @@ function normalizeGridCells(value: unknown): GridCellCoord[] {
 
 function normalizeSettings(value: unknown): SceneSettings {
   if (!isRecord(value)) return { ...DEFAULT_SETTINGS };
+  const armyFormationCostPerHp = nonNegativeInteger(value.armyFormationCostPerHp)
+    ? value.armyFormationCostPerHp
+    : (DEFAULT_SETTINGS.armyFormationCostPerHp ?? 5000);
+  const armyHealingCostPerHp = nonNegativeInteger(value.armyHealingCostPerHp)
+    ? value.armyHealingCostPerHp
+    : (DEFAULT_SETTINGS.armyHealingCostPerHp ?? 5000);
+  const hospitalHealingCostPerHp = nonNegativeInteger(value.hospitalHealingCostPerHp)
+    ? value.hospitalHealingCostPerHp
+    : (DEFAULT_SETTINGS.hospitalHealingCostPerHp ?? 2500);
   const detectionMode: DetectionMode = enumValue(value.detectionMode, ["INDEPENDENT", "MUTUAL"])
     ? value.detectionMode
     : DEFAULT_SETTINGS.detectionMode;
@@ -136,8 +148,43 @@ function normalizeSettings(value: unknown): SceneSettings {
     interpolationEnabled:
       typeof value.interpolationEnabled === "boolean"
         ? value.interpolationEnabled
-        : DEFAULT_SETTINGS.interpolationEnabled
+        : DEFAULT_SETTINGS.interpolationEnabled,
+    armyFormationCostPerHp,
+    armyHealingCostPerHp,
+    hospitalHealingCostPerHp
   };
+}
+
+function normalizeLRTransaction(value: unknown): LRTransaction | undefined {
+  if (!isRecord(value) || !nonEmptyString(value.id) || !nonEmptyString(value.requestId) ||
+      !nonEmptyString(value.createdAt) || !nonNegativeInteger(value.turnNumber) ||
+      !nonEmptyString(value.actorPlayerId) || !nonEmptyString(value.sideId) ||
+      !nonEmptyString(value.sideName) || !nonEmptyString(value.armyId) ||
+      !nonEmptyString(value.armyName) || !nonNegativeInteger(value.hp) ||
+      !nonNegativeInteger(value.ratePerHp) || !nonNegativeInteger(value.amount)) return undefined;
+  if (!enumValue<LRTransactionKind>(value.kind, ["FORMATION", "COMPLETION", "HEALING"]) ||
+      !enumValue<LRTransactionStatus>(value.status, ["PENDING", "RECORDED"])) return undefined;
+  const transaction: LRTransaction = {
+    id: value.id,
+    requestId: value.requestId,
+    createdAt: value.createdAt,
+    turnNumber: value.turnNumber,
+    actorPlayerId: value.actorPlayerId,
+    sideId: value.sideId,
+    sideName: value.sideName,
+    cityId: value.cityId === null || nonEmptyString(value.cityId) ? value.cityId as string | null : null,
+    cityName: value.cityName === null || nonEmptyString(value.cityName) ? value.cityName as string | null : null,
+    armyId: value.armyId,
+    armyName: value.armyName,
+    kind: value.kind,
+    hp: value.hp,
+    ratePerHp: value.ratePerHp,
+    amount: value.amount,
+    status: value.status
+  };
+  if (nonEmptyString(value.recordedByPlayerId)) transaction.recordedByPlayerId = value.recordedByPlayerId;
+  if (nonEmptyString(value.recordedAt)) transaction.recordedAt = value.recordedAt;
+  return transaction;
 }
 
 function normalizeSide(value: unknown): Side | undefined {
@@ -411,7 +458,9 @@ function normalizeShip(value: unknown): ShipState | undefined {
       : null,
     shoreBombardmentUsedOnTurn: nullableNonNegativeInteger(value.shoreBombardmentUsedOnTurn),
     logisticsActionUsedOnTurn: nullableNonNegativeInteger(value.logisticsActionUsedOnTurn),
-    revision: nonNegative(value.revision) ? Math.floor(value.revision) : 0
+    revision: nonNegative(value.revision) ? Math.floor(value.revision) : 0,
+    ...(nonNegativeInteger(value.repairedHpThisTurn) ? { repairedHpThisTurn: value.repairedHpThisTurn } : {}),
+    ...(nonNegativeInteger(value.repairedOnTurn) ? { repairedOnTurn: value.repairedOnTurn } : {})
   };
 }
 
@@ -608,6 +657,9 @@ export function normalizeSceneState(raw: unknown): ValidationResult<SceneState> 
         .map(normalizeNavalBattle)
         .filter((battle): battle is NavalBattleState => battle !== undefined)
     : [];
+  const lrTransactions = Array.isArray(raw.lrTransactions)
+    ? raw.lrTransactions.map(normalizeLRTransaction).filter((entry): entry is LRTransaction => entry !== undefined)
+    : [];
   const state: SceneState = {
     version: 6,
     revision: nonNegative(raw.revision) ? Math.floor(raw.revision) : 0,
@@ -625,7 +677,8 @@ export function normalizeSceneState(raw: unknown): ValidationResult<SceneState> 
     transportEmbarkRequests,
     activeNavalBattle,
     navalBattleHistory,
-    navalRevealUntilTurn: normalizeNavalRevealMap(raw.navalRevealUntilTurn)
+    navalRevealUntilTurn: normalizeNavalRevealMap(raw.navalRevealUntilTurn),
+    lrTransactions
   };
   if (isRecord(raw.coordinatorLease) && nonEmptyString(raw.coordinatorLease.connectionId)) {
     const { epoch, expiresAt } = raw.coordinatorLease;
@@ -677,7 +730,28 @@ export function normalizeArmyState(raw: unknown): ValidationResult<ArmyState> {
         supplied: typeof supply.supplied === "boolean" ? supply.supplied : true,
         checkedOnTurn: Number.isInteger(supply.checkedOnTurn) && nonNegative(supply.checkedOnTurn)
           ? supply.checkedOnTurn as number
-          : 0
+          : 0,
+        ...(nonNegativeInteger(supply.unsuppliedSinceTurn) ? { unsuppliedSinceTurn: supply.unsuppliedSinceTurn } : {})
+      };
+    })(),
+    experience: nonNegative(raw.experience) ? raw.experience : 0,
+    formation: (() => {
+      const formation = isRecord(raw.formation) ? raw.formation : {};
+      return {
+        active: formation.active === true,
+        cityId: formation.cityId === null || nonEmptyString(formation.cityId) ? formation.cityId as string | null : null,
+        hpAddedThisTurn: nonNegativeInteger(formation.hpAddedThisTurn) ? formation.hpAddedThisTurn : 0,
+        checkedOnTurn: nonNegativeInteger(formation.checkedOnTurn) ? formation.checkedOnTurn : 0
+      };
+    })(),
+    healing: (() => {
+      const healing = isRecord(raw.healing) ? raw.healing : {};
+      return {
+        hpHealedThisTurn: nonNegativeInteger(healing.hpHealedThisTurn) ? healing.hpHealedThisTurn : 0,
+        checkedOnTurn: nonNegativeInteger(healing.checkedOnTurn) ? healing.checkedOnTurn : 0,
+        hospitalCityId: healing.hospitalCityId === null || nonEmptyString(healing.hospitalCityId)
+          ? healing.hospitalCityId as string | null
+          : null
       };
     })(),
     disband: (() => {

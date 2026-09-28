@@ -43,7 +43,7 @@ describe("metadata migrations", () => {
     expect(result).toMatchObject({
       ok: true,
       value: {
-        version: 7,
+        version: 8,
         battleGroups: [
           { battleId: "a", name: "Бой 1" },
           { battleId: "z", name: "Бой 2" }
@@ -96,7 +96,7 @@ describe("metadata migrations", () => {
     expect(result).toMatchObject({
       ok: true,
       value: {
-        version: 7,
+        version: 8,
         revision: 7,
         sides: [
           {
@@ -121,7 +121,7 @@ describe("metadata migrations", () => {
     })).toMatchObject({
       ok: true,
       value: {
-        version: 7,
+        version: 8,
         revision: 4,
         sides: [{ id: "red", playerIds: ["p1"], leaderPlayerIds: [] }],
         turn: { phase: "MOVEMENT" },
@@ -180,7 +180,7 @@ it("migrates v4 scene through state territory and strategic war schemas", () => 
   expect(result).toMatchObject({
     ok: true,
     value: {
-      version: 7,
+      version: 8,
       states: [],
       sides: [{ id: "red", stateId: null }],
       terrain: {

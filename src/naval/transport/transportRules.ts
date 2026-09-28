@@ -83,7 +83,7 @@ function consumeTransportMovement(ship: ShipState): ShipState {
   };
 }
 
-function pauseArmyForTransport(army: ArmyState, shipId: string): ArmyState {
+function pauseArmyForTransport(army: ArmyState, shipId: string, armyMovementCost = 0): ArmyState {
   return {
     ...army,
     status: "PAUSED",
@@ -98,6 +98,7 @@ function pauseArmyForTransport(army: ArmyState, shipId: string): ArmyState {
     },
     movement: {
       ...army.movement,
+      remainingUnits: Math.max(0, army.movement.remainingUnits - armyMovementCost),
       enteredRouteCellCount: 0
     },
     embarkedOnShipId: shipId,
@@ -112,14 +113,15 @@ export function embarkArmy(
   shipId: string,
   ship: ShipState,
   armyId: string,
-  army: ArmyState
+  army: ArmyState,
+  armyMovementCost = 0
 ): { ship: ShipState; army: ArmyState } {
   return {
     ship: {
       ...consumeTransportMovement(ship),
       embarkedArmyId: armyId
     },
-    army: pauseArmyForTransport(army, shipId)
+    army: pauseArmyForTransport(army, shipId, armyMovementCost)
   };
 }
 
@@ -127,7 +129,8 @@ export function disembarkArmy(
   shipId: string,
   ship: ShipState,
   armyId: string,
-  army: ArmyState
+  army: ArmyState,
+  armyMovementCost = 0
 ):
   | { ok: true; ship: ShipState; army: ArmyState }
   | { ok: false; reason: "NOT_RECIPROCALLY_EMBARKED" } {
@@ -142,6 +145,7 @@ export function disembarkArmy(
     },
     army: {
       ...army,
+      movement: { ...army.movement, remainingUnits: Math.max(0, army.movement.remainingUnits - armyMovementCost) },
       embarkedOnShipId: null,
       revision: army.revision + 1
     }

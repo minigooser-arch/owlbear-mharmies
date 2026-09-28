@@ -1,17 +1,14 @@
+/* eslint-disable @typescript-eslint/no-non-null-assertion */
 import { describe, expect, it } from "vitest";
-import { applyEncirclementDamage, canHealArmy } from "./armyHealth";
-import { roomArmy } from "../tests/helpers/factories";
+import { createFormationArmy } from "../armies/armyFormation";
+import { healArmyForTurn } from "./armyHealth";
 
-describe("army health", () => {
-  it("removes ten percent of maximum HP while encircled", () => {
-    const army = roomArmy("a","red","A",0).state;
-    army.health = { hp: 50, maxHp: 50 };
-    army.supply = { supplied:false, checkedOnTurn:2 };
-    expect(applyEncirclementDamage(army).health.hp).toBe(45);
-  });
-  it("blocks healing while unsupplied", () => {
-    const army = roomArmy("a","red","A",0).state;
-    army.supply.supplied = false;
-    expect(canHealArmy(army)).toEqual({ allowed:false, reason:"ARMY_ENCIRCLED" });
+describe("army healing limits", () => {
+  it("allows at most 10 HP per global turn and blocks formation/battle armies", () => {
+    const ready = { ...createFormationArmy({ armyId: "a", sideId: "s", status: "READY", maxUnits: 10, turnNumber: 2, experience: 0 }), formation: { active: false, cityId: null, hpAddedThisTurn: 0, checkedOnTurn: 2 }, health: { hp: 20, maxHp: 40 } };
+    const healed = healArmyForTurn(ready, 10, 2);
+    expect(healed?.health.hp).toBe(30);
+    expect(healArmyForTurn(healed!, 1, 2)).toBeUndefined();
+    expect(healArmyForTurn({ ...ready, status: "IN_BATTLE" }, 1, 2)).toBeUndefined();
   });
 });

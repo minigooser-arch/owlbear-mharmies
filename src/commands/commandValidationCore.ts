@@ -290,6 +290,10 @@ const sidePlayer = (value: UnknownRecord): { sideId: string; playerId: string } 
 const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
   REGISTER_ARMY: (value) => boundedString(value.itemId) && sideId(value.sideId)
     ? { type: "REGISTER_ARMY", itemId: value.itemId, sideId: value.sideId } : undefined,
+  CREATE_CITY_ARMY: (value) => boundedString(value.itemId) && boundedString(value.cityId) && sideId(value.sideId)
+    ? { type: "CREATE_CITY_ARMY", itemId: value.itemId, cityId: value.cityId, sideId: value.sideId } : undefined,
+  FORM_ARMY: (value) => boundedString(value.armyId) && nonNegativeInteger(value.hp) && value.hp > 0
+    ? { type: "FORM_ARMY", armyId: value.armyId, hp: value.hp } : undefined,
   UNREGISTER_ARMY: (value) => {
     const armyId = armyIdOnly(value);
     return armyId ? { type: "UNREGISTER_ARMY", armyId } : undefined;
@@ -299,6 +303,12 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
     (value.classId === "BATTLESHIP" || value.classId === "CRUISER" || value.classId === "IRONCLAD" || value.classId === "HOSPITAL" || value.classId === "TRANSPORT") &&
     (value.facing === "NORTH" || value.facing === "EAST" || value.facing === "SOUTH" || value.facing === "WEST")
       ? { type: "REGISTER_SHIP", itemId: value.itemId, sideId: value.sideId, classId: value.classId, facing: value.facing }
+      : undefined,
+  REGISTER_CITY_SHIP: (value) =>
+    boundedString(value.itemId) && boundedString(value.cityId) && sideId(value.sideId) &&
+    (value.classId === "BATTLESHIP" || value.classId === "CRUISER" || value.classId === "IRONCLAD" || value.classId === "HOSPITAL" || value.classId === "TRANSPORT") &&
+    (value.facing === "NORTH" || value.facing === "EAST" || value.facing === "SOUTH" || value.facing === "WEST")
+      ? { type: "REGISTER_CITY_SHIP", itemId: value.itemId, cityId: value.cityId, sideId: value.sideId, classId: value.classId, facing: value.facing }
       : undefined,
   UNREGISTER_SHIP: (value) => boundedString(value.shipId) ? { type: "UNREGISTER_SHIP", shipId: value.shipId } : undefined,
   SET_SHIP_ROUTE: (value) => {
@@ -323,6 +333,8 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
     boundedString(value.shipId) && nonNegativeInteger(value.hp)
       ? { type: "SET_SHIP_HP", shipId: value.shipId, hp: value.hp }
       : undefined,
+  REPAIR_SHIP_AT_SHIPYARD: (value) => boundedString(value.shipId) && nonNegativeInteger(value.amount) && value.amount > 0
+    ? { type: "REPAIR_SHIP_AT_SHIPYARD", shipId: value.shipId, amount: value.amount } : undefined,
   SET_SHIP_DETECTION_OVERRIDE: (value) =>
     boundedString(value.shipId) &&
     (value.detectionOverride === null || finiteAtLeast(value.detectionOverride, 0))
@@ -440,6 +452,7 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
       ? { type: "SET_RELATION", leftSideId: value.leftSideId, rightSideId: value.rightSideId, relation: value.relation }
       : undefined,
   UPDATE_SETTINGS: (value) => { const settings = parseSettings(value.settings); return settings ? { type: "UPDATE_SETTINGS", settings } : undefined; },
+  MARK_LR_TRANSACTION_RECORDED: (value) => boundedString(value.transactionId) ? { type: "MARK_LR_TRANSACTION_RECORDED", transactionId: value.transactionId } : undefined,
   UPDATE_ARMY_OVERRIDES: (value) => {
     const overrides = parseOverrides(value.overrides);
     return boundedString(value.armyId) && overrides ? { type: "UPDATE_ARMY_OVERRIDES", armyId: value.armyId, overrides } : undefined;
@@ -549,7 +562,14 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
     if (value.maxHp !== undefined && (!nonNegativeInteger(value.maxHp) || value.maxHp <= 0)) return undefined;
     return { type: "SET_ARMY_HP", armyId: value.armyId, hp: value.hp, ...(value.maxHp !== undefined ? { maxHp: value.maxHp } : {}) };
   },
-  HEAL_ARMY: (value) => boundedString(value.armyId) && nonNegativeInteger(value.amount) && value.amount > 0 ? { type: "HEAL_ARMY", armyId: value.armyId, amount: value.amount } : undefined,
+  HEAL_ARMY: (value) => boundedString(value.armyId) && nonNegativeInteger(value.amount) && value.amount > 0
+    ? {
+        type: "HEAL_ARMY",
+        armyId: value.armyId,
+        amount: value.amount,
+        ...(value.hospitalCityId === undefined ? {} : boundedString(value.hospitalCityId) ? { hospitalCityId: value.hospitalCityId } : {})
+      }
+    : undefined,
   REQUEST_ARMY_DISBAND: (value) => { const armyId = armyIdOnly(value); return armyId ? { type: "REQUEST_ARMY_DISBAND", armyId } : undefined; },
   DEFER_TURN: (value) => {
     if (!boundedString(value.until, 64) || !Number.isFinite(Date.parse(value.until))) return undefined;

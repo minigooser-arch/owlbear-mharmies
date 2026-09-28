@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { SHIP_CLASSES } from "../../naval/ships/shipClasses";
-import type { ShipClassId, ShipFacing, Side, SideRelation, TurnState } from "../../shared/types";
+import type { ShipClassId, ShipFacing, Side, SideRelation, StrategicCity, TurnState } from "../../shared/types";
 import { ShipCard } from "../components/ShipCard";
 import type { ArmyView, NavalBattleRequestView, NavalRequestTargetView, ShipView, TransportEmbarkTargetView, UiCommand } from "../state/useExtensionState";
 
@@ -18,6 +18,7 @@ export function FleetPage({
   sides,
   role,
   leaderSideIds,
+  strategicCities = [],
   relations = {},
   navalRequestTargets = [],
   pendingNavalBattleRequests = [],
@@ -30,6 +31,7 @@ export function FleetPage({
   sides: readonly Side[];
   role: "GM" | "PLAYER";
   leaderSideIds: ReadonlySet<string>;
+  strategicCities?: readonly StrategicCity[];
   relations?: Readonly<Record<string, Readonly<Record<string, SideRelation>>>>;
   navalRequestTargets?: readonly NavalRequestTargetView[];
   pendingNavalBattleRequests?: readonly NavalBattleRequestView[];
@@ -43,6 +45,7 @@ export function FleetPage({
   const [registrationSideId, setRegistrationSideId] = useState(sides[0]?.id ?? "");
   const [registrationClassId, setRegistrationClassId] = useState<ShipClassId>("BATTLESHIP");
   const [registrationFacing, setRegistrationFacing] = useState<ShipFacing>("NORTH");
+  const [registrationCityId, setRegistrationCityId] = useState("");
   const [requestInitiatingShipId, setRequestInitiatingShipId] = useState("");
   const [requestTargetShipId, setRequestTargetShipId] = useState("");
   const [embarkShipId, setEmbarkShipId] = useState("");
@@ -55,6 +58,13 @@ export function FleetPage({
   const selectedRegistrationSideId = sides.some((side) => side.id === registrationSideId)
     ? registrationSideId
     : (sides[0]?.id ?? "");
+  const shipyardCities = strategicCities.filter((city) =>
+    (role === "GM" || (city.factionInfluenceId !== null && leaderSideIds.has(city.factionInfluenceId))) &&
+    (city.buildings ?? []).some((building) => building.type === "SHIPYARD")
+  );
+  const selectedRegistrationCityId = shipyardCities.some((city) => city.id === registrationCityId)
+    ? registrationCityId
+    : (shipyardCities[0]?.id ?? "");
   const selectedFilterSideId = filterSideId === "ALL" || sides.some((side) => side.id === filterSideId)
     ? filterSideId
     : "ALL";
@@ -310,6 +320,37 @@ export function FleetPage({
         </section>
       )}
 
+      {shipyardCities.length > 0 && (
+        <section className="registration-card fleet-registration" aria-label="Регистрация корабля через верфь">
+          <div className="registration-copy">
+            <span className="registration-kicker">Верфь</span>
+            <strong>Зарегистрировать корабль из выбранного токена</strong>
+            <small>Токен должен находиться на клетке выбранной действующей Верфи. На клетке может быть только один корабль.</small>
+          </div>
+          <div className="registration-actions fleet-registration-actions">
+            <select aria-label="Верфь регистрации корабля" value={selectedRegistrationCityId} onChange={(event) => setRegistrationCityId(event.target.value)}>
+              {shipyardCities.map((city) => <option key={city.id} value={city.id}>{city.name}</option>)}
+            </select>
+            <select aria-label="Класс корабля на верфи" value={registrationClassId} onChange={(event) => setRegistrationClassId(event.target.value as ShipClassId)}>
+              {CLASS_IDS.map((classId) => <option key={classId} value={classId}>{SHIP_CLASSES[classId].name}</option>)}
+            </select>
+            <select aria-label="Курс корабля на верфи" value={registrationFacing} onChange={(event) => setRegistrationFacing(event.target.value as ShipFacing)}>
+              {FACING_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+            <button
+              className="button primary"
+              type="button"
+              onClick={() => {
+                const city = shipyardCities.find((candidate) => candidate.id === selectedRegistrationCityId);
+                if (city?.factionInfluenceId) onAction({ type: "REGISTER_SELECTED_CITY_SHIP", cityId: city.id, sideId: city.factionInfluenceId, classId: registrationClassId, facing: registrationFacing });
+              }}
+            >
+              Сделать кораблём
+            </button>
+          </div>
+        </section>
+      )}
+
       <div className="card-list fleet-list">
         {filtered.map((ship) => {
           const sideColor = sides.find((side) => side.id === ship.sideId)?.color ?? "#687F91";
@@ -322,6 +363,7 @@ export function FleetPage({
               sideColor={sideColor}
               isGM={role === "GM"}
               canPlanRoute={canPlanRoute}
+              canRepair={canPlanRoute}
               routePlanningEnabled={movementPhase}
               relations={relations}
               {...(embarkedArmyName !== undefined ? { embarkedArmyName } : {})}

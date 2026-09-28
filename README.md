@@ -34,6 +34,8 @@ Production manifest URL:
 https://minigooser-arch.github.io/owlbear-mharmies/manifest.json
 ```
 
+Памятка по глобальной карте для игроков находится в [docs/global-map-player-guide.md](docs/global-map-player-guide.md).
+
 Если Vite выбрал другой порт, используйте адрес из его вывода. Окно разработки должно оставаться запущенным.
 
 ## Production-сборка

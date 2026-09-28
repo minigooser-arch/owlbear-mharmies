@@ -1,10 +1,13 @@
-import type { CommandEnvelope, GridCellCoord, StrategicCity } from "../shared/types";
+import type { CityBuilding, CommandEnvelope, GridCellCoord, StrategicCity } from "../shared/types";
 import { COMMAND_PROTOCOL_VERSION } from "../shared/types";
 
 export type StrategicCityCommandPayload =
   | { type: "CREATE_STRATEGIC_CITY"; city: StrategicCity }
+  | { type: "CREATE_STRATEGIC_CITY_FROM_TOKEN"; city: StrategicCity; markerItemId: string }
   | { type: "UPDATE_STRATEGIC_CITY"; cityId: string; patch: Partial<Omit<StrategicCity, "id">> }
-  | { type: "DELETE_STRATEGIC_CITY"; cityId: string };
+  | { type: "DELETE_STRATEGIC_CITY"; cityId: string }
+  | { type: "ADD_CITY_BUILDING"; cityId: string; building: CityBuilding }
+  | { type: "REMOVE_CITY_BUILDING"; cityId: string; buildingId: string };
 
 export type StrategicCityCommand = CommandEnvelope & StrategicCityCommandPayload;
 
@@ -59,6 +62,9 @@ function parseCity(value: unknown): StrategicCity | null {
   if (factionInfluenceId === undefined || mayorId === undefined) return null;
   if (typeof candidate.isCapital !== "boolean") return null;
   if (!Number.isInteger(candidate.historicalBuildTypeCount) || (candidate.historicalBuildTypeCount as number) < 0) return null;
+  const markerItemId = candidate.markerItemId === null || text(candidate.markerItemId) ? candidate.markerItemId as string | null : undefined;
+  const buildings = parseBuildings(candidate.buildings);
+  if (buildings === null) return null;
   return {
     id: candidate.id,
     name: candidate.name.trim(),
@@ -68,8 +74,33 @@ function parseCity(value: unknown): StrategicCity | null {
     factionInfluenceId,
     mayorId,
     isCapital: candidate.isCapital,
-    historicalBuildTypeCount: candidate.historicalBuildTypeCount as number
+    historicalBuildTypeCount: candidate.historicalBuildTypeCount as number,
+    ...(markerItemId !== undefined ? { markerItemId } : {}),
+    ...(buildings.length > 0 ? { buildings } : {})
   };
+}
+
+const CITY_BUILDING_TYPES = new Set([
+  "MILITARY_DEPARTMENT", "MILITARY_HOSPITAL", "AERODROME", "BARRACKS", "TRAINING_GROUND",
+  "MILITARY_ACADEMY", "WATCHTOWER", "COASTAL_BATTERY", "RAILWAY_STATION",
+  "MILITARY_LOGISTICS_CENTER", "POST_STATION", "PORT", "SHIPYARD", "MARINE_STATION",
+  "CANAL", "LIGHTHOUSE", "BUNKERING_STATION", "SEA_FORT"
+]);
+
+function parseBuildings(value: unknown): CityBuilding[] | null {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 64) return null;
+  const result: CityBuilding[] = [];
+  const types = new Set<string>();
+  for (const raw of value) {
+    const candidate = record(raw);
+    const parsedCell = candidate ? cell(candidate.cell) : null;
+    if (!candidate || !text(candidate.id) || typeof candidate.type !== "string" || !CITY_BUILDING_TYPES.has(candidate.type) || !parsedCell) return null;
+    if (types.has(candidate.type)) return null;
+    types.add(candidate.type);
+    result.push({ id: candidate.id, type: candidate.type as CityBuilding["type"], cell: parsedCell });
+  }
+  return result;
 }
 
 function parsePatch(value: unknown): Partial<Omit<StrategicCity, "id">> | null {
@@ -106,11 +137,23 @@ function parsePatch(value: unknown): Partial<Omit<StrategicCity, "id">> | null {
     if (!Number.isInteger(candidate.historicalBuildTypeCount) || (candidate.historicalBuildTypeCount as number) < 0) return null;
     patch.historicalBuildTypeCount = candidate.historicalBuildTypeCount as number;
   }
+  if ("markerItemId" in candidate) {
+    const parsed = nullableText(candidate.markerItemId);
+    if (parsed === undefined) return null;
+    patch.markerItemId = parsed;
+  }
+  if ("buildings" in candidate) {
+    const buildings = parseBuildings(candidate.buildings);
+    if (buildings === null) return null;
+    patch.buildings = buildings;
+  }
   return Object.keys(patch).length > 0 ? patch : null;
 }
 
 export function isStrategicCityCommand(value: { type?: unknown }): value is StrategicCityCommand {
-  return value.type === "CREATE_STRATEGIC_CITY" || value.type === "UPDATE_STRATEGIC_CITY" || value.type === "DELETE_STRATEGIC_CITY";
+  return value.type === "CREATE_STRATEGIC_CITY" || value.type === "CREATE_STRATEGIC_CITY_FROM_TOKEN" ||
+    value.type === "UPDATE_STRATEGIC_CITY" || value.type === "DELETE_STRATEGIC_CITY" ||
+    value.type === "ADD_CITY_BUILDING" || value.type === "REMOVE_CITY_BUILDING";
 }
 
 export function validateStrategicCityCommand(value: unknown): StrategicCityCommandValidationResult | null {
@@ -130,13 +173,29 @@ export function validateStrategicCityCommand(value: unknown): StrategicCityComma
     senderConnectionId: candidate.senderConnectionId,
     expectedRevision: candidate.expectedRevision as number
   };
-  if (candidate.type === "CREATE_STRATEGIC_CITY") {
+  if (candidate.type === "CREATE_STRATEGIC_CITY" || candidate.type === "CREATE_STRATEGIC_CITY_FROM_TOKEN") {
     const city = parseCity(candidate.city);
-    return city ? { ok: true, command: { ...envelope, type: candidate.type, city } } : { ok: false, requestId, reason: "INVALID_COMMAND" };
+    if (!city) return { ok: false, requestId, reason: "INVALID_COMMAND" };
+    if (candidate.type === "CREATE_STRATEGIC_CITY_FROM_TOKEN") {
+      if (!text(candidate.markerItemId)) return { ok: false, requestId, reason: "INVALID_COMMAND" };
+      return { ok: true, command: { ...envelope, type: candidate.type, city, markerItemId: candidate.markerItemId } };
+    }
+    return { ok: true, command: { ...envelope, type: candidate.type, city } };
   }
   if (!text(candidate.cityId)) return { ok: false, requestId, reason: "INVALID_COMMAND" };
   if (candidate.type === "DELETE_STRATEGIC_CITY") {
     return { ok: true, command: { ...envelope, type: candidate.type, cityId: candidate.cityId } };
+  }
+  if (candidate.type === "REMOVE_CITY_BUILDING") {
+    return text(candidate.buildingId)
+      ? { ok: true, command: { ...envelope, type: candidate.type, cityId: candidate.cityId, buildingId: candidate.buildingId } }
+      : { ok: false, requestId, reason: "INVALID_COMMAND" };
+  }
+  if (candidate.type === "ADD_CITY_BUILDING") {
+    const buildings = parseBuildings([candidate.building]);
+    return buildings?.[0]
+      ? { ok: true, command: { ...envelope, type: candidate.type, cityId: candidate.cityId, building: buildings[0] } }
+      : { ok: false, requestId, reason: "INVALID_COMMAND" };
   }
   const patch = parsePatch(candidate.patch);
   return patch

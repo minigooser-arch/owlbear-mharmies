@@ -54,7 +54,12 @@ function applySupplyCheckpoint(
 
     nextArmies[armyId] = {
       ...army,
-      supply: { supplied, checkedOnTurn: nextTurnNumber },
+      supply: {
+        supplied,
+        checkedOnTurn: nextTurnNumber,
+        ...(!supplied && army.supply.supplied ? { unsuppliedSinceTurn: nextTurnNumber } : {}),
+        ...(!supplied && !army.supply.supplied && army.supply.unsuppliedSinceTurn !== undefined ? { unsuppliedSinceTurn: army.supply.unsuppliedSinceTurn } : {})
+      },
       revision: army.revision + 1
     };
   }

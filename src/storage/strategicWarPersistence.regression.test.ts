@@ -139,7 +139,7 @@ describe("strategic war persistence regressions", () => {
       deFactoStateId: "de"
     });
     expect(reloaded.forcedExitStates).toEqual(initial.forcedExitStates);
-    expect(reloaded.strategicCities).toEqual(initial.strategicCities);
+    expect(reloaded.strategicCities).toMatchObject(initial.strategicCities ?? []);
     expect(reloaded.territorialScores).toEqual(initial.territorialScores);
     expect(reloaded.rebellions).toEqual(initial.rebellions);
     expect(reloaded.turnCheckpoint).toEqual(initial.turnCheckpoint);

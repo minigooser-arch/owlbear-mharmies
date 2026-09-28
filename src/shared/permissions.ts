@@ -67,6 +67,19 @@ export function authorizeArmyCommand(
     if (!army) return { allowed: false, reason: "ARMY_NOT_FOUND" };
     return ledBy(context, army.sideId);
   }
+  if (command.type === "REPAIR_SHIP_AT_SHIPYARD") {
+    const ship = context.ships?.get(command.shipId);
+    if (!ship) return { allowed: false, reason: "SHIP_NOT_FOUND" };
+    return ledBy(context, ship.sideId);
+  }
+
+  if (command.type === "CREATE_CITY_ARMY") return ledBy(context, command.sideId);
+  if (command.type === "REGISTER_CITY_SHIP") return ledBy(context, command.sideId);
+  if (command.type === "FORM_ARMY" || command.type === "HEAL_ARMY") {
+    const army = context.armies.get(command.armyId);
+    if (!army) return { allowed: false, reason: "ARMY_NOT_FOUND" };
+    return ledBy(context, army.sideId);
+  }
 
   if (command.type === "SET_ROUTE" || command.type === "CLEAR_ROUTE") {
     const army = context.armies.get(command.armyId);

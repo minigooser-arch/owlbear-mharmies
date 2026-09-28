@@ -86,7 +86,10 @@ export const DEFAULT_SETTINGS: SceneSettings = {
   allowPlayersToStartOwnArmies: true,
   movementUpdateRate: 5,
   visibilityUpdateRate: 4,
-  interpolationEnabled: true
+  interpolationEnabled: true,
+  armyFormationCostPerHp: 5000,
+  armyHealingCostPerHp: 5000,
+  hospitalHealingCostPerHp: 2500
 };
 
 export const DEFAULT_TERRAIN: TerrainRegistryState = {

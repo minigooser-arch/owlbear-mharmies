@@ -1,13 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
-import type { GridCellCoord, StateEntity, StrategicCity } from "../../shared/types";
+import type { CityBuildingType, GridCellCoord, StateEntity, StrategicCity } from "../../shared/types";
+
+const BUILDING_TYPES: readonly CityBuildingType[] = ["MILITARY_DEPARTMENT", "MILITARY_HOSPITAL", "BARRACKS", "TRAINING_GROUND", "MILITARY_ACADEMY", "RAILWAY_STATION", "PORT", "SHIPYARD", "MARINE_STATION", "CANAL", "LIGHTHOUSE", "BUNKERING_STATION", "SEA_FORT", "COASTAL_BATTERY", "AERODROME"];
 
 export interface StrategicCityEditorProps {
   role: "GM" | "PLAYER";
   states: readonly StateEntity[];
   cities: readonly StrategicCity[];
   onCreate(city: StrategicCity): void | Promise<void>;
+  onCreateFromToken?(city: StrategicCity): void | Promise<void>;
   onUpdate(cityId: string, patch: Partial<Omit<StrategicCity, "id">>): void | Promise<void>;
   onDelete(cityId: string): void | Promise<void>;
+  onAddBuilding?(cityId: string, building: { id: string; type: CityBuildingType; cell: GridCellCoord }): void | Promise<void>;
   onOpenCellPicker?(): void | Promise<void>;
   onCloseCellPicker?(): void | Promise<void>;
   pickedCells?: readonly GridCellCoord[];
@@ -63,13 +67,15 @@ function StrategicCityRow({
   stateNames,
   role,
   onUpdate,
-  onDelete
+  onDelete,
+  onAddBuilding
 }: {
   city: StrategicCity;
   stateNames: ReadonlyMap<string, string>;
   role: "GM" | "PLAYER";
   onUpdate(cityId: string, patch: Partial<Omit<StrategicCity, "id">>): void | Promise<void>;
   onDelete(cityId: string): void | Promise<void>;
+  onAddBuilding?(cityId: string, building: { id: string; type: CityBuildingType; cell: GridCellCoord }): void | Promise<void>;
 }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(city.name);
@@ -78,6 +84,8 @@ function StrategicCityRow({
   const [buildCount, setBuildCount] = useState(String(city.historicalBuildTypeCount));
   const [capital, setCapital] = useState(city.isCapital);
   const [error, setError] = useState<string | null>(null);
+  const [buildingType, setBuildingType] = useState<CityBuildingType>("MILITARY_DEPARTMENT");
+  const [buildingCell, setBuildingCell] = useState("0,0");
 
   const beginEditing = () => {
     if (editing) {
@@ -130,6 +138,15 @@ function StrategicCityRow({
       <p>Признанная принадлежность: {stateNames.get(city.recognizedStateId) ?? city.recognizedStateId}</p>
       <p>Фактический контроль: {stateNames.get(city.deFactoStateId) ?? city.deFactoStateId}</p>
       <p>Исторических типов построек: {city.historicalBuildTypeCount}</p>
+      <p>Постройки: {(city.buildings ?? []).length === 0 ? "нет" : (city.buildings ?? []).map((building) => `${building.type} (${building.cell.x},${building.cell.y})`).join(" · ")}</p>
+      {role === "GM" && (city.buildings ?? []).length > 0 ? <div className="card-actions" aria-label={`Постройки города ${city.name}`}>
+        {(city.buildings ?? []).map((building) => <button key={building.id} type="button" onClick={() => void onUpdate(city.id, { buildings: (city.buildings ?? []).filter((candidate) => candidate.id !== building.id) })}>Снять {building.type}</button>)}
+      </div> : null}
+      {role === "GM" && onAddBuilding ? <div className="card-actions" aria-label={`Добавить постройку в ${city.name}`}>
+        <select aria-label={`Тип новой постройки ${city.name}`} value={buildingType} onChange={(event) => setBuildingType(event.target.value as CityBuildingType)}>{BUILDING_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}</select>
+        <input aria-label={`Клетка новой постройки ${city.name}`} value={buildingCell} onChange={(event) => setBuildingCell(event.target.value)} placeholder="X,Y" />
+        <button type="button" onClick={() => { const values = buildingCell.split(",").map(Number); const x = values[0]; const y = values[1]; if (x !== undefined && y !== undefined && Number.isInteger(x) && Number.isInteger(y)) void onAddBuilding(city.id, { id: `${city.id}-${buildingType.toLowerCase()}-${x}-${y}`, type: buildingType, cell: { x, y } }); }}>Добавить постройку</button>
+      </div> : null}
       <p>Координаты клеток: {cellsText(city.cells)}</p>
       {city.cells.length > 0 ? <button type="button" onClick={() => void navigator.clipboard?.writeText(cellsText(city.cells))}>Скопировать координаты</button> : null}
       {role === "GM" ? <div className="strategic-city-actions">
@@ -174,8 +191,10 @@ export function StrategicCityEditor({
   states,
   cities,
   onCreate,
+  onCreateFromToken,
   onUpdate,
   onDelete,
+  onAddBuilding,
   onOpenCellPicker,
   onCloseCellPicker,
   pickedCells = [],
@@ -264,7 +283,7 @@ export function StrategicCityEditor({
       return;
     }
     setError(null);
-    void onCreate({
+    const city: StrategicCity = {
       id: resolvedId,
       name: name.trim(),
       cells,
@@ -274,7 +293,8 @@ export function StrategicCityEditor({
       mayorId: null,
       isCapital: capital,
       historicalBuildTypeCount
-    });
+    };
+    void onCreate(city);
   };
 
   return <section className="strategic-city-editor" aria-label="Стратегические города">
@@ -293,7 +313,7 @@ export function StrategicCityEditor({
       </label>
     </div> : null}
     <div className="strategic-city-list">
-      {visibleCities.map((city) => <StrategicCityRow key={city.id} city={city} stateNames={stateNames} role={role} onUpdate={onUpdate} onDelete={onDelete} />)}
+      {visibleCities.map((city) => <StrategicCityRow key={city.id} city={city} stateNames={stateNames} role={role} onUpdate={onUpdate} onDelete={onDelete} {...(onAddBuilding ? { onAddBuilding } : {})} />)}
       {cities.length === 0 ? <p className="empty">Города не добавлены.</p> : null}
       {cities.length > 0 && visibleCities.length === 0 ? <p className="empty">По этим условиям города не найдены.</p> : null}
     </div>
@@ -353,7 +373,18 @@ export function StrategicCityEditor({
       </details>
       {error ? <p role="alert">{error}</p> : null}
       {states.length === 0 ? <p role="status">Сначала создайте государство в разделе «Управление → Государства».</p> : null}
-      <button className="strategic-city-create-button" type="button" disabled={states.length === 0} onClick={submit}>Создать город</button>
+      <div className="strategic-city-create-actions">
+        <button className="strategic-city-create-button" type="button" disabled={states.length === 0} onClick={submit}>Создать город</button>
+        {onCreateFromToken ? <button className="strategic-city-create-button" type="button" disabled={states.length === 0} onClick={() => {
+          const cells = parseCells(cityCellsText) ?? [];
+          const historicalBuildTypeCount = Number(buildCount);
+          if (!resolvedId || !name.trim() || !selectedStateId || !Number.isInteger(historicalBuildTypeCount) || historicalBuildTypeCount < 0) {
+            setError("Укажите название и государство перед созданием по токену.");
+            return;
+          }
+          void onCreateFromToken({ id: resolvedId, name: name.trim(), cells, recognizedStateId: selectedStateId, deFactoStateId: selectedStateId, factionInfluenceId: null, mayorId: null, isCapital: capital, historicalBuildTypeCount });
+        }}>Создать из выбранного токена</button> : null}
+      </div>
     </section> : null}
   </section>;
 }

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { Side, SideRelation, TurnState } from "../../shared/types";
+import type { Side, SideRelation, StrategicCity, TurnState } from "../../shared/types";
 import type { ArmyView, NavalBattleRequestView, NavalRequestTargetView, ShipView, TransportEmbarkRequestView, TransportEmbarkTargetView, UiCommand } from "../state/useExtensionState";
 import { ArmiesPage } from "./ArmiesPage";
 import { FleetPage } from "./FleetPage";
@@ -12,6 +12,7 @@ export function ForcesPage({
   sides,
   role,
   playerId,
+  strategicCities = [],
   leaderSideIds,
   relations = {},
   navalRequestTargets = [],
@@ -26,6 +27,7 @@ export function ForcesPage({
   sides: readonly Side[];
   role: "GM" | "PLAYER";
   playerId: string;
+  strategicCities?: readonly StrategicCity[];
   leaderSideIds: ReadonlySet<string>;
   relations?: Readonly<Record<string, Readonly<Record<string, SideRelation>>>>;
   navalRequestTargets?: readonly NavalRequestTargetView[];
@@ -54,6 +56,7 @@ export function ForcesPage({
           role={role}
           playerId={playerId}
           leaderSideIds={leaderSideIds}
+          strategicCities={strategicCities}
           pendingTransportEmbarkRequests={pendingTransportEmbarkRequests}
           onAction={onAction}
         />
@@ -64,6 +67,7 @@ export function ForcesPage({
           sides={sides}
           role={role}
           leaderSideIds={leaderSideIds}
+          strategicCities={strategicCities}
           relations={relations}
           navalRequestTargets={navalRequestTargets}
           pendingNavalBattleRequests={pendingNavalBattleRequests}

@@ -52,6 +52,7 @@ import {
 } from "../shared/types";
 import { migrateSceneState } from "../storage/migrations";
 import { getRebellionCapitalController, getRebellionFactionStrength } from "../rebellions/rebellionService";
+import { lighthouseDetectionBonusAtCell } from "../cities/cityEffects";
 import { territorialCityContributions } from "../wars/territorialScore";
 import { isFactionStateAtWar } from "../states/stateRules";
 import { MetadataRepository, type ArmyRecord, type MetadataItemFrame, type ShipRecord } from "../storage/metadataRepository";
@@ -266,6 +267,10 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
       atWar: isFactionStateAtWar(input.scene, state.sideId),
       healthHp: state.health.hp,
       healthMaxHp: state.health.maxHp,
+      experience: state.experience ?? 0,
+      formationActive: state.formation?.active ?? false,
+      formationHpAddedThisTurn: state.formation?.hpAddedThisTurn ?? 0,
+      healingHpHealedThisTurn: state.healing?.hpHealedThisTurn ?? 0,
       supplied: state.supply.supplied,
       supplyCheckedOnTurn: state.supply.checkedOnTurn,
       disbandPending: state.disband.pending,
@@ -385,7 +390,7 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
       normalRangeMax: definition.normalRangeMax,
       embarkedArmyId: state.embarkedArmyId,
       detectionOverride: state.detectionOverride,
-      effectiveDetectionRange: state.detectionOverride ?? input.scene.settings.defaultDetectionRangeCells,
+      effectiveDetectionRange: (state.detectionOverride ?? input.scene.settings.defaultDetectionRangeCells) + (input.gridDpi ? lighthouseDetectionBonusAtCell(input.scene, new StrategicGridAdapter({ dpi: input.gridDpi, offset: { x: 0, y: 0 } }).sceneToCell(item.position)) : 0),
       broadsideTargets,
       hospitalSupportTargets,
       shoreBombardmentTargets,
@@ -453,10 +458,12 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
     transportEmbarkTargets,
     pendingTransportEmbarkRequests,
     territorialScores,
+    lrTransactions: input.role === "GM" ? (input.scene.lrTransactions ?? []) : [],
     rebellionStatuses,
     ...(activeNavalBattle ? { activeNavalBattle } : {}),
     sides: input.scene.sides,
     states: input.scene.states,
+    strategicCities: input.scene.strategicCities ?? [],
     relations: input.scene.relations,
     battleGroups: input.scene.battleGroups,
     settings: input.scene.settings,
@@ -875,6 +882,23 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
           }).id,
           sideId: command.sideId
         };
+      } else if (command.type === "CREATE_SELECTED_CITY_ARMY") {
+        payload = {
+          type: "CREATE_CITY_ARMY",
+          itemId: resolveRegistrationSelection({ selection: (await OBR.player.getSelection()) ?? [], items: await adapter.getSceneItems() }).id,
+          cityId: command.cityId,
+          sideId: command.sideId
+        };
+      } else if (command.type === "REGISTER_SELECTED_CITY") {
+        const selected = resolveRegistrationSelection({ selection: (await OBR.player.getSelection()) ?? [], items: await adapter.getSceneItems() });
+        const gridDpi = await adapter.getGridDpi();
+        if (gridDpi === undefined) throw new Error("CITY_POSITION_UNAVAILABLE");
+        const cell = new StrategicGridAdapter({ dpi: gridDpi, offset: { x: 0, y: 0 } }).sceneToCell(selected.position);
+        payload = {
+          type: "CREATE_STRATEGIC_CITY_FROM_TOKEN",
+          city: { ...command.city, markerItemId: selected.id, cells: [cell] },
+          markerItemId: selected.id
+        } as unknown as ArmyCommandPayload;
       } else if (command.type === "REGISTER_SELECTED_SHIP") {
         payload = buildSelectedShipRegistrationPayload({
           selection: (await OBR.player.getSelection()) ?? [],
@@ -883,6 +907,15 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
           classId: command.classId,
           facing: command.facing
         });
+      } else if (command.type === "REGISTER_SELECTED_CITY_SHIP") {
+        const base = buildSelectedShipRegistrationPayload({
+          selection: (await OBR.player.getSelection()) ?? [],
+          items: await adapter.getSceneItems(),
+          sideId: command.sideId,
+          classId: command.classId,
+          facing: command.facing
+        });
+        payload = { ...base, type: "REGISTER_CITY_SHIP", cityId: command.cityId };
       } else {
         payload = command;
       }

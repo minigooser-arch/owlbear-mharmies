@@ -32,6 +32,9 @@ export interface SceneSettings {
   movementUpdateRate: number;
   visibilityUpdateRate: number;
   interpolationEnabled: boolean;
+  armyFormationCostPerHp?: number;
+  armyHealingCostPerHp?: number;
+  hospitalHealingCostPerHp?: number;
 }
 
 export interface Side {
@@ -64,6 +67,56 @@ export interface StateRelationState {
 
 export type StateRelations = Record<string, Record<string, StateRelationState>>;
 
+export type CityBuildingType =
+  | "MILITARY_DEPARTMENT" | "MILITARY_HOSPITAL" | "AERODROME" | "BARRACKS"
+  | "TRAINING_GROUND" | "MILITARY_ACADEMY" | "WATCHTOWER" | "COASTAL_BATTERY"
+  | "RAILWAY_STATION" | "MILITARY_LOGISTICS_CENTER" | "POST_STATION" | "PORT"
+  | "SHIPYARD" | "MARINE_STATION" | "CANAL" | "LIGHTHOUSE"
+  | "BUNKERING_STATION" | "SEA_FORT";
+
+export interface CityBuilding {
+  id: string;
+  type: CityBuildingType;
+  cell: GridCellCoord;
+}
+
+export type LRTransactionKind = "FORMATION" | "COMPLETION" | "HEALING";
+export type LRTransactionStatus = "PENDING" | "RECORDED";
+
+export interface LRTransaction {
+  id: string;
+  requestId: string;
+  createdAt: string;
+  turnNumber: number;
+  actorPlayerId: string;
+  sideId: string;
+  sideName: string;
+  cityId: string | null;
+  cityName: string | null;
+  armyId: string;
+  armyName: string;
+  kind: LRTransactionKind;
+  hp: number;
+  ratePerHp: number;
+  amount: number;
+  status: LRTransactionStatus;
+  recordedByPlayerId?: string;
+  recordedAt?: string;
+}
+
+export interface ArmyFormationState {
+  active: boolean;
+  cityId: string | null;
+  hpAddedThisTurn: number;
+  checkedOnTurn: number;
+}
+
+export interface ArmyHealingState {
+  hpHealedThisTurn: number;
+  checkedOnTurn: number;
+  hospitalCityId: string | null;
+}
+
 export type ForcedExitReason = "PASSAGE_REVOKED" | "WAR_ENDED" | "BORDER_CHANGED" | "OTHER";
 
 export interface ForcedExitState {
@@ -82,6 +135,8 @@ export interface StrategicCity {
   mayorId: string | null;
   isCapital: boolean;
   historicalBuildTypeCount: number;
+  markerItemId?: string | null;
+  buildings?: CityBuilding[];
 }
 
 export interface TerritorialScore {
@@ -195,6 +250,8 @@ export interface ShipState {
   shoreBombardmentUsedOnTurn: number | null;
   logisticsActionUsedOnTurn: number | null;
   revision: number;
+  repairedHpThisTurn?: number;
+  repairedOnTurn?: number;
 }
 
 export interface NavalBattleRequest {
@@ -258,7 +315,7 @@ export interface NavalBattleState {
  * migration fixtures remain representable; scene migration upgrades persisted state to v7.
  */
 export interface SceneState {
-  version: 5 | 6 | 7;
+  version: 5 | 6 | 7 | 8;
   revision: number;
   settings: SceneSettings;
   sides: Side[];
@@ -282,11 +339,12 @@ export interface SceneState {
   rebellions?: RebellionState[];
   turnCheckpoint?: TurnCheckpointState | null;
   coordinatorLease?: CoordinatorLease;
+  lrTransactions?: LRTransaction[];
 }
 
 /** Boundary-compatible naval scene shape used by existing tactical code and fixtures. */
 export interface NavalSceneState extends SceneState {
-  version: 6 | 7;
+  version: 6 | 7 | 8;
   ships: Record<string, ShipState>;
   navalBattleRequests: NavalBattleRequest[];
   activeNavalBattle: NavalBattleState | null;
@@ -297,7 +355,7 @@ export interface NavalSceneState extends SceneState {
 
 /** Fully normalized v7 scene. */
 export interface StrategicSceneState extends NavalSceneState {
-  version: 7;
+  version: 7 | 8;
   states: NormalizedStateEntity[];
   transportEmbarkRequests: TransportEmbarkRequest[];
   stateRelations: StateRelations;
@@ -306,6 +364,7 @@ export interface StrategicSceneState extends NavalSceneState {
   territorialScores: TerritorialScore[];
   rebellions: RebellionState[];
   turnCheckpoint: TurnCheckpointState | null;
+  lrTransactions?: LRTransaction[];
 }
 
 export interface ArmyOverrides {
@@ -357,6 +416,7 @@ export interface ArmyHealthState {
 export interface ArmySupplyState {
   supplied: boolean;
   checkedOnTurn: number;
+  unsuppliedSinceTurn?: number;
 }
 
 export interface ArmyDisbandState {
@@ -389,6 +449,9 @@ export interface ArmyState {
   directOwnerPlayerId?: string;
   battleGroupId?: string;
   stopReason?: "BARRIER" | "COORDINATOR_GAP" | "MANUAL" | "ARRIVED" | "INVALID_ROUTE" | "BATTLE";
+  experience?: number;
+  formation?: ArmyFormationState;
+  healing?: ArmyHealingState;
 }
 
 export interface BarrierState {
@@ -438,11 +501,15 @@ export type CellPropertyTarget = "TERRAIN" | "IMPASSABLE" | "RECOGNIZED_STATE" |
 export type ArmyCommandPayload =
   (
     | { type: "REGISTER_ARMY"; itemId: string; sideId: string }
+    | { type: "CREATE_CITY_ARMY"; itemId: string; cityId: string; sideId: string }
+    | { type: "FORM_ARMY"; armyId: string; hp: number }
     | { type: "UNREGISTER_ARMY"; armyId: string }
     | { type: "REGISTER_SHIP"; itemId: string; sideId: string; classId: ShipClassId; facing: ShipFacing }
+    | { type: "REGISTER_CITY_SHIP"; itemId: string; cityId: string; sideId: string; classId: ShipClassId; facing: ShipFacing }
     | { type: "UNREGISTER_SHIP"; shipId: string }
     | { type: "SET_SHIP_ROUTE"; shipId: string; startCell: GridCellCoord; cells: GridCellCoord[]; finalFacing?: ShipFacing }
     | { type: "SET_SHIP_HP"; shipId: string; hp: number }
+    | { type: "REPAIR_SHIP_AT_SHIPYARD"; shipId: string; amount: number }
     | { type: "SET_SHIP_DETECTION_OVERRIDE"; shipId: string; detectionOverride: number | null }
     | { type: "NAVAL_MOVE_FORWARD"; shipId: string }
     | { type: "NAVAL_TURN_SHIP"; shipId: string; direction: "LEFT" | "RIGHT" }
@@ -487,6 +554,7 @@ export type ArmyCommandPayload =
       }
     | { type: "SET_RELATION"; leftSideId: string; rightSideId: string; relation: SideRelation }
     | { type: "UPDATE_SETTINGS"; settings: Partial<SceneSettings> }
+    | { type: "MARK_LR_TRANSACTION_RECORDED"; transactionId: string }
     | { type: "UPDATE_ARMY_OVERRIDES"; armyId: string; overrides: ArmyOverrides }
     | { type: "SET_ROUTE"; armyId: string; route: Vector2[]; startCell: GridCellCoord; cells: GridCellCoord[] }
     | { type: "CLEAR_ROUTE"; armyId: string }
@@ -537,7 +605,7 @@ export type ArmyCommandPayload =
       }
     | { type: "SET_DEFACTO_STATE_CELLS"; cells: GridCellCoord[]; stateId: string | null }
     | { type: "SET_ARMY_HP"; armyId: string; hp: number; maxHp?: number }
-    | { type: "HEAL_ARMY"; armyId: string; amount: number }
+    | { type: "HEAL_ARMY"; armyId: string; amount: number; hospitalCityId?: string }
     | { type: "REQUEST_ARMY_DISBAND"; armyId: string }
     | { type: "DEFER_TURN"; until: string }
     | { type: "CANCEL_TURN_DEFERRAL" }

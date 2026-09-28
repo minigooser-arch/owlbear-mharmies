@@ -4,6 +4,7 @@ import {
   deleteStrategicCity,
   updateStrategicCity
 } from "../cities/strategicCities";
+import { addCityBuilding, removeCityBuilding } from "../cities/cityBuildingRules";
 import {
   isStrategicCityCommand,
   type StrategicCityCommand
@@ -38,11 +39,29 @@ export class CommandProcessor {
 
     const state = structuredClone(context.state);
     const cities = state.scene.strategicCities ?? [];
-    const result = command.type === "CREATE_STRATEGIC_CITY"
+    const result = command.type === "CREATE_STRATEGIC_CITY" || command.type === "CREATE_STRATEGIC_CITY_FROM_TOKEN"
       ? createStrategicCity(cities, command.city, state.scene.gridMap, state.scene.states)
       : command.type === "UPDATE_STRATEGIC_CITY"
         ? updateStrategicCity(cities, command.cityId, command.patch, state.scene.gridMap, state.scene.states)
-        : deleteStrategicCity(cities, command.cityId);
+        : command.type === "DELETE_STRATEGIC_CITY"
+          ? deleteStrategicCity(cities, command.cityId)
+          : command.type === "ADD_CITY_BUILDING"
+            ? (() => {
+                const city = cities.find((candidate) => candidate.id === command.cityId);
+                if (!city) return { ok: false as const, reason: "CITY_NOT_FOUND" as const };
+                const added = addCityBuilding(city, command.building, cities);
+                return added.ok
+                  ? { ok: true as const, cities: cities.map((candidate) => candidate.id === city.id ? added.city : structuredClone(candidate)) }
+                  : { ok: false as const, reason: added.reason };
+              })()
+            : (() => {
+                const city = cities.find((candidate) => candidate.id === command.cityId);
+                if (!city) return { ok: false as const, reason: "CITY_NOT_FOUND" as const };
+                const removed = removeCityBuilding(city, command.buildingId);
+                return removed.ok
+                  ? { ok: true as const, cities: cities.map((candidate) => candidate.id === city.id ? removed.city : structuredClone(candidate)) }
+                  : { ok: false as const, reason: removed.reason };
+              })();
     if (!result.ok) return { status: "REJECTED", reason: result.reason };
     state.scene.strategicCities = result.cities;
     state.scene.revision += 1;

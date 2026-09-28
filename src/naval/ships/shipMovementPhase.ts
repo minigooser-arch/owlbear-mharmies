@@ -1,4 +1,5 @@
 import type { GridCellCoord, SceneItemRecord, SceneState, Vector2 } from "../../shared/types";
+import { shipBunkeringBonusAtCell } from "../../cities/cityEffects";
 import { SHIP_CLASSES } from "./shipClasses";
 import { hasDuplicateLiveShipCells } from "./shipCellOccupancy";
 import { planShipStrategicRoute, type ShipStrategicMovementFailure } from "./shipStrategicMovement";
@@ -36,9 +37,12 @@ export function resolvePlannedShipRoutes(
       }
       startCell = cellForPosition(position);
     }
+    const position = positions[shipId] ?? items[shipId]?.position;
+    const startCellForBonus = position && cellForPosition ? cellForPosition(position) : undefined;
     const validationShip = {
       ...ship,
-      globalMovementRemaining: SHIP_CLASSES[ship.classId].movement
+      globalMovementRemaining: SHIP_CLASSES[ship.classId].movement +
+        (startCellForBonus ? shipBunkeringBonusAtCell(scene, startCellForBonus) : 0)
     };
     const planned = planShipStrategicRoute(
       scene,

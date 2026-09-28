@@ -124,14 +124,14 @@ describe("runTurnCheckpoint", () => {
       armyCells: { a: { x: 0, y: 0 } }
     }, 4);
 
-    expect(first.armies.a?.supply).toEqual({ supplied: false, checkedOnTurn: 4 });
-    expect(first.armies.a?.health.hp).toBe(45);
+    expect(first.armies.a?.supply).toEqual({ supplied: false, checkedOnTurn: 4, unsuppliedSinceTurn: 4 });
+    expect(first.armies.a?.health.hp).toBe(50);
     expect(first.scene.territorialScores).toEqual([
       { holderStateId: "red-state", opponentStateId: "blue-state", points: 3 }
     ]);
 
     const second = runTurnCheckpoint(first, 4);
-    expect(second.armies.a?.health.hp).toBe(45);
+    expect(second.armies.a?.health.hp).toBe(50);
     expect(second.scene.territorialScores).toEqual(first.scene.territorialScores);
     expect(second.armies.a?.supply).toEqual(first.armies.a?.supply);
   });

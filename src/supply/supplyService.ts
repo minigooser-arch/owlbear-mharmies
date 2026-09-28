@@ -2,6 +2,7 @@ import { stateForFaction } from "../states/stateRules";
 import { readCell } from "../terrain/gridMap";
 import type { ArmyState, GridCellCoord, SceneState } from "../shared/types";
 import { cellKey } from "../grid/strategicGrid";
+import { isCityBuildingActive } from "../cities/cityBuildingRules";
 
 const NEIGHBORS = [
   { x: 0, y: -1 },
@@ -21,10 +22,14 @@ export function findSupplyPath(
     return state.deFactoStateId ?? state.recognizedStateId;
   };
   const isControlled = (cell: GridCellCoord) => effectiveController(cell) === stateId;
-  const isAnchor = (cell: GridCellCoord) => {
-    const state = readCell(scene.gridMap, cell);
-    return effectiveController(cell) === stateId && state.recognizedStateId === stateId;
-  };
+  const railwayCells = (scene.strategicCities ?? []).flatMap((city) => {
+    const building = (city.buildings ?? []).find((candidate) => candidate.type === "RAILWAY_STATION");
+    return building && isCityBuildingActive(city, building, scene.gridMap, scene.states, scene.sides) && effectiveController(building.cell) === stateId
+      ? [building.cell] : [];
+  });
+  const isAnchor = (cell: GridCellCoord) => railwayCells.some((candidate) => cellKey(candidate) === cellKey(cell)) ||
+    // Legacy scenes without city records retain the old recognized-state endpoint until migrated.
+    ((scene.strategicCities ?? []).length === 0 && effectiveController(cell) === stateId && readCell(scene.gridMap, cell).recognizedStateId === stateId);
   if (!isControlled(start)) return null;
   const queue: GridCellCoord[] = [{ ...start }];
   const parents = new Map<string, string | null>([[cellKey(start), null]]);

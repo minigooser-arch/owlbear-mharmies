@@ -89,6 +89,8 @@ export function semanticSnapshotEqual(left: RawExtensionSnapshot, right: RawExte
     && semanticValueEqual(left.activeNavalBattle, right.activeNavalBattle)
     && entityCollectionEqual(left.sides, right.sides, (side) => side.id, sideEqual)
     && entityCollectionEqual(left.states, right.states, (state) => state.id, stateEqual)
+    && optionalEntityCollectionEqual(left.strategicCities, right.strategicCities, (city) => city.id)
+    && optionalEntityCollectionEqual(left.lrTransactions, right.lrTransactions, (transaction) => transaction.id)
     && semanticValueEqual(left.relations, right.relations)
     && semanticValueEqual(left.stateRelations, right.stateRelations)
     && entityCollectionEqual(left.battleGroups, right.battleGroups, (battle) => battle.battleId, battleEqual)

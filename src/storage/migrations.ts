@@ -8,6 +8,9 @@ import type {
   ShipState,
   StateRelations,
   StrategicCity,
+  CityBuilding,
+  CityBuildingType,
+  LRTransaction,
   TerritorialScore,
   TurnCheckpointState,
   ValidationResult
@@ -174,6 +177,24 @@ function normalizeStrategicCities(value: unknown, stateIds: ReadonlySet<string>)
         !nonNegativeInteger(raw.historicalBuildTypeCount)) continue;
     const cells = uniqueGridCells(raw.cells);
     if (cells.length === 0) continue;
+    const allowedBuildingTypes: ReadonlySet<CityBuildingType> = new Set<CityBuildingType>([
+      "MILITARY_DEPARTMENT", "MILITARY_HOSPITAL", "AERODROME", "BARRACKS", "TRAINING_GROUND",
+      "MILITARY_ACADEMY", "WATCHTOWER", "COASTAL_BATTERY", "RAILWAY_STATION",
+      "MILITARY_LOGISTICS_CENTER", "POST_STATION", "PORT", "SHIPYARD", "MARINE_STATION",
+      "CANAL", "LIGHTHOUSE", "BUNKERING_STATION", "SEA_FORT"
+    ]);
+    const buildings: CityBuilding[] = Array.isArray(raw.buildings)
+      ? raw.buildings
+          .filter((building): building is UnknownRecord => isRecord(building) && nonEmptyString(building.id))
+          .map((building) => {
+            const cell = normalizeGridCell(building.cell);
+            return cell && allowedBuildingTypes.has(building.type as CityBuildingType)
+              ? { id: building.id, type: building.type as CityBuildingType, cell }
+              : undefined;
+          })
+          .filter((building): building is CityBuilding => building !== undefined)
+          .filter((building, index, all) => all.findIndex((candidate) => candidate.type === building.type) === index)
+      : [];
     result.set(raw.id, {
       id: raw.id,
       name: raw.name.trim(),
@@ -185,10 +206,27 @@ function normalizeStrategicCities(value: unknown, stateIds: ReadonlySet<string>)
         : null,
       mayorId: raw.mayorId === null || nonEmptyString(raw.mayorId) ? raw.mayorId as string | null : null,
       isCapital: raw.isCapital === true,
-      historicalBuildTypeCount: raw.historicalBuildTypeCount
+      historicalBuildTypeCount: raw.historicalBuildTypeCount,
+      ...(raw.markerItemId === null || nonEmptyString(raw.markerItemId) ? { markerItemId: raw.markerItemId as string | null } : {}),
+      ...(Array.isArray(raw.buildings) ? { buildings } : {})
     });
   }
   return [...result.values()];
+}
+
+function normalizeLRTransactionsForScene(value: unknown): LRTransaction[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is LRTransaction => {
+    if (!isRecord(entry)) return false;
+    return nonEmptyString(entry.id) && nonEmptyString(entry.requestId) &&
+      nonEmptyString(entry.createdAt) && nonEmptyString(entry.actorPlayerId) &&
+      nonEmptyString(entry.sideId) && nonEmptyString(entry.armyId) &&
+      nonEmptyString(entry.armyName) && nonNegativeInteger(entry.turnNumber) &&
+      nonNegativeInteger(entry.hp) && nonNegativeInteger(entry.ratePerHp) &&
+      nonNegativeInteger(entry.amount) &&
+      (entry.kind === "FORMATION" || entry.kind === "COMPLETION" || entry.kind === "HEALING") &&
+      (entry.status === "PENDING" || entry.status === "RECORDED");
+  }).map((entry) => structuredClone(entry));
 }
 
 function normalizeTerritorialScores(value: unknown, stateIds: ReadonlySet<string>): TerritorialScore[] {
@@ -278,7 +316,7 @@ function normalizeStrategicSceneState(raw: UnknownRecord): ValidationResult<Scen
     ok: true,
     value: {
       ...core.value,
-      version: 7,
+       version: 8,
       states,
       gridMap,
       stateRelations: normalizeStateRelations(raw.stateRelations, stateIds),
@@ -286,7 +324,8 @@ function normalizeStrategicSceneState(raw: UnknownRecord): ValidationResult<Scen
       strategicCities: normalizeStrategicCities(raw.strategicCities, stateIds),
       territorialScores: normalizeTerritorialScores(raw.territorialScores, stateIds),
       rebellions: normalizeRebellions(raw.rebellions, stateIds),
-      turnCheckpoint: normalizeTurnCheckpoint(raw.turnCheckpoint)
+       turnCheckpoint: normalizeTurnCheckpoint(raw.turnCheckpoint),
+       lrTransactions: normalizeLRTransactionsForScene(raw.lrTransactions)
     }
   };
 }
@@ -296,7 +335,7 @@ export function migrateSceneState(raw: unknown): ValidationResult<SceneState> {
     return { ok: false, issue: { code: "INVALID_VALUE", path: "version" } };
   }
   const version = versionOf(raw);
-  if (version !== undefined && version > 7) {
+  if (version !== undefined && version > 8) {
     return { ok: false, issue: { code: "FUTURE_VERSION", version } };
   }
   if (!isRecord(raw)) return normalizeSceneState(raw);
@@ -386,7 +425,10 @@ export function migrateSceneState(raw: unknown): ValidationResult<SceneState> {
     };
   }
   if (migrated.version === 7) {
-    migrated = { ...migrated, terrain: ensureBuiltInTerrains(migrated.terrain) };
+    migrated = { ...migrated, version: 8, terrain: ensureBuiltInTerrains(migrated.terrain), lrTransactions: [] };
+  }
+  if (migrated.version === 8) {
+    migrated = { ...migrated, terrain: ensureBuiltInTerrains(migrated.terrain), lrTransactions: migrated.lrTransactions ?? [] };
     const result = normalizeStrategicSceneState(migrated);
     if (!result.ok) return result;
     return { ok: true, value: { ...result.value,

@@ -164,7 +164,7 @@ describe("MetadataRepository", () => {
     const repository = new MetadataRepository(new MemoryPort());
 
     await expect(repository.readScene()).resolves.toMatchObject({
-      version: 7,
+      version: 8,
       sides: [],
       states: [],
       gridMap: { version: 1, revision: 0, cells: {} },

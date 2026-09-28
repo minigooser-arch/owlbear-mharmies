@@ -1,6 +1,11 @@
 import { joinReinforcements, releaseBattleGroup } from "../battles/battleGroupService";
 import { destroyArmy } from "../armies/armyLifecycle";
-import { healArmy } from "../health/armyHealth";
+import { healArmyForTurn } from "../health/armyHealth";
+import { applyFormationHp, createFormationArmy, interruptFormation } from "../armies/armyFormation";
+import { appendLRTransaction } from "../finance/lrLedger";
+import { markLRTransactionRecorded } from "../finance/lrLedger";
+import { isCityBuildingActive } from "../cities/cityBuildingRules";
+import { activeShipyardAtCell, coastalBatteryRetaliationDamage, marineStationAllowsCrossing, repairShipAtShipyard, seaFortBlocksDisembark, transportArmyMovementCostAtCell } from "../cities/cityEffects";
 import { requestArmyDisband } from "../disband/disbandService";
 import { canRenumberTurn, cancelTurnDeferral, completeTurn, deferTurn, pauseAutoTurns, renumberSceneTurn, resumeAutoTurns } from "../turns/turnService";
 import { preCheckpointTurnBlockers } from "../turns/turnCompletionGuard";
@@ -173,7 +178,7 @@ function revalidateArmyRoute(state: CommandState, armyId: string): void {
       ? 10
       : army.movement.remainingUnits,
     readCell: (cell) => readCell(state.scene.gridMap, cell),
-    armyStateAllowsMovement: army.status === "READY" || army.status === "PAUSED" || army.status === "MOVING"
+    armyStateAllowsMovement: !army.formation?.active && (army.status === "READY" || army.status === "PAUSED" || army.status === "MOVING")
   });
   const plannedRoute: ArmyState["plannedRoute"] = result.valid
     ? {
@@ -202,7 +207,7 @@ function revalidateAllRoutes(state: CommandState): void {
 function startRoutesForMovementPhase(state: CommandState): void {
   const turnNumber = state.scene.turn.turnNumber;
   for (const [armyId, army] of Object.entries(state.armies)) {
-    if (army.plannedRoute.executeOnTurn !== turnNumber + 1 || army.status === "IN_BATTLE") continue;
+    if (army.plannedRoute.executeOnTurn !== turnNumber + 1 || army.status === "IN_BATTLE" || army.formation?.active) continue;
     revalidateArmyRoute(state, armyId);
     const current = state.armies[armyId];
     if (
@@ -337,6 +342,49 @@ export class CommandProcessor {
         state.armies[command.itemId] = registered;
         return undefined;
       }
+      case "CREATE_CITY_ARMY": {
+        const item = state.items[command.itemId];
+        if (!item) return "ITEM_NOT_FOUND";
+        if (item.type !== "IMAGE") return "IMAGE_REQUIRED";
+        if (state.armies[command.itemId] || item.metadata[METADATA_KEYS.army] !== undefined) return "ALREADY_REGISTERED";
+        const city = (state.scene.strategicCities ?? []).find((candidate) => candidate.id === command.cityId);
+        if (!city) return "CITY_NOT_FOUND";
+        const militaryDepartment = (city.buildings ?? []).find((building) => building.type === "MILITARY_DEPARTMENT");
+        if (!militaryDepartment || city.factionInfluenceId !== command.sideId ||
+            !isCityBuildingActive(city, militaryDepartment, state.scene.gridMap, state.scene.states, state.scene.sides)) {
+          return "MILITARY_DEPARTMENT_REQUIRED";
+        }
+        if (!this.cellForPosition) return "CITY_POSITION_UNAVAILABLE";
+        const itemCell = this.cellForPosition(item.position);
+        if (!city.cells.some((cell) => sameCell(cell, itemCell))) return "ARMY_MUST_BE_IN_CITY";
+        const army = createFormationArmy({ armyId: command.itemId, sideId: command.sideId, status: "READY", maxUnits: 10, turnNumber: state.scene.turn.turnNumber, experience: (city.buildings ?? []).reduce((total, building) => total + (building.type === "TRAINING_GROUND" || building.type === "MILITARY_ACADEMY" ? 0.5 : 0), 0) });
+        army.formation = { active: true, cityId: city.id, hpAddedThisTurn: 5, checkedOnTurn: state.scene.turn.turnNumber };
+        state.armies[command.itemId] = army;
+        state.items[command.itemId] = { ...item, metadata: { ...item.metadata, [METADATA_KEYS.army]: { sideId: command.sideId, registered: true } } };
+        state.scene.lrTransactions = appendLRTransaction(state.scene.lrTransactions ?? [], {
+          id: `${command.requestId}:formation`, requestId: command.requestId, createdAt: this.now().toISOString(), turnNumber: state.scene.turn.turnNumber,
+          actorPlayerId: command.senderPlayerId, sideId: command.sideId, sideName: state.scene.sides.find((side) => side.id === command.sideId)?.name ?? command.sideId,
+          cityId: city.id, cityName: city.name, armyId: command.itemId, armyName: item.name ?? command.itemId, kind: "FORMATION", hp: 5,
+          ratePerHp: state.scene.settings.armyFormationCostPerHp ?? 5000, amount: 5 * (state.scene.settings.armyFormationCostPerHp ?? 5000)
+        });
+        return undefined;
+      }
+      case "FORM_ARMY": {
+        const army = state.armies[command.armyId];
+        if (!army) return "ARMY_NOT_FOUND";
+        const result = applyFormationHp(army, command.hp, state.scene.turn.turnNumber, state.scene.settings.armyFormationCostPerHp ?? 5000,
+          Boolean(army.formation?.cityId && (state.scene.strategicCities ?? []).find((city) => city.id === army.formation?.cityId)?.buildings?.some((building) => building.type === "BARRACKS")));
+        if (!result.ok) return result.reason;
+        state.armies[command.armyId] = result.army;
+        state.scene.lrTransactions = appendLRTransaction(state.scene.lrTransactions ?? [], {
+          id: `${command.requestId}:formation`, requestId: command.requestId, createdAt: this.now().toISOString(), turnNumber: state.scene.turn.turnNumber,
+          actorPlayerId: command.senderPlayerId, sideId: army.sideId, sideName: state.scene.sides.find((side) => side.id === army.sideId)?.name ?? army.sideId,
+          cityId: army.formation?.cityId ?? null, cityName: (state.scene.strategicCities ?? []).find((city) => city.id === army.formation?.cityId)?.name ?? null,
+          armyId: command.armyId, armyName: command.armyId, kind: result.army.health.hp >= result.army.health.maxHp ? "COMPLETION" : "FORMATION", hp: command.hp,
+          ratePerHp: state.scene.settings.armyFormationCostPerHp ?? 5000, amount: result.amount
+        });
+        return undefined;
+      }
       case "UNREGISTER_ARMY": {
         if (!state.armies[command.armyId]) return "ARMY_NOT_FOUND";
         const destroyed = destroyArmy(state.armies, state.scene.battleGroups, command.armyId);
@@ -415,7 +463,7 @@ export class CommandProcessor {
           });
           return undefined;
         }
-        const embarked = embarkArmy(command.shipId, ship, command.armyId, army);
+        const embarked = embarkArmy(command.shipId, ship, command.armyId, army, transportArmyMovementCostAtCell(state.scene, armyCell));
         state.scene.ships ??= {};
         state.scene.ships[command.shipId] = embarked.ship;
         state.armies[command.armyId] = embarked.army;
@@ -451,7 +499,7 @@ export class CommandProcessor {
             cellSupportsDomain(state.scene, shipCell, "SEA")
         });
         if (!geometry.ok) return geometry.reason;
-        const embarked = embarkArmy(command.shipId, ship, command.armyId, army);
+        const embarked = embarkArmy(command.shipId, ship, command.armyId, army, transportArmyMovementCostAtCell(state.scene, armyCell));
         state.scene.ships ??= {};
         state.scene.ships[command.shipId] = embarked.ship;
         state.armies[command.armyId] = embarked.army;
@@ -469,6 +517,9 @@ export class CommandProcessor {
         const shipPosition = commandPosition(state, command.shipId);
         if (!shipPosition) return "TRANSPORT_POSITION_UNAVAILABLE";
         if (!cellSupportsDomain(state.scene, command.targetCell, "LAND")) return "LANDING_REQUIRES_LAND";
+        if (seaFortBlocksDisembark(state.scene, command.targetCell, relationForSides(state.scene, ship.sideId, army.sideId) === "ENEMY")) {
+          return "SEA_FORT_BLOCKS_LANDING";
+        }
         const shipCell = this.cellForPosition(shipPosition);
         const geometry = validateTransportInteraction({
           action: "DISEMBARK",
@@ -493,7 +544,7 @@ export class CommandProcessor {
         if (political.allowedCellCount === 0) {
           return political.blockedReason ?? "INVALID_POLITICAL_CONFIG";
         }
-        const disembarked = disembarkArmy(command.shipId, ship, command.armyId, army);
+        const disembarked = disembarkArmy(command.shipId, ship, command.armyId, army, transportArmyMovementCostAtCell(state.scene, command.targetCell));
         if (!disembarked.ok) return disembarked.reason;
         const occupantIds = Object.entries(state.armies)
           .filter(([armyId, candidate]) => armyId !== command.armyId && candidate.health.hp > 0 && candidate.embarkedOnShipId == null)
@@ -532,7 +583,8 @@ export class CommandProcessor {
             for (const participantId of group.participantIds) {
               const participant = state.armies[participantId];
               if (!participant) continue;
-              state.armies[participantId] = bumpArmy(participant, {
+              const battleReady = interruptFormation(participant);
+              state.armies[participantId] = bumpArmy(battleReady, {
                 status: "IN_BATTLE",
                 stopReason: "BATTLE",
                 movement: { ...participant.movement, remainingUnits: 0 },
@@ -858,6 +910,24 @@ export class CommandProcessor {
           state.scene.battleGroups = destroyed.battleGroups;
         } else {
           state.armies[command.armyId] = result.target;
+        }
+        const retaliation = coastalBatteryRetaliationDamage(
+          state.scene,
+          targetCell,
+          relation === "ENEMY",
+          this.rollD6
+        );
+        if (retaliation > 0) {
+          const armor = SHIP_CLASSES[ship.classId].armor;
+          const damage = Math.max(0, retaliation - armor);
+          const retaliated = { ...result.attacker, hp: Math.max(0, result.attacker.hp - damage), revision: result.attacker.revision + 1 };
+          if (retaliated.hp <= 0) {
+            const destroyed = destroyShip(state.scene as NavalSceneState, command.shipId);
+            state.scene = destroyed.scene;
+            if (destroyed.itemIdToDelete) Reflect.deleteProperty(state.items, destroyed.itemIdToDelete);
+          } else {
+            state.scene.ships[command.shipId] = retaliated;
+          }
         }
         return undefined;
       }
@@ -1206,6 +1276,48 @@ export class CommandProcessor {
       case "UPDATE_SETTINGS":
         state.scene.settings = { ...state.scene.settings, ...command.settings };
         return undefined;
+      case "MARK_LR_TRANSACTION_RECORDED": {
+        if (!(state.scene.lrTransactions ?? []).some((entry) => entry.id === command.transactionId)) return "TRANSACTION_NOT_FOUND";
+        state.scene.lrTransactions = markLRTransactionRecorded(state.scene.lrTransactions ?? [], command.transactionId, command.senderPlayerId, this.now().toISOString());
+        return undefined;
+      }
+      case "REGISTER_CITY_SHIP": {
+        const item = state.items[command.itemId];
+        if (!item) return "ITEM_NOT_FOUND";
+        if (item.type !== "IMAGE") return "IMAGE_REQUIRED";
+        state.scene.ships ??= {};
+        if (
+          state.armies[command.itemId] ||
+          item.metadata[METADATA_KEYS.army] !== undefined ||
+          state.scene.ships[command.itemId] ||
+          item.metadata[METADATA_KEYS.ship] !== undefined
+        ) return "ALREADY_REGISTERED";
+        if (!state.scene.sides.some((side) => side.id === command.sideId)) return "SIDE_NOT_FOUND";
+        if (!this.cellForPosition) return "SHIP_POSITION_UNAVAILABLE";
+        const cell = this.cellForPosition(item.position);
+        if (!cellSupportsDomain(state.scene, cell, "SEA")) return "SHIP_REQUIRES_SEA";
+        if (!activeShipyardAtCell(state.scene, command.cityId, command.sideId, cell)) return "SHIPYARD_REQUIRED";
+        const cellForPosition = this.cellForPosition;
+        const shipCells = Object.fromEntries(Object.entries(state.scene.ships).flatMap(([shipId]) => {
+          const position = commandPosition(state, shipId);
+          return position && cellForPosition ? [[shipId, cellForPosition(position)]] : [];
+        }));
+        if (occupiedByOtherLiveShip(state.scene.ships, shipCells, command.itemId, cell)) return "SHIPYARD_OCCUPIED";
+        state.scene.ships[command.itemId] = createRegisteredShip(command.sideId, command.classId, command.facing);
+        return undefined;
+      }
+      case "REPAIR_SHIP_AT_SHIPYARD": {
+        const ship = state.scene.ships?.[command.shipId];
+        if (!ship) return "SHIP_NOT_FOUND";
+        if (!this.cellForPosition) return "SHIP_POSITION_UNAVAILABLE";
+        const position = commandPosition(state, command.shipId);
+        if (!position) return "SHIP_POSITION_UNAVAILABLE";
+        const repaired = repairShipAtShipyard(state.scene, ship, this.cellForPosition(position), command.amount, state.scene.turn.turnNumber);
+        if (repaired === ship) return "SHIPYARD_REQUIRED";
+        state.scene.ships ??= {};
+        state.scene.ships[command.shipId] = repaired;
+        return undefined;
+      }
       case "UPDATE_ARMY_OVERRIDES": {
         const army = state.armies[command.armyId];
         if (!army) return "ARMY_NOT_FOUND";
@@ -1218,6 +1330,7 @@ export class CommandProcessor {
         const army = state.armies[command.armyId];
         if (!army) return "ARMY_NOT_FOUND";
         if (army.status !== "READY") return "ARMY_NOT_READY";
+        if (army.formation?.active) return "ARMY_FORMING";
         if (command.route.length !== command.cells.length) return "INVALID_COMMAND";
         const forcedExit = (state.scene.forcedExitStates ?? []).find((candidate) =>
           candidate.armyId === command.armyId && candidate.startedOnTurn <= state.scene.turn.turnNumber + 1
@@ -1239,11 +1352,15 @@ export class CommandProcessor {
           });
           if (political.allowedCellCount < command.cells.length) return political.blockedReason ?? "INVALID_POLITICAL_CONFIG";
         }
+        const routeCity = (state.scene.strategicCities ?? []).find((city) => city.cells.some((cell) => sameCell(cell, command.startCell)));
+        const marineCrossing = routeCity ? marineStationAllowsCrossing(state.scene, routeCity.id, command.cells) : false;
+        const routeTerrain = marineCrossing ? structuredClone(state.scene.terrain) : state.scene.terrain;
+        if (marineCrossing && routeTerrain.types.sea) routeTerrain.types.sea = { ...routeTerrain.types.sea, movementDomains: ["LAND", "SEA"] };
         const validation = validatePlannedRoute({
           start: command.startCell,
           cells: command.cells,
           sideId: army.sideId,
-          terrain: state.scene.terrain,
+          terrain: routeTerrain,
           wars: state.scene.wars,
           remainingUnits: 10,
           readCell: (cell) => readCell(state.scene.gridMap, cell),
@@ -1584,9 +1701,47 @@ export class CommandProcessor {
       case "HEAL_ARMY": {
         const army = state.armies[command.armyId];
         if (!army) return "ARMY_NOT_FOUND";
-        const healed = healArmy(army, command.amount);
+        let armyForHealing = army;
+        let hospitalRate = state.scene.settings.armyHealingCostPerHp ?? 5000;
+        const requestedHospitalCityId = command.hospitalCityId ?? army.healing?.hospitalCityId ?? null;
+        let healingCityId: string | null = null;
+        let healingCityName: string | null = null;
+        if (requestedHospitalCityId) {
+          if (!this.cellForPosition) return "ARMY_POSITION_UNAVAILABLE";
+          const position = commandPosition(state, command.armyId);
+          if (!position) return "ARMY_POSITION_UNAVAILABLE";
+          const armyCell = this.cellForPosition(position);
+          const hospitalCity = (state.scene.strategicCities ?? []).find((city) => city.id === requestedHospitalCityId);
+          const hospital = hospitalCity?.buildings?.find((building) => building.type === "MILITARY_HOSPITAL");
+          if (!hospitalCity || !hospital || !isCityBuildingActive(hospitalCity, hospital, state.scene.gridMap, state.scene.states, state.scene.sides)) return "MILITARY_HOSPITAL_REQUIRED";
+          if (!hospitalCity.cells.some((cell) => sameCell(cell, armyCell))) return "ARMY_MUST_BE_IN_CITY";
+          const hospitalInUse = Object.entries(state.armies).some(([otherArmyId, otherArmy]) =>
+            otherArmyId !== command.armyId && otherArmy.healing?.checkedOnTurn === state.scene.turn.turnNumber &&
+            otherArmy.healing.hospitalCityId === requestedHospitalCityId
+          );
+          if (hospitalInUse) return "MILITARY_HOSPITAL_IN_USE";
+          armyForHealing = {
+            ...army,
+            healing: {
+              hpHealedThisTurn: army.healing?.checkedOnTurn === state.scene.turn.turnNumber ? army.healing.hpHealedThisTurn : 0,
+              checkedOnTurn: state.scene.turn.turnNumber,
+              hospitalCityId: requestedHospitalCityId
+            }
+          };
+          hospitalRate = state.scene.settings.hospitalHealingCostPerHp ?? 2500;
+          healingCityId = hospitalCity.id;
+          healingCityName = hospitalCity.name;
+        }
+        const healed = healArmyForTurn(armyForHealing, command.amount, state.scene.turn.turnNumber);
         if (!healed) return army.supply.supplied ? "ARMY_DESTROYED" : "ARMY_ENCIRCLED";
         state.armies[command.armyId] = healed;
+        const actualHp = healed.health.hp - army.health.hp;
+        state.scene.lrTransactions = appendLRTransaction(state.scene.lrTransactions ?? [], {
+          id: `${command.requestId}:healing`, requestId: command.requestId, createdAt: this.now().toISOString(), turnNumber: state.scene.turn.turnNumber,
+          actorPlayerId: command.senderPlayerId, sideId: army.sideId, sideName: state.scene.sides.find((side) => side.id === army.sideId)?.name ?? army.sideId,
+          cityId: healingCityId, cityName: healingCityName, armyId: command.armyId, armyName: command.armyId, kind: "HEALING", hp: actualHp,
+          ratePerHp: hospitalRate, amount: actualHp * hospitalRate
+        });
         return undefined;
       }
       case "REQUEST_ARMY_DISBAND": {
@@ -1632,6 +1787,11 @@ export class CommandProcessor {
           if (!position || !this.cellForPosition) return [];
           return [[armyId, this.cellForPosition(position)]];
         }));
+        const shipCells = Object.fromEntries(Object.entries(state.scene.ships ?? {}).flatMap(([shipId]) => {
+          const position = state.positions?.[shipId];
+          if (!position || !this.cellForPosition) return [];
+          return [[shipId, this.cellForPosition(position)]];
+        }));
         const hasStateBoundArmyWithoutCell = Object.entries(state.armies).some(([armyId, army]) => {
           const side = state.scene.sides.find((candidate) => candidate.id === army.sideId);
           return Boolean(side?.stateId) && !armyCells[armyId];
@@ -1641,7 +1801,8 @@ export class CommandProcessor {
           source: "MANUAL",
           completedAt: this.now(),
           ...(this.positionForCell ? {positionForCell: this.positionForCell} : {}),
-          armyCells
+          armyCells,
+          shipCells
         });
         if (!result.changed) return "blockers" in result ? `TURN_BLOCKED:${result.blockers.join(",")}` : result.reason;
         state.scene = result.scene;

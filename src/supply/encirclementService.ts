@@ -44,7 +44,7 @@ export function applyEncirclementCheckpoint(
 
   for (const armyId of Object.keys(armies)) {
     const army = armies[armyId];
-    if (!army || army.supply.supplied || army.health.hp <= 0) continue;
+    if (!army || army.supply.supplied || army.health.hp <= 0 || army.supply.unsuppliedSinceTurn === turnNumber) continue;
 
     const damaged = applyEncirclementDamage(army);
     if (damaged.health.hp > 0) {

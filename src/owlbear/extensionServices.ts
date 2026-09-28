@@ -366,6 +366,7 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
     ...(activeNavalBattle ? { activeNavalBattle } : {}),
     sides: input.scene.sides,
     states: input.scene.states,
+    strategicCities: input.scene.strategicCities ?? [],
     relations: input.scene.relations,
     battleGroups: input.scene.battleGroups,
     settings: input.scene.settings,
@@ -786,6 +787,23 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
           }).id,
           sideId: command.sideId
         };
+      } else if (command.type === "CREATE_SELECTED_CITY_ARMY") {
+        payload = {
+          type: "CREATE_CITY_ARMY",
+          itemId: resolveRegistrationSelection({ selection: (await OBR.player.getSelection()) ?? [], items: await adapter.getSceneItems() }).id,
+          cityId: command.cityId,
+          sideId: command.sideId
+        };
+      } else if (command.type === "REGISTER_SELECTED_CITY") {
+        const selected = resolveRegistrationSelection({ selection: (await OBR.player.getSelection()) ?? [], items: await adapter.getSceneItems() });
+        const gridDpi = await adapter.getGridDpi();
+        if (gridDpi === undefined) throw new Error("CITY_POSITION_UNAVAILABLE");
+        const cell = new StrategicGridAdapter({ dpi: gridDpi, offset: { x: 0, y: 0 } }).sceneToCell(selected.position);
+        payload = {
+          type: "CREATE_STRATEGIC_CITY_FROM_TOKEN",
+          city: { ...command.city, markerItemId: selected.id, cells: [cell] },
+          markerItemId: selected.id
+        } as unknown as ArmyCommandPayload;
       } else if (command.type === "REGISTER_SELECTED_SHIP") {
         payload = buildSelectedShipRegistrationPayload({
           selection: (await OBR.player.getSelection()) ?? [],
@@ -794,6 +812,15 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
           classId: command.classId,
           facing: command.facing
         });
+      } else if (command.type === "REGISTER_SELECTED_CITY_SHIP") {
+        const base = buildSelectedShipRegistrationPayload({
+          selection: (await OBR.player.getSelection()) ?? [],
+          items: await adapter.getSceneItems(),
+          sideId: command.sideId,
+          classId: command.classId,
+          facing: command.facing
+        });
+        payload = { ...base, type: "REGISTER_CITY_SHIP", cityId: command.cityId };
       } else {
         payload = command;
       }

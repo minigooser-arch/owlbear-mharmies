@@ -79,7 +79,7 @@ describe("strategic war scene schema", () => {
     expect(result).toMatchObject({
       ok: true,
       value: {
-        version: 7,
+        version: 8,
         revision: 9,
         states: [
           { id: "russia", color: "#607d8b", rulingFactionId: "red", active: true },
@@ -121,10 +121,10 @@ describe("strategic war scene schema", () => {
     expect(migrated.stateRelations?.germany?.broken?.atWar).not.toBe(true);
   });
 
-  it("rejects schema versions newer than v7", () => {
-    expect(migrateSceneState({ version: 8 })).toEqual({
+  it("rejects schema versions newer than v8", () => {
+    expect(migrateSceneState({ version: 9 })).toEqual({
       ok: false,
-      issue: { code: "FUTURE_VERSION", version: 8 }
+      issue: { code: "FUTURE_VERSION", version: 9 }
     });
   });
 

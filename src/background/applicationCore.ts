@@ -476,12 +476,17 @@ export class ProductionEngine {
       record.item.id,
       strategicGrid.sceneToCell(record.item.position)
     ]));
+    const shipCells = Object.fromEntries(frame.items.ships.map((record) => [
+      record.item.id,
+      strategicGrid.sceneToCell(record.item.position)
+    ]));
     const completion = completeTurn(scene, armies, {
       source: "SCHEDULE",
       completedAt: now,
       boundaryId: boundary.id,
       positionForCell: (cell) => strategicGrid.cellToSceneCenter(cell),
-      armyCells
+      armyCells,
+      shipCells
     });
     if (!completion.changed) return;
 

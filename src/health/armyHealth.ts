@@ -7,6 +7,7 @@ export type HealPermission =
 export function canHealArmy(army: ArmyState): HealPermission {
   if (army.health.hp <= 0) return { allowed: false, reason: "ARMY_DESTROYED" };
   if (!army.supply.supplied) return { allowed: false, reason: "ARMY_ENCIRCLED" };
+  if (army.status === "IN_BATTLE" || army.formation?.active) return { allowed: false, reason: "ARMY_ENCIRCLED" };
   return { allowed: true };
 }
 
@@ -32,5 +33,22 @@ export function healArmy(army: ArmyState, amount: number): ArmyState | undefined
     ...army,
     health: { ...army.health, hp: Math.min(army.health.maxHp, army.health.hp + normalized) },
     revision: army.revision + 1
+  };
+}
+
+export function healArmyForTurn(army: ArmyState, amount: number, turnNumber: number): ArmyState | undefined {
+  if (!canHealArmy(army).allowed) return undefined;
+  const used = army.healing?.checkedOnTurn === turnNumber ? army.healing.hpHealedThisTurn : 0;
+  const normalized = Number.isFinite(amount) ? Math.max(0, Math.floor(amount)) : 0;
+  if (normalized <= 0 || normalized > 10 - used) return undefined;
+  const healed = healArmy(army, normalized);
+  if (!healed) return undefined;
+  return {
+    ...healed,
+    healing: {
+      hpHealedThisTurn: used + Math.min(normalized, healed.health.hp - army.health.hp),
+      checkedOnTurn: turnNumber,
+      hospitalCityId: army.healing?.hospitalCityId ?? null
+    }
   };
 }

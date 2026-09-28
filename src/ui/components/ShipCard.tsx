@@ -131,6 +131,7 @@ export function ShipCard({
   sideColor,
   isGM,
   canPlanRoute,
+  canRepair = false,
   routePlanningEnabled = true,
   embarkedArmyName,
   relations = {},
@@ -140,6 +141,7 @@ export function ShipCard({
   sideColor: string;
   isGM: boolean;
   canPlanRoute: boolean;
+  canRepair?: boolean;
   routePlanningEnabled?: boolean;
   embarkedArmyName?: string;
   relations?: Readonly<Record<string, Readonly<Record<string, SideRelation>>>>;
@@ -419,6 +421,18 @@ export function ShipCard({
             onClick={() => onAction({ type: "EDIT_SHIP_ROUTE", shipId: ship.id })}
           >
             {hasPlannedRoute ? "Изменить переход" : "Проложить переход"}
+          </button>
+        </div>
+      )}
+
+      {canRepair && !destroyed && (
+        <div className="card-actions ship-repair-actions">
+          <button
+            className="button subtle wide"
+            type="button"
+            onClick={() => onAction({ type: "REPAIR_SHIP_AT_SHIPYARD", shipId: ship.id, amount: 10 })}
+          >
+            Ремонт на верфи (+10 HP)
           </button>
         </div>
       )}
