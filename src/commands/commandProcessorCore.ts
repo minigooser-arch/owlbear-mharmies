@@ -4,6 +4,8 @@ import { canHealArmy, requestArmyHealing } from "../health/armyHealth";
 import { applyFormationHp, createFormationArmy, interruptFormation } from "../armies/armyFormation";
 import { appendLRTransaction } from "../finance/lrLedger";
 import { markLRTransactionRecorded } from "../finance/lrLedger";
+import { applyDemographyCorrection, debitHumanResource as debitHumanResourceFromState } from "../finance/humanResourceLedger";
+import { recalculateHumanResourceCapacity } from "../population/populationRules";
 import { isCityBuildingActive } from "../cities/cityBuildingRules";
 import { activeShipyardAtCell, coastalBatteryRetaliationDamage, marineStationAllowsCrossing, repairShipAtShipyard, seaFortBlocksDisembark, transportArmyMovementCostAtCell } from "../cities/cityEffects";
 import { requestArmyDisband } from "../disband/disbandService";
@@ -306,6 +308,22 @@ export class CommandProcessor {
     return "INVALID_NAVAL_TACTICAL_ACTION";
   }
 
+  private debitHumanResource(
+    state: CommandState,
+    sideId: string,
+    amount: number,
+    context: Parameters<typeof debitHumanResourceFromState>[3]
+  ): string | undefined {
+    if (amount <= 0 || state.scene.demographics === undefined) return undefined;
+    const result = debitHumanResourceFromState(state.scene, sideId, amount, context);
+    if (!result.ok) return result.reason;
+    state.scene.demographics = state.scene.demographics.map((record) =>
+      record.stateId === result.demography.stateId ? result.demography : record
+    );
+    state.scene.lrTransactions = appendLRTransaction(state.scene.lrTransactions ?? [], result.transaction);
+    return undefined;
+  }
+
   private apply(
     state: CommandState,
     command: ArmyCommand,
@@ -364,6 +382,22 @@ export class CommandProcessor {
         const existingCell = existingItem ? this.cellForPosition(existingItem.position) : undefined;
         if (existingItem && (!existingCell || !city.cells.some((cell) => sameCell(cell, existingCell)))) return "ARMY_MUST_BE_IN_CITY";
         if (!existingItem && !side.armyTokenAsset) return "ARMY_TOKEN_NOT_CONFIGURED";
+        const formationRate = state.scene.settings.armyFormationCostPerHp ?? 5000;
+        const formationAmount = 5 * formationRate;
+        const formationDebit = this.debitHumanResource(state, command.sideId, formationAmount, {
+          requestId: command.requestId,
+          actorPlayerId: command.senderPlayerId,
+          kind: "FORMATION",
+          armyId,
+          armyName: existingItem?.name ?? armyId,
+          cityId: city.id,
+          cityName: city.name,
+          hp: 5,
+          ratePerHp: formationRate,
+          turnNumber: state.scene.turn.turnNumber,
+          createdAt: this.now().toISOString()
+        });
+        if (formationDebit) return formationDebit;
         const army = createFormationArmy({ armyId, sideId: command.sideId, status: "READY", maxUnits: 10, turnNumber: state.scene.turn.turnNumber, experience: (city.buildings ?? []).reduce((total, building) => total + (building.type === "TRAINING_GROUND" || building.type === "MILITARY_ACADEMY" ? 0.5 : 0), 0) });
         army.formation = { active: true, cityId: city.id, hpAddedThisTurn: 5, checkedOnTurn: state.scene.turn.turnNumber };
         state.armies[armyId] = army;
@@ -389,11 +423,11 @@ export class CommandProcessor {
           state.items[armyId] = { ...existingItem, position: itemPosition };
         }
         state.items[armyId] = { ...state.items[armyId], metadata: { ...state.items[armyId]?.metadata, [METADATA_KEYS.army]: army } } as SceneItemRecord;
-        state.scene.lrTransactions = appendLRTransaction(state.scene.lrTransactions ?? [], {
+        if (state.scene.demographics === undefined) state.scene.lrTransactions = appendLRTransaction(state.scene.lrTransactions ?? [], {
           id: `${command.requestId}:formation`, requestId: command.requestId, createdAt: this.now().toISOString(), turnNumber: state.scene.turn.turnNumber,
           actorPlayerId: command.senderPlayerId, sideId: command.sideId, sideName: state.scene.sides.find((side) => side.id === command.sideId)?.name ?? command.sideId,
           cityId: city.id, cityName: city.name, armyId, armyName: state.items[armyId]?.name ?? armyId, kind: "FORMATION", hp: 5,
-          ratePerHp: state.scene.settings.armyFormationCostPerHp ?? 5000, amount: 5 * (state.scene.settings.armyFormationCostPerHp ?? 5000)
+          ratePerHp: formationRate, amount: formationAmount
         });
         return undefined;
       }
@@ -403,13 +437,30 @@ export class CommandProcessor {
         const result = applyFormationHp(army, command.hp, state.scene.turn.turnNumber, state.scene.settings.armyFormationCostPerHp ?? 5000,
           Boolean(army.formation?.cityId && (state.scene.strategicCities ?? []).find((city) => city.id === army.formation?.cityId)?.buildings?.some((building) => building.type === "BARRACKS")));
         if (!result.ok) return result.reason;
+        const formationRate = state.scene.settings.armyFormationCostPerHp ?? 5000;
+        const formationKind = result.army.health.hp >= result.army.health.maxHp ? "COMPLETION" : "FORMATION";
+        const cityId = army.formation?.cityId ?? null;
+        const cityName = (state.scene.strategicCities ?? []).find((city) => city.id === cityId)?.name ?? null;
+        const formationDebit = this.debitHumanResource(state, army.sideId, result.amount, {
+          requestId: command.requestId,
+          actorPlayerId: command.senderPlayerId,
+          kind: formationKind,
+          armyId: command.armyId,
+          armyName: command.armyId,
+          cityId,
+          cityName,
+          hp: command.hp,
+          ratePerHp: formationRate,
+          turnNumber: state.scene.turn.turnNumber,
+          createdAt: this.now().toISOString()
+        });
+        if (formationDebit) return formationDebit;
         state.armies[command.armyId] = result.army;
-        state.scene.lrTransactions = appendLRTransaction(state.scene.lrTransactions ?? [], {
+        if (state.scene.demographics === undefined) state.scene.lrTransactions = appendLRTransaction(state.scene.lrTransactions ?? [], {
           id: `${command.requestId}:formation`, requestId: command.requestId, createdAt: this.now().toISOString(), turnNumber: state.scene.turn.turnNumber,
           actorPlayerId: command.senderPlayerId, sideId: army.sideId, sideName: state.scene.sides.find((side) => side.id === army.sideId)?.name ?? army.sideId,
-          cityId: army.formation?.cityId ?? null, cityName: (state.scene.strategicCities ?? []).find((city) => city.id === army.formation?.cityId)?.name ?? null,
-          armyId: command.armyId, armyName: command.armyId, kind: result.army.health.hp >= result.army.health.maxHp ? "COMPLETION" : "FORMATION", hp: command.hp,
-          ratePerHp: state.scene.settings.armyFormationCostPerHp ?? 5000, amount: result.amount
+          cityId, cityName, armyId: command.armyId, armyName: command.armyId, kind: formationKind, hp: command.hp,
+          ratePerHp: formationRate, amount: result.amount
         });
         return undefined;
       }
@@ -1304,6 +1355,42 @@ export class CommandProcessor {
       case "UPDATE_SETTINGS":
         state.scene.settings = { ...state.scene.settings, ...command.settings };
         return undefined;
+      case "UPDATE_STATE_DEMOGRAPHY": {
+        const record = state.scene.demographics?.find((candidate) => candidate.stateId === command.stateId);
+        if (!record) return "STATE_DEMOGRAPHY_NOT_FOUND";
+        let corrected: ReturnType<typeof applyDemographyCorrection>;
+        try {
+          corrected = applyDemographyCorrection(record, command.patch, command.reason, command.senderPlayerId, this.now().toISOString());
+        } catch {
+          return "DEMOGRAPHY_CORRECTION_REASON_REQUIRED";
+        }
+        state.scene.demographics = (state.scene.demographics ?? []).map((candidate) => candidate.stateId === command.stateId ? corrected.record : candidate);
+        state.scene.demographyAudit = [...(state.scene.demographyAudit ?? []), corrected.entry];
+        return undefined;
+      }
+      case "UPSERT_CONSCRIPTION_LAW": {
+        const existing = state.scene.conscriptionLaws ?? [];
+        state.scene.conscriptionLaws = [...existing.filter((law) => law.id !== command.law.id), structuredClone(command.law)];
+        const at = this.now().toISOString();
+        state.scene.demographics = (state.scene.demographics ?? []).map((record) => {
+          if (record.conscriptionLawId !== command.law.id) return record;
+          const next = recalculateHumanResourceCapacity(record, state.scene.conscriptionLaws ?? []);
+          if (next.conscriptionRate === record.conscriptionRate) return next;
+          state.scene.demographyAudit = [
+            ...(state.scene.demographyAudit ?? []),
+            {
+              id: `law-${command.law.id}-${record.stateId}-${at}`,
+              stateId: record.stateId,
+              actorPlayerId: command.senderPlayerId,
+              reason: command.reason,
+              changes: { conscriptionRate: { before: record.conscriptionRate, after: next.conscriptionRate } },
+              createdAt: at
+            }
+          ];
+          return next;
+        });
+        return undefined;
+      }
       case "SET_SIDE_ARMY_TOKEN": {
         const side = state.scene.sides.find((candidate) => candidate.id === command.sideId);
         if (!side) return "SIDE_NOT_FOUND";

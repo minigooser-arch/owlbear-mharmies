@@ -338,6 +338,27 @@ describe("ProductionEngine overlay performance", () => {
   });
 });
 
+it("applies missed population days once during a coordinator tick even without turn completion", async () => {
+  const fixture = commandPort();
+  fixture.scene.demographics = [{
+    stateId: "state-1", population: 1000, populationGrowthFactor: 1.003, humanResource: 100,
+    conscriptionLawId: "GENERAL_MOBILIZATION", conscriptionRate: 0.24, humanResourceCapacity: 240,
+    lastPopulationCalculationDate: "2026-09-26"
+  }];
+  fixture.scene.conscriptionLaws = [{ id: "GENERAL_MOBILIZATION", name: "Всеобщая мобилизация", rate: 0.24, active: true }];
+  const engine = new ProductionEngine(fixture.port, () => new Date("2026-09-28T12:00:00.000Z"));
+  engine.setCoordinator(true, "coordinator");
+
+  await engine.turnTick();
+  const firstPopulation = fixture.scene.demographics[0]?.population;
+  expect(firstPopulation).toBeCloseTo(1000 * 1.003 ** 2, 8);
+  expect(fixture.scene.revision).toBe(3);
+
+  await engine.turnTick();
+  expect(fixture.scene.demographics[0]?.population).toBe(firstPopulation);
+  expect(fixture.scene.revision).toBe(3);
+});
+
 it("loads one command input item frame before fresh persistence checks", async () => {
   const fixture = commandPort();
   const engine = new ProductionEngine(fixture.port);
@@ -512,6 +533,11 @@ describe("ProductionEngine command boundary", () => {
       }
     });
     fixture.scene.states = [{ id: "red-state", name: "Красное государство", rulingFactionId: "red", active: true }];
+    fixture.scene.demographics = [{
+      stateId: "red-state", population: 1_000_000, populationGrowthFactor: 1.003, humanResource: 100_000,
+      conscriptionLawId: "GENERAL_MOBILIZATION", conscriptionRate: 0.24, humanResourceCapacity: 240_000,
+      lastPopulationCalculationDate: "2026-09-28"
+    }];
     fixture.scene.gridMap.cells["0,0"] = {
       terrainId: "plain", impassable: false, factionTerritoryIds: ["red"], recognizedStateId: "red-state", deFactoStateId: "red-state"
     };

@@ -1,4 +1,5 @@
-import type { ConscriptionLaw, StateDemography } from "../shared/types";
+import { DEFAULT_CONSCRIPTION_LAWS } from "../shared/constants";
+import type { ConscriptionLaw, SceneState, StateDemography } from "../shared/types";
 
 export interface PopulationCalendarOptions {
   today: string;
@@ -75,4 +76,16 @@ export function populationDateInTimeZone(now: Date, timeZone: string): string {
   });
   const parts = Object.fromEntries(formatter.formatToParts(now).map((part) => [part.type, part.value]));
   return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+export function applyPopulationCalendarToScene(scene: SceneState, now: Date): SceneState {
+  if (!scene.demographics || scene.demographics.length === 0) return scene;
+  const today = populationDateInTimeZone(now, scene.settings.populationTimeZone ?? "Europe/Moscow");
+  const laws = scene.conscriptionLaws ?? DEFAULT_CONSCRIPTION_LAWS;
+  const demographics = scene.demographics.map((record) => applyPopulationCalendar(record, laws, {
+    today,
+    timeZone: scene.settings.populationTimeZone ?? "Europe/Moscow"
+  }));
+  if (JSON.stringify(demographics) === JSON.stringify(scene.demographics)) return scene;
+  return { ...scene, demographics };
 }

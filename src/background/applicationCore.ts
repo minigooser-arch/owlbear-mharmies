@@ -86,6 +86,7 @@ import { buildDetectionGraph } from "../visibility/detectionGraph";
 import { buildSceneDetectionGraph, detectedShipIdsForSide } from "../visibility/sceneDetectionGraph";
 import { LocalCloneReconciler, UpdateOriginGuard } from "../visibility/localCloneReconciler";
 import { visibleArmyIdsForPlayer } from "../visibility/visibilityEngine";
+import { applyPopulationCalendarToScene } from "../population/populationRules";
 import type { OwlbearPort } from "../owlbear/sdkAdapter";
 import {
   CoordinatorLease,
@@ -454,13 +455,23 @@ export class ProductionEngine {
     const canCommit = this.captureCoordinatorGuard(expectedCoordinatorConnectionId);
     const now = this.wallClock();
     const frame = await this.repository.readFrame();
-    const scene = frame.scene;
+    const sourceScene = frame.scene;
+    const scene = applyPopulationCalendarToScene(sourceScene, now);
     const armyRecords = frame.items.armies;
     const barrierRecords = frame.items.barriers;
     const sceneItems = frame.items.items;
     if (!canCommit()) return;
     const boundary = getDueTurnBoundary(now, scene.turn);
-    if (!boundary) return;
+    if (!boundary) {
+      if (scene !== sourceScene) {
+        await this.repository.writeScene(
+          { ...scene, revision: sourceScene.revision + 1 },
+          sourceScene.revision,
+          (current) => canCommit() && current.revision === sourceScene.revision
+        );
+      }
+      return;
+    }
     const armies = Object.fromEntries(armyRecords.map((record) => [record.item.id, record.state]));
     let strategicGrid: StrategicGridAdapter;
     try {
@@ -488,7 +499,16 @@ export class ProductionEngine {
       armyCells,
       shipCells
     });
-    if (!completion.changed) return;
+    if (!completion.changed) {
+      if (scene !== sourceScene) {
+        await this.repository.writeScene(
+          { ...scene, revision: sourceScene.revision + 1 },
+          sourceScene.revision,
+          (current) => canCommit() && current.revision === sourceScene.revision
+        );
+      }
+      return;
+    }
 
     const previous: CommandState = {
       scene,
@@ -906,7 +926,7 @@ export class ProductionEngine {
     }
     const command = validation.command;
     const frame = await this.repository.readFrame();
-    const scene = frame.scene;
+    const scene = applyPopulationCalendarToScene(frame.scene, this.wallClock());
     const armyRecords = frame.items.armies;
     const barrierRecords = frame.items.barriers;
     const sceneItems = frame.items.items;

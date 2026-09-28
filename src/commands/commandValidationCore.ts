@@ -7,6 +7,7 @@ import type {
   SceneSettings,
   Side,
   StateEntity,
+  StateDemography,
   TerrainType,
   Vector2
 } from "../shared/types";
@@ -290,6 +291,17 @@ const armyIdOnly = (value: UnknownRecord): string | undefined => boundedString(v
 const sidePlayer = (value: UnknownRecord): { sideId: string; playerId: string } | undefined =>
   sideId(value.sideId) && boundedString(value.playerId) ? { sideId: value.sideId, playerId: value.playerId } : undefined;
 
+function demographyPatch(value: unknown): Partial<Pick<StateDemography, "population" | "populationGrowthFactor" | "humanResource" | "conscriptionLawId" | "conscriptionRate">> | undefined {
+  if (!isRecord(value)) return undefined;
+  const patch: Record<string, unknown> = {};
+  if ("population" in value) { if (!finiteAtLeast(value.population, 0)) return undefined; patch.population = value.population; }
+  if ("populationGrowthFactor" in value) { if (!finiteAtLeast(value.populationGrowthFactor, 0, false)) return undefined; patch.populationGrowthFactor = value.populationGrowthFactor; }
+  if ("humanResource" in value) { if (!finiteAtLeast(value.humanResource, 0)) return undefined; patch.humanResource = value.humanResource; }
+  if ("conscriptionLawId" in value) { if (!sideId(value.conscriptionLawId)) return undefined; patch.conscriptionLawId = value.conscriptionLawId; }
+  if ("conscriptionRate" in value) { if (!finiteAtLeast(value.conscriptionRate, 0) || value.conscriptionRate > 1) return undefined; patch.conscriptionRate = value.conscriptionRate; }
+  return Object.keys(patch).length > 0 ? patch as Partial<Pick<StateDemography, "population" | "populationGrowthFactor" | "humanResource" | "conscriptionLawId" | "conscriptionRate">> : undefined;
+}
+
 const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
   REGISTER_ARMY: (value) => boundedString(value.itemId) && sideId(value.sideId)
     ? { type: "REGISTER_ARMY", itemId: value.itemId, sideId: value.sideId } : undefined,
@@ -459,6 +471,21 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
       ? { type: "SET_RELATION", leftSideId: value.leftSideId, rightSideId: value.rightSideId, relation: value.relation }
       : undefined,
   UPDATE_SETTINGS: (value) => { const settings = parseSettings(value.settings); return settings ? { type: "UPDATE_SETTINGS", settings } : undefined; },
+  UPDATE_STATE_DEMOGRAPHY: (value) => {
+    const patch = demographyPatch(value.patch);
+    return sideId(value.stateId) && boundedString(value.reason, 512) && patch
+      ? { type: "UPDATE_STATE_DEMOGRAPHY", stateId: value.stateId, patch, reason: value.reason.trim() }
+      : undefined;
+  },
+  UPSERT_CONSCRIPTION_LAW: (value) => {
+    if (!isRecord(value.law) || !sideId(value.law.id) || !boundedString(value.law.name, 128) ||
+        !finiteAtLeast(value.law.rate, 0) || value.law.rate > 1 || typeof value.law.active !== "boolean" || !boundedString(value.reason, 512)) return undefined;
+    return {
+      type: "UPSERT_CONSCRIPTION_LAW",
+      law: { id: value.law.id, name: value.law.name.trim(), rate: value.law.rate, active: value.law.active },
+      reason: value.reason.trim()
+    };
+  },
   MARK_LR_TRANSACTION_RECORDED: (value) => boundedString(value.transactionId) ? { type: "MARK_LR_TRANSACTION_RECORDED", transactionId: value.transactionId } : undefined,
   UPDATE_ARMY_OVERRIDES: (value) => {
     const overrides = parseOverrides(value.overrides);

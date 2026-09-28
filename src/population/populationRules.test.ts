@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_CONSCRIPTION_LAWS } from "../shared/constants";
 import type { StateDemography } from "../shared/types";
-import { applyPopulationCalendar, populationDateInTimeZone, recalculateHumanResourceCapacity } from "./populationRules";
+import { applyPopulationCalendar, applyPopulationCalendarToScene, populationDateInTimeZone, recalculateHumanResourceCapacity } from "./populationRules";
 
 const record = (overrides: Partial<StateDemography> = {}): StateDemography => ({
   stateId: "state-1",
@@ -82,5 +82,21 @@ describe("population calendar rules", () => {
 
   it("derives the campaign date in the configured timezone", () => {
     expect(populationDateInTimeZone(new Date("2026-09-28T21:30:00.000Z"), "Europe/Moscow")).toBe("2026-09-29");
+  });
+
+  it("updates every scene demographic record using the scene timezone", () => {
+    const scene = {
+      version: 9,
+      revision: 1,
+      settings: { populationTimeZone: "Europe/Moscow" },
+      demographics: [record()],
+      conscriptionLaws: DEFAULT_CONSCRIPTION_LAWS
+    } as never;
+
+    const updated = applyPopulationCalendarToScene(scene, new Date("2026-09-28T21:30:00.000Z"));
+
+    if (!updated.demographics) throw new Error("demography missing");
+    expect(updated.demographics[0]?.lastPopulationCalculationDate).toBe("2026-09-29");
+    expect(updated.demographics[0]?.population).toBeCloseTo(1000 * 1.003 ** 28, 5);
   });
 });

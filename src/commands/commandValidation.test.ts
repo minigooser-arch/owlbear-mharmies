@@ -178,6 +178,8 @@ describe("validateArmyCommand", () => {
     { type: "DELETE_SIDE", sideId: "red", strategy: "REASSIGN_ARMIES", targetSideId: "blue" },
     { type: "SET_RELATION", leftSideId: "red", rightSideId: "blue", relation: "ENEMY" },
     { type: "UPDATE_SETTINGS", settings: { defaultSpeedCellsPerSecond: 1, interpolationEnabled: false } },
+    { type: "UPDATE_STATE_DEMOGRAPHY", stateId: "state-1", patch: { humanResource: 150 }, reason: "Импорт" },
+    { type: "UPSERT_CONSCRIPTION_LAW", law: { id: "custom", name: "Особый закон", rate: 0.12, active: true }, reason: "Решение мастера" },
     { type: "UPDATE_ARMY_OVERRIDES", armyId: "army", overrides: { maxRouteDistanceCells: 8 } },
     { type: "MOVE_ARMY", armyId: "army", position: { x: 1, y: 2 } },
     {

@@ -609,6 +609,13 @@ export type ArmyCommandPayload =
       }
     | { type: "SET_RELATION"; leftSideId: string; rightSideId: string; relation: SideRelation }
     | { type: "UPDATE_SETTINGS"; settings: Partial<SceneSettings> }
+    | {
+        type: "UPDATE_STATE_DEMOGRAPHY";
+        stateId: string;
+        patch: Partial<Pick<StateDemography, "population" | "populationGrowthFactor" | "humanResource" | "conscriptionLawId" | "conscriptionRate">>;
+        reason: string;
+      }
+    | { type: "UPSERT_CONSCRIPTION_LAW"; law: ConscriptionLaw; reason: string }
     | { type: "MARK_LR_TRANSACTION_RECORDED"; transactionId: string }
     | { type: "UPDATE_ARMY_OVERRIDES"; armyId: string; overrides: ArmyOverrides }
     | { type: "SET_ROUTE"; armyId: string; route: Vector2[]; startCell: GridCellCoord; cells: GridCellCoord[] }

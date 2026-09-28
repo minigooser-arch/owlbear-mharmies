@@ -344,6 +344,11 @@ describe("CommandProcessor", () => {
     const current = state();
     current.scene.sides = current.scene.sides.map((side) => side.id === "red" ? { ...side, stateId: "red-state" } : side);
     current.scene.states = [{ id: "red-state", name: "Красное государство", rulingFactionId: "red", active: true }];
+    current.scene.demographics = [{
+      stateId: "red-state", population: 1000, populationGrowthFactor: 1.003, humanResource: 100_000,
+      conscriptionLawId: "GENERAL_MOBILIZATION", conscriptionRate: 0.24, humanResourceCapacity: 240,
+      lastPopulationCalculationDate: "2026-09-28"
+    }];
     current.scene.gridMap.cells["0,0"] = {
       terrainId: "plain", impassable: false, factionTerritoryIds: ["red"], recognizedStateId: "red-state", deFactoStateId: "red-state"
     };
@@ -360,7 +365,59 @@ describe("CommandProcessor", () => {
     const result = new CommandProcessor(() => new Date(), (position) => ({ x: Math.floor(position.x / 100), y: Math.floor(position.y / 100) }))
       .execute(context("PLAYER", "leader", current), command({ type: "CREATE_CITY_ARMY", itemId: "candidate-image", cityId: "city-red", sideId: "red" }, "leader"));
     expect(result.status).toBe("ACCEPTED");
-    if (result.status === "ACCEPTED") expect(result.state.armies["candidate-image"]).toMatchObject({ sideId: "red", health: { hp: 5, maxHp: 40 }, formation: { active: true, cityId: "city-red" } });
+    if (result.status === "ACCEPTED") {
+      expect(result.state.armies["candidate-image"]).toMatchObject({ sideId: "red", health: { hp: 5, maxHp: 40 }, formation: { active: true, cityId: "city-red" } });
+      const demographics = result.state.scene.demographics;
+      if (!demographics) throw new Error("demography missing");
+      expect(demographics[0]?.humanResource).toBe(75_000);
+      expect(result.state.scene.lrTransactions?.[0]).toMatchObject({ stateId: "red-state", balanceBefore: 100_000, balanceAfter: 75_000, amount: 25_000 });
+    }
+  });
+
+  it("rejects formation before changing HP when the state has insufficient LR", () => {
+    const current = state();
+    current.scene.sides = current.scene.sides.map((side) => side.id === "red" ? { ...side, stateId: "red-state" } : side);
+    current.scene.states = [{ id: "red-state", name: "Красное государство", rulingFactionId: "red", active: true }];
+    current.scene.demographics = [{
+      stateId: "red-state", population: 1000, populationGrowthFactor: 1.003, humanResource: 10_000,
+      conscriptionLawId: "GENERAL_MOBILIZATION", conscriptionRate: 0.24, humanResourceCapacity: 240,
+      lastPopulationCalculationDate: "2026-09-28"
+    }];
+    const redArmy = current.armies["army-red"];
+    if (!redArmy) throw new Error("red army missing");
+    current.armies["army-red"] = {
+      ...redArmy,
+      health: { hp: 30, maxHp: 40 },
+      formation: { active: true, cityId: null, hpAddedThisTurn: 0, checkedOnTurn: 1 }
+    };
+
+    const result = processor.execute(context("PLAYER", "leader", current), command({ type: "FORM_ARMY", armyId: "army-red", hp: 5 }, "leader"));
+
+    expect(result).toEqual({ status: "REJECTED", reason: "INSUFFICIENT_HUMAN_RESOURCE" });
+    expect(current.armies["army-red"]?.health.hp).toBe(30);
+  });
+
+  it("lets the GM correct a state demographic record with an audit reason", () => {
+    const current = state();
+    current.scene.states = [{ id: "red-state", name: "Красное государство", rulingFactionId: "red", active: true }];
+    current.scene.demographics = [{
+      stateId: "red-state", population: 1000, populationGrowthFactor: 1.003, humanResource: 100,
+      conscriptionLawId: "GENERAL_MOBILIZATION", conscriptionRate: 0.24, humanResourceCapacity: 240,
+      lastPopulationCalculationDate: "2026-09-28"
+    }];
+
+    const result = processor.execute(context("GM", "gm", current), command({
+      type: "UPDATE_STATE_DEMOGRAPHY",
+      stateId: "red-state",
+      patch: { humanResource: 150 },
+      reason: "Импорт из таблицы"
+    }, "gm"));
+
+    expect(result.status).toBe("ACCEPTED");
+    if (result.status === "ACCEPTED") {
+      expect(result.state.scene.demographics?.[0]?.humanResource).toBe(150);
+      expect(result.state.scene.demographyAudit?.[0]).toMatchObject({ stateId: "red-state", reason: "Импорт из таблицы" });
+    }
   });
 
   it("spawns the configured faction token in the city when no token is selected", () => {
