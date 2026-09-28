@@ -2,7 +2,7 @@
 
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { StateEntity, StrategicCity } from "../../shared/types";
+import type { Side, StateEntity, StrategicCity } from "../../shared/types";
 import { StrategicCityEditor } from "./StrategicCityEditor";
 
 afterEach(cleanup);
@@ -11,6 +11,10 @@ const states: StateEntity[] = [
   { id: "russia", name: "Россия", color: "#b71c1c", rulingFactionId: "red", active: true },
   { id: "germany", name: "Германия", color: "#263238", rulingFactionId: "black", active: true },
   { id: "france", name: "Франция", color: "#3344aa", rulingFactionId: "green", active: true }
+];
+const sides: Side[] = [
+  { id: "red", name: "Красные", color: "#f00", playerIds: [], leaderPlayerIds: [], stateId: "russia" },
+  { id: "black", name: "Чёрные", color: "#000", playerIds: [], leaderPlayerIds: [], stateId: "germany" }
 ];
 
 const city: StrategicCity = {
@@ -26,6 +30,27 @@ const city: StrategicCity = {
 };
 
 describe("StrategicCityEditor", () => {
+  it("lets the GM assign a faction influence when creating a city", () => {
+    const onCreate = vi.fn();
+    render(<StrategicCityEditor role="GM" states={states} sides={sides} cities={[]} onCreate={onCreate} onUpdate={vi.fn()} onDelete={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("Фракция влияния"), { target: { value: "red" } });
+    fireEvent.change(screen.getByLabelText("Название города"), { target: { value: "Москва" } });
+    fireEvent.click(screen.getByText("Дополнительные настройки"));
+    fireEvent.change(screen.getByLabelText("Клетки города"), { target: { value: "1,2" } });
+    fireEvent.click(screen.getByRole("button", { name: "Создать город" }));
+    expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({ factionInfluenceId: "red" }));
+  });
+
+  it("lets the GM change a city's faction influence", () => {
+    const onUpdate = vi.fn();
+    render(<StrategicCityEditor role="GM" states={states} sides={sides} cities={[city]} onCreate={vi.fn()} onUpdate={onUpdate} onDelete={vi.fn()} />);
+    fireEvent.click(screen.getByText("Показать детали города Москва"));
+    fireEvent.click(screen.getByRole("button", { name: "Редактировать Москва" }));
+    fireEvent.change(screen.getByLabelText("Редактировать фракцию влияния Москва"), { target: { value: "black" } });
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить Москва" }));
+    expect(onUpdate).toHaveBeenCalledWith("moscow", expect.objectContaining({ factionInfluenceId: "black" }));
+  });
+
   it("shows concise city summaries and expandable city details", () => {
     render(<StrategicCityEditor role="GM" states={states} cities={[city]} onCreate={vi.fn()} onUpdate={vi.fn()} onDelete={vi.fn()} />);
     const cityCard = screen.getByText("Показать детали города Москва").closest("details");

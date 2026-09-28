@@ -9,8 +9,8 @@ function scene(): SceneState {
     revision: 1,
     settings: structuredClone(DEFAULT_SETTINGS),
     sides: [],
-    states: [],
     relations: {},
+    states: [{ id: "russia", name: "Россия", rulingFactionId: "red", active: true }],
     battleGroups: [],
     terrain: { ...structuredClone(DEFAULT_TERRAIN), defaultTerrainId: "plain" },
     gridMap: {
@@ -29,13 +29,26 @@ function scene(): SceneState {
 describe("CachedCellTerrainLookup", () => {
   it("describes explicit terrain and implicit default terrain", async () => {
     const lookup = new CachedCellTerrainLookup(async () => scene());
-    await expect(lookup.describeCell({ x: 2, y: 3 })).resolves.toEqual({ terrainId: "forest", terrainName: "Лес" });
-    await expect(lookup.describeCell({ x: 20, y: 30 })).resolves.toEqual({ terrainId: "plain", terrainName: "Равнины" });
+    await expect(lookup.describeCell({ x: 2, y: 3 })).resolves.toEqual({ terrainId: "forest", terrainName: "Лес", movementCostUnits: 4, recognizedStateName: "нет" });
+    await expect(lookup.describeCell({ x: 20, y: 30 })).resolves.toEqual({ terrainId: "plain", terrainName: "Равнины", movementCostUnits: 2, recognizedStateName: "нет" });
+  });
+
+  it("returns movement cost and recognized state name for a cell", async () => {
+    const current = scene();
+    current.gridMap.cells["2,3"] = {
+      ...current.gridMap.cells["2,3"]!,
+      recognizedStateId: "russia"
+    };
+    const lookup = new CachedCellTerrainLookup(async () => current);
+    await expect(lookup.describeCell({ x: 2, y: 3 })).resolves.toMatchObject({
+      movementCostUnits: 4,
+      recognizedStateName: "Россия"
+    });
   });
 
   it("uses the unknown fallback for a dangling terrain id", async () => {
     const lookup = new CachedCellTerrainLookup(async () => scene());
-    await expect(lookup.describeCell({ x: 4, y: 5 })).resolves.toEqual({ terrainId: null, terrainName: "неизвестна" });
+    await expect(lookup.describeCell({ x: 4, y: 5 })).resolves.toEqual({ terrainId: null, terrainName: "неизвестна", movementCostUnits: null, recognizedStateName: "нет" });
   });
 
   it("does not cache loader failures", async () => {
@@ -43,8 +56,8 @@ describe("CachedCellTerrainLookup", () => {
       .mockRejectedValueOnce(new Error("temporary"))
       .mockResolvedValueOnce(scene());
     const lookup = new CachedCellTerrainLookup(loadScene);
-    await expect(lookup.describeCell({ x: 2, y: 3 })).resolves.toEqual({ terrainId: null, terrainName: "неизвестна" });
-    await expect(lookup.describeCell({ x: 2, y: 3 })).resolves.toEqual({ terrainId: "forest", terrainName: "Лес" });
+    await expect(lookup.describeCell({ x: 2, y: 3 })).resolves.toEqual({ terrainId: null, terrainName: "неизвестна", movementCostUnits: null, recognizedStateName: "нет" });
+    await expect(lookup.describeCell({ x: 2, y: 3 })).resolves.toEqual({ terrainId: "forest", terrainName: "Лес", movementCostUnits: 4, recognizedStateName: "нет" });
     expect(loadScene).toHaveBeenCalledTimes(2);
   });
 
@@ -68,8 +81,8 @@ describe("CachedCellTerrainLookup", () => {
     expect(loadScene).toHaveBeenCalledTimes(1);
     resolveLoad?.(scene());
     await expect(Promise.all([first, second])).resolves.toEqual([
-      { terrainId: "forest", terrainName: "Лес" },
-      { terrainId: "plain", terrainName: "Равнины" }
+      { terrainId: "forest", terrainName: "Лес", movementCostUnits: 4, recognizedStateName: "нет" },
+      { terrainId: "plain", terrainName: "Равнины", movementCostUnits: 2, recognizedStateName: "нет" }
     ]);
 
     lookup.invalidate();
@@ -100,6 +113,6 @@ describe("CachedCellTerrainLookup", () => {
     };
     resolvers[1]?.(updated);
 
-    await expect(description).resolves.toEqual({ terrainId: "mountains", terrainName: "Горы" });
+    await expect(description).resolves.toEqual({ terrainId: "mountains", terrainName: "Горы", movementCostUnits: 6, recognizedStateName: "нет" });
   });
 });

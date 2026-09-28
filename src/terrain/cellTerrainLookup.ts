@@ -4,11 +4,15 @@ import type { GridCellCoord, SceneState } from "../shared/types";
 export interface CellTerrainInfo {
   terrainId: string | null;
   terrainName: string;
+  movementCostUnits: number | null;
+  recognizedStateName: string;
 }
 
 const UNKNOWN_TERRAIN: CellTerrainInfo = {
   terrainId: null,
-  terrainName: "неизвестна"
+  terrainName: "неизвестна",
+  movementCostUnits: null,
+  recognizedStateName: "нет"
 };
 
 export class CachedCellTerrainLookup {
@@ -21,11 +25,21 @@ export class CachedCellTerrainLookup {
   async describeCell(cell: GridCellCoord): Promise<CellTerrainInfo> {
     try {
       const scene = await this.getScene();
-      const terrainId = scene.gridMap.cells[cellKey(cell)]?.terrainId
+      const cellState = scene.gridMap.cells[cellKey(cell)];
+      const terrainId = cellState?.terrainId
         ?? scene.terrain.defaultTerrainId;
       const terrain = scene.terrain.types[terrainId];
       if (!terrain) return { ...UNKNOWN_TERRAIN };
-      return { terrainId: terrain.id, terrainName: terrain.name };
+      const recognizedStateId = cellState?.recognizedStateId ?? null;
+      const recognizedStateName = recognizedStateId === null
+        ? "нет"
+        : scene.states.find((state) => state.id === recognizedStateId)?.name ?? "нет";
+      return {
+        terrainId: terrain.id,
+        terrainName: terrain.name,
+        movementCostUnits: terrain.movementCostUnits,
+        recognizedStateName
+      };
     } catch {
       return { ...UNKNOWN_TERRAIN };
     }

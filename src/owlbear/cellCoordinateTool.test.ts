@@ -18,8 +18,8 @@ it("shows hovered coordinates, pins a clicked cell, and clears both labels on ex
   const port = {
     getGridDpi: async () => 100,
     describeCell: async (cell: { x: number; y: number }) => cell.x === 2 && cell.y === 3
-      ? { terrainId: "forest", terrainName: "Лес" }
-      : { terrainId: null, terrainName: "неизвестна" },
+      ? { terrainId: "forest", terrainName: "Лес", movementCostUnits: 4, recognizedStateName: "Россия" }
+      : { terrainId: null, terrainName: "неизвестна", movementCostUnits: null, recognizedStateName: "нет" },
     createId: (() => { let next = 0; return () => `coordinate-${++next}`; })(),
     getLocalItems: async () => items,
     addLocalItem: async (item: SceneItemRecord) => { items.push(structuredClone(item)); },
@@ -34,21 +34,21 @@ it("shows hovered coordinates, pins a clicked cell, and clears both labels on ex
   const registration = await registerCellCoordinateTool(api, port, "/coordinates.svg");
   const context = { metadata: {} } as never;
   mode?.onToolMove?.(context, { pointerPosition: { x: 250, y: 350 } } as never);
-  await new Promise((resolve) => setTimeout(resolve, 20));
-  expect(items.some((item) => item.text === "X: 2, Y: 3\nМестность: Лес")).toBe(true);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(items.some((item) => item.text === "X: 2, Y: 3\nМестность: Лес\nСтоимость перемещения: 2 ОП\nПризнанная территория: Россия")).toBe(true);
 
   mode?.onToolClick?.(context, { pointerPosition: { x: 250, y: 350 } } as never);
-  await new Promise((resolve) => setTimeout(resolve, 20));
-  expect(items.some((item) => item.text === "Выбрано: 2, 3\nМестность: Лес")).toBe(true);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(items.some((item) => item.text === "Выбрано: 2, 3\nМестность: Лес\nСтоимость перемещения: 2 ОП\nПризнанная территория: Россия")).toBe(true);
   expect(messages).toEqual([]);
 
   mode?.onToolMove?.(context, { pointerPosition: { x: 450, y: 150 } } as never);
-  await new Promise((resolve) => setTimeout(resolve, 20));
-  expect(items.some((item) => item.text === "X: 4, Y: 1\nМестность: неизвестна")).toBe(true);
-  expect(items.some((item) => item.text === "Выбрано: 2, 3\nМестность: Лес")).toBe(true);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(items.some((item) => item.text === "X: 4, Y: 1\nМестность: неизвестна\nСтоимость перемещения: неизвестна\nПризнанная территория: нет")).toBe(true);
+  expect(items.some((item) => item.text === "Выбрано: 2, 3\nМестность: Лес\nСтоимость перемещения: 2 ОП\nПризнанная территория: Россия")).toBe(true);
 
   mode?.onDeactivate?.({} as never);
-  await new Promise((resolve) => setTimeout(resolve, 20));
+  await new Promise((resolve) => setTimeout(resolve, 50));
   expect(items).toEqual([]);
   await registration();
 });
@@ -64,7 +64,7 @@ it("broadcasts clicked cells only for a valid city-picker session", async () => 
   };
   const port = {
     getGridDpi: async () => 100,
-    describeCell: async () => ({ terrainId: "forest", terrainName: "Лес" }),
+    describeCell: async () => ({ terrainId: "forest", terrainName: "Лес", movementCostUnits: 4, recognizedStateName: "Россия" }),
     createId: () => "coordinate",
     getLocalItems: async () => [],
     addLocalItem: async () => undefined,
@@ -76,7 +76,7 @@ it("broadcasts clicked cells only for a valid city-picker session", async () => 
   const event = { pointerPosition: { x: 250, y: 350 } } as never;
 
   mode?.onToolClick?.({ metadata: {} } as never, event);
-  await new Promise((resolve) => setTimeout(resolve, 20));
+  await new Promise((resolve) => setTimeout(resolve, 50));
   expect(messages).toEqual([]);
 
   mode?.onToolClick?.({ metadata: { [CITY_CELL_PICK_SESSION_KEY]: "city-session-1" } } as never, event);

@@ -178,7 +178,6 @@ export function ArmiesPage({
               isGM={role === "GM"}
               canEditRoute={role === "GM" || leaderSideIds.has(army.sideId)}
               canRequestDisband={role === "GM" || leaderSideIds.has(army.sideId)}
-              hospitalCities={strategicCities.filter((city) => army.cell && city.cells.some((cell) => cell.x === army.cell?.x && cell.y === army.cell?.y) && (city.buildings ?? []).some((building) => building.type === "MILITARY_HOSPITAL"))}
               onAction={onAction}
             />
           );

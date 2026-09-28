@@ -1,4 +1,5 @@
 import { destroyArmy } from "../armies/armyLifecycle";
+import { applyAutomaticTurnHealing } from "../health/armyHealth";
 import { validatePlannedRoute } from "../movement/movementRules";
 import { politicalRouteGate } from "../movement/authoritativeStateMovement";
 import { forcedExitRouteGate, forcedExitTurnRoute } from "../movement/forcedExitService";
@@ -177,6 +178,12 @@ export function completeTurn(
   }, nextTurn);
   nextScene = checkpoint.scene;
   nextArmies = checkpoint.armies;
+
+  // Base recovery is applied after the turn checkpoint (including supply damage)
+  // and before the new movement phase becomes available.
+  for (const [armyId, army] of Object.entries(nextArmies)) {
+    nextArmies[armyId] = applyAutomaticTurnHealing(army);
+  }
 
   // Open the new movement phase only after every strategic checkpoint effect completed.
   for (const [armyId, army] of Object.entries(nextArmies)) {

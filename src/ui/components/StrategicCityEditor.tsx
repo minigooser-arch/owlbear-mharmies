@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import type { CityBuildingType, GridCellCoord, StateEntity, StrategicCity } from "../../shared/types";
+import type { CityBuildingType, GridCellCoord, Side, StateEntity, StrategicCity } from "../../shared/types";
 
 const BUILDING_TYPES: readonly CityBuildingType[] = ["MILITARY_DEPARTMENT", "MILITARY_HOSPITAL", "BARRACKS", "TRAINING_GROUND", "MILITARY_ACADEMY", "RAILWAY_STATION", "PORT", "SHIPYARD", "MARINE_STATION", "CANAL", "LIGHTHOUSE", "BUNKERING_STATION", "SEA_FORT", "COASTAL_BATTERY", "AERODROME"];
 
 export interface StrategicCityEditorProps {
   role: "GM" | "PLAYER";
   states: readonly StateEntity[];
+  sides?: readonly Side[];
   cities: readonly StrategicCity[];
   onCreate(city: StrategicCity): void | Promise<void>;
   onCreateFromToken?(city: StrategicCity): void | Promise<void>;
@@ -65,6 +66,7 @@ function cellsText(cells: readonly GridCellCoord[]): string {
 function StrategicCityRow({
   city,
   stateNames,
+  sides,
   role,
   onUpdate,
   onDelete,
@@ -72,6 +74,7 @@ function StrategicCityRow({
 }: {
   city: StrategicCity;
   stateNames: ReadonlyMap<string, string>;
+  sides: readonly Side[];
   role: "GM" | "PLAYER";
   onUpdate(cityId: string, patch: Partial<Omit<StrategicCity, "id">>): void | Promise<void>;
   onDelete(cityId: string): void | Promise<void>;
@@ -81,6 +84,7 @@ function StrategicCityRow({
   const [name, setName] = useState(city.name);
   const [cells, setCells] = useState(cellsText(city.cells));
   const [stateId, setStateId] = useState(city.recognizedStateId);
+  const [factionInfluenceId, setFactionInfluenceId] = useState(city.factionInfluenceId ?? "");
   const [buildCount, setBuildCount] = useState(String(city.historicalBuildTypeCount));
   const [capital, setCapital] = useState(city.isCapital);
   const [error, setError] = useState<string | null>(null);
@@ -95,6 +99,7 @@ function StrategicCityRow({
     setName(city.name);
     setCells(cellsText(city.cells));
     setStateId(city.recognizedStateId);
+    setFactionInfluenceId(city.factionInfluenceId ?? "");
     setBuildCount(String(city.historicalBuildTypeCount));
     setCapital(city.isCapital);
     setError(null);
@@ -113,7 +118,7 @@ function StrategicCityRow({
       name: name.trim(),
       cells: parsedCells,
       recognizedStateId: stateId,
-      factionInfluenceId: city.factionInfluenceId,
+      factionInfluenceId: factionInfluenceId || null,
       mayorId: city.mayorId,
       isCapital: capital,
       historicalBuildTypeCount
@@ -137,6 +142,7 @@ function StrategicCityRow({
       <h3>{city.name}</h3>
       <p>Признанная принадлежность: {stateNames.get(city.recognizedStateId) ?? city.recognizedStateId}</p>
       <p>Фактический контроль: {stateNames.get(city.deFactoStateId) ?? city.deFactoStateId}</p>
+      <p>Фракция влияния: {sides.find((side) => side.id === city.factionInfluenceId)?.name ?? "не указана"}</p>
       <p>Исторических типов построек: {city.historicalBuildTypeCount}</p>
       <p>Постройки: {(city.buildings ?? []).length === 0 ? "нет" : (city.buildings ?? []).map((building) => `${building.type} (${building.cell.x},${building.cell.y})`).join(" · ")}</p>
       {role === "GM" && (city.buildings ?? []).length > 0 ? <div className="card-actions" aria-label={`Постройки города ${city.name}`}>
@@ -164,6 +170,13 @@ function StrategicCityRow({
             {Array.from(stateNames, ([id, stateName]) => <option key={id} value={id}>{stateName}</option>)}
           </select>
         </label>
+        <label>
+          Фракция влияния
+          <select aria-label={`Редактировать фракцию влияния ${city.name}`} value={factionInfluenceId} onChange={(event) => setFactionInfluenceId(event.target.value)}>
+            <option value="">Нет влияющей фракции</option>
+            {sides.map((side) => <option key={side.id} value={side.id}>{side.name}</option>)}
+          </select>
+        </label>
         <details className="strategic-city-advanced">
           <summary>Дополнительные поля</summary>
           <label>
@@ -189,6 +202,7 @@ function StrategicCityRow({
 export function StrategicCityEditor({
   role,
   states,
+  sides = [],
   cities,
   onCreate,
   onCreateFromToken,
@@ -205,6 +219,7 @@ export function StrategicCityEditor({
   const [name, setName] = useState("");
   const [cityCellsText, setCityCellsText] = useState("");
   const [stateId, setStateId] = useState(states[0]?.id ?? "");
+  const [factionInfluenceId, setFactionInfluenceId] = useState("");
   const [buildCount, setBuildCount] = useState("0");
   const [capital, setCapital] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -216,9 +231,13 @@ export function StrategicCityEditor({
 
   const stateNames = useMemo(() => new Map(states.map((state) => [state.id, state.name])), [states]);
   const selectedStateId = states.some((state) => state.id === stateId) ? stateId : (states[0]?.id ?? "");
+  const selectedFactionInfluenceId = sides.some((side) => side.id === factionInfluenceId) ? factionInfluenceId : "";
   useEffect(() => {
     if (selectedStateId !== stateId) setStateId(selectedStateId);
   }, [selectedStateId, stateId]);
+  useEffect(() => {
+    if (selectedFactionInfluenceId !== factionInfluenceId) setFactionInfluenceId(selectedFactionInfluenceId);
+  }, [factionInfluenceId, selectedFactionInfluenceId]);
   useEffect(() => {
     if (observedPickerSessionId !== pickerSessionId) {
       setObservedPickerSessionId(pickerSessionId);
@@ -289,7 +308,7 @@ export function StrategicCityEditor({
       cells,
       recognizedStateId: selectedStateId,
       deFactoStateId: selectedStateId,
-      factionInfluenceId: null,
+      factionInfluenceId: selectedFactionInfluenceId || null,
       mayorId: null,
       isCapital: capital,
       historicalBuildTypeCount
@@ -313,7 +332,7 @@ export function StrategicCityEditor({
       </label>
     </div> : null}
     <div className="strategic-city-list">
-      {visibleCities.map((city) => <StrategicCityRow key={city.id} city={city} stateNames={stateNames} role={role} onUpdate={onUpdate} onDelete={onDelete} {...(onAddBuilding ? { onAddBuilding } : {})} />)}
+      {visibleCities.map((city) => <StrategicCityRow key={city.id} city={city} stateNames={stateNames} sides={sides} role={role} onUpdate={onUpdate} onDelete={onDelete} {...(onAddBuilding ? { onAddBuilding } : {})} />)}
       {cities.length === 0 ? <p className="empty">Города не добавлены.</p> : null}
       {cities.length > 0 && visibleCities.length === 0 ? <p className="empty">По этим условиям города не найдены.</p> : null}
     </div>
@@ -332,6 +351,13 @@ export function StrategicCityEditor({
           Признанное государство
           <select aria-label="Государство" value={selectedStateId} onChange={(event) => setStateId(event.target.value)}>
             {states.length === 0 ? <option value="">Государства не созданы</option> : states.map((state) => <option key={state.id} value={state.id}>{state.name}</option>)}
+          </select>
+        </label>
+        <label>
+          Фракция влияния
+          <select aria-label="Фракция влияния" value={selectedFactionInfluenceId} onChange={(event) => setFactionInfluenceId(event.target.value)}>
+            <option value="">Нет влияющей фракции</option>
+            {sides.map((side) => <option key={side.id} value={side.id}>{side.name}</option>)}
           </select>
         </label>
         <label>
@@ -382,7 +408,7 @@ export function StrategicCityEditor({
             setError("Укажите название и государство перед созданием по токену.");
             return;
           }
-          void onCreateFromToken({ id: resolvedId, name: name.trim(), cells, recognizedStateId: selectedStateId, deFactoStateId: selectedStateId, factionInfluenceId: null, mayorId: null, isCapital: capital, historicalBuildTypeCount });
+          void onCreateFromToken({ id: resolvedId, name: name.trim(), cells, recognizedStateId: selectedStateId, deFactoStateId: selectedStateId, factionInfluenceId: selectedFactionInfluenceId || null, mayorId: null, isCapital: capital, historicalBuildTypeCount });
         }}>Создать из выбранного токена</button> : null}
       </div>
     </section> : null}

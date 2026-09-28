@@ -36,6 +36,12 @@ export function healArmy(army: ArmyState, amount: number): ArmyState | undefined
   };
 }
 
+/** Applies the free base recovery during the completed-turn checkpoint. */
+export function applyAutomaticTurnHealing(army: ArmyState, amount = 10): ArmyState {
+  if (army.health.hp >= army.health.maxHp) return army;
+  return healArmy(army, amount) ?? army;
+}
+
 export function healArmyForTurn(army: ArmyState, amount: number, turnNumber: number): ArmyState | undefined {
   if (!canHealArmy(army).allowed) return undefined;
   const used = army.healing?.checkedOnTurn === turnNumber ? army.healing.hpHealedThisTurn : 0;

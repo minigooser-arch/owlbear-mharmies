@@ -105,6 +105,7 @@ export const DEFAULT_TERRAIN: TerrainRegistryState = {
     desert: { id: "desert", name: "Пустыня", movementCostUnits: 3, enabled: true, movementDomains: ["LAND"], blocksNavalLos: true, color: "#F3E5AB" },
     tundra: { id: "tundra", name: "Тундра", movementCostUnits: 4, enabled: true, movementDomains: ["LAND"], blocksNavalLos: true, color: "#FFFFFF" },
     sea: { id: "sea", name: "Океан / озёра", movementCostUnits: 2, enabled: true, movementDomains: ["SEA"], blocksNavalLos: false, color: "#2F6BFF" },
+    channel: { id: "channel", name: "Канал", movementCostUnits: 2, enabled: true, movementDomains: ["LAND", "SEA"], blocksNavalLos: false, color: "#4FA3D1" },
     ice: { id: "ice", name: "Льды", movementCostUnits: 4, enabled: true, movementDomains: ["LAND"], blocksNavalLos: true, color: "#87CEEB" }
   }
 };

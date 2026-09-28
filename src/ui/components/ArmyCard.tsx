@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import type { StrategicCity } from "../../shared/types";
 import type { ArmyView, UiCommand } from "../state/useExtensionState";
 import { formatMovementUnits, movementDenialMessage } from "../presentation/movement";
 
@@ -16,7 +15,6 @@ interface ArmyCardProps {
   isGM: boolean;
   canEditRoute: boolean;
   canRequestDisband: boolean;
-  hospitalCities?: readonly StrategicCity[];
   onAction(command: UiCommand): void;
 }
 
@@ -58,13 +56,11 @@ function ArmyHealthEditor({ army, onAction }: { army: ArmyView; onAction(command
   );
 }
 
-export function ArmyCard({ army, sideColor = "#687F91", isGM, canEditRoute, canRequestDisband, hospitalCities = [], onAction }: ArmyCardProps) {
+export function ArmyCard({ army, sideColor = "#687F91", isGM, canEditRoute, canRequestDisband, onAction }: ArmyCardProps) {
   const canChangeRoute = canEditRoute && army.status === "READY" && !army.formationActive;
   const invalidMessage = movementDenialMessage(army.routeInvalidReason);
   const encirclementDamage = Math.ceil(army.healthMaxHp * 0.1);
   const hasRoute = army.routeCellCount > 0;
-  const healAmount = Math.min(10, army.healthMaxHp - army.healthHp);
-  const [hospitalCityId, setHospitalCityId] = useState(hospitalCities[0]?.id ?? "");
   return (
     <article className={`army-card wiki-card${!army.supplied ? " army-card-warning" : ""}`}>
       <span className="army-side-mark" style={{ backgroundColor: sideColor }} aria-hidden="true" />
@@ -107,22 +103,8 @@ export function ArmyCard({ army, sideColor = "#687F91", isGM, canEditRoute, canR
         </div>
       )}
 
-      {canEditRoute && healAmount > 0 && army.supplied && army.status !== "IN_BATTLE" && !army.formationActive && (
-        <div className="card-actions" aria-label="Лечение армии">
-          {hospitalCities.length > 0 && (
-            <select aria-label={`Госпиталь для лечения ${army.name}`} value={hospitalCityId} onChange={(event) => setHospitalCityId(event.target.value)}>
-              <option value="">Обычная ставка</option>
-              {hospitalCities.map((city) => <option key={city.id} value={city.id}>{city.name} · госпиталь</option>)}
-            </select>
-          )}
-          <button
-            className="button subtle wide"
-            type="button"
-            onClick={() => onAction({ type: "HEAL_ARMY", armyId: army.id, amount: healAmount, ...(hospitalCityId ? { hospitalCityId } : {}) })}
-          >
-            Лечить армию (+{healAmount} HP)
-          </button>
-        </div>
+      {army.supplied && army.status !== "IN_BATTLE" && !army.formationActive && army.healthHp < army.healthMaxHp && (
+        <p className="helper-text">После завершения глобального хода армия восстановит до 10 HP бесплатно.</p>
       )}
 
       {(isGM || canRequestDisband) && (

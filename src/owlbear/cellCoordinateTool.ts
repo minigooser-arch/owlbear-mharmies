@@ -41,7 +41,12 @@ function coordinateLabel(kind: CoordinateOverlayKind, cell: GridCellCoord, terra
   const coordinates = kind === "HOVER"
     ? `X: ${cell.x}, Y: ${cell.y}`
     : `Выбрано: ${cell.x}, ${cell.y}`;
-  return `${coordinates}\nМестность: ${terrain.terrainName}`;
+  const movementCost = terrain.movementCostUnits === null
+    ? "неизвестна"
+    : `${Number.isInteger(terrain.movementCostUnits / 2)
+      ? String(terrain.movementCostUnits / 2)
+      : (terrain.movementCostUnits / 2).toFixed(1).replace(".", ",")} ОП`;
+  return `${coordinates}\nМестность: ${terrain.terrainName}\nСтоимость перемещения: ${movementCost}\nПризнанная территория: ${terrain.recognizedStateName}`;
 }
 
 export async function registerCellCoordinateTool(

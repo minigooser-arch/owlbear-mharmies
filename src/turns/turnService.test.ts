@@ -37,6 +37,18 @@ it("starts a new turn with exactly five OP and starts only routes due on that tu
   expect(result.armies.a?.status).toBe("MOVING");
 });
 
+it("heals a supplied army after the global turn is completed", () => {
+  const damaged = { ...army(17), health: { hp: 30, maxHp: 50 } };
+  const result = completeTurn(scene(), { a: damaged }, {
+    source: "MANUAL",
+    completedAt: new Date("2026-09-06T12:00:00.000Z"),
+    armyCells: { a: { x: 0, y: 0 } }
+  });
+  expect(result.changed).toBe(true);
+  if (!result.changed) return;
+  expect(result.armies.a?.health.hp).toBe(40);
+});
+
 it("always starts the new turn in movement phase", () => {
   const current = scene();
   current.turn.phase = "POST_MOVEMENT";

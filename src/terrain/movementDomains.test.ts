@@ -8,6 +8,17 @@ function terrain(movementDomains: MovementDomain[], los: boolean): TerrainType {
 }
 
 describe("movement domains", () => {
+  it("ships the built-in channel terrain as both LAND and SEA", () => {
+    const channel = DEFAULT_TERRAIN.types.channel;
+    expect(channel).toMatchObject({
+      id: "channel",
+      name: "Канал",
+      movementCostUnits: 2,
+      movementDomains: ["LAND", "SEA"],
+      blocksNavalLos: false
+    });
+  });
+
   it("treats canal terrain as both LAND and SEA", () => {
     const canal = terrain(["LAND", "SEA"], false);
     expect(terrainSupportsDomain(canal, "LAND")).toBe(true);
