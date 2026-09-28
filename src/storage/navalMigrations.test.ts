@@ -26,7 +26,7 @@ function v3ArmyFixture() {
 it("migrates v5 scenes through naval defaults into strategic v7", () => {
   const migrated = migrateSceneState(v5SceneFixture());
   expect(migrated.ok).toBe(true); if (!migrated.ok) return;
-  expect(migrated.value.version).toBe(8);
+  expect(migrated.value.version).toBe(9);
   expect(migrated.value.turn.phase).toBe("MOVEMENT");
   expect(migrated.value.ships).toEqual({});
   expect(migrated.value.navalBattleRequests).toEqual([]);

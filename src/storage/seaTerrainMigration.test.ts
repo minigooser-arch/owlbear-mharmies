@@ -29,7 +29,7 @@ it("restores built-in sea terrain when an existing v6 scene does not contain it"
   expect(result).toMatchObject({
     ok: true,
     value: {
-      version: 8,
+      version: 9,
       revision: 7,
       terrain: {
         types: {

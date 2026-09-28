@@ -33,7 +33,7 @@ describe("city army buildings migration", () => {
     expect(result).toMatchObject({
       ok: true,
       value: {
-        version: 8,
+        version: 9,
         lrTransactions: [],
         strategicCities: [{ id: "city-1" }],
         settings: {
