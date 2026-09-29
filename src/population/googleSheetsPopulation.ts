@@ -113,7 +113,12 @@ export function parseConscriptionCategoryCsv(csv: string): StateConscriptionRow[
   let pendingHumanResource: number | undefined;
   for (const record of records) {
     const stateName = record[10]?.trim();
-    if (stateName && parseNumber(record[15] ?? "") !== undefined) {
+    // The public sheet formats population as e.g. `46М. 084Т.`, not as a
+    // plain number. Use the same compact-number parser and fall back to the
+    // numeric state index so a formatted/blank population cell cannot hide
+    // the following faction row's conscription category.
+    const isStateRow = stateName && (parseHumanResource(record[15]) !== undefined || parseNumber(record[1] ?? "") !== undefined);
+    if (isStateRow) {
       pendingStateName = stateName;
       pendingHumanResource = parseHumanResource(record[40]);
     }

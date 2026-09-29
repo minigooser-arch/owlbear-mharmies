@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { StateDemography } from "../../shared/types";
 import { PopulationPage } from "./PopulationPage";
 
@@ -19,6 +19,8 @@ const demographic: StateDemography = {
 const laws = [{ id: "GENERAL_MOBILIZATION", name: "Всеобщая мобилизация", rate: 0.24, active: true }];
 
 describe("PopulationPage", () => {
+  afterEach(() => cleanup());
+
   it("shows state balance and requires a reason before submitting correction", () => {
     const onAction = vi.fn();
     render(<PopulationPage states={[{ id: "state-1", name: "Государство", rulingFactionId: null, active: true }]} demographics={[demographic]} conscriptionLaws={laws} onAction={onAction} />);
@@ -35,11 +37,33 @@ describe("PopulationPage", () => {
   });
 
   it("syncs population from the configured public sheet", async () => {
-    const onSyncPopulation = vi.fn().mockResolvedValue({ applied: 1, entries: [], unmatchedStates: [], skippedRows: [], errors: [] });
+    const onSyncPopulation = vi.fn().mockResolvedValue({ applied: 1, humanResourceApplied: 0, conscriptionApplied: 0, entries: [], unmatchedStates: [], unmatchedConscriptionStates: [], skippedRows: [], errors: [] });
     render(<PopulationPage states={[]} demographics={[]} conscriptionLaws={laws} onAction={vi.fn()} onSyncPopulation={onSyncPopulation} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Синхронизировать с Google Sheets" }));
+    const syncButton = screen.getAllByRole("button", { name: "Синхронизировать с Google Sheets" }).at(-1);
+    if (!syncButton) throw new Error("Sync button was not rendered");
+    fireEvent.click(syncButton);
     expect(onSyncPopulation).toHaveBeenCalledOnce();
     expect(await screen.findByRole("status")).toHaveTextContent("Обновлено записей: 1");
+  });
+
+  it("shows synchronization error details", async () => {
+    const onSyncPopulation = vi.fn().mockResolvedValue({
+      applied: 0,
+      humanResourceApplied: 0,
+      conscriptionApplied: 0,
+      entries: [],
+      unmatchedStates: [],
+      unmatchedConscriptionStates: [],
+      skippedRows: [],
+      errors: ["Таблица призыва вернула HTTP 429"]
+    });
+    render(<PopulationPage states={[]} demographics={[]} conscriptionLaws={laws} onAction={vi.fn()} onSyncPopulation={onSyncPopulation} />);
+
+    const syncButton = screen.getAllByRole("button", { name: "Синхронизировать с Google Sheets" }).at(-1);
+    if (!syncButton) throw new Error("Sync button was not rendered");
+    fireEvent.click(syncButton);
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Таблица призыва вернула HTTP 429");
   });
 });

@@ -56,7 +56,7 @@ export function PopulationPage({ states, demographics, conscriptionLaws, onActio
         `Категорий призыва: ${result.conscriptionApplied}`,
         result.unmatchedStates.length > 0 ? `Без соответствия: ${result.unmatchedStates.length}` : "",
         (result.unmatchedConscriptionStates?.length ?? 0) > 0 ? `Без категории призыва: ${result.unmatchedConscriptionStates?.length}` : "",
-        result.errors.length > 0 ? `Ошибок: ${result.errors.length}` : ""
+        result.errors.length > 0 ? `Ошибки: ${result.errors.join(" · ")}` : ""
       ].filter(Boolean).join(" · ");
       setSyncMessage(details || "Синхронизация завершена");
     } catch (error) {
