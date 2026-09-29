@@ -25,6 +25,14 @@ export type NotificationCode =
   | "IMAGE_REQUIRED"
   | "ARMY_TOKEN_NOT_CONFIGURED"
   | "ARMY_TOKEN_NOT_SELECTED"
+  | "CITY_NOT_FOUND"
+  | "MILITARY_DEPARTMENT_REQUIRED"
+  | "CITY_POSITION_UNAVAILABLE"
+  | "ARMY_MUST_BE_IN_CITY"
+  | "STATE_REQUIRED"
+  | "STATE_NOT_FOUND"
+  | "INSUFFICIENT_HUMAN_RESOURCE"
+  | "INVALID_AMOUNT"
   | "ALREADY_REGISTERED"
   | "SIDE_NOT_FOUND"
   | "ARMY_NOT_READY"
@@ -103,6 +111,14 @@ const RUSSIAN_MESSAGES: Readonly<Record<NotificationCode, string>> = {
   IMAGE_REQUIRED: "Для армии необходимо выбрать изображение.",
   ARMY_TOKEN_NOT_CONFIGURED: "Для этой фракции не задан токен армии. Настройте его в разделе «Фракции».",
   ARMY_TOKEN_NOT_SELECTED: "В Assets Manager не выбран токен армии.",
+  CITY_NOT_FOUND: "Выбранный город не найден в состоянии сцены.",
+  MILITARY_DEPARTMENT_REQUIRED: "Военное ведомство отсутствует, не принадлежит влияющей фракции или не действует на этой клетке.",
+  CITY_POSITION_UNAVAILABLE: "Не удалось определить клетку города для размещения армии.",
+  ARMY_MUST_BE_IN_CITY: "Выбранный токен армии должен находиться внутри клетки города.",
+  STATE_REQUIRED: "Для фракции не указано государство. Сначала привяжите фракцию к государству.",
+  STATE_NOT_FOUND: "Для государства фракции нет демографической записи. Создайте её или синхронизируйте население.",
+  INSUFFICIENT_HUMAN_RESOURCE: "Недостаточно людского ресурса для создания или комплектования армии.",
+  INVALID_AMOUNT: "Указана недопустимая сумма людского ресурса.",
   ALREADY_REGISTERED: "Выбранное изображение уже зарегистрировано как армия.",
   SIDE_NOT_FOUND: "Выбранная сторона не найдена.",
   ARMY_NOT_READY: "Сначала остановите армию, чтобы изменить её маршрут.",

@@ -33,4 +33,13 @@ describe("PopulationPage", () => {
 
     expect(onAction).toHaveBeenCalledWith(expect.objectContaining({ type: "UPDATE_STATE_DEMOGRAPHY", stateId: "state-1", reason: "Исправление" }));
   });
+
+  it("syncs population from the configured public sheet", async () => {
+    const onSyncPopulation = vi.fn().mockResolvedValue({ applied: 1, entries: [], unmatchedStates: [], skippedRows: [], errors: [] });
+    render(<PopulationPage states={[]} demographics={[]} conscriptionLaws={laws} onAction={vi.fn()} onSyncPopulation={onSyncPopulation} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Синхронизировать с Google Sheets" }));
+    expect(onSyncPopulation).toHaveBeenCalledOnce();
+    expect(await screen.findByRole("status")).toHaveTextContent("Обновлено записей: 1");
+  });
 });

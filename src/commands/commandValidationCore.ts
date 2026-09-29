@@ -159,12 +159,14 @@ function parseStateEntity(value: unknown): StateEntity | undefined {
     ? null
     : sideId(value.rulingFactionId) ? value.rulingFactionId : undefined;
   if (rulingFactionId === undefined) return undefined;
+  if (value.backendCountry !== undefined && value.backendCountry !== null && !boundedString(value.backendCountry, 128)) return undefined;
   return {
     id: value.id,
     name: value.name.trim(),
     color: value.color,
     rulingFactionId,
-    active: value.active
+    active: value.active,
+    ...(value.backendCountry !== undefined ? { backendCountry: value.backendCountry === null ? null : value.backendCountry.trim() } : {})
   };
 }
 
@@ -239,6 +241,10 @@ function parseSettings(value: unknown): Partial<SceneSettings> | undefined {
   if ("visibilityRecalculationMode" in value) {
     if (value.visibilityRecalculationMode !== "ON_DROP" && value.visibilityRecalculationMode !== "REALTIME") return undefined;
     result.visibilityRecalculationMode = value.visibilityRecalculationMode;
+  }
+  if ("populationSheetCsvUrl" in value) {
+    if (!boundedString(value.populationSheetCsvUrl, 1024)) return undefined;
+    result.populationSheetCsvUrl = value.populationSheetCsvUrl.trim();
   }
   return result;
 }
@@ -542,6 +548,7 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
     if ("color" in value.patch) { if (!boundedString(value.patch.color, 32)) return undefined; patch.color = value.patch.color; }
     if ("active" in value.patch) { if (typeof value.patch.active !== "boolean") return undefined; patch.active = value.patch.active; }
     if ("rulingFactionId" in value.patch) { if (value.patch.rulingFactionId !== null && !sideId(value.patch.rulingFactionId)) return undefined; patch.rulingFactionId = value.patch.rulingFactionId as string | null; }
+    if ("backendCountry" in value.patch) { if (value.patch.backendCountry !== null && !boundedString(value.patch.backendCountry, 128)) return undefined; patch.backendCountry = value.patch.backendCountry === null ? null : value.patch.backendCountry.trim(); }
     return { type: "UPDATE_STATE", stateId: value.stateId, patch };
   },
   DELETE_STATE: (value) => sideId(value.stateId) ? { type: "DELETE_STATE", stateId: value.stateId } : undefined,

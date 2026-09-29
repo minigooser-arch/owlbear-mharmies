@@ -37,6 +37,8 @@ export interface SceneSettings {
   hospitalHealingCostPerHp?: number;
   /** IANA timezone used for real-date population growth. */
   populationTimeZone?: string;
+  /** Public Google Sheets CSV endpoint used for explicit GM population sync. */
+  populationSheetCsvUrl?: string;
 }
 
 export interface ArmyTokenAsset {
@@ -66,6 +68,8 @@ export interface StateEntity {
   color?: string;
   rulingFactionId: string | null;
   active: boolean;
+  /** Stable country key from the public population sheet's backend tab. */
+  backendCountry?: string | null;
 }
 
 export interface NormalizedStateEntity extends StateEntity {

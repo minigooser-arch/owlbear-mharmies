@@ -65,7 +65,7 @@ export function updateState(
   states: readonly StateEntity[],
   sides: readonly Side[],
   stateId: string,
-  patch: Partial<Pick<StateEntity, "name" | "color" | "rulingFactionId" | "active">>
+  patch: Partial<Pick<StateEntity, "name" | "color" | "rulingFactionId" | "active" | "backendCountry">>
 ): StateMutationResult {
   const index = states.findIndex((state) => state.id === stateId);
   if (index < 0) return { ok: false, reason: "STATE_NOT_FOUND" };

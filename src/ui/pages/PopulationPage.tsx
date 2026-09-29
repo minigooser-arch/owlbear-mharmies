@@ -1,5 +1,6 @@
 import { useState } from "react";
-import type { ConscriptionLaw, StateDemography, StateEntity } from "../../shared/types";
+import type { ConscriptionLaw, SceneSettings, StateDemography, StateEntity } from "../../shared/types";
+import type { PopulationSyncSummary } from "../../population/populationSheetSync";
 import type { UiCommand } from "../state/useExtensionState";
 
 interface PopulationPageProps {
@@ -7,6 +8,8 @@ interface PopulationPageProps {
   demographics: readonly StateDemography[];
   conscriptionLaws: readonly ConscriptionLaw[];
   onAction(command: UiCommand): void;
+  settings?: SceneSettings;
+  onSyncPopulation?: () => Promise<PopulationSyncSummary>;
 }
 
 type DemographyDraft = Pick<StateDemography, "population" | "populationGrowthFactor" | "humanResource" | "conscriptionLawId" | "conscriptionRate">;
@@ -21,7 +24,7 @@ function draftFor(record: StateDemography): DemographyDraft {
   };
 }
 
-export function PopulationPage({ states, demographics, conscriptionLaws, onAction }: PopulationPageProps) {
+export function PopulationPage({ states, demographics, conscriptionLaws, onAction, settings, onSyncPopulation }: PopulationPageProps) {
   const [drafts, setDrafts] = useState<Record<string, DemographyDraft>>(() =>
     Object.fromEntries(demographics.map((record) => [record.stateId, draftFor(record)]))
   );
@@ -29,6 +32,8 @@ export function PopulationPage({ states, demographics, conscriptionLaws, onActio
   const [lawDrafts, setLawDrafts] = useState<Record<string, ConscriptionLaw>>(() =>
     Object.fromEntries(conscriptionLaws.map((law) => [law.id, { ...law }]))
   );
+  const [syncing, setSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const stateNames = new Map(states.map((state) => [state.id, state.name]));
   const updateDraft = (record: StateDemography, patch: Partial<DemographyDraft>) => {
     setDrafts((current) => ({ ...current, [record.stateId]: { ...(current[record.stateId] ?? draftFor(record)), ...patch } }));
@@ -39,10 +44,33 @@ export function PopulationPage({ states, demographics, conscriptionLaws, onActio
     const draft = drafts[record.stateId] ?? draftFor(record);
     onAction({ type: "UPDATE_STATE_DEMOGRAPHY", stateId: record.stateId, patch: draft, reason });
   };
+  const syncPopulation = async () => {
+    if (!onSyncPopulation || syncing) return;
+    setSyncing(true);
+    setSyncMessage(null);
+    try {
+      const result = await onSyncPopulation();
+      const details = [
+        `Обновлено записей: ${result.applied}`,
+        result.unmatchedStates.length > 0 ? `Без соответствия: ${result.unmatchedStates.length}` : "",
+        result.errors.length > 0 ? `Ошибок: ${result.errors.length}` : ""
+      ].filter(Boolean).join(" · ");
+      setSyncMessage(details || "Синхронизация завершена");
+    } catch (error) {
+      setSyncMessage(`Синхронизация не выполнена: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   return (
     <section aria-labelledby="population-title">
-      <div className="section-heading wiki-page-heading"><div><p className="eyebrow">Экономика государств</p><h2 id="population-title">Население и ЛР</h2><p className="page-description">ЛР хранится внутри сцены. Google Sheets остаётся внешним журналом для ручного переноса.</p></div></div>
+      <div className="section-heading wiki-page-heading"><div><p className="eyebrow">Экономика государств</p><h2 id="population-title">Население и ЛР</h2><p className="page-description">Google Sheets используется как источник населения. Изменения читаются из публичного CSV и применяются только мастером; запись обратно в таблицу не выполняется.</p></div></div>
+      {onSyncPopulation && <div className="registration-card population-sync-card">
+        <div className="registration-copy"><strong>Синхронизация с Google Sheets</strong><small>{settings?.populationSheetCsvUrl ?? "Адрес CSV не задан"}</small></div>
+        <button className="button primary" type="button" onClick={() => void syncPopulation()} disabled={syncing}>{syncing ? "Загрузка…" : "Синхронизировать с Google Sheets"}</button>
+        {syncMessage && <p className="page-description" role="status">{syncMessage}</p>}
+      </div>}
       <div className="management-stack">
         {demographics.length === 0 && <div className="empty-state">Демографических записей пока нет. Создайте их через корректировку государства.</div>}
         {states.filter((state) => !demographics.some((record) => record.stateId === state.id)).map((state) => {

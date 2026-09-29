@@ -1,6 +1,7 @@
 import type { ConscriptionLaw, SceneSettings, TerrainRegistryState, TurnState } from "./types";
 
 export const EXTENSION_ID = "com.letopis.army-control";
+export const DEFAULT_POPULATION_SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/1wlTrvSxeoQDPKO0s9C0ooKF3xMqmTfcCDB70y-1X2QA/export?format=csv&gid=64907648";
 export const PROGRAMMATIC_ONLY_TOOL_FILTER = {
   activeTools: [`${EXTENSION_ID}/__programmatic-only__`]
 };
@@ -68,6 +69,7 @@ export const METADATA_KEYS = {
   mapOverlay: `${EXTENSION_ID}/map-overlay`,
   /** Legacy key used only to remove the retired gray vision overlay. */
   visionOverlay: `${EXTENSION_ID}/vision-overlay`,
+  visionLight: `${EXTENSION_ID}/vision-light`,
   healthOverlay: `${EXTENSION_ID}/health-overlay`,
   navalShipOverlay: `${EXTENSION_ID}/naval-ship-overlay`,
   interceptionOverlay: `${EXTENSION_ID}/interception-overlay`,
@@ -92,7 +94,8 @@ export const DEFAULT_SETTINGS: SceneSettings = {
   armyFormationCostPerHp: 5000,
   armyHealingCostPerHp: 5000,
   hospitalHealingCostPerHp: 2500,
-  populationTimeZone: "Europe/Moscow"
+  populationTimeZone: "Europe/Moscow",
+  populationSheetCsvUrl: DEFAULT_POPULATION_SHEET_CSV_URL
 };
 
 export const DEFAULT_CONSCRIPTION_LAWS: ConscriptionLaw[] = [
