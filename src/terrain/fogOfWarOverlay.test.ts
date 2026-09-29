@@ -23,8 +23,11 @@ describe("fog of war overlay", () => {
       type: "CURVE",
       position: { x: 0, y: 0 },
       layer: "FOG",
-      fillColor: "#6b7280",
-      fillOpacity: 0.35,
+      strokeColor: "rgba(107,114,128,0)",
+      strokeOpacity: 0,
+      strokeWidth: 0,
+      fillColor: "#808080",
+      fillOpacity: 0.2,
       metadata: { "com.letopis.army-control/map-overlay": { kind: "FOG_OF_WAR" } }
     });
     expect(overlays.every(({ key }) => key.startsWith("FOG_OF_WAR/"))).toBe(true);

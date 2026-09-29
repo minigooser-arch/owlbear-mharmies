@@ -136,11 +136,13 @@ export function buildFogOfWarOverlays(source: FogOfWarOverlaySource): DesiredLoc
         locked: true,
         disableHit: true,
         disableAutoZIndex: true,
-        strokeColor: "#6b7280",
+        // Use a transparent stroke as a second line of defence: some Owlbear
+        // renderers keep a default curve outline even when opacity is zero.
+        strokeColor: "rgba(107,114,128,0)",
         strokeOpacity: 0,
         strokeWidth: 0,
-        fillColor: "#6b7280",
-        fillOpacity: 0.35,
+        fillColor: "#808080",
+        fillOpacity: 0.2,
         metadata: {
           [METADATA_KEYS.mapOverlay]: { key, kind: "FOG_OF_WAR" }
         }
