@@ -22,7 +22,7 @@ function harness() {
       },
       createId: () => `overlay-${nextId++}`
     },
-    seed: (...seedItems: SceneItemRecord[]) => { items = seedItems.map((item) => structuredClone(item)); },
+    seed: (seedItems: SceneItemRecord[]) => { items = seedItems.map((item) => structuredClone(item)); },
     items: () => items
   };
 }
@@ -180,67 +180,15 @@ describe("MapOverlayService", () => {
     });
   });
 
-  it("adds a player-local live fog mask and removes it when fog is no longer requested", async () => {
+  it("removes legacy fog overlays when map visuals are reconciled", async () => {
     const test = harness();
-    const base = {
-      dpi: 100,
-      gridMap: {
-        version: 1 as const,
-        revision: 1,
-        cells: {
-          "0,0": { terrainId: null, impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null },
-          "4,4": { terrainId: null, impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null }
-        }
-      },
-      terrain: { defaultTerrainId: "plain", types: {} },
-      sides: [],
-      states: []
-    };
-    await new MapOverlayService(test.port).reconcile({
-      ...base,
-      viewerRole: "PLAYER",
-      fog: { dpi: 100, bounds: { minX: 0, maxX: 4, minY: 0, maxY: 4 }, observers: [{ cell: { x: 1, y: 1 }, rangeCells: 1 }] }
-    });
-    expect(test.items().length).toBeGreaterThan(0);
-    expect(test.items().every((item) => item.metadata[METADATA_KEYS.mapOverlay])).toBe(true);
-    expect(test.items().some((item) => item.type === "SHAPE")).toBe(true);
-    expect(test.items().find((item) => item.type === "SHAPE")).toMatchObject({
+    const legacy: SceneItemRecord = {
+      id: "legacy-fog",
       type: "SHAPE",
-      layer: "FOG",
-      locked: true,
-      disableHit: true,
-      metadata: { [METADATA_KEYS.mapOverlay]: { kind: "FOG_OF_WAR" } }
-    });
-    const firstIds = test.items().map((item) => item.id).sort();
-
-    await new MapOverlayService(test.port).reconcile({
-      ...base,
-      viewerRole: "PLAYER",
-      fog: { dpi: 100, bounds: { minX: 0, maxX: 4, minY: 0, maxY: 4 }, observers: [{ cell: { x: 3, y: 3 }, rangeCells: 1 }] }
-    });
-    expect(test.items().length).toBeGreaterThan(0);
-    expect(test.items().map((item) => item.id).sort()).not.toEqual(firstIds);
-
-    await new MapOverlayService(test.port).reconcile({ ...base, viewerRole: "PLAYER" });
-    expect(test.items()).toEqual([]);
-  });
-
-  it("removes legacy curve and raster fog objects when installing the current mask", async () => {
-    const test = harness();
-    test.seed(
-      {
-        id: "legacy-curve",
-        type: "CURVE",
-        position: { x: 0, y: 0 },
-        metadata: { [METADATA_KEYS.mapOverlay]: { key: "FOG_OF_WAR_V4/0,0/4,4", kind: "FOG_OF_WAR" } }
-      },
-      {
-        id: "legacy-raster",
-        type: "IMAGE",
-        position: { x: 0, y: 0 },
-        metadata: { [METADATA_KEYS.mapOverlay]: { key: "FOG_OF_WAR_V3", kind: "FOG_OF_WAR" } }
-      }
-    );
+      position: { x: 0, y: 0 },
+      metadata: { [METADATA_KEYS.mapOverlay]: { key: "FOG_OF_WAR_V5/0,0/4,4", kind: "FOG_OF_WAR" } }
+    };
+    test.seed([legacy]);
     const base = {
       dpi: 100,
       gridMap: {
@@ -252,13 +200,7 @@ describe("MapOverlayService", () => {
       sides: [],
       states: []
     };
-    await new MapOverlayService(test.port).reconcile({
-      ...base,
-      viewerRole: "PLAYER",
-      fog: { dpi: 100, bounds: { minX: 0, maxX: 0, minY: 0, maxY: 0 }, observers: [] }
-    });
-
-    expect(test.items().map((item) => item.id)).toEqual(["overlay-1"]);
-    expect(test.items()[0]?.metadata[METADATA_KEYS.mapOverlay]).toMatchObject({ key: expect.stringMatching(/^FOG_OF_WAR_V5\//) });
+    await new MapOverlayService(test.port).reconcile({ ...base, viewerRole: "PLAYER" });
+    expect(test.items()).toEqual([]);
   });
 });

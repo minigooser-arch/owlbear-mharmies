@@ -335,7 +335,7 @@ describe("ProductionEngine overlay performance", () => {
     )).toBe(false);
     expect(localItems.some((item) =>
       (item.metadata[METADATA_KEYS.mapOverlay] as { kind?: string } | undefined)?.kind === "FOG_OF_WAR"
-    )).toBe(true);
+    )).toBe(false);
     expect(fixture.items.some((item) => item.metadata[METADATA_KEYS.mapOverlay])).toBe(false);
   });
 });
