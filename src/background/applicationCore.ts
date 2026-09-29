@@ -26,6 +26,7 @@ import { findStrategicConflictEdges } from "../movement/movementIntent";
 import { applyCellPatchBatch, readCell, type CellPatchOperation } from "../terrain/gridMap";
 import { annexingStateForEntry } from "../annexation/annexationRules";
 import { MapOverlayService } from "../terrain/mapOverlayService";
+import { VisionOverlayService } from "../terrain/visionOverlayService";
 import { CachedCellTerrainLookup } from "../terrain/cellTerrainLookup";
 import { HealthOverlayService } from "../health/healthOverlayService";
 import { NavalShipOverlayService } from "../naval/ships/navalShipOverlayService";
@@ -41,7 +42,7 @@ import { getDueTurnBoundary } from "../turns/turnSchedule";
 import { completeTurn } from "../turns/turnService";
 import { getDestinationMovementCostUnits } from "../terrain/terrainRegistry";
 import { GridDistanceService } from "../grid/gridDistance";
-import { StrategicGridAdapter } from "../grid/strategicGrid";
+import { parseCellKey, StrategicGridAdapter } from "../grid/strategicGrid";
 import { RouteOverlayService } from "../routes/routeOverlayService";
 import { validateStrategicRouteShape } from "../routes/strategicRoute";
 import {
@@ -86,6 +87,7 @@ import { buildDetectionGraph } from "../visibility/detectionGraph";
 import { buildSceneDetectionGraph, detectedShipIdsForSide } from "../visibility/sceneDetectionGraph";
 import { LocalCloneReconciler, UpdateOriginGuard } from "../visibility/localCloneReconciler";
 import { visibleArmyIdsForPlayer } from "../visibility/visibilityEngine";
+import { visibleCellsForObservers } from "../visibility/visibleCells";
 import { applyPopulationCalendarToScene } from "../population/populationRules";
 import type { OwlbearPort } from "../owlbear/sdkAdapter";
 import {
@@ -246,6 +248,7 @@ export function localOverlayIds(items: readonly SceneItemRecord[]): string[] {
     METADATA_KEYS.shipRoutePreview,
     METADATA_KEYS.barrierOverlay,
     METADATA_KEYS.mapOverlay,
+    METADATA_KEYS.visionOverlay,
     METADATA_KEYS.healthOverlay,
     METADATA_KEYS.navalShipOverlay,
     METADATA_KEYS.interceptionOverlay,
@@ -417,6 +420,38 @@ export class ProductionEngine {
       revealUntilTurn: scene.navalRevealUntilTurn ?? {},
       currentTurn: scene.turn.turnNumber
     });
+    let visibleCells: Set<string> | undefined;
+    try {
+      const dpi = await this.grid.getDpi();
+      const strategicGrid = new StrategicGridAdapter({ dpi, offset: { x: 0, y: 0 } });
+      const mapCells = Object.keys(scene.gridMap.cells).flatMap((rawCellKey) => {
+        try {
+          return [parseCellKey(rawCellKey)];
+        } catch {
+          return [];
+        }
+      });
+      if (role === "GM") {
+        visibleCells = new Set(mapCells.map((cell) => `${cell.x},${cell.y}`));
+      } else {
+        visibleCells = await visibleCellsForObservers({
+          cells: mapCells,
+          observers: armyDetectionUnits
+            .filter((unit) => memberSideIds.includes(unit.sideId))
+            .map(({ position, detectionRangeCells, ignoresVisionBarriers }) => ({
+              position,
+              detectionRangeCells,
+              ignoresVisionBarriers
+            })),
+          cellToSceneCenter: strategicGrid.cellToSceneCenter.bind(strategicGrid),
+          sceneToCell: strategicGrid.sceneToCell.bind(strategicGrid),
+          distancePort: this.grid,
+          visionBarriers: extractBarrierSegments(barriers, "vision")
+        });
+      }
+    } catch {
+      // Keep the previous vision overlay when grid geometry is temporarily unavailable.
+    }
     const shipSources = sceneItems.filter((item) => (scene.ships ?? {})[item.id] !== undefined);
     const visibleSourceIds = new Set([...visible, ...visibleShips]);
     await this.cloneReconciler.reconcile(
@@ -432,7 +467,8 @@ export class ProductionEngine {
       leaderSideIds,
       visible,
       sceneItems,
-      visibleShips
+      visibleShips,
+      visibleCells
     );
   }
 
@@ -1472,7 +1508,8 @@ export class ProductionEngine {
     leaderSideIds: readonly string[],
     visibleArmyIds: ReadonlySet<string>,
     sceneItems: readonly SceneItemRecord[],
-    visibleShipIds: ReadonlySet<string>
+    visibleShipIds: ReadonlySet<string>,
+    visibleCells: ReadonlySet<string> | undefined
   ): Promise<void> {
     let localItemsSnapshot: Promise<SceneItemRecord[]> | undefined;
     const overlayPort = {
@@ -1642,16 +1679,25 @@ export class ProductionEngine {
           .map((state) => [state.id, state.name, state.color ?? null])
           .sort(([left], [right]) => String(left).localeCompare(String(right)))
       ]);
-      if (this.lastMapOverlaySignature === signature) return;
-      await mapOverlayService.reconcile({
-        viewerRole: role,
-        dpi,
-        gridMap: scene.gridMap,
-        terrain: scene.terrain,
-        sides: scene.sides,
-        states: scene.states,
-      });
-      this.lastMapOverlaySignature = signature;
+      if (this.lastMapOverlaySignature !== signature) {
+        await mapOverlayService.reconcile({
+          viewerRole: role,
+          dpi,
+          gridMap: scene.gridMap,
+          terrain: scene.terrain,
+          sides: scene.sides,
+          states: scene.states,
+        });
+        this.lastMapOverlaySignature = signature;
+      }
+      if (visibleCells !== undefined) {
+        await new VisionOverlayService(overlayPort).reconcile({
+          viewerRole: role,
+          dpi,
+          gridMap: scene.gridMap,
+          visibleCells
+        });
+      }
     } catch {
       // Keep the last valid GM map overlay if grid geometry is temporarily unavailable.
     }

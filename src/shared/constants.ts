@@ -66,6 +66,7 @@ export const METADATA_KEYS = {
   shipRoutePreview: `${EXTENSION_ID}/ship-route-preview`,
   barrierOverlay: `${EXTENSION_ID}/barrier-overlay`,
   mapOverlay: `${EXTENSION_ID}/map-overlay`,
+  visionOverlay: `${EXTENSION_ID}/vision-overlay`,
   healthOverlay: `${EXTENSION_ID}/health-overlay`,
   navalShipOverlay: `${EXTENSION_ID}/naval-ship-overlay`,
   interceptionOverlay: `${EXTENSION_ID}/interception-overlay`,
