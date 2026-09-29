@@ -203,9 +203,9 @@ describe("MapOverlayService", () => {
     });
     expect(test.items().length).toBeGreaterThan(0);
     expect(test.items().every((item) => item.metadata[METADATA_KEYS.mapOverlay])).toBe(true);
-    expect(test.items().some((item) => item.type === "IMAGE")).toBe(true);
-    expect(test.items().find((item) => item.type === "IMAGE")).toMatchObject({
-      type: "IMAGE",
+    expect(test.items().some((item) => item.type === "CURVE")).toBe(true);
+    expect(test.items().find((item) => item.type === "CURVE")).toMatchObject({
+      type: "CURVE",
       layer: "FOG",
       locked: true,
       disableHit: true,
@@ -219,8 +219,7 @@ describe("MapOverlayService", () => {
       fog: { dpi: 100, bounds: { minX: 0, maxX: 4, minY: 0, maxY: 4 }, observers: [{ cell: { x: 3, y: 3 }, rangeCells: 1 }] }
     });
     expect(test.items().length).toBeGreaterThan(0);
-    expect(test.items().map((item) => item.id).sort()).toEqual(firstIds);
-    expect(test.items()[0]?.type).toBe("IMAGE");
+    expect(test.items().map((item) => item.id).sort()).not.toEqual(firstIds);
 
     await new MapOverlayService(test.port).reconcile({ ...base, viewerRole: "PLAYER" });
     expect(test.items()).toEqual([]);
@@ -233,13 +232,13 @@ describe("MapOverlayService", () => {
         id: "legacy-curve",
         type: "CURVE",
         position: { x: 0, y: 0 },
-        metadata: { [METADATA_KEYS.mapOverlay]: { key: "FOG_OF_WAR/0,0/4,4", kind: "FOG_OF_WAR" } }
+        metadata: { [METADATA_KEYS.mapOverlay]: { key: "FOG_OF_WAR_V3", kind: "FOG_OF_WAR" } }
       },
       {
         id: "legacy-raster",
         type: "IMAGE",
         position: { x: 0, y: 0 },
-        metadata: { [METADATA_KEYS.mapOverlay]: { key: "FOG_OF_WAR", kind: "FOG_OF_WAR" } }
+        metadata: { [METADATA_KEYS.mapOverlay]: { key: "FOG_OF_WAR/0,0/4,4", kind: "FOG_OF_WAR" } }
       }
     );
     const base = {
@@ -260,6 +259,6 @@ describe("MapOverlayService", () => {
     });
 
     expect(test.items().map((item) => item.id)).toEqual(["overlay-1"]);
-    expect(test.items()[0]?.metadata[METADATA_KEYS.mapOverlay]).toMatchObject({ key: "FOG_OF_WAR_V3" });
+    expect(test.items()[0]?.metadata[METADATA_KEYS.mapOverlay]).toMatchObject({ key: expect.stringMatching(/^FOG_OF_WAR_V4\//) });
   });
 });

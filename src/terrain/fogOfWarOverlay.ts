@@ -44,154 +44,105 @@ export function deriveGridBounds(
   return bounds;
 }
 
-export const FOG_OF_WAR_OVERLAY_VERSION = "FOG_OF_WAR_V3";
+export const FOG_OF_WAR_OVERLAY_VERSION = "FOG_OF_WAR_V4";
 
-const PNG_SIGNATURE = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
-
-function writeUint32(target: Uint8Array, offset: number, value: number): void {
-  target[offset] = (value >>> 24) & 0xff;
-  target[offset + 1] = (value >>> 16) & 0xff;
-  target[offset + 2] = (value >>> 8) & 0xff;
-  target[offset + 3] = value & 0xff;
+interface FogRectangle {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
 }
 
-function crc32(bytes: Uint8Array): number {
-  let crc = 0xffffffff;
-  for (const byte of bytes) {
-    crc ^= byte;
-    for (let bit = 0; bit < 8; bit += 1) {
-      crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+function revealedCell(x: number, y: number, observers: readonly FogObserver[]): boolean {
+  return observers.some((observer) => {
+    if (!Number.isFinite(observer.rangeCells) || observer.rangeCells < 0) return false;
+    const dx = x - observer.cell.x;
+    const dy = y - observer.cell.y;
+    const radius = observer.rangeCells + 0.5;
+    return dx * dx + dy * dy <= radius * radius;
+  });
+}
+
+function fogRectangles(source: FogOfWarOverlaySource): FogRectangle[] {
+  const { minX, maxX, minY, maxY } = source.bounds;
+  const active = new Map<string, FogRectangle>();
+  const finished: FogRectangle[] = [];
+
+  for (let y = minY; y <= maxY; y += 1) {
+    const runs: Array<[number, number]> = [];
+    let runStart: number | undefined;
+    for (let x = minX; x <= maxX + 1; x += 1) {
+      const fogged = x <= maxX && !revealedCell(x, y, source.observers);
+      if (fogged && runStart === undefined) runStart = x;
+      if (!fogged && runStart !== undefined) {
+        runs.push([runStart, x - 1]);
+        runStart = undefined;
+      }
     }
-  }
-  return (crc ^ 0xffffffff) >>> 0;
-}
 
-function adler32(bytes: Uint8Array): number {
-  let a = 1;
-  let b = 0;
-  for (const byte of bytes) {
-    a = (a + byte) % 65521;
-    b = (b + a) % 65521;
-  }
-  return ((b << 16) | a) >>> 0;
-}
-
-function concatBytes(...parts: readonly Uint8Array[]): Uint8Array {
-  const result = new Uint8Array(parts.reduce((total, part) => total + part.length, 0));
-  let offset = 0;
-  for (const part of parts) {
-    result.set(part, offset);
-    offset += part.length;
-  }
-  return result;
-}
-
-function pngChunk(type: string, data: Uint8Array): Uint8Array {
-  const typeBytes = new TextEncoder().encode(type);
-  const body = concatBytes(typeBytes, data);
-  const chunk = new Uint8Array(12 + data.length);
-  writeUint32(chunk, 0, data.length);
-  chunk.set(body, 4);
-  writeUint32(chunk, 8 + data.length, crc32(body));
-  return chunk;
-}
-
-/**
- * A single raster overlay avoids per-rectangle curve outlines. Each pixel is
- * one strategic cell; revealed cells are transparent and fogged cells are a
- * neutral gray with low opacity, so the underlying map remains readable.
- */
-function pngDataUrl(source: FogOfWarOverlaySource): string {
-  const width = source.bounds.maxX - source.bounds.minX + 1;
-  const height = source.bounds.maxY - source.bounds.minY + 1;
-  const raw = new Uint8Array(height * (1 + width * 4));
-  // Strong enough to neutralize coloured map/border overlays, while still
-  // leaving the underlying terrain readable through the fog.
-  const alpha = Math.round(0.55 * 255);
-  const observers = source.observers.filter((observer) =>
-    Number.isFinite(observer.rangeCells) && observer.rangeCells >= 0
-  );
-  let rawOffset = 0;
-  for (let y = 0; y < height; y += 1) {
-    raw[rawOffset++] = 0;
-    for (let x = 0; x < width; x += 1) {
-      const cellX = source.bounds.minX + x;
-      const cellY = source.bounds.minY + y;
-      const revealed = observers.some((observer) => {
-        const dx = cellX - observer.cell.x;
-        const dy = cellY - observer.cell.y;
-        const radius = observer.rangeCells + 0.5;
-        return dx * dx + dy * dy <= radius * radius;
-      });
-      raw[rawOffset++] = 0x80;
-      raw[rawOffset++] = 0x80;
-      raw[rawOffset++] = 0x80;
-      raw[rawOffset++] = revealed ? 0 : alpha;
+    const next = new Map<string, FogRectangle>();
+    for (const [runMinX, runMaxX] of runs) {
+      const key = `${runMinX},${runMaxX}`;
+      const previous = active.get(key);
+      if (previous && previous.maxY === y - 1) {
+        previous.maxY = y;
+        next.set(key, previous);
+      } else {
+        next.set(key, { minX: runMinX, maxX: runMaxX, minY: y, maxY: y });
+      }
     }
+    for (const [key, rectangle] of active) {
+      if (!next.has(key)) finished.push(rectangle);
+    }
+    active.clear();
+    for (const [key, rectangle] of next) active.set(key, rectangle);
   }
+  finished.push(...active.values());
+  return finished;
+}
 
-  const deflateBlocks: Uint8Array[] = [];
-  for (let offset = 0; offset < raw.length;) {
-    const length = Math.min(65_535, raw.length - offset);
-    const block = new Uint8Array(5 + length);
-    block[0] = offset + length >= raw.length ? 1 : 0;
-    block[1] = length & 0xff;
-    block[2] = (length >>> 8) & 0xff;
-    const complement = (~length) & 0xffff;
-    block[3] = complement & 0xff;
-    block[4] = (complement >>> 8) & 0xff;
-    block.set(raw.subarray(offset, offset + length), 5);
-    deflateBlocks.push(block);
-    offset += length;
-  }
-  const zlib = concatBytes(new Uint8Array([0x78, 0x01]), ...deflateBlocks);
-  const checksum = new Uint8Array(4);
-  writeUint32(checksum, 0, adler32(raw));
-  const idat = concatBytes(zlib, checksum);
-  const header = new Uint8Array(13);
-  writeUint32(header, 0, width);
-  writeUint32(header, 4, height);
-  header[8] = 8;
-  header[9] = 6;
-  const png = concatBytes(
-    PNG_SIGNATURE,
-    pngChunk("IHDR", header),
-    pngChunk("IDAT", idat),
-    pngChunk("IEND", new Uint8Array())
-  );
-  let binary = "";
-  for (let offset = 0; offset < png.length; offset += 0x8000) {
-    binary += String.fromCharCode(...png.subarray(offset, offset + 0x8000));
-  }
-  return `data:image/png;base64,${btoa(binary)}`;
+function rectanglePoints(rectangle: FogRectangle, dpi: number) {
+  const minX = rectangle.minX * dpi;
+  const minY = rectangle.minY * dpi;
+  const maxX = (rectangle.maxX + 1) * dpi;
+  const maxY = (rectangle.maxY + 1) * dpi;
+  return [
+    { x: minX, y: minY },
+    { x: maxX, y: minY },
+    { x: maxX, y: maxY },
+    { x: minX, y: maxY },
+    { x: minX, y: minY }
+  ];
 }
 
 export function buildFogOfWarOverlays(source: FogOfWarOverlaySource): DesiredLocalOverlay[] {
-  const width = source.bounds.maxX - source.bounds.minX + 1;
-  const height = source.bounds.maxY - source.bounds.minY + 1;
-  const key = FOG_OF_WAR_OVERLAY_VERSION;
-  return [{
-    key,
-    item: {
-      type: "IMAGE",
-      name: "Туман войны",
-      position: {
-        x: (source.bounds.minX + source.bounds.maxX + 1) * source.dpi / 2,
-        y: (source.bounds.minY + source.bounds.maxY + 1) * source.dpi / 2
-      },
-      rotation: 0,
-      scale: { x: 1, y: 1 },
-      layer: "FOG",
-      zIndex: 0,
-      visible: true,
-      locked: true,
-      disableHit: true,
-      disableAutoZIndex: true,
-      image: { width, height, mime: "image/png", url: pngDataUrl(source) },
-      grid: { dpi: 1, offset: { x: 0, y: 0 } },
-      metadata: {
-        [METADATA_KEYS.mapOverlay]: { key, kind: "FOG_OF_WAR" }
+  return fogRectangles(source).map((rectangle) => {
+    const key = `${FOG_OF_WAR_OVERLAY_VERSION}/${rectangle.minX},${rectangle.minY}/${rectangle.maxX},${rectangle.maxY}`;
+    return {
+      key,
+      item: {
+        type: "CURVE",
+        name: "Туман войны",
+        position: { x: 0, y: 0 },
+        points: rectanglePoints(rectangle, source.dpi),
+        closed: true,
+        rotation: 0,
+        scale: { x: 1, y: 1 },
+        layer: "FOG",
+        zIndex: 0,
+        visible: true,
+        locked: true,
+        disableHit: true,
+        disableAutoZIndex: true,
+        strokeColor: "#808080",
+        strokeOpacity: 0,
+        strokeWidth: 0,
+        fillColor: "#808080",
+        fillOpacity: 0.42,
+        metadata: {
+          [METADATA_KEYS.mapOverlay]: { key, kind: "FOG_OF_WAR" }
+        }
       }
-    }
-  }];
+    };
+  });
 }
