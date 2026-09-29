@@ -14,6 +14,7 @@ import type {
 } from "../shared/types";
 import { buildStateBoundarySegmentsForFields, compactBoundarySegments } from "../states/stateBoundaryOverlay";
 import { compactCellRectangles, type CellRectangle, type StyledCell } from "./compactOverlayGeometry";
+import { buildFogOfWarOverlay, type FogOfWarOverlaySource } from "./fogOfWarOverlay";
 
 export type MapOverlayPort = LocalOverlayBatchPort;
 
@@ -24,6 +25,8 @@ export interface MapOverlaySource {
   terrain: TerrainRegistryState;
   sides: readonly Side[];
   states: readonly StateEntity[];
+  /** Per-player live visibility mask. GM clients intentionally do not receive one. */
+  fog?: FogOfWarOverlaySource;
 }
 
 function rectangleMetadata(
@@ -187,6 +190,10 @@ export class MapOverlayService {
     for (const overlay of overlays) {
       overlay.item.layer = "MAP";
       overlay.item.locked = true;
+    }
+
+    if (source.viewerRole === "PLAYER" && source.fog) {
+      overlays.push(buildFogOfWarOverlay(source.fog));
     }
 
     await reconcileLocalOverlays(this.port, mapOverlayKey, overlays);

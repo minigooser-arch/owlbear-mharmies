@@ -330,10 +330,12 @@ describe("ProductionEngine overlay performance", () => {
 
     await engine.visibilityTick("PLAYER", "player");
 
-    expect(localItems.some((item) => item.metadata[METADATA_KEYS.mapOverlay])).toBe(false);
     expect(localItems.some((item) =>
       (item.metadata[METADATA_KEYS.mapOverlay] as { kind?: string } | undefined)?.kind === "TERRAIN"
     )).toBe(false);
+    expect(localItems.some((item) =>
+      (item.metadata[METADATA_KEYS.mapOverlay] as { kind?: string } | undefined)?.kind === "FOG_OF_WAR"
+    )).toBe(true);
     expect(fixture.items.some((item) => item.metadata[METADATA_KEYS.mapOverlay])).toBe(false);
   });
 });

@@ -178,4 +178,49 @@ describe("MapOverlayService", () => {
       points: [{ x: 0, y: 0 }, { x: 200, y: 0 }, { x: 200, y: 100 }, { x: 0, y: 100 }, { x: 0, y: 0 }]
     });
   });
+
+  it("adds a player-local live fog mask and removes it when fog is no longer requested", async () => {
+    const test = harness();
+    const base = {
+      dpi: 100,
+      gridMap: {
+        version: 1 as const,
+        revision: 1,
+        cells: {
+          "0,0": { terrainId: null, impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null },
+          "4,4": { terrainId: null, impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null }
+        }
+      },
+      terrain: { defaultTerrainId: "plain", types: {} },
+      sides: [],
+      states: []
+    };
+    await new MapOverlayService(test.port).reconcile({
+      ...base,
+      viewerRole: "PLAYER",
+      fog: { dpi: 100, bounds: { minX: 0, maxX: 4, minY: 0, maxY: 4 }, observers: [{ cell: { x: 1, y: 1 }, rangeCells: 1 }] }
+    });
+    expect(test.items()).toHaveLength(1);
+    expect(test.items()[0]).toMatchObject({
+      type: "IMAGE",
+      layer: "FOG",
+      locked: true,
+      disableHit: true,
+      metadata: { [METADATA_KEYS.mapOverlay]: { kind: "FOG_OF_WAR" } }
+    });
+    const firstId = test.items()[0]?.id;
+    const firstUrl = (test.items()[0] as SceneItemRecord & { image?: { url?: string } }).image?.url;
+
+    await new MapOverlayService(test.port).reconcile({
+      ...base,
+      viewerRole: "PLAYER",
+      fog: { dpi: 100, bounds: { minX: 0, maxX: 4, minY: 0, maxY: 4 }, observers: [{ cell: { x: 3, y: 3 }, rangeCells: 1 }] }
+    });
+    expect(test.items()).toHaveLength(1);
+    expect(test.items()[0]?.id).toBe(firstId);
+    expect((test.items()[0] as SceneItemRecord & { image?: { url?: string } }).image?.url).not.toBe(firstUrl);
+
+    await new MapOverlayService(test.port).reconcile({ ...base, viewerRole: "PLAYER" });
+    expect(test.items()).toEqual([]);
+  });
 });

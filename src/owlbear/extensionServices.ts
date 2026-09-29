@@ -76,6 +76,7 @@ import {
 } from "./registration";
 import { semanticSnapshotEqual, semanticValueEqual } from "./snapshotEquality";
 import { CityCellPickerSession, type CityCellPickSnapshot } from "./cityCellPickerSession";
+import { armyTokenPickerOptions } from "./armyTokenPicker";
 
 export interface SnapshotInput {
   role: "GM" | "PLAYER";
@@ -804,8 +805,12 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
           await notifyRussian(adapter, "GM_ONLY");
           return undefined;
         }
-        const side = snapshot.sides.find((candidate) => candidate.id === command.sideId);
-        const selected = await OBR.assets.downloadImages(false, side?.name ?? "Токен армии", "CHARACTER");
+        const picker = armyTokenPickerOptions();
+        const selected = await OBR.assets.downloadImages(
+          picker.multiple,
+          picker.defaultSearch,
+          picker.typeHint
+        );
         const asset = selected[0];
         if (!asset) {
           await notifyRussian(adapter, "ARMY_TOKEN_NOT_SELECTED");

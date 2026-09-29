@@ -26,6 +26,7 @@ import { findStrategicConflictEdges } from "../movement/movementIntent";
 import { applyCellPatchBatch, readCell, type CellPatchOperation } from "../terrain/gridMap";
 import { annexingStateForEntry } from "../annexation/annexationRules";
 import { MapOverlayService } from "../terrain/mapOverlayService";
+import { deriveGridBounds, type FogObserver } from "../terrain/fogOfWarOverlay";
 import { CachedCellTerrainLookup } from "../terrain/cellTerrainLookup";
 import { HealthOverlayService } from "../health/healthOverlayService";
 import { NavalShipOverlayService } from "../naval/ships/navalShipOverlayService";
@@ -1598,10 +1599,49 @@ export class ProductionEngine {
     const mapOverlayService = new MapOverlayService(overlayPort);
     try {
       const dpi = await this.grid.getDpi();
+      const memberSideSet = new Set(memberSideIds);
+      const fogBounds = role === "PLAYER" ? deriveGridBounds(scene.gridMap.cells) : undefined;
+      const fogObservers: FogObserver[] = [];
+      if (role === "PLAYER") {
+        const fogGrid = new StrategicGridAdapter({ dpi, offset: { x: 0, y: 0 } });
+        for (const record of armies) {
+          if (!memberSideSet.has(record.state.sideId) || record.state.health.hp <= 0) continue;
+          try {
+            fogObservers.push({
+              cell: fogGrid.sceneToCell(record.item.position),
+              rangeCells: record.state.overrides.detectionRangeCells ?? scene.settings.defaultDetectionRangeCells
+            });
+          } catch {
+            // A malformed or temporarily unavailable position must not break the visibility frame.
+          }
+        }
+        for (const [shipId, state] of Object.entries(scene.ships ?? {})) {
+          if (!memberSideSet.has(state.sideId) || state.hp <= 0) continue;
+          const item = sceneItemById.get(shipId);
+          if (!item) continue;
+          try {
+            fogObservers.push({
+              cell: fogGrid.sceneToCell(item.position),
+              rangeCells: state.detectionOverride ?? scene.settings.defaultDetectionRangeCells
+            });
+          } catch {
+            // See the army case above.
+          }
+        }
+      }
+      const fogSignature = role === "PLAYER"
+        ? {
+            bounds: fogBounds ?? null,
+            observers: fogObservers
+              .map((observer) => [observer.cell.x, observer.cell.y, observer.rangeCells])
+              .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)))
+          }
+        : null;
       const signature = JSON.stringify([
         role,
         dpi,
         scene.gridMap.revision,
+        fogSignature,
         Object.values(scene.terrain.types)
           .map((terrain) => [terrain.id, terrain.enabled, terrain.color ?? null])
           .sort(([left], [right]) => String(left).localeCompare(String(right))),
@@ -1616,7 +1656,10 @@ export class ProductionEngine {
         gridMap: scene.gridMap,
         terrain: scene.terrain,
         sides: scene.sides,
-        states: scene.states
+        states: scene.states,
+        ...(fogBounds
+          ? { fog: { dpi, bounds: fogBounds, observers: fogObservers } }
+          : {})
       });
       this.lastMapOverlaySignature = signature;
     } catch {

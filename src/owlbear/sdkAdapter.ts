@@ -171,6 +171,12 @@ function applyNormalizedLocalItem(
       }
     };
   }
+  if (source.type === "IMAGE" && draft.type === "IMAGE") {
+    if (hasOwn(source, "image")) draft.image = structuredClone(source.image);
+    if (hasOwn(source, "grid")) draft.grid = structuredClone(source.grid);
+    if (hasOwn(source, "text")) draft.text = structuredClone(source.text);
+    if (hasOwn(source, "textItemType")) draft.textItemType = source.textItemType;
+  }
 }
 
 function localCloneMetadata(source: SceneItemRecord): Record<string, unknown> {
@@ -251,6 +257,8 @@ export function createSdkLocalItem(
       .zIndex(source.zIndex ?? Date.now())
       .visible(source.visible ?? true)
       .locked(source.locked ?? false)
+      .disableHit(typeof source.disableHit === "boolean" ? source.disableHit : false)
+      .disableAutoZIndex(typeof source.disableAutoZIndex === "boolean" ? source.disableAutoZIndex : false)
       .metadata(source.metadata as Metadata);
     if (source.text && typeof source.text === "object") builder.text(source.text as Parameters<typeof builder.text>[0]);
     if (source.textItemType === "LABEL" || source.textItemType === "TEXT") builder.textItemType(source.textItemType);
