@@ -1269,6 +1269,7 @@ export class ProductionEngine {
     const canCommit = this.captureCoordinatorGuard(expectedCoordinatorConnectionId);
     try {
       const newItems = Object.values(next.items).filter((item) => previous.items[item.id] === undefined);
+      const newlyCreatedItemIds = new Set(newItems.map((item) => item.id));
       if (newItems.length > 0) {
         if (!this.port.addSceneItems) throw new Error("SCENE_ITEM_CREATION_UNAVAILABLE");
         if (!canCommit()) throw new Error("Coordinator stopped during persistence");
@@ -1290,6 +1291,12 @@ export class ProductionEngine {
         }
         const item = itemById.get(armyId);
         if (!item) continue;
+        // Newly spawned city armies already carry their authoritative army
+        // metadata in the item passed to addSceneItems. Avoid an immediate
+        // second update: Owlbear can briefly expose a newly added item before
+        // its collection index is ready, which turns a valid formation into a
+        // misleading PERSISTENCE_FAILED rejection.
+        if (newlyCreatedItemIds.has(armyId) && item.metadata[METADATA_KEYS.army] !== undefined) continue;
         if (!canCommit()) throw new Error("Coordinator stopped during persistence");
         await this.port.patchSceneItemMetadata(armyId, METADATA_KEYS.army, state, {
           visible: state === undefined,
