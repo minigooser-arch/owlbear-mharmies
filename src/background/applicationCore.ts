@@ -364,6 +364,7 @@ export class ProductionEngine {
     const armies = frame.items.armies;
     const barriers = frame.items.barriers;
     const sceneItems = frame.items.items;
+    await this.hideVisibleAuthoritativeUnits(armies, sceneItems, scene);
     const sceneItemById = new Map(sceneItems.map((item) => [item.id, item]));
     const reciprocallyEmbarkedArmyIds = new Set(armies.flatMap(({ item, state }) => {
       if (state.embarkedOnShipId == null) return [];
@@ -438,6 +439,38 @@ export class ProductionEngine {
 
   movementTick(itemFrame?: MetadataItemFrame): Promise<void> {
     return this.enqueueMutation(() => this.movementTickNow(itemFrame));
+  }
+
+  private async hideVisibleAuthoritativeUnits(
+    armies: readonly ArmyRecord[],
+    sceneItems: readonly SceneItemRecord[],
+    scene: SceneState
+  ): Promise<void> {
+    if (!this.isCoordinator()) return;
+    const itemById = new Map(sceneItems.map((item) => [item.id, item]));
+    const writes: Promise<void>[] = [];
+    for (const record of armies) {
+      if (record.item.visible === false) continue;
+      writes.push(this.port.patchSceneItemMetadata(
+        record.item.id,
+        METADATA_KEYS.army,
+        record.state,
+        { visible: false },
+        record.state.revision
+      ).catch(() => undefined));
+    }
+    for (const [shipId, state] of Object.entries(scene.ships ?? {})) {
+      const item = itemById.get(shipId);
+      if (!item || item.visible === false) continue;
+      writes.push(this.port.patchSceneItemMetadata(
+        shipId,
+        METADATA_KEYS.ship,
+        state,
+        { visible: false },
+        state.revision
+      ).catch(() => undefined));
+    }
+    await Promise.all(writes);
   }
 
   movementTickTransaction(

@@ -22,13 +22,12 @@ describe("fog of war overlay", () => {
       type: "IMAGE",
       position: { x: 500, y: 300 },
       layer: "FOG",
-      image: { width: 1000, height: 600, mime: "image/svg+xml" },
-      grid: { dpi: 100, offset: { x: 0, y: 0 } },
+      image: { width: 10, height: 6, mime: "image/png" },
+      grid: { dpi: 1, offset: { x: 0, y: 0 } },
       metadata: { "com.letopis.army-control/map-overlay": { kind: "FOG_OF_WAR" } }
     });
     const url = String((overlay.item as unknown as { image: { url: string } }).image.url);
-    const svg = decodeURIComponent(url.slice(url.indexOf(",") + 1));
-    expect(svg).toContain("<mask");
-    expect(svg).toContain("circle");
+    expect(url).toMatch(/^data:image\/png;base64,/);
+    expect(url).not.toContain("image/svg");
   });
 });

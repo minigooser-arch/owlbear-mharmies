@@ -572,7 +572,7 @@ describe("ProductionEngine command boundary", () => {
 
     expect(fixture.sent.at(-1)).toMatchObject({ data: { status: "ACCEPTED" } });
     const spawned = fixture.items.find((item) => item.id === "army-spawn-city-army");
-    expect(spawned).toMatchObject({ type: "IMAGE", position: { x: 50, y: 50 }, metadata: { [METADATA_KEYS.army]: { sideId: "red" } } });
+    expect(spawned).toMatchObject({ type: "IMAGE", position: { x: 50, y: 50 }, visible: false, metadata: { [METADATA_KEYS.army]: { sideId: "red" } } });
   });
 
   it("does not snap or move an army when registration is rejected", async () => {

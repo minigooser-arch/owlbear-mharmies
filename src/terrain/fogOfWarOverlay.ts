@@ -44,29 +44,129 @@ export function deriveGridBounds(
   return bounds;
 }
 
-function xml(value: number): string {
-  return Number.isInteger(value) ? String(value) : value.toFixed(3);
+const PNG_SIGNATURE = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+
+function writeUint32(target: Uint8Array, offset: number, value: number): void {
+  target[offset] = (value >>> 24) & 0xff;
+  target[offset + 1] = (value >>> 16) & 0xff;
+  target[offset + 2] = (value >>> 8) & 0xff;
+  target[offset + 3] = value & 0xff;
 }
 
-function maskSvg(source: FogOfWarOverlaySource): string {
+function crc32(bytes: Uint8Array): number {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function adler32(bytes: Uint8Array): number {
+  let a = 1;
+  let b = 0;
+  for (const byte of bytes) {
+    a = (a + byte) % 65521;
+    b = (b + a) % 65521;
+  }
+  return ((b << 16) | a) >>> 0;
+}
+
+function concatBytes(...parts: readonly Uint8Array[]): Uint8Array {
+  const result = new Uint8Array(parts.reduce((total, part) => total + part.length, 0));
+  let offset = 0;
+  for (const part of parts) {
+    result.set(part, offset);
+    offset += part.length;
+  }
+  return result;
+}
+
+function pngChunk(type: string, data: Uint8Array): Uint8Array {
+  const typeBytes = new TextEncoder().encode(type);
+  const body = concatBytes(typeBytes, data);
+  const chunk = new Uint8Array(12 + data.length);
+  writeUint32(chunk, 0, data.length);
+  chunk.set(body, 4);
+  writeUint32(chunk, 8 + data.length, crc32(body));
+  return chunk;
+}
+
+/**
+ * PNG with stored DEFLATE blocks. A one-pixel-per-cell raster keeps the mask
+ * compact while remaining a universally loadable image (Owlbear rejects SVG
+ * data URLs for scene images).
+ */
+function pngDataUrl(source: FogOfWarOverlaySource): string {
   const width = source.bounds.maxX - source.bounds.minX + 1;
   const height = source.bounds.maxY - source.bounds.minY + 1;
-  const holes = source.observers
-    .filter((observer) => Number.isFinite(observer.rangeCells) && observer.rangeCells >= 0)
-    .map((observer) => {
-      const cx = observer.cell.x - source.bounds.minX + 0.5;
-      const cy = observer.cell.y - source.bounds.minY + 0.5;
-      return `<circle cx="${xml(cx)}" cy="${xml(cy)}" r="${xml(observer.rangeCells + 0.5)}" fill="black"/>`;
-    })
-    .join("");
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${xml(width)}" height="${xml(height)}" viewBox="0 0 ${xml(width)} ${xml(height)}"><defs><mask id="fog-mask" maskUnits="userSpaceOnUse"><rect width="${xml(width)}" height="${xml(height)}" fill="white"/>${holes}</mask></defs><rect width="${xml(width)}" height="${xml(height)}" fill="#6b7280" fill-opacity="0.58" mask="url(#fog-mask)"/></svg>`;
+  const raw = new Uint8Array(height * (1 + width * 4));
+  const alpha = Math.round(0.58 * 255);
+  const observers = source.observers.filter((observer) =>
+    Number.isFinite(observer.rangeCells) && observer.rangeCells >= 0
+  );
+  let rawOffset = 0;
+  for (let y = 0; y < height; y += 1) {
+    raw[rawOffset++] = 0;
+    for (let x = 0; x < width; x += 1) {
+      const cellX = source.bounds.minX + x + 0.5;
+      const cellY = source.bounds.minY + y + 0.5;
+      const revealed = observers.some((observer) => {
+        const dx = cellX - observer.cell.x - 0.5;
+        const dy = cellY - observer.cell.y - 0.5;
+        const radius = observer.rangeCells + 0.5;
+        return dx * dx + dy * dy <= radius * radius;
+      });
+      raw[rawOffset++] = 0x6b;
+      raw[rawOffset++] = 0x72;
+      raw[rawOffset++] = 0x80;
+      raw[rawOffset++] = revealed ? 0 : alpha;
+    }
+  }
+
+  const deflateBlocks: Uint8Array[] = [];
+  for (let offset = 0; offset < raw.length;) {
+    const length = Math.min(65_535, raw.length - offset);
+    const block = new Uint8Array(5 + length);
+    block[0] = offset + length >= raw.length ? 1 : 0;
+    block[1] = length & 0xff;
+    block[2] = (length >>> 8) & 0xff;
+    const complement = (~length) & 0xffff;
+    block[3] = complement & 0xff;
+    block[4] = (complement >>> 8) & 0xff;
+    block.set(raw.subarray(offset, offset + length), 5);
+    deflateBlocks.push(block);
+    offset += length;
+  }
+  const zlib = concatBytes(new Uint8Array([0x78, 0x01]), ...deflateBlocks);
+  const checksum = new Uint8Array(4);
+  writeUint32(checksum, 0, adler32(raw));
+  const idat = concatBytes(zlib, checksum);
+  const header = new Uint8Array(13);
+  writeUint32(header, 0, width);
+  writeUint32(header, 4, height);
+  header[8] = 8;
+  header[9] = 6;
+  const png = concatBytes(
+    PNG_SIGNATURE,
+    pngChunk("IHDR", header),
+    pngChunk("IDAT", idat),
+    pngChunk("IEND", new Uint8Array())
+  );
+  let binary = "";
+  for (let offset = 0; offset < png.length; offset += 0x8000) {
+    binary += String.fromCharCode(...png.subarray(offset, offset + 0x8000));
+  }
+  return `data:image/png;base64,${btoa(binary)}`;
 }
 
 export function buildFogOfWarOverlay(source: FogOfWarOverlaySource): DesiredLocalOverlay {
   const widthCells = source.bounds.maxX - source.bounds.minX + 1;
   const heightCells = source.bounds.maxY - source.bounds.minY + 1;
-  const width = widthCells * source.dpi;
-  const height = heightCells * source.dpi;
+  const width = widthCells;
+  const height = heightCells;
   const key = "FOG_OF_WAR";
   return {
     key,
@@ -88,10 +188,10 @@ export function buildFogOfWarOverlay(source: FogOfWarOverlaySource): DesiredLoca
       image: {
         width,
         height,
-        mime: "image/svg+xml",
-        url: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(maskSvg(source))}`
+        mime: "image/png",
+        url: pngDataUrl(source)
       },
-      grid: { dpi: source.dpi, offset: { x: 0, y: 0 } },
+      grid: { dpi: 1, offset: { x: 0, y: 0 } },
       metadata: {
         [METADATA_KEYS.mapOverlay]: { key, kind: "FOG_OF_WAR" }
       }

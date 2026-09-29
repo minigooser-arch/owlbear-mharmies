@@ -336,6 +336,7 @@ describe("CommandProcessor", () => {
     expect(result.status).toBe("ACCEPTED");
     if (result.status === "ACCEPTED") {
       expect(result.state.armies["candidate-image"]).toMatchObject({ sideId: "red", status: "READY" });
+      expect(result.state.items["candidate-image"]).toMatchObject({ visible: false });
       expect(result.state.armies["candidate-image"]).not.toHaveProperty("directOwnerPlayerId");
     }
   });
@@ -461,7 +462,7 @@ describe("CommandProcessor", () => {
     expect(result.status).toBe("ACCEPTED");
     if (result.status === "ACCEPTED") {
       expect(result.state.armies["army-request"]).toMatchObject({ sideId: "red", health: { hp: 5, maxHp: 40 } });
-      expect(result.state.items["army-request"]).toMatchObject({ type: "IMAGE", position: { x: 50, y: 50 }, image: asset.image, grid: asset.grid });
+      expect(result.state.items["army-request"]).toMatchObject({ type: "IMAGE", position: { x: 50, y: 50 }, visible: false, image: asset.image, grid: asset.grid });
     }
   });
 

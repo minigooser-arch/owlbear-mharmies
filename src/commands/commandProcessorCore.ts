@@ -358,6 +358,7 @@ export class CommandProcessor {
           revision: 1
         };
         state.armies[command.itemId] = registered;
+        state.items[command.itemId] = { ...item, visible: false };
         return undefined;
       }
       case "CREATE_CITY_ARMY": {
@@ -410,7 +411,9 @@ export class CommandProcessor {
             rotation: side.armyTokenAsset.rotation ?? 0,
             scale: side.armyTokenAsset.scale ?? { x: 1, y: 1 },
             layer: "CHARACTER",
-            visible: true,
+            // Authoritative army tokens stay hidden in the shared scene. Each player
+            // receives a local clone only when the visibility engine allows it.
+            visible: false,
             locked: false,
             metadata: {},
             image: structuredClone(side.armyTokenAsset.image),
