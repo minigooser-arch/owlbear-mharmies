@@ -200,25 +200,25 @@ describe("MapOverlayService", () => {
       viewerRole: "PLAYER",
       fog: { dpi: 100, bounds: { minX: 0, maxX: 4, minY: 0, maxY: 4 }, observers: [{ cell: { x: 1, y: 1 }, rangeCells: 1 }] }
     });
-    expect(test.items()).toHaveLength(1);
-    expect(test.items()[0]).toMatchObject({
-      type: "IMAGE",
+    expect(test.items().length).toBeGreaterThan(0);
+    expect(test.items().every((item) => item.metadata[METADATA_KEYS.mapOverlay])).toBe(true);
+    expect(test.items().some((item) => item.type === "CURVE")).toBe(true);
+    expect(test.items().find((item) => item.type === "CURVE")).toMatchObject({
+      type: "CURVE",
       layer: "FOG",
       locked: true,
       disableHit: true,
       metadata: { [METADATA_KEYS.mapOverlay]: { kind: "FOG_OF_WAR" } }
     });
-    const firstId = test.items()[0]?.id;
-    const firstUrl = (test.items()[0] as SceneItemRecord & { image?: { url?: string } }).image?.url;
+    const firstIds = test.items().map((item) => item.id).sort();
 
     await new MapOverlayService(test.port).reconcile({
       ...base,
       viewerRole: "PLAYER",
       fog: { dpi: 100, bounds: { minX: 0, maxX: 4, minY: 0, maxY: 4 }, observers: [{ cell: { x: 3, y: 3 }, rangeCells: 1 }] }
     });
-    expect(test.items()).toHaveLength(1);
-    expect(test.items()[0]?.id).toBe(firstId);
-    expect((test.items()[0] as SceneItemRecord & { image?: { url?: string } }).image?.url).not.toBe(firstUrl);
+    expect(test.items().length).toBeGreaterThan(0);
+    expect(test.items().map((item) => item.id).sort()).not.toEqual(firstIds);
 
     await new MapOverlayService(test.port).reconcile({ ...base, viewerRole: "PLAYER" });
     expect(test.items()).toEqual([]);

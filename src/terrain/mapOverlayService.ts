@@ -14,7 +14,7 @@ import type {
 } from "../shared/types";
 import { buildStateBoundarySegmentsForFields, compactBoundarySegments } from "../states/stateBoundaryOverlay";
 import { compactCellRectangles, type CellRectangle, type StyledCell } from "./compactOverlayGeometry";
-import { buildFogOfWarOverlay, type FogOfWarOverlaySource } from "./fogOfWarOverlay";
+import { buildFogOfWarOverlays, type FogOfWarOverlaySource } from "./fogOfWarOverlay";
 
 export type MapOverlayPort = LocalOverlayBatchPort;
 
@@ -193,7 +193,7 @@ export class MapOverlayService {
     }
 
     if (source.viewerRole === "PLAYER" && source.fog) {
-      overlays.push(buildFogOfWarOverlay(source.fog));
+      overlays.push(...buildFogOfWarOverlays(source.fog));
     }
 
     await reconcileLocalOverlays(this.port, mapOverlayKey, overlays);
