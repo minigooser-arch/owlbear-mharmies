@@ -93,4 +93,40 @@ describe("population sheet sync", () => {
       conscriptionRate: 0.04
     });
   });
+
+  it("imports the current human resource from the formatted state row", async () => {
+    const laws: ConscriptionLaw[] = [{ id: "URGENT_CONSCRIPTION", name: "Срочный призыв", rate: 0.04, active: true }];
+    const applyCorrection = vi.fn().mockResolvedValue(undefined);
+    const row = (values: Record<number, string>) => {
+      const cells = Array.from({ length: 41 }, () => "");
+      for (const [index, value] of Object.entries(values)) cells[Number(index)] = value;
+      return cells.join(",");
+    };
+    const fetcher = vi.fn().mockImplementation(async (url: string) => ({
+      ok: true,
+      status: 200,
+      text: async () => url.includes("backend")
+        ? "country,population,growth_rate\ncountry-a,46084,1.003\n"
+        : [row({ 10: "Государство", 15: "46084", 40: "0М. 584Т." }), row({ 10: "🏳️", 40: "СРОЧНЫЙ ПРИЗЫВ" })].join("\n")
+    }));
+
+    const result = await syncPopulationFromPublicSheet({
+      csvUrl: "https://example.test/backend.csv",
+      conscriptionCsvUrl: "https://example.test/states.csv",
+      states: [{ ...matchedState, name: "Государство" }],
+      demographics: [],
+      conscriptionLaws: laws,
+      fetcher,
+      applyCorrection
+    });
+
+    expect(applyCorrection).toHaveBeenCalledWith("state-1", {
+      population: 46_084,
+      populationGrowthFactor: 1.003,
+      humanResource: 584,
+      conscriptionLawId: "URGENT_CONSCRIPTION",
+      conscriptionRate: 0.04
+    });
+    expect(result.humanResourceApplied).toBe(1);
+  });
 });

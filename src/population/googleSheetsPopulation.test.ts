@@ -40,12 +40,12 @@ describe("Google Sheets population CSV", () => {
       return cells.map((value) => value.includes(",") ? `"${value.replaceAll('"', '""')}"` : value).join(",");
     };
     const csv = [
-      row({ 10: "ВЕЛИКОБРИТАНИЯ", 15: "46084" }),
+      row({ 10: "ВЕЛИКОБРИТАНИЯ", 15: "46084", 40: "0М. 584Т." }),
       row({ 10: "🏳️", 40: "СРОЧНЫЙ ПРИЗЫВ" })
     ].join("\n");
 
     expect(parseConscriptionCategoryCsv(csv)).toEqual([
-      { stateName: "ВЕЛИКОБРИТАНИЯ", category: "СРОЧНЫЙ ПРИЗЫВ" }
+      { stateName: "ВЕЛИКОБРИТАНИЯ", category: "СРОЧНЫЙ ПРИЗЫВ", humanResource: 584 }
     ]);
   });
 });
