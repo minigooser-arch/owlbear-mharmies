@@ -213,6 +213,20 @@ describe("BackgroundRuntime", () => {
     await runtime.stop();
   });
 
+  it("refreshes visibility when coordinator ownership is acquired", async () => {
+    const port = new RuntimePort();
+    const runtime = new BackgroundRuntime(port);
+    runtime.start();
+    await runtime.whenIdle();
+    port.visibility.mockClear();
+
+    port.coordinator?.(true);
+    await runtime.whenIdle();
+
+    expect(port.visibility).toHaveBeenCalledTimes(1);
+    await runtime.stop();
+  });
+
   it("reports rejected movement, visibility, and turn scheduler work", async () => {
     const port = new RuntimePort();
     const report = vi.fn();

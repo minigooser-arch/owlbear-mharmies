@@ -137,7 +137,13 @@ export class BackgroundRuntime {
       this.sceneSubscriptions.add(this.port.onCoordinatorChange((active) => {
         const lost = this.coordinator && !active;
         this.coordinator = active;
-        if (active) this.requestTurnTick();
+        if (active) {
+          // The coordinator is responsible for hiding legacy shared army/ship
+          // sources. Refresh immediately after lease acquisition so a scene
+          // opened before this client became coordinator cannot leak them.
+          this.requestVisibilityTick();
+          this.requestTurnTick();
+        }
         if (lost) this.trackLifecycle(() => this.port.pauseMovingArmies());
       }));
       this.sceneSubscriptions.add(
