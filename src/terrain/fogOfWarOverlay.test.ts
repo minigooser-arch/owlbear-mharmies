@@ -10,7 +10,7 @@ describe("fog of war overlay", () => {
     })).toEqual({ minX: -2, maxX: 4, minY: -1, maxY: 5 });
   });
 
-  it("builds compact gray curve rectangles for unrevealed cells", () => {
+  it("builds one neutral gray raster mask for unrevealed cells", () => {
     const overlays = buildFogOfWarOverlays({
       dpi: 100,
       bounds: { minX: 0, maxX: 9, minY: 0, maxY: 5 },
@@ -20,16 +20,13 @@ describe("fog of war overlay", () => {
     expect(overlays.length).toBeGreaterThan(0);
     expect(overlays.every(({ item }) => item)).toBe(true);
     expect(overlays[0]?.item).toMatchObject({
-      type: "CURVE",
-      position: { x: 0, y: 0 },
+      type: "IMAGE",
+      position: { x: 500, y: 300 },
       layer: "FOG",
-      strokeColor: "rgba(107,114,128,0)",
-      strokeOpacity: 0,
-      strokeWidth: 0,
-      fillColor: "#808080",
-      fillOpacity: 0.2,
+      image: { width: 10, height: 6, mime: "image/png" },
       metadata: { "com.letopis.army-control/map-overlay": { kind: "FOG_OF_WAR" } }
     });
-    expect(overlays.every(({ key }) => key.startsWith("FOG_OF_WAR/"))).toBe(true);
+    expect(overlays).toHaveLength(1);
+    expect(overlays[0]?.key).toBe("FOG_OF_WAR_V3");
   });
 });

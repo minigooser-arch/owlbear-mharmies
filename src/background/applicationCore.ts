@@ -26,7 +26,11 @@ import { findStrategicConflictEdges } from "../movement/movementIntent";
 import { applyCellPatchBatch, readCell, type CellPatchOperation } from "../terrain/gridMap";
 import { annexingStateForEntry } from "../annexation/annexationRules";
 import { MapOverlayService } from "../terrain/mapOverlayService";
-import { deriveGridBounds, type FogObserver } from "../terrain/fogOfWarOverlay";
+import {
+  deriveGridBounds,
+  FOG_OF_WAR_OVERLAY_VERSION,
+  type FogObserver
+} from "../terrain/fogOfWarOverlay";
 import { CachedCellTerrainLookup } from "../terrain/cellTerrainLookup";
 import { HealthOverlayService } from "../health/healthOverlayService";
 import { NavalShipOverlayService } from "../naval/ships/navalShipOverlayService";
@@ -1673,6 +1677,7 @@ export class ProductionEngine {
       const signature = JSON.stringify([
         role,
         dpi,
+        FOG_OF_WAR_OVERLAY_VERSION,
         scene.gridMap.revision,
         fogSignature,
         Object.values(scene.terrain.types)
