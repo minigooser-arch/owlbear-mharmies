@@ -248,6 +248,24 @@ function reconcileForcedExits(state: CommandState, cellForPosition: ((position: 
   );
 }
 
+/**
+ * Demographic balances imported from the state sheet are stored in thousands
+ * of people (584 means 584,000). Cost settings retain the rules' human-facing
+ * values (5,000 LR per HP), so convert legacy/person units at the command
+ * boundary for normalized demographic records. Older scenes may still carry
+ * absolute-person balances above their capacity; those keep the old scale.
+ */
+function humanResourceRateInSceneUnits(state: CommandState, sideId: string, configuredRate: number): number {
+  const side = state.scene.sides.find((candidate) => candidate.id === sideId);
+  const demography = side?.stateId
+    ? state.scene.demographics?.find((record) => record.stateId === side.stateId)
+    : undefined;
+  if (demography && configuredRate >= 1000 && demography.humanResource <= demography.humanResourceCapacity) {
+    return configuredRate / 1000;
+  }
+  return configuredRate;
+}
+
 export class CommandProcessor {
   constructor(
     private readonly now: () => Date = () => new Date(),
@@ -383,7 +401,7 @@ export class CommandProcessor {
         const existingCell = existingItem ? this.cellForPosition(existingItem.position) : undefined;
         if (existingItem && (!existingCell || !city.cells.some((cell) => sameCell(cell, existingCell)))) return "ARMY_MUST_BE_IN_CITY";
         if (!existingItem && !side.armyTokenAsset) return "ARMY_TOKEN_NOT_CONFIGURED";
-        const formationRate = state.scene.settings.armyFormationCostPerHp ?? 5000;
+        const formationRate = humanResourceRateInSceneUnits(state, command.sideId, state.scene.settings.armyFormationCostPerHp ?? 5000);
         const formationAmount = 5 * formationRate;
         const formationDebit = this.debitHumanResource(state, command.sideId, formationAmount, {
           requestId: command.requestId,
@@ -437,10 +455,10 @@ export class CommandProcessor {
       case "FORM_ARMY": {
         const army = state.armies[command.armyId];
         if (!army) return "ARMY_NOT_FOUND";
-        const result = applyFormationHp(army, command.hp, state.scene.turn.turnNumber, state.scene.settings.armyFormationCostPerHp ?? 5000,
+        const formationRate = humanResourceRateInSceneUnits(state, army.sideId, state.scene.settings.armyFormationCostPerHp ?? 5000);
+        const result = applyFormationHp(army, command.hp, state.scene.turn.turnNumber, formationRate,
           Boolean(army.formation?.cityId && (state.scene.strategicCities ?? []).find((city) => city.id === army.formation?.cityId)?.buildings?.some((building) => building.type === "BARRACKS")));
         if (!result.ok) return result.reason;
-        const formationRate = state.scene.settings.armyFormationCostPerHp ?? 5000;
         const formationKind = result.army.health.hp >= result.army.health.maxHp ? "COMPLETION" : "FORMATION";
         const cityId = army.formation?.cityId ?? null;
         const cityName = (state.scene.strategicCities ?? []).find((city) => city.id === cityId)?.name ?? null;
