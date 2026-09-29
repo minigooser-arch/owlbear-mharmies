@@ -2,6 +2,7 @@ import type { ConscriptionLaw, SceneSettings, TerrainRegistryState, TurnState } 
 
 export const EXTENSION_ID = "com.letopis.army-control";
 export const DEFAULT_POPULATION_SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/1wlTrvSxeoQDPKO0s9C0ooKF3xMqmTfcCDB70y-1X2QA/export?format=csv&gid=64907648";
+export const DEFAULT_CONSCRIPTION_SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/1wlTrvSxeoQDPKO0s9C0ooKF3xMqmTfcCDB70y-1X2QA/export?format=csv&gid=2109091990";
 export const PROGRAMMATIC_ONLY_TOOL_FILTER = {
   activeTools: [`${EXTENSION_ID}/__programmatic-only__`]
 };
@@ -95,7 +96,8 @@ export const DEFAULT_SETTINGS: SceneSettings = {
   armyHealingCostPerHp: 5000,
   hospitalHealingCostPerHp: 2500,
   populationTimeZone: "Europe/Moscow",
-  populationSheetCsvUrl: DEFAULT_POPULATION_SHEET_CSV_URL
+  populationSheetCsvUrl: DEFAULT_POPULATION_SHEET_CSV_URL,
+  conscriptionSheetCsvUrl: DEFAULT_CONSCRIPTION_SHEET_CSV_URL
 };
 
 export const DEFAULT_CONSCRIPTION_LAWS: ConscriptionLaw[] = [

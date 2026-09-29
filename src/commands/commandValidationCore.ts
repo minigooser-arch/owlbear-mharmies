@@ -246,6 +246,10 @@ function parseSettings(value: unknown): Partial<SceneSettings> | undefined {
     if (!boundedString(value.populationSheetCsvUrl, 1024)) return undefined;
     result.populationSheetCsvUrl = value.populationSheetCsvUrl.trim();
   }
+  if ("conscriptionSheetCsvUrl" in value) {
+    if (!boundedString(value.conscriptionSheetCsvUrl, 1024)) return undefined;
+    result.conscriptionSheetCsvUrl = value.conscriptionSheetCsvUrl.trim();
+  }
   return result;
 }
 

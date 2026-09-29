@@ -52,7 +52,9 @@ export function PopulationPage({ states, demographics, conscriptionLaws, onActio
       const result = await onSyncPopulation();
       const details = [
         `Обновлено записей: ${result.applied}`,
+        `Категорий призыва: ${result.conscriptionApplied}`,
         result.unmatchedStates.length > 0 ? `Без соответствия: ${result.unmatchedStates.length}` : "",
+        (result.unmatchedConscriptionStates?.length ?? 0) > 0 ? `Без категории призыва: ${result.unmatchedConscriptionStates?.length}` : "",
         result.errors.length > 0 ? `Ошибок: ${result.errors.length}` : ""
       ].filter(Boolean).join(" · ");
       setSyncMessage(details || "Синхронизация завершена");
@@ -67,7 +69,7 @@ export function PopulationPage({ states, demographics, conscriptionLaws, onActio
     <section aria-labelledby="population-title">
       <div className="section-heading wiki-page-heading"><div><p className="eyebrow">Экономика государств</p><h2 id="population-title">Население и ЛР</h2><p className="page-description">Google Sheets используется как источник населения. Изменения читаются из публичного CSV и применяются только мастером; запись обратно в таблицу не выполняется.</p></div></div>
       {onSyncPopulation && <div className="registration-card population-sync-card">
-        <div className="registration-copy"><strong>Синхронизация с Google Sheets</strong><small>{settings?.populationSheetCsvUrl ?? "Адрес CSV не задан"}</small></div>
+        <div className="registration-copy"><strong>Синхронизация с Google Sheets</strong><small>{settings?.populationSheetCsvUrl ?? "Адрес CSV населения не задан"}<br />{settings?.conscriptionSheetCsvUrl ?? "Адрес CSV призыва не задан"}</small></div>
         <button className="button primary" type="button" onClick={() => void syncPopulation()} disabled={syncing}>{syncing ? "Загрузка…" : "Синхронизировать с Google Sheets"}</button>
         {syncMessage && <p className="page-description" role="status">{syncMessage}</p>}
       </div>}

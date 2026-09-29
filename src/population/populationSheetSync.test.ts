@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { StateEntity } from "../shared/types";
+import type { ConscriptionLaw, StateEntity } from "../shared/types";
 import { buildPopulationSyncPlan, syncPopulationFromPublicSheet } from "./populationSheetSync";
 
 const states: StateEntity[] = [
@@ -62,5 +62,35 @@ describe("population sheet sync", () => {
 
     expect(result.applied).toBe(0);
     expect(result.errors).toContain("В CSV не найдены строки с заголовками country, population, growth_rate");
+  });
+
+  it("imports a matching conscription category from the states sheet", async () => {
+    const laws: ConscriptionLaw[] = [{ id: "URGENT_CONSCRIPTION", name: "Срочный призыв", rate: 0.04, active: true }];
+    const applyCorrection = vi.fn().mockResolvedValue(undefined);
+    const fetcher = vi.fn().mockImplementation(async (url: string) => ({
+      ok: true,
+      status: 200,
+      text: async () => url.includes("backend")
+        ? "country,population,growth_rate\ncountry-a,3000000,1.02\n"
+        : "state_name,category\nГосударство,СРОЧНЫЙ ПРИЗЫВ\n"
+    }));
+
+    const result = await syncPopulationFromPublicSheet({
+      csvUrl: "https://example.test/backend.csv",
+      conscriptionCsvUrl: "https://example.test/states.csv",
+      states: [{ ...matchedState, name: "Государство" }],
+      demographics: [],
+      conscriptionLaws: laws,
+      fetcher,
+      applyCorrection
+    });
+
+    expect(result.conscriptionApplied).toBe(1);
+    expect(applyCorrection).toHaveBeenCalledWith("state-1", {
+      population: 3_000_000,
+      populationGrowthFactor: 1.02,
+      conscriptionLawId: "URGENT_CONSCRIPTION",
+      conscriptionRate: 0.04
+    });
   });
 });

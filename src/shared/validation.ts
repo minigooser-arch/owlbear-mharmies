@@ -133,6 +133,9 @@ function normalizeSettings(value: unknown): SceneSettings {
   const populationSheetCsvUrl = nonEmptyString(value.populationSheetCsvUrl)
     ? value.populationSheetCsvUrl.trim()
     : DEFAULT_SETTINGS.populationSheetCsvUrl;
+  const conscriptionSheetCsvUrl = nonEmptyString(value.conscriptionSheetCsvUrl)
+    ? value.conscriptionSheetCsvUrl.trim()
+    : DEFAULT_SETTINGS.conscriptionSheetCsvUrl;
   return {
     defaultDetectionRangeCells: nonNegative(value.defaultDetectionRangeCells)
       ? value.defaultDetectionRangeCells
@@ -170,7 +173,8 @@ function normalizeSettings(value: unknown): SceneSettings {
     armyHealingCostPerHp,
     hospitalHealingCostPerHp,
     populationTimeZone: validTimeZone(value.populationTimeZone, DEFAULT_SETTINGS.populationTimeZone ?? "Europe/Moscow"),
-    ...(populationSheetCsvUrl ? { populationSheetCsvUrl } : {})
+    ...(populationSheetCsvUrl ? { populationSheetCsvUrl } : {}),
+    ...(conscriptionSheetCsvUrl ? { conscriptionSheetCsvUrl } : {})
   };
 }
 
