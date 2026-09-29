@@ -29,8 +29,7 @@ function fakeBuilder(type: "CURVE" | "LABEL" | "SHAPE"): unknown {
                 strokeWidth: values.strokeWidth,
                 strokeDash: values.strokeDash,
                 tension: values.tension
-              },
-              closed: values.closed
+              }
             }
           : type === "SHAPE"
             ? {
@@ -233,7 +232,6 @@ it("builds valid Owlbear curve and label items for local overlays", () => {
     fillColor: "#0af",
     fillOpacity: 0.25,
     strokeWidth: 7,
-    closed: true,
     metadata: { [METADATA_KEYS.routePreview]: { kind: "LINE" } }
   }, builders);
   const label = createSdkLocalItem({
@@ -253,8 +251,7 @@ it("builds valid Owlbear curve and label items for local overlays", () => {
     layer: "POINTER",
     disableHit: true,
     points: [{ x: 0, y: 0 }, { x: 2, y: 1 }],
-    style: { fillColor: "#0af", fillOpacity: 0.25, strokeColor: "#f00", strokeWidth: 7 },
-    closed: true
+    style: { fillColor: "#0af", fillOpacity: 0.25, strokeColor: "#f00", strokeWidth: 7 }
   });
   expect(label).toMatchObject({
     id: "route-label",

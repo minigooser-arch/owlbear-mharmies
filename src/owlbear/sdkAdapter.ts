@@ -99,8 +99,7 @@ function normalizeSdkLocalItem(item: SceneItemRecord): SceneItemRecord {
       ...(typeof style.strokeOpacity === "number" ? { strokeOpacity: style.strokeOpacity } : {}),
       ...(typeof style.strokeWidth === "number" ? { strokeWidth: style.strokeWidth } : {}),
       ...(Array.isArray(style.strokeDash) ? { strokeDash: style.strokeDash } : {}),
-      ...(typeof style.tension === "number" ? { tension: style.tension } : {}),
-      ...(typeof item.closed === "boolean" ? { closed: item.closed } : {})
+      ...(typeof style.tension === "number" ? { tension: style.tension } : {})
     };
   }
   if (item.type === "LABEL") {
@@ -160,7 +159,6 @@ function applyNormalizedLocalItem(
   }
   if (source.type === "CURVE" && draft.type === "CURVE") {
     if (hasOwn(source, "points")) draft.points = structuredClone(source.points);
-    if (hasOwn(source, "closed")) draft.closed = structuredClone(source.closed);
     const style = { ...objectRecord(draft.style) };
     for (const field of [
       "fillColor",
@@ -328,7 +326,6 @@ export function createSdkLocalItem(
       .strokeWidth(numeric(source.strokeWidth, 4))
       .strokeDash(Array.isArray(source.strokeDash) ? source.strokeDash as number[] : [])
       .tension(numeric(source.tension, 0))
-      .closed(source.closed === true)
       .build() as unknown as SceneItemRecord;
   }
   if (source.type === "SHAPE" && typeof source.style !== "object") {

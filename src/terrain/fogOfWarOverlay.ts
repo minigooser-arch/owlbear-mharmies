@@ -130,7 +130,7 @@ export function buildFogOfWarOverlays(source: FogOfWarOverlaySource): DesiredLoc
         strokeOpacity: 0,
         strokeWidth: 0,
         fillColor: "#808080",
-        fillOpacity: 0.48,
+        fillOpacity: 0.82,
         metadata: {
           [METADATA_KEYS.mapOverlay]: { key, kind: "FOG_OF_WAR" }
         }

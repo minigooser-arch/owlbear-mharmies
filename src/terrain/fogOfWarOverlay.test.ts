@@ -27,7 +27,7 @@ describe("fog of war overlay", () => {
       strokeOpacity: 0,
       strokeWidth: 0,
       fillColor: "#808080",
-      fillOpacity: 0.48,
+      fillOpacity: 0.82,
       metadata: { "com.letopis.army-control/map-overlay": { kind: "FOG_OF_WAR" } }
     });
     expect(overlays.length).toBeGreaterThan(0);
