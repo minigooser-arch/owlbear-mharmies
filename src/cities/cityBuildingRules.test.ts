@@ -34,6 +34,12 @@ describe("city building rules", () => {
     expect(isCityBuildingActive(city, city.buildings![0]!, capturedMap, states, sides)).toBe(false);
   });
 
+  it("uses the city's stored controller when legacy city cells have no de-facto annotations", () => {
+    const sparseMap = structuredClone(map);
+    sparseMap.cells["0,0"]!.deFactoStateId = null;
+    expect(isCityBuildingActive(city, city.buildings![0]!, sparseMap, states, sides)).toBe(true);
+  });
+
   it("allows only the influencing faction leaders or GM to use an active building", () => {
     const building = city.buildings![0]!;
     expect(canUseCityBuilding("p1", "PLAYER", city, building, map, states, sides)).toBe(true);
