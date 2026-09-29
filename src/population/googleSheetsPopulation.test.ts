@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseBackendPopulationCsv } from "./googleSheetsPopulation";
+import { parseBackendPopulationCsv, parseConscriptionCategoryCsv } from "./googleSheetsPopulation";
 
 describe("Google Sheets population CSV", () => {
   it("reads the backend headers and quoted comma decimals", () => {
@@ -31,5 +31,21 @@ describe("Google Sheets population CSV", () => {
 
   it("returns an empty list when required headers are absent", () => {
     expect(parseBackendPopulationCsv("country,gdp\nrussia,12")).toEqual([]);
+  });
+
+  it("reads conscription category from paired state and faction rows", () => {
+    const row = (values: Record<number, string>) => {
+      const cells = Array.from({ length: 41 }, () => "");
+      for (const [index, value] of Object.entries(values)) cells[Number(index)] = value;
+      return cells.map((value) => value.includes(",") ? `"${value.replaceAll('"', '""')}"` : value).join(",");
+    };
+    const csv = [
+      row({ 10: "ВЕЛИКОБРИТАНИЯ", 15: "46084" }),
+      row({ 10: "🏳️", 40: "СРОЧНЫЙ ПРИЗЫВ" })
+    ].join("\n");
+
+    expect(parseConscriptionCategoryCsv(csv)).toEqual([
+      { stateName: "ВЕЛИКОБРИТАНИЯ", category: "СРОЧНЫЙ ПРИЗЫВ" }
+    ]);
   });
 });

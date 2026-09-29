@@ -1,21 +1,25 @@
-import type { StateDemography, StateEntity } from "../shared/types";
-import { parseBackendPopulationCsv, type BackendPopulationRow } from "./googleSheetsPopulation";
+import type { ConscriptionLaw, StateDemography, StateEntity } from "../shared/types";
+import { parseBackendPopulationCsv, parseConscriptionCategoryCsv, type BackendPopulationRow, type StateConscriptionRow } from "./googleSheetsPopulation";
 
 export interface PopulationSyncPlanEntry {
   stateId: string;
   country: string;
   population: number;
   populationGrowthFactor: number;
+  conscriptionLawId?: string;
+  conscriptionRate?: number;
 }
 
 export interface PopulationSyncPlan {
   entries: PopulationSyncPlanEntry[];
   unmatchedStates: string[];
+  unmatchedConscriptionStates: string[];
   skippedRows: string[];
 }
 
 export interface PopulationSyncSummary extends PopulationSyncPlan {
   applied: number;
+  conscriptionApplied: number;
   errors: string[];
 }
 
@@ -27,10 +31,16 @@ interface PopulationFetchResponse {
 
 export interface PopulationSyncInput {
   csvUrl: string;
+  conscriptionCsvUrl?: string;
   states: readonly StateEntity[];
   demographics: readonly StateDemography[];
+  conscriptionLaws?: readonly ConscriptionLaw[];
   fetcher?: (url: string) => Promise<PopulationFetchResponse>;
-  applyCorrection: (stateId: string, patch: Pick<StateDemography, "population" | "populationGrowthFactor">) => Promise<unknown>;
+  applyCorrection: (stateId: string, patch: Pick<StateDemography, "population" | "populationGrowthFactor"> & Partial<Pick<StateDemography, "conscriptionLawId" | "conscriptionRate">>) => Promise<unknown>;
+}
+
+function normalizeLabel(value: string): string {
+  return value.trim().toLocaleLowerCase("ru-RU").replaceAll("ё", "е").replace(/\s+/g, " ");
 }
 
 function hasRequiredHeaders(csv: string): boolean {
@@ -39,7 +49,12 @@ function hasRequiredHeaders(csv: string): boolean {
   return columns.includes("country") && columns.includes("population") && columns.includes("growth_rate");
 }
 
-export function buildPopulationSyncPlan(rows: readonly BackendPopulationRow[], states: readonly StateEntity[]): PopulationSyncPlan {
+export function buildPopulationSyncPlan(
+  rows: readonly BackendPopulationRow[],
+  states: readonly StateEntity[],
+  conscriptionRows: readonly StateConscriptionRow[] = [],
+  conscriptionLaws: readonly ConscriptionLaw[] = []
+): PopulationSyncPlan {
   const rowsByCountry = new Map<string, BackendPopulationRow>();
   const skippedRows: string[] = [];
   for (const row of rows) {
@@ -52,6 +67,13 @@ export function buildPopulationSyncPlan(rows: readonly BackendPopulationRow[], s
 
   const entries: PopulationSyncPlanEntry[] = [];
   const unmatchedStates: string[] = [];
+  const unmatchedConscriptionStates: string[] = [];
+  const categoriesByState = new Map<string, StateConscriptionRow>();
+  for (const row of conscriptionRows) {
+    const key = normalizeLabel(row.stateName);
+    if (key && !categoriesByState.has(key)) categoriesByState.set(key, row);
+  }
+  const lawsByName = new Map(conscriptionLaws.map((law) => [normalizeLabel(law.name), law]));
   for (const state of states) {
     const country = state.backendCountry?.trim();
     const row = country ? rowsByCountry.get(country) : undefined;
@@ -59,18 +81,29 @@ export function buildPopulationSyncPlan(rows: readonly BackendPopulationRow[], s
       unmatchedStates.push(state.id);
       continue;
     }
-    entries.push({
+    const entry: PopulationSyncPlanEntry = {
       stateId: state.id,
       country,
       population: row.population,
       populationGrowthFactor: row.growthRate
-    });
+    };
+    if (conscriptionRows.length > 0) {
+      const category = categoriesByState.get(normalizeLabel(state.name)) ?? categoriesByState.get(normalizeLabel(country));
+      const law = category ? lawsByName.get(normalizeLabel(category.category)) : undefined;
+      if (law) {
+        entry.conscriptionLawId = law.id;
+        entry.conscriptionRate = law.rate;
+      } else {
+        unmatchedConscriptionStates.push(state.id);
+      }
+    }
+    entries.push(entry);
   }
-  return { entries, unmatchedStates, skippedRows };
+  return { entries, unmatchedStates, unmatchedConscriptionStates, skippedRows };
 }
 
 export async function syncPopulationFromPublicSheet(input: PopulationSyncInput): Promise<PopulationSyncSummary> {
-  const summary: PopulationSyncSummary = { applied: 0, entries: [], unmatchedStates: [], skippedRows: [], errors: [] };
+  const summary: PopulationSyncSummary = { applied: 0, conscriptionApplied: 0, entries: [], unmatchedStates: [], unmatchedConscriptionStates: [], skippedRows: [], errors: [] };
   const url = input.csvUrl.trim();
   if (!url) {
     summary.errors.push("CSV URL не задан");
@@ -102,17 +135,38 @@ export async function syncPopulationFromPublicSheet(input: PopulationSyncInput):
     summary.errors.push("В CSV не найдены строки с заголовками country, population, growth_rate");
     return summary;
   }
-  const plan = buildPopulationSyncPlan(parseBackendPopulationCsv(csv), input.states);
+  let conscriptionRows: StateConscriptionRow[] = [];
+  if (input.conscriptionCsvUrl?.trim()) {
+    try {
+      const conscriptionResponse = await fetcher(input.conscriptionCsvUrl.trim());
+      if (!conscriptionResponse.ok) {
+        summary.errors.push(`Таблица призыва вернула HTTP ${conscriptionResponse.status}`);
+      } else {
+        conscriptionRows = parseConscriptionCategoryCsv(await conscriptionResponse.text());
+        if (conscriptionRows.length === 0) summary.errors.push("В CSV государств не найдены категории призыва");
+      }
+    } catch (error) {
+      summary.errors.push(`Не удалось загрузить таблицу призыва: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  const plan = buildPopulationSyncPlan(parseBackendPopulationCsv(csv), input.states, conscriptionRows, input.conscriptionLaws ?? []);
   summary.entries = plan.entries;
   summary.unmatchedStates = plan.unmatchedStates;
+  summary.unmatchedConscriptionStates = plan.unmatchedConscriptionStates;
   summary.skippedRows = plan.skippedRows;
   for (const entry of plan.entries) {
     try {
-      await input.applyCorrection(entry.stateId, {
+      const patch: Pick<StateDemography, "population" | "populationGrowthFactor"> & Partial<Pick<StateDemography, "conscriptionLawId" | "conscriptionRate">> = {
         population: entry.population,
         populationGrowthFactor: entry.populationGrowthFactor
-      });
+      };
+      if (entry.conscriptionLawId && entry.conscriptionRate !== undefined) {
+        patch.conscriptionLawId = entry.conscriptionLawId;
+        patch.conscriptionRate = entry.conscriptionRate;
+      }
+      await input.applyCorrection(entry.stateId, patch);
       summary.applied += 1;
+      if (entry.conscriptionLawId) summary.conscriptionApplied += 1;
     } catch (error) {
       summary.errors.push(`${entry.stateId}: ${error instanceof Error ? error.message : String(error)}`);
     }

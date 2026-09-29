@@ -39,6 +39,8 @@ export interface SceneSettings {
   populationTimeZone?: string;
   /** Public Google Sheets CSV endpoint used for explicit GM population sync. */
   populationSheetCsvUrl?: string;
+  /** Public Google Sheets CSV endpoint for the state/conscription category sheet. */
+  conscriptionSheetCsvUrl?: string;
 }
 
 export interface ArmyTokenAsset {
