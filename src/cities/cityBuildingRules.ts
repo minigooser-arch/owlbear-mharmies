@@ -29,7 +29,9 @@ export function isCityBuildingActive(
   if (!city.factionInfluenceId) return false;
   const influence = sides.find((side) => side.id === city.factionInfluenceId);
   if (!influence?.stateId || !states.some((state) => state.id === influence.stateId && state.active)) return false;
-  return resolveCityDeFactoState(city, gridMap) === influence.stateId;
+  const cityCellsHaveControllerData = city.cells.some((cell) => gridMap.cells[cellKey(cell)]?.deFactoStateId !== null && gridMap.cells[cellKey(cell)]?.deFactoStateId !== undefined);
+  const controller = cityCellsHaveControllerData ? resolveCityDeFactoState(city, gridMap) : city.deFactoStateId;
+  return controller === influence.stateId;
 }
 
 export function canUseCityBuilding(
