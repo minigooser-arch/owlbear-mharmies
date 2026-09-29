@@ -52,6 +52,7 @@ export function PopulationPage({ states, demographics, conscriptionLaws, onActio
       const result = await onSyncPopulation();
       const details = [
         `Обновлено записей: ${result.applied}`,
+        `ЛР из таблицы: ${result.humanResourceApplied ?? 0}`,
         `Категорий призыва: ${result.conscriptionApplied}`,
         result.unmatchedStates.length > 0 ? `Без соответствия: ${result.unmatchedStates.length}` : "",
         (result.unmatchedConscriptionStates?.length ?? 0) > 0 ? `Без категории призыва: ${result.unmatchedConscriptionStates?.length}` : "",
@@ -67,7 +68,7 @@ export function PopulationPage({ states, demographics, conscriptionLaws, onActio
 
   return (
     <section aria-labelledby="population-title">
-      <div className="section-heading wiki-page-heading"><div><p className="eyebrow">Экономика государств</p><h2 id="population-title">Население и ЛР</h2><p className="page-description">Google Sheets используется как источник населения. Изменения читаются из публичного CSV и применяются только мастером; запись обратно в таблицу не выполняется.</p></div></div>
+      <div className="section-heading wiki-page-heading"><div><p className="eyebrow">Экономика государств</p><h2 id="population-title">Население и ЛР</h2><p className="page-description">Google Sheets используется как источник населения и текущего ЛР. Все числовые значения населения и ЛР хранятся в тысячах человек: 46 084 = 46М 084Т. Изменения читаются из публичного CSV и применяются только мастером; запись обратно в таблицу не выполняется.</p></div></div>
       {onSyncPopulation && <div className="registration-card population-sync-card">
         <div className="registration-copy"><strong>Синхронизация с Google Sheets</strong><small>{settings?.populationSheetCsvUrl ?? "Адрес CSV населения не задан"}<br />{settings?.conscriptionSheetCsvUrl ?? "Адрес CSV призыва не задан"}</small></div>
         <button className="button primary" type="button" onClick={() => void syncPopulation()} disabled={syncing}>{syncing ? "Загрузка…" : "Синхронизировать с Google Sheets"}</button>
@@ -83,11 +84,11 @@ export function PopulationPage({ states, demographics, conscriptionLaws, onActio
           const draft = drafts[record.stateId] ?? draftFor(record);
           return (
             <form className="registration-card management-form" key={record.stateId} onSubmit={(event) => { event.preventDefault(); submitRecord(record); }}>
-              <div className="registration-copy"><strong>{stateNames.get(record.stateId) ?? record.stateId}</strong><small>Максимум ЛР: {Math.round(record.humanResourceCapacity).toLocaleString("ru-RU")} · Последний расчёт: {record.lastPopulationCalculationDate ?? "не выполнялся"}</small></div>
+              <div className="registration-copy"><strong>{stateNames.get(record.stateId) ?? record.stateId}</strong><small>Максимум ЛР: {Math.round(record.humanResourceCapacity).toLocaleString("ru-RU")} тыс. · Последний расчёт: {record.lastPopulationCalculationDate ?? "не выполнялся"}</small></div>
               <div className="form-grid">
-                <label>Население<input type="number" min="0" step="any" value={draft.population} onChange={(event) => updateDraft(record, { population: Number(event.target.value) })} /></label>
+                <label>Население (тыс.)<input type="number" min="0" step="any" value={draft.population} onChange={(event) => updateDraft(record, { population: Number(event.target.value) })} /></label>
                 <label>Коэффициент роста<input type="number" min="0.000001" step="0.000001" value={draft.populationGrowthFactor} onChange={(event) => updateDraft(record, { populationGrowthFactor: Number(event.target.value) })} /></label>
-                <label>Текущий ЛР<input type="number" min="0" step="any" value={draft.humanResource} onChange={(event) => updateDraft(record, { humanResource: Number(event.target.value) })} /></label>
+                <label>Текущий ЛР (тыс.)<input type="number" min="0" step="any" value={draft.humanResource} onChange={(event) => updateDraft(record, { humanResource: Number(event.target.value) })} /></label>
                 <label>Закон о призыве<select value={draft.conscriptionLawId} onChange={(event) => { const law = conscriptionLaws.find((candidate) => candidate.id === event.target.value); updateDraft(record, { conscriptionLawId: event.target.value, ...(law ? { conscriptionRate: law.rate } : {}) }); }}><option value="">Выберите закон</option>{conscriptionLaws.map((law) => <option key={law.id} value={law.id}>{law.name} ({(law.rate * 100).toLocaleString("ru-RU")}%)</option>)}</select></label>
                 <label>Ставка закона<input type="number" min="0" max="1" step="0.01" value={draft.conscriptionRate} onChange={(event) => updateDraft(record, { conscriptionRate: Number(event.target.value) })} /></label>
                 <label>Причина изменения<input required value={reasons[record.stateId] ?? ""} onChange={(event) => setReasons((current) => ({ ...current, [record.stateId]: event.target.value }))} placeholder="Например, импорт из таблицы" /></label>

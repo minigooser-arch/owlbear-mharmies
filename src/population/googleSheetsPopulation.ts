@@ -7,6 +7,8 @@ export interface BackendPopulationRow {
 export interface StateConscriptionRow {
   stateName: string;
   category: string;
+  /** Current LR in thousands, as represented by the formatted state row. */
+  humanResource?: number;
 }
 
 function delimiterFor(csv: string): "," | ";" {
@@ -68,6 +70,21 @@ function isUsableCategory(value: string | undefined): value is string {
   return Boolean(normalized && normalized !== "/" && normalized !== "-");
 }
 
+function parseHumanResource(value: string | undefined): number | undefined {
+  if (!value?.trim()) return undefined;
+  const normalized = value.replace(/[\u00A0\s]/g, " ").trim();
+  const compact = normalized.match(/^([\d.,]+)\s*[МM]\.?(?:\s*([\d.,]+)\s*[ТT]\.?)?$/i);
+  if (compact) {
+    const millions = parseNumber(compact[1] ?? "");
+    const thousands = compact[2] === undefined ? 0 : parseNumber(compact[2]);
+    return millions === undefined || thousands === undefined ? undefined : millions * 1000 + thousands;
+  }
+  const thousands = normalized.match(/^([\d.,]+)\s*[ТT]\.?$/i);
+  if (thousands) return parseNumber(thousands[1] ?? "");
+  const plain = parseNumber(normalized);
+  return plain;
+}
+
 /**
  * Reads the category from the public `ГОСУДАРСТВА [1910]` export.
  * The sheet stores a country row followed by a faction/details row; the
@@ -79,23 +96,32 @@ export function parseConscriptionCategoryCsv(csv: string): StateConscriptionRow[
   const headers = records[0]?.map((header) => header.replace(/^\uFEFF/, "").trim().toLowerCase()) ?? [];
   const directStateIndex = headers.findIndex((header) => ["state_name", "state", "country_name"].includes(header));
   const directCategoryIndex = headers.findIndex((header) => ["category", "conscription", "conscription_category", "draft_law"].includes(header));
+  const directHumanResourceIndex = headers.findIndex((header) => ["human_resource", "humanresource", "lr", "человеческий ресурс"].includes(header));
   if (directStateIndex >= 0 && directCategoryIndex >= 0) {
     return records.slice(1).flatMap((record) => {
       const stateName = record[directStateIndex]?.trim();
       const category = record[directCategoryIndex]?.trim();
-      return stateName && isUsableCategory(category) ? [{ stateName, category }] : [];
+      const humanResource = directHumanResourceIndex >= 0 ? parseHumanResource(record[directHumanResourceIndex]) : undefined;
+      return stateName && isUsableCategory(category)
+        ? [{ stateName, category, ...(humanResource !== undefined ? { humanResource } : {}) }]
+        : [];
     });
   }
 
   const rows: StateConscriptionRow[] = [];
   let pendingStateName: string | undefined;
+  let pendingHumanResource: number | undefined;
   for (const record of records) {
     const stateName = record[10]?.trim();
-    if (stateName && parseNumber(record[15] ?? "") !== undefined) pendingStateName = stateName;
+    if (stateName && parseNumber(record[15] ?? "") !== undefined) {
+      pendingStateName = stateName;
+      pendingHumanResource = parseHumanResource(record[40]);
+    }
     const category = record[40]?.trim();
-    if (pendingStateName && isUsableCategory(category) && parseNumber(category) === undefined) {
-      rows.push({ stateName: pendingStateName, category });
+    if (pendingStateName && isUsableCategory(category) && parseNumber(category) === undefined && parseHumanResource(category) === undefined) {
+      rows.push({ stateName: pendingStateName, category, ...(pendingHumanResource !== undefined ? { humanResource: pendingHumanResource } : {}) });
       pendingStateName = undefined;
+      pendingHumanResource = undefined;
     }
   }
   return rows;
