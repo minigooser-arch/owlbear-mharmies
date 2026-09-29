@@ -2,10 +2,12 @@ import OBR, {
   buildCurve,
   buildImage,
   buildLabel,
+  buildShape,
   type Image,
   type Item,
   type Layer,
-  type Metadata
+  type Metadata,
+  type ShapeType
 } from "@owlbear-rodeo/sdk";
 import type { BroadcastEvent, BroadcastPort } from "../commands/commandGateway";
 import type { GridSdkPort } from "../grid/gridDistance";
@@ -110,6 +112,18 @@ function normalizeSdkLocalItem(item: SceneItemRecord): SceneItemRecord {
       ...(typeof style.fillColor === "string" ? { color: style.fillColor } : {})
     };
   }
+  if (item.type === "SHAPE") {
+    const style = objectRecord(item.style);
+    return {
+      ...item,
+      ...(typeof style.fillColor === "string" ? { fillColor: style.fillColor } : {}),
+      ...(typeof style.fillOpacity === "number" ? { fillOpacity: style.fillOpacity } : {}),
+      ...(typeof style.strokeColor === "string" ? { strokeColor: style.strokeColor } : {}),
+      ...(typeof style.strokeOpacity === "number" ? { strokeOpacity: style.strokeOpacity } : {}),
+      ...(typeof style.strokeWidth === "number" ? { strokeWidth: style.strokeWidth } : {}),
+      ...(Array.isArray(style.strokeDash) ? { strokeDash: style.strokeDash } : {})
+    };
+  }
   return item;
 }
 
@@ -156,6 +170,23 @@ function applyNormalizedLocalItem(
       "strokeWidth",
       "strokeDash",
       "tension"
+    ] as const) {
+      if (hasOwn(source, field)) style[field] = structuredClone(source[field]);
+    }
+    draft.style = style;
+  }
+  if (source.type === "SHAPE" && draft.type === "SHAPE") {
+    for (const field of ["width", "height", "shapeType"] as const) {
+      if (hasOwn(source, field)) draft[field] = structuredClone(source[field]);
+    }
+    const style = { ...objectRecord(draft.style) };
+    for (const field of [
+      "fillColor",
+      "fillOpacity",
+      "strokeColor",
+      "strokeOpacity",
+      "strokeWidth",
+      "strokeDash"
     ] as const) {
       if (hasOwn(source, field)) style[field] = structuredClone(source[field]);
     }
@@ -236,11 +267,13 @@ function numeric(value: unknown, fallback: number): number {
 export interface LocalOverlayBuilderFactory {
   curve(): ReturnType<typeof buildCurve>;
   label(): ReturnType<typeof buildLabel>;
+  shape(): ReturnType<typeof buildShape>;
 }
 
 const DEFAULT_OVERLAY_BUILDERS: LocalOverlayBuilderFactory = {
   curve: () => buildCurve(),
-  label: () => buildLabel()
+  label: () => buildLabel(),
+  shape: () => buildShape()
 };
 
 export function createSdkLocalItem(
@@ -296,6 +329,34 @@ export function createSdkLocalItem(
       .strokeDash(Array.isArray(source.strokeDash) ? source.strokeDash as number[] : [])
       .tension(numeric(source.tension, 0))
       .closed(source.closed === true)
+      .build() as unknown as SceneItemRecord;
+  }
+  if (source.type === "SHAPE" && typeof source.style !== "object") {
+    const shapeType = source.shapeType === "CIRCLE" || source.shapeType === "TRIANGLE" || source.shapeType === "HEXAGON"
+      ? source.shapeType
+      : "RECTANGLE";
+    return builders.shape()
+      .id(source.id)
+      .name(source.name ?? "Локальный прямоугольник")
+      .position(source.position)
+      .rotation(source.rotation ?? 0)
+      .scale(source.scale ?? { x: 1, y: 1 })
+      .layer((source.layer ?? "POINTER") as Layer)
+      .zIndex(source.zIndex ?? Date.now())
+      .visible(source.visible ?? true)
+      .locked(source.locked ?? false)
+      .disableHit(typeof source.disableHit === "boolean" ? source.disableHit : true)
+      .disableAutoZIndex(typeof source.disableAutoZIndex === "boolean" ? source.disableAutoZIndex : false)
+      .metadata(source.metadata as Metadata)
+      .width(numeric(source.width, 0))
+      .height(numeric(source.height, 0))
+      .shapeType(shapeType as ShapeType)
+      .fillColor(typeof source.fillColor === "string" ? source.fillColor : "#808080")
+      .fillOpacity(numeric(source.fillOpacity, 0))
+      .strokeColor(typeof source.strokeColor === "string" ? source.strokeColor : "#808080")
+      .strokeOpacity(numeric(source.strokeOpacity, 0))
+      .strokeWidth(numeric(source.strokeWidth, 0))
+      .strokeDash(Array.isArray(source.strokeDash) ? source.strokeDash as number[] : [])
       .build() as unknown as SceneItemRecord;
   }
   if (source.type === "LABEL" && typeof source.text === "string") {

@@ -12,7 +12,7 @@ import {
   type LocalOverlayBuilderFactory
 } from "./sdkAdapter";
 
-function fakeBuilder(type: "CURVE" | "LABEL"): unknown {
+function fakeBuilder(type: "CURVE" | "LABEL" | "SHAPE"): unknown {
   const values: Record<string, unknown> = {};
   const proxy = new Proxy<Record<string, unknown>>({}, {
     get: (_target, property) => {
@@ -32,7 +32,20 @@ function fakeBuilder(type: "CURVE" | "LABEL"): unknown {
               },
               closed: values.closed
             }
-          : {
+          : type === "SHAPE"
+            ? {
+                ...values,
+                type,
+                style: {
+                  fillColor: values.fillColor,
+                  fillOpacity: values.fillOpacity,
+                  strokeColor: values.strokeColor,
+                  strokeOpacity: values.strokeOpacity,
+                  strokeWidth: values.strokeWidth,
+                  strokeDash: values.strokeDash
+                }
+              }
+            : {
               ...values,
               type,
               text: {
@@ -57,7 +70,8 @@ function fakeBuilder(type: "CURVE" | "LABEL"): unknown {
 function fakeOverlayBuilders(): LocalOverlayBuilderFactory {
   return {
     curve: () => fakeBuilder("CURVE") as ReturnType<LocalOverlayBuilderFactory["curve"]>,
-    label: () => fakeBuilder("LABEL") as ReturnType<LocalOverlayBuilderFactory["label"]>
+    label: () => fakeBuilder("LABEL") as ReturnType<LocalOverlayBuilderFactory["label"]>,
+    shape: () => fakeBuilder("SHAPE") as ReturnType<LocalOverlayBuilderFactory["shape"]>
   };
 }
 
@@ -248,6 +262,33 @@ it("builds valid Owlbear curve and label items for local overlays", () => {
     layer: "POINTER",
     disableHit: true,
     text: { plainText: "Осталось: 3", style: { fillColor: "#0f0" } }
+  });
+});
+
+it("builds local rectangle shapes without a visible outline", () => {
+  const shape = createSdkLocalItem({
+    id: "fog-cell",
+    type: "SHAPE",
+    position: { x: 50, y: 50 },
+    width: 100,
+    height: 100,
+    shapeType: "RECTANGLE",
+    fillColor: "#808080",
+    fillOpacity: 0.48,
+    strokeColor: "#808080",
+    strokeOpacity: 0,
+    strokeWidth: 0,
+    layer: "FOG",
+    metadata: { [METADATA_KEYS.mapOverlay]: { key: "FOG_OF_WAR_V5/0,0/0,0" } }
+  }, fakeOverlayBuilders());
+
+  expect(shape).toMatchObject({
+    type: "SHAPE",
+    width: 100,
+    height: 100,
+    shapeType: "RECTANGLE",
+    layer: "FOG",
+    style: { fillColor: "#808080", fillOpacity: 0.48, strokeOpacity: 0, strokeWidth: 0 }
   });
 });
 

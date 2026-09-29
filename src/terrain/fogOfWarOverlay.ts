@@ -44,7 +44,7 @@ export function deriveGridBounds(
   return bounds;
 }
 
-export const FOG_OF_WAR_OVERLAY_VERSION = "FOG_OF_WAR_V4";
+export const FOG_OF_WAR_OVERLAY_VERSION = "FOG_OF_WAR_V5";
 
 interface FogRectangle {
   minX: number;
@@ -101,31 +101,23 @@ function fogRectangles(source: FogOfWarOverlaySource): FogRectangle[] {
   return finished;
 }
 
-function rectanglePoints(rectangle: FogRectangle, dpi: number) {
-  const minX = rectangle.minX * dpi;
-  const minY = rectangle.minY * dpi;
-  const maxX = (rectangle.maxX + 1) * dpi;
-  const maxY = (rectangle.maxY + 1) * dpi;
-  return [
-    { x: minX, y: minY },
-    { x: maxX, y: minY },
-    { x: maxX, y: maxY },
-    { x: minX, y: maxY },
-    { x: minX, y: minY }
-  ];
-}
-
 export function buildFogOfWarOverlays(source: FogOfWarOverlaySource): DesiredLocalOverlay[] {
   return fogRectangles(source).map((rectangle) => {
     const key = `${FOG_OF_WAR_OVERLAY_VERSION}/${rectangle.minX},${rectangle.minY}/${rectangle.maxX},${rectangle.maxY}`;
+    const width = (rectangle.maxX - rectangle.minX + 1) * source.dpi;
+    const height = (rectangle.maxY - rectangle.minY + 1) * source.dpi;
     return {
       key,
       item: {
-        type: "CURVE",
+        type: "SHAPE",
         name: "Туман войны",
-        position: { x: 0, y: 0 },
-        points: rectanglePoints(rectangle, source.dpi),
-        closed: true,
+        position: {
+          x: (rectangle.minX + rectangle.maxX + 1) * source.dpi / 2,
+          y: (rectangle.minY + rectangle.maxY + 1) * source.dpi / 2
+        },
+        width,
+        height,
+        shapeType: "RECTANGLE",
         rotation: 0,
         scale: { x: 1, y: 1 },
         layer: "FOG",
@@ -138,7 +130,7 @@ export function buildFogOfWarOverlays(source: FogOfWarOverlaySource): DesiredLoc
         strokeOpacity: 0,
         strokeWidth: 0,
         fillColor: "#808080",
-        fillOpacity: 0.42,
+        fillOpacity: 0.48,
         metadata: {
           [METADATA_KEYS.mapOverlay]: { key, kind: "FOG_OF_WAR" }
         }
