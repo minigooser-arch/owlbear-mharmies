@@ -11,6 +11,7 @@ import { StateDiplomacyPage } from "./StateDiplomacyPage";
 import { StatesPage } from "./StatesPage";
 import { LRLedgerPage } from "./LRLedgerPage";
 import { PopulationPage } from "./PopulationPage";
+import type { PopulationSyncSummary } from "../../population/populationSheetSync";
 
 type ManagementSection = "SIDES" | "STATES" | "STATE_DIPLOMACY" | "RELATIONS" | "REBELLIONS" | "POPULATION" | "LR" | "SETTINGS" | "DIAGNOSTICS";
 const LABELS: Record<ManagementSection, string> = {
@@ -26,7 +27,7 @@ const LABELS: Record<ManagementSection, string> = {
 };
 
 export function ManagementPage({
-  playerId, sides, states, strategicCities, rebellionStatuses, lrTransactions, demographics, conscriptionLaws, players, relations, stateRelations, settings, leaderSideIds, onAction, runDiagnostic
+  playerId, sides, states, strategicCities, rebellionStatuses, lrTransactions, demographics, conscriptionLaws, players, relations, stateRelations, settings, leaderSideIds, onAction, onSyncPopulation, runDiagnostic
 }: {
   playerId: string;
   sides: readonly Side[];
@@ -42,6 +43,7 @@ export function ManagementPage({
   settings: SceneSettings;
   leaderSideIds: ReadonlySet<string>;
   onAction(command: UiCommand): void;
+  onSyncPopulation(): Promise<PopulationSyncSummary>;
   runDiagnostic(testId: DiagnosticTestId): Promise<unknown>;
 }) {
   const [section, setSection] = useState<ManagementSection>("SIDES");
@@ -57,7 +59,7 @@ export function ManagementPage({
         {section === "STATE_DIPLOMACY" && <StateDiplomacyPage states={states} stateRelations={stateRelations} onAction={onAction} />}
         {section === "RELATIONS" && <RelationsPage sides={sides} relations={relations} onAction={onAction} />}
         {section === "REBELLIONS" && <RebellionsPage states={states} sides={sides} cities={strategicCities} statuses={rebellionStatuses} onAction={onAction} />}
-        {section === "POPULATION" && <PopulationPage states={states} demographics={demographics} conscriptionLaws={conscriptionLaws} onAction={onAction} />}
+        {section === "POPULATION" && <PopulationPage states={states} demographics={demographics} conscriptionLaws={conscriptionLaws} settings={settings} onAction={onAction} onSyncPopulation={onSyncPopulation} />}
         {section === "LR" && <LRLedgerPage transactions={lrTransactions} onAction={onAction} />}
         {section === "SETTINGS" && <SettingsPage settings={settings} onAction={onAction} />}
         {section === "DIAGNOSTICS" && <DiagnosticsPage run={runDiagnostic} />}

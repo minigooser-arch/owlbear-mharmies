@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE } from "./constants";
+import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE, DEFAULT_POPULATION_SHEET_CSV_URL } from "./constants";
 import { normalizeArmyState, normalizeSceneState } from "./validation";
 
 function scene(overrides: Record<string, unknown> = {}) {
@@ -59,6 +59,20 @@ describe("metadata validation", () => {
     const result = normalizeSceneState(scene());
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.value.settings).toEqual(DEFAULT_SETTINGS);
+  });
+
+  it("preserves the backend country mapping and defaults the public population source", () => {
+    const result = normalizeSceneState(scene({
+      states: [{ id: "russia", name: "Россия", rulingFactionId: null, active: true, backendCountry: "russian_empire" }]
+    }));
+
+    expect(result).toMatchObject({
+      ok: true,
+      value: {
+        states: [{ id: "russia", backendCountry: "russian_empire" }],
+        settings: { populationSheetCsvUrl: DEFAULT_POPULATION_SHEET_CSV_URL }
+      }
+    });
   });
 
   it("normalizes leaders as unique members without crossing side boundaries", () => {

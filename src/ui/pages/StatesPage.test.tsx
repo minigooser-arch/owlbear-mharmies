@@ -10,7 +10,7 @@ const sides: Side[] = [
   { id: "blue", name: "Синие", color: "#00f", playerIds: [], leaderPlayerIds: [], stateId: null }
 ];
 const states: StateEntity[] = [
-  { id: "russia", name: "Россия", color: "#b71c1c", rulingFactionId: "red", active: true }
+  { id: "russia", name: "Россия", color: "#b71c1c", rulingFactionId: "red", active: true, backendCountry: "russian_empire" }
 ];
 
 afterEach(cleanup);
@@ -57,7 +57,21 @@ it("edits state name and color from the state administration page", () => {
   expect(onAction).toHaveBeenCalledWith({
     type: "UPDATE_STATE",
     stateId: "russia",
-    patch: { name: "Российская империя", color: "#aa0000" }
+    patch: { name: "Российская империя", color: "#aa0000", backendCountry: "russian_empire" }
+  });
+});
+
+it("edits the backend country mapping for a state", () => {
+  const onAction = vi.fn();
+  render(<StatesPage states={states} sides={sides} onAction={onAction} />);
+
+  fireEvent.change(screen.getByLabelText("Backend country Россия"), { target: { value: "german_empire" } });
+  fireEvent.click(screen.getByRole("button", { name: "Сохранить государство Россия" }));
+
+  expect(onAction).toHaveBeenCalledWith({
+    type: "UPDATE_STATE",
+    stateId: "russia",
+    patch: { name: "Россия", color: "#b71c1c", backendCountry: "german_empire" }
   });
 });
 

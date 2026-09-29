@@ -13,15 +13,18 @@ function StateCard({
 }) {
   const [name, setName] = useState(state.name);
   const [color, setColor] = useState(state.color ?? "#607d8b");
+  const [backendCountry, setBackendCountry] = useState(state.backendCountry ?? "");
 
   useEffect(() => {
     setName(state.name);
     setColor(state.color ?? "#607d8b");
-  }, [state.name, state.color]);
+    setBackendCountry(state.backendCountry ?? "");
+  }, [state.name, state.color, state.backendCountry]);
 
   const members = sides.filter((side) => side.stateId === state.id);
   const trimmedName = name.trim();
-  const detailsChanged = trimmedName !== state.name || color !== (state.color ?? "#607d8b");
+  const trimmedBackendCountry = backendCountry.trim();
+  const detailsChanged = trimmedName !== state.name || color !== (state.color ?? "#607d8b") || trimmedBackendCountry !== (state.backendCountry ?? "");
 
   return (
     <article className="side-card" aria-label={`Государство ${state.name}`}>
@@ -50,6 +53,10 @@ function StateCard({
           onChange={(event) => setColor(event.target.value)}
         />
       </label>
+      <label>
+        Backend country
+        <input aria-label={`Backend country ${state.name}`} value={backendCountry} onChange={(event) => setBackendCountry(event.target.value)} placeholder="например, russian_empire" />
+      </label>
       <button
         className="button"
         type="button"
@@ -58,7 +65,11 @@ function StateCard({
         onClick={() => onAction({
           type: "UPDATE_STATE",
           stateId: state.id,
-          patch: { name: trimmedName, color }
+          patch: {
+            name: trimmedName,
+            color,
+            ...(state.backendCountry !== undefined || trimmedBackendCountry ? { backendCountry: trimmedBackendCountry || null } : {})
+          }
         })}
       >
         Сохранить

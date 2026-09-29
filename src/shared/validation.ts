@@ -130,6 +130,9 @@ function normalizeSettings(value: unknown): SceneSettings {
   )
     ? value.visibilityRecalculationMode
     : DEFAULT_SETTINGS.visibilityRecalculationMode;
+  const populationSheetCsvUrl = nonEmptyString(value.populationSheetCsvUrl)
+    ? value.populationSheetCsvUrl.trim()
+    : DEFAULT_SETTINGS.populationSheetCsvUrl;
   return {
     defaultDetectionRangeCells: nonNegative(value.defaultDetectionRangeCells)
       ? value.defaultDetectionRangeCells
@@ -166,7 +169,8 @@ function normalizeSettings(value: unknown): SceneSettings {
     armyFormationCostPerHp,
     armyHealingCostPerHp,
     hospitalHealingCostPerHp,
-    populationTimeZone: validTimeZone(value.populationTimeZone, DEFAULT_SETTINGS.populationTimeZone ?? "Europe/Moscow")
+    populationTimeZone: validTimeZone(value.populationTimeZone, DEFAULT_SETTINGS.populationTimeZone ?? "Europe/Moscow"),
+    ...(populationSheetCsvUrl ? { populationSheetCsvUrl } : {})
   };
 }
 
@@ -300,7 +304,10 @@ function normalizeStateEntity(value: unknown): StateEntity | undefined {
     rulingFactionId: value.rulingFactionId === null || nonEmptyString(value.rulingFactionId)
       ? value.rulingFactionId as string | null
       : null,
-    active: typeof value.active === "boolean" ? value.active : true
+    active: typeof value.active === "boolean" ? value.active : true,
+    ...(value.backendCountry === null || nonEmptyString(value.backendCountry)
+      ? { backendCountry: value.backendCountry === null ? null : value.backendCountry.trim() }
+      : {})
   };
 }
 

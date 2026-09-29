@@ -85,6 +85,7 @@ import { GridStorageError } from "../storage/gridChunkCodec";
 import { buildDetectionGraph } from "../visibility/detectionGraph";
 import { buildSceneDetectionGraph, detectedShipIdsForSide } from "../visibility/sceneDetectionGraph";
 import { LocalCloneReconciler, UpdateOriginGuard } from "../visibility/localCloneReconciler";
+import { VisionLightService } from "../visibility/visionLightService";
 import { visibleArmyIdsForPlayer } from "../visibility/visibilityEngine";
 import { applyPopulationCalendarToScene } from "../population/populationRules";
 import type { OwlbearPort } from "../owlbear/sdkAdapter";
@@ -247,6 +248,7 @@ export function localOverlayIds(items: readonly SceneItemRecord[]): string[] {
     METADATA_KEYS.barrierOverlay,
     METADATA_KEYS.mapOverlay,
     METADATA_KEYS.visionOverlay,
+    METADATA_KEYS.visionLight,
     METADATA_KEYS.healthOverlay,
     METADATA_KEYS.navalShipOverlay,
     METADATA_KEYS.interceptionOverlay,
@@ -1490,6 +1492,21 @@ export class ProductionEngine {
       createId: () => crypto.randomUUID()
     };
     const sideColors = new Map(scene.sides.map((side) => [side.id, side.color]));
+    try {
+      await new VisionLightService(overlayPort).reconcile(
+        armies.map(({ item, state }) => ({
+          sourceItemId: item.id,
+          sideId: state.sideId,
+          position: item.position,
+          rangeCells:
+            state.overrides.detectionRangeCells ?? scene.settings.defaultDetectionRangeCells
+        })),
+        { isGM: role === "GM", memberSideIds: new Set(memberSideIds) },
+        await this.grid.getDpi()
+      );
+    } catch {
+      // Fog lighting is cosmetic; visibility and command handling must remain available.
+    }
     await new RouteOverlayService(overlayPort).reconcile(
       armies
         .filter((record) => record.state.route.length > 0)

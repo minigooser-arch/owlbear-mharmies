@@ -90,12 +90,25 @@ it("includes route, map brush, coordinate, and health overlays in local overlay 
       metadata: { [METADATA_KEYS.navalBattleAreaPreview]: { cellKey: "1,1" } }
     },
     {
+      id: "army-vision-light",
+      type: "LIGHT",
+      position: { x: 0, y: 0 },
+      metadata: { [METADATA_KEYS.visionLight]: { sourceItemId: "army" } }
+    },
+    {
       id: "keep",
       type: "LABEL",
       position: { x: 0, y: 0 },
       metadata: { other: true }
     }
-  ])).toEqual(["route-preview", "map-brush-preview", "health", "cell-coordinate", "naval-area-preview"]);
+  ])).toEqual([
+    "route-preview",
+    "map-brush-preview",
+    "health",
+    "cell-coordinate",
+    "naval-area-preview",
+    "army-vision-light"
+  ]);
 });
 
 describe("background command readiness", () => {

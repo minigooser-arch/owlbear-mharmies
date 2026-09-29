@@ -12,7 +12,7 @@ import {
   type LocalOverlayBuilderFactory
 } from "./sdkAdapter";
 
-function fakeBuilder(type: "CURVE" | "LABEL"): unknown {
+function fakeBuilder(type: "CURVE" | "LABEL" | "LIGHT"): unknown {
   const values: Record<string, unknown> = {};
   const proxy = new Proxy<Record<string, unknown>>({}, {
     get: (_target, property) => {
@@ -31,7 +31,7 @@ function fakeBuilder(type: "CURVE" | "LABEL"): unknown {
                 tension: values.tension
               }
             }
-          : {
+          : type === "LABEL" ? {
               ...values,
               type,
               text: {
@@ -42,6 +42,11 @@ function fakeBuilder(type: "CURVE" | "LABEL"): unknown {
                 backgroundOpacity: values.backgroundOpacity,
                 cornerRadius: values.cornerRadius
               }
+            }
+          : {
+              ...values,
+              type,
+              createdUserId: "fake-player"
             };
       }
       return (value: unknown) => {
@@ -56,8 +61,9 @@ function fakeBuilder(type: "CURVE" | "LABEL"): unknown {
 function fakeOverlayBuilders(): LocalOverlayBuilderFactory {
   return {
     curve: () => fakeBuilder("CURVE") as ReturnType<LocalOverlayBuilderFactory["curve"]>,
-    label: () => fakeBuilder("LABEL") as ReturnType<LocalOverlayBuilderFactory["label"]>
-  };
+    label: () => fakeBuilder("LABEL") as ReturnType<LocalOverlayBuilderFactory["label"]>,
+    light: () => fakeBuilder("LIGHT")
+  } as unknown as LocalOverlayBuilderFactory;
 }
 
 function fakeImageBuilders(): LocalImageBuilderFactory {
@@ -248,6 +254,43 @@ it("builds valid Owlbear curve and label items for local overlays", () => {
   });
 });
 
+it("builds native local lights for dynamic fog", () => {
+  const light = createSdkLocalItem({
+    id: "army-light",
+    type: "LIGHT",
+    position: { x: 300, y: 450 },
+    visible: true,
+    locked: true,
+    disableHit: true,
+    disableAutoZIndex: true,
+    layer: "FOG",
+    zIndex: 0,
+    sourceRadius: 0,
+    attenuationRadius: 900,
+    falloff: 0,
+    innerAngle: 360,
+    outerAngle: 360,
+    lightType: "PRIMARY",
+    metadata: { [METADATA_KEYS.visionLight]: { sourceItemId: "army" } }
+  }, fakeOverlayBuilders());
+
+  expect(light).toMatchObject({
+    id: "army-light",
+    type: "LIGHT",
+    createdUserId: "fake-player",
+    position: { x: 300, y: 450 },
+    layer: "FOG",
+    zIndex: 0,
+    sourceRadius: 0,
+    attenuationRadius: 900,
+    falloff: 0,
+    innerAngle: 360,
+    outerAngle: 360,
+    lightType: "PRIMARY",
+    metadata: { [METADATA_KEYS.visionLight]: { sourceItemId: "army" } }
+  });
+});
+
 it("snaps grid positions to cell centres with full sensitivity", async () => {
   const calls: unknown[][] = [];
   const collection = {
@@ -367,5 +410,66 @@ it("updates normalized local curve fill and stroke styles without losing them", 
     strokeWidth: 5,
     strokeDash: [4, 2],
     tension: 0
+  });
+});
+
+it("updates native local light position and radius as an army moves", async () => {
+  let localItem: SceneItemRecord = {
+    id: "army-light",
+    type: "LIGHT",
+    position: { x: 50, y: 50 },
+    metadata: { [METADATA_KEYS.visionLight]: { sourceItemId: "army" } },
+    sourceRadius: 0,
+    attenuationRadius: 400,
+    falloff: 0,
+    innerAngle: 360,
+    outerAngle: 360,
+    lightType: "PRIMARY"
+  };
+  const local = {
+    getItems: async () => [structuredClone(localItem)],
+    updateItems: async (_ids: unknown[], update: (drafts: SceneItemRecord[]) => void) => {
+      const drafts = [structuredClone(localItem)];
+      update(drafts);
+      localItem = drafts[0] as SceneItemRecord;
+    },
+    addItems: async () => undefined,
+    deleteItems: async () => undefined
+  };
+  const empty = {
+    getItems: async () => [],
+    updateItems: async () => undefined,
+    addItems: async () => undefined,
+    deleteItems: async () => undefined
+  };
+  const adapter = createOwlbearAdapter({
+    scene: {
+      getMetadata: async () => ({}),
+      setMetadata: async () => undefined,
+      items: empty,
+      local,
+      grid: {
+        getDistance: async () => 0,
+        getDpi: async () => 100,
+        snapPosition: async (position) => position,
+        onChange: () => () => undefined
+      }
+    },
+    broadcast: {
+      sendMessage: async () => undefined,
+      onMessage: () => () => undefined
+    },
+    notification: { show: async () => undefined }
+  });
+
+  await adapter.updateLocalItems([{
+    ...localItem,
+    position: { x: 250, y: 150 },
+    attenuationRadius: 600
+  }]);
+
+  expect(localItem).toMatchObject({
+    position: { x: 250, y: 150 },
+    attenuationRadius: 600
   });
 });

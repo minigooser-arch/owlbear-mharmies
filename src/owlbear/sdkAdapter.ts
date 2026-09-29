@@ -2,6 +2,7 @@ import OBR, {
   buildCurve,
   buildImage,
   buildLabel,
+  buildLight,
   type Image,
   type Item,
   type Layer,
@@ -171,6 +172,18 @@ function applyNormalizedLocalItem(
       }
     };
   }
+  if (source.type === "LIGHT" && draft.type === "LIGHT") {
+    for (const field of [
+      "sourceRadius",
+      "attenuationRadius",
+      "falloff",
+      "innerAngle",
+      "outerAngle",
+      "lightType"
+    ] as const) {
+      if (hasOwn(source, field)) draftRecord[field] = structuredClone(source[field]);
+    }
+  }
   if (source.type === "IMAGE" && draft.type === "IMAGE") {
     if (hasOwn(source, "image")) draft.image = structuredClone(source.image);
     if (hasOwn(source, "grid")) draft.grid = structuredClone(source.grid);
@@ -234,11 +247,13 @@ function numeric(value: unknown, fallback: number): number {
 export interface LocalOverlayBuilderFactory {
   curve(): ReturnType<typeof buildCurve>;
   label(): ReturnType<typeof buildLabel>;
+  light(): ReturnType<typeof buildLight>;
 }
 
 const DEFAULT_OVERLAY_BUILDERS: LocalOverlayBuilderFactory = {
   curve: () => buildCurve(),
-  label: () => buildLabel()
+  label: () => buildLabel(),
+  light: () => buildLight()
 };
 
 export function createSdkLocalItem(
@@ -315,6 +330,34 @@ export function createSdkLocalItem(
       .backgroundOpacity(numeric(source.backgroundOpacity, 0.82))
       .cornerRadius(numeric(source.cornerRadius, 6))
       .build() as unknown as SceneItemRecord;
+  }
+  if (source.type === "LIGHT") {
+    const lightType = source.lightType === "SECONDARY" || source.lightType === "AUXILIARY"
+      ? source.lightType
+      : "PRIMARY";
+    let builder = builders.light()
+      .id(source.id)
+      .name(source.name ?? "Обзор армии")
+      .position(source.position)
+      .rotation(source.rotation ?? 0)
+      .scale(source.scale ?? { x: 1, y: 1 })
+      .layer((source.layer ?? "FOG") as Layer)
+      .zIndex(numeric(source.zIndex, 0))
+      .visible(source.visible ?? true)
+      .locked(source.locked ?? true)
+      .disableHit(typeof source.disableHit === "boolean" ? source.disableHit : true)
+      .disableAutoZIndex(
+        typeof source.disableAutoZIndex === "boolean" ? source.disableAutoZIndex : true
+      )
+      .metadata(source.metadata as Metadata)
+      .sourceRadius(numeric(source.sourceRadius, 0))
+      .attenuationRadius(numeric(source.attenuationRadius, 0))
+      .falloff(numeric(source.falloff, 0))
+      .innerAngle(numeric(source.innerAngle, 360))
+      .outerAngle(numeric(source.outerAngle, 360))
+      .lightType(lightType);
+    if (typeof source.description === "string") builder = builder.description(source.description);
+    return builder.build() as unknown as SceneItemRecord;
   }
   return source;
 }
