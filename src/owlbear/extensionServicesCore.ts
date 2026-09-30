@@ -52,7 +52,7 @@ import {
 } from "../shared/types";
 import { migrateSceneState } from "../storage/migrations";
 import { getRebellionCapitalController, getRebellionFactionStrength } from "../rebellions/rebellionService";
-import { lighthouseDetectionBonusAtCell } from "../cities/cityEffects";
+import { armyFormationCap, lighthouseDetectionBonusAtCell } from "../cities/cityEffects";
 import { shipEmbarkedArmyIds } from "../naval/transport/transportRules";
 import { territorialCityContributions } from "../wars/territorialScore";
 import { isFactionStateAtWar } from "../states/stateRules";
@@ -288,6 +288,7 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
       upgrades: structuredClone(state.upgrades ?? { recovery: {}, motorization: {}, reconnaissance: {} }),
       formationActive: state.formation?.active ?? false,
       formationHpAddedThisTurn: state.formation?.hpAddedThisTurn ?? 0,
+      formationTurnCap: armyFormationCap(input.scene, state.formation?.cityId ?? null),
       healingHpHealedThisTurn: state.healing?.hpHealedThisTurn ?? 0,
       healingPending: state.healing?.pending ?? false,
       supplied: state.supply.supplied,
