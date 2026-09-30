@@ -236,8 +236,6 @@ export interface BattleGroup {
   name: string;
   participantIds: string[];
   revision: number;
-  /** Sides that already earned naval XP eligibility by sinking an enemy ship in this battle. */
-  experienceEligibleSideIds?: string[];
 }
 
 export interface CoordinatorLease {
@@ -317,6 +315,7 @@ export interface ShipState {
   battleId: string | null;
   detectionOverride: number | null;
   embarkedArmyId: string | null;
+  additionalEmbarkedArmyId?: string | null;
   shoreBombardmentUsedOnTurn: number | null;
   logisticsActionUsedOnTurn: number | null;
   revision: number;
@@ -380,6 +379,8 @@ export interface NavalBattleState {
   startedOnTurn: number;
   startedAt: number;
   revision: number;
+  /** A side is listed once it has sunk at least one enemy ship in this battle. */
+  experienceEligibleSideIds?: string[];
 }
 
 /**
