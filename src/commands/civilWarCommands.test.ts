@@ -76,7 +76,7 @@ function scene(): SceneState {
 function command(sender = "gm"): ArmyCommand {
   return {
     type: "START_CIVIL_WAR",
-    protocolVersion: 5,
+    protocolVersion: 6,
     requestId: "request",
     senderPlayerId: sender,
     senderConnectionId: sender + "-connection",
