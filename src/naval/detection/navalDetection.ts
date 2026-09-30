@@ -1,10 +1,11 @@
 import type { GridCellCoord, ShipState } from "../../shared/types";
+import { shipDetectionBonus } from "../../upgrades/unitUpgrades";
 
 export interface NavalDetectionShip {
   id: string;
   sideId: string;
   cell: GridCellCoord;
-  state: Pick<ShipState, "detectionOverride">;
+  state: Pick<ShipState, "detectionOverride" | "classId" | "upgrades">;
 }
 
 export interface NavalDetectionGraph {
@@ -42,10 +43,10 @@ function recordDetection(
 }
 
 export function effectiveShipDetectionRange(
-  ship: Pick<ShipState, "detectionOverride">,
+  ship: Pick<ShipState, "detectionOverride" | "classId" | "upgrades">,
   baseDetectionRangeCells: number
 ): number {
-  return Math.max(0, ship.detectionOverride ?? baseDetectionRangeCells);
+  return Math.max(0, (ship.detectionOverride ?? baseDetectionRangeCells) + shipDetectionBonus(ship));
 }
 
 export function buildNavalDetectionGraph(input: NavalDetectionInput): NavalDetectionGraph {
