@@ -20,7 +20,6 @@ import { unenteredRouteCells } from "../movement/strategicProgress";
 import { createRegisteredShip, destroyShip } from "../naval/ships/shipLifecycle";
 import { resolvePlannedShipRoutes } from "../naval/ships/shipMovementPhase";
 import { occupiedByOtherLiveShip } from "../naval/ships/shipCellOccupancy";
-import { SHIP_CLASSES } from "../naval/ships/shipClasses";
 import { cellSupportsDomain } from "../terrain/movementDomains";
 import { authorizeArmyCommand } from "../shared/permissions";
 import { METADATA_KEYS } from "../shared/constants";
@@ -1089,7 +1088,7 @@ export class CommandProcessor {
           this.rollD6
         );
         if (retaliation > 0) {
-          const armor = SHIP_CLASSES[ship.classId].armor;
+          const armor = shipEffectiveArmor(ship);
           const damage = Math.max(0, retaliation - armor);
           const retaliated = { ...result.attacker, hp: Math.max(0, result.attacker.hp - damage), revision: result.attacker.revision + 1 };
           if (retaliated.hp <= 0) {
@@ -1300,7 +1299,7 @@ export class CommandProcessor {
       case "SET_SHIP_HP": {
         const ship = state.scene.ships?.[command.shipId];
         if (!ship) return "SHIP_NOT_FOUND";
-        const maxHp = SHIP_CLASSES[ship.classId].maxHp;
+        const maxHp = shipEffectiveMaxHp(ship);
         if (command.hp > maxHp) return "INVALID_HP";
         if (command.hp <= 0) {
           destroyReciprocalTransportCargo(state, command.shipId, ship);
@@ -1312,6 +1311,9 @@ export class CommandProcessor {
           embarkedArmyId: command.hp <= 0 && ship.classId === "TRANSPORT"
             ? null
             : ship.embarkedArmyId,
+          additionalEmbarkedArmyId: command.hp <= 0 && ship.classId === "TRANSPORT"
+            ? null
+            : ship.additionalEmbarkedArmyId ?? null,
           revision: ship.revision + 1
         };
         const battle = state.scene.activeNavalBattle;
