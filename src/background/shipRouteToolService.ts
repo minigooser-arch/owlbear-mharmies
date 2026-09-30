@@ -1,6 +1,6 @@
 import type { CommandAck } from "../commands/commandGateway";
 import { StrategicGridAdapter } from "../grid/strategicGrid";
-import { SHIP_CLASSES } from "../naval/ships/shipClasses";
+import { shipEffectiveMovement } from "../upgrades/unitUpgrades";
 import { shipStrategicRouteCost } from "../naval/ships/shipStrategicMovement";
 import type { ShipRouteToolSnapshot, ShipRouteToolActivation } from "../owlbear/shipRouteTool";
 import {
@@ -139,7 +139,7 @@ export class ShipRouteToolService {
       startCell,
       gridDpi,
       movementPoints: editableMovementPoints,
-      maxMovementPoints: SHIP_CLASSES[authorized.ship.state.classId].movement,
+      maxMovementPoints: shipEffectiveMovement(authorized.ship.state),
       facing: authorized.ship.state.facing,
       initialCells: [],
       terrain: structuredClone(authorized.scene.terrain),
