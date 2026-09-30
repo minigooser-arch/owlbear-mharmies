@@ -96,7 +96,14 @@ import {
   type HeartbeatLease
 } from "./coordinator";
 import { BackgroundRuntime, type BackgroundRuntimePort } from "./runtime";
-import { armyTerrainMovementCostUnits, terrainRegistryForArmy } from "../upgrades/unitUpgrades";
+import {
+  armyConcealmentCells,
+  armyEffectiveDetectionRange,
+  armyRevealsEnemyHp,
+  armyTerrainMovementCostUnits,
+  shipDetectionBonus,
+  terrainRegistryForArmy
+} from "../upgrades/unitUpgrades";
 
 type BarrierPurpose = "movement" | "vision";
 
@@ -379,8 +386,11 @@ export class ProductionEngine {
       id: item.id,
       sideId: state.sideId,
       position: item.position,
-      detectionRangeCells:
-        state.overrides.detectionRangeCells ?? scene.settings.defaultDetectionRangeCells,
+      detectionRangeCells: armyEffectiveDetectionRange(
+        state,
+        state.overrides.detectionRangeCells ?? scene.settings.defaultDetectionRangeCells
+      ),
+      concealmentCells: armyConcealmentCells(state),
       ignoresVisionBarriers: state.ignoresVisionBarriers
     }));
     const shipDetectionUnits = Object.entries(scene.ships ?? {}).flatMap(([shipId, state]) => {
@@ -390,7 +400,9 @@ export class ProductionEngine {
         id: shipId,
         sideId: state.sideId,
         position: item.position,
-        detectionRangeCells: state.detectionOverride ?? scene.settings.defaultDetectionRangeCells,
+        detectionRangeCells:
+          (state.detectionOverride ?? scene.settings.defaultDetectionRangeCells) + shipDetectionBonus(state),
+        concealmentCells: 0,
         ignoresVisionBarriers: false
       }];
     });
@@ -421,6 +433,25 @@ export class ProductionEngine {
       revealUntilTurn: scene.navalRevealUntilTurn ?? {},
       currentTurn: scene.turn.turnNumber
     });
+    const armyStateById = new Map(activeLandArmies.map(({ item, state }) => [item.id, state]));
+    const hpVisibleArmyIds = new Set<string>();
+    if (role === "GM") {
+      for (const armyId of armyStateById.keys()) hpVisibleArmyIds.add(armyId);
+    } else {
+      for (const [armyId, army] of armyStateById) {
+        if (memberSideIds.includes(army.sideId)) hpVisibleArmyIds.add(armyId);
+      }
+      for (const sideId of memberSideIds) {
+        for (const [targetId, observerIds] of graph.observersBySide.get(sideId) ?? []) {
+          if (!armyStateById.has(targetId)) continue;
+          const hasReconIntel = [...observerIds].some((observerId) => {
+            const observer = armyStateById.get(observerId);
+            return observer !== undefined && armyRevealsEnemyHp(observer);
+          });
+          if (hasReconIntel) hpVisibleArmyIds.add(targetId);
+        }
+      }
+    }
     const shipSources = sceneItems.filter((item) => (scene.ships ?? {})[item.id] !== undefined);
     const visibleSourceIds = new Set([...visible, ...visibleShips]);
     await this.cloneReconciler.reconcile(
@@ -435,6 +466,7 @@ export class ProductionEngine {
       memberSideIds,
       leaderSideIds,
       visible,
+      hpVisibleArmyIds,
       sceneItems,
       visibleShips
     );
@@ -1483,6 +1515,7 @@ export class ProductionEngine {
     memberSideIds: readonly string[],
     leaderSideIds: readonly string[],
     visibleArmyIds: ReadonlySet<string>,
+    hpVisibleArmyIds: ReadonlySet<string>,
     sceneItems: readonly SceneItemRecord[],
     visibleShipIds: ReadonlySet<string>
   ): Promise<void> {
@@ -1507,8 +1540,10 @@ export class ProductionEngine {
           sourceItemId: item.id,
           sideId: state.sideId,
           position: item.position,
-          rangeCells:
+          rangeCells: armyEffectiveDetectionRange(
+            state,
             state.overrides.detectionRangeCells ?? scene.settings.defaultDetectionRangeCells
+          )
         })),
         { isGM: role === "GM", memberSideIds: new Set(memberSideIds) },
         await this.grid.getDpi()
@@ -1574,7 +1609,7 @@ export class ProductionEngine {
         maxHp: record.state.health.maxHp,
         color: sideColors.get(record.state.sideId) ?? "#ffffff"
       })),
-      visibleArmyIds
+      hpVisibleArmyIds
     );
 
     const sceneItemById = new Map(sceneItems.map((item) => [item.id, item]));
