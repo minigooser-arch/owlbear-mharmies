@@ -46,7 +46,7 @@ describe("Google Sheets population CSV", () => {
     ].join("\n");
 
     expect(parseConscriptionCategoryCsv(csv)).toEqual([
-      { stateName: "ВЕЛИКОБРИТАНИЯ", category: "СРОЧНЫЙ ПРИЗЫВ", humanResource: 584 }
+      { stateName: "ВЕЛИКОБРИТАНИЯ", category: "СРОЧНЫЙ ПРИЗЫВ", population: 46084, humanResource: 584 }
     ]);
   });
 });

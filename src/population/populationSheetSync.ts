@@ -42,7 +42,17 @@ export interface PopulationSyncInput {
 }
 
 function normalizeLabel(value: string): string {
-  return value.trim().toLocaleLowerCase("ru-RU").replaceAll("ё", "е").replace(/\s+/g, " ");
+  return value
+    .trim()
+    .toLocaleLowerCase("ru-RU")
+    .replaceAll("ё", "е")
+    // The state sheet sometimes displays a law as `... (4%)`, while the
+    // in-extension law catalog stores only the canonical name.
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/[‐‑‒–—]/g, "-")
+    .replace(/[«»\"']/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function hasRequiredHeaders(csv: string): boolean {
@@ -71,9 +81,20 @@ export function buildPopulationSyncPlan(
   const unmatchedStates: string[] = [];
   const unmatchedConscriptionStates: string[] = [];
   const categoriesByState = new Map<string, StateConscriptionRow>();
+  const categoriesByPopulation = new Map<number, StateConscriptionRow>();
+  const duplicatePopulations = new Set<number>();
   for (const row of conscriptionRows) {
     const key = normalizeLabel(row.stateName);
     if (key && !categoriesByState.has(key)) categoriesByState.set(key, row);
+    if (row.population !== undefined) {
+      if (duplicatePopulations.has(row.population)) continue;
+      if (categoriesByPopulation.has(row.population)) {
+        categoriesByPopulation.delete(row.population);
+        duplicatePopulations.add(row.population);
+      } else {
+        categoriesByPopulation.set(row.population, row);
+      }
+    }
   }
   const lawsByName = new Map(conscriptionLaws.map((law) => [normalizeLabel(law.name), law]));
   for (const state of states) {
@@ -90,7 +111,12 @@ export function buildPopulationSyncPlan(
       populationGrowthFactor: row.growthRate
     };
     if (conscriptionRows.length > 0) {
-      const category = categoriesByState.get(normalizeLabel(state.name)) ?? categoriesByState.get(normalizeLabel(country));
+      const category = categoriesByState.get(normalizeLabel(state.name))
+        ?? categoriesByState.get(normalizeLabel(country))
+        // The sheet and scene can use different display names for the same
+        // state. Population is a stable fallback because both feeds use the
+        // same thousand-person unit.
+        ?? categoriesByPopulation.get(row.population);
       const law = category ? lawsByName.get(normalizeLabel(category.category)) : undefined;
       if (category?.humanResource !== undefined) entry.humanResource = category.humanResource;
       if (law) {

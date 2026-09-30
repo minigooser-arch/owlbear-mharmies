@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ConscriptionLaw, SceneSettings, StateDemography, StateEntity } from "../../shared/types";
 import type { PopulationSyncSummary } from "../../population/populationSheetSync";
 import type { UiCommand } from "../state/useExtensionState";
@@ -34,6 +34,12 @@ export function PopulationPage({ states, demographics, conscriptionLaws, onActio
   );
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  useEffect(() => {
+    setDrafts(Object.fromEntries(demographics.map((record) => [record.stateId, draftFor(record)])));
+  }, [demographics]);
+  useEffect(() => {
+    setLawDrafts(Object.fromEntries(conscriptionLaws.map((law) => [law.id, { ...law }])));
+  }, [conscriptionLaws]);
   const stateNames = new Map(states.map((state) => [state.id, state.name]));
   const updateDraft = (record: StateDemography, patch: Partial<DemographyDraft>) => {
     setDrafts((current) => ({ ...current, [record.stateId]: { ...(current[record.stateId] ?? draftFor(record)), ...patch } }));

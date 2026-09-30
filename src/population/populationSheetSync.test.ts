@@ -94,6 +94,32 @@ describe("population sheet sync", () => {
     });
   });
 
+  it("matches a sheet category when it includes the displayed percentage", () => {
+    const laws: ConscriptionLaw[] = [{ id: "URGENT_CONSCRIPTION", name: "Срочный призыв", rate: 0.04, active: true }];
+    const result = buildPopulationSyncPlan(
+      [{ country: "country-a", population: 3_000_000, growthRate: 1.02 }],
+      [{ ...matchedState, name: "Государство" }],
+      [{ stateName: "ГОСУДАРСТВО", category: "СРОЧНЫЙ ПРИЗЫВ (4%)" }],
+      laws
+    );
+
+    expect(result.entries[0]).toMatchObject({ conscriptionLawId: "URGENT_CONSCRIPTION", conscriptionRate: 0.04 });
+    expect(result.unmatchedConscriptionStates).toEqual([]);
+  });
+
+  it("falls back to the shared population value when state display names differ", () => {
+    const laws: ConscriptionLaw[] = [{ id: "URGENT_CONSCRIPTION", name: "Срочный призыв", rate: 0.04, active: true }];
+    const result = buildPopulationSyncPlan(
+      [{ country: "country-a", population: 46_084, growthRate: 1.003 }],
+      [{ ...matchedState, name: "Другое название" }],
+      [{ stateName: "ВЕЛИКОБРИТАНИЯ", population: 46_084, category: "СРОЧНЫЙ ПРИЗЫВ" }],
+      laws
+    );
+
+    expect(result.entries[0]).toMatchObject({ conscriptionLawId: "URGENT_CONSCRIPTION", conscriptionRate: 0.04 });
+    expect(result.unmatchedConscriptionStates).toEqual([]);
+  });
+
   it("imports the current human resource from the formatted state row", async () => {
     const laws: ConscriptionLaw[] = [{ id: "URGENT_CONSCRIPTION", name: "Срочный призыв", rate: 0.04, active: true }];
     const applyCorrection = vi.fn().mockResolvedValue(undefined);

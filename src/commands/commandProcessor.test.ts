@@ -453,6 +453,37 @@ describe("CommandProcessor", () => {
     }
   });
 
+  it("recalculates the LR limit when a conscription law changes", () => {
+    const current = state();
+    current.scene.states = [{ id: "red-state", name: "Красное государство", rulingFactionId: "red", active: true }];
+    current.scene.conscriptionLaws = [{ id: "URGENT_CONSCRIPTION", name: "Срочный призыв", rate: 0.04, active: true }];
+    current.scene.demographics = [{
+      stateId: "red-state", population: 1_000, populationGrowthFactor: 1.003, humanResource: 100,
+      conscriptionLawId: "URGENT_CONSCRIPTION", conscriptionRate: 0.04, humanResourceCapacity: 200,
+      lastPopulationCalculationDate: "2026-09-28"
+    }];
+
+    const result = processor.execute(context("GM", "gm", current), command({
+      type: "UPSERT_CONSCRIPTION_LAW",
+      law: { id: "URGENT_CONSCRIPTION", name: "Срочный призыв", rate: 0.08, active: true },
+      reason: "Изменение закона"
+    }, "gm"));
+
+    expect(result.status).toBe("ACCEPTED");
+    if (result.status === "ACCEPTED") {
+      expect(result.state.scene.demographics?.[0]).toMatchObject({
+        conscriptionRate: 0.08,
+        humanResourceCapacity: 80,
+        humanResource: 80
+      });
+      expect(result.state.scene.demographyAudit?.at(-1)?.changes).toMatchObject({
+        conscriptionRate: { before: 0.04, after: 0.08 },
+        humanResourceCapacity: { before: 200, after: 80 },
+        humanResource: { before: 100, after: 80 }
+      });
+    }
+  });
+
   it("creates a missing demographic record on the first GM correction", () => {
     const current = state();
     current.scene.states = [{ id: "red-state", name: "Красное государство", rulingFactionId: "red", active: true }];

@@ -31,6 +31,7 @@ import type {
   ForcedExitReason,
   SceneItemRecord,
   SceneState,
+  StateDemography,
   NavalSceneState,
   GridCellCoord,
   ShipState,
@@ -264,6 +265,14 @@ function humanResourceRateInSceneUnits(state: CommandState, sideId: string, conf
     return configuredRate / 1000;
   }
   return configuredRate;
+}
+
+function demographicLawChanges(before: StateDemography, after: StateDemography): Record<string, { before: number; after: number }> {
+  const changes: Record<string, { before: number; after: number }> = {};
+  for (const key of ["conscriptionRate", "humanResourceCapacity", "humanResource"] as const) {
+    if (before[key] !== after[key]) changes[key] = { before: before[key], after: after[key] };
+  }
+  return changes;
 }
 
 export class CommandProcessor {
@@ -1412,7 +1421,8 @@ export class CommandProcessor {
         state.scene.demographics = (state.scene.demographics ?? []).map((record) => {
           if (record.conscriptionLawId !== command.law.id) return record;
           const next = recalculateHumanResourceCapacity(record, state.scene.conscriptionLaws ?? []);
-          if (next.conscriptionRate === record.conscriptionRate) return next;
+          const changes = demographicLawChanges(record, next);
+          if (Object.keys(changes).length === 0) return next;
           state.scene.demographyAudit = [
             ...(state.scene.demographyAudit ?? []),
             {
@@ -1420,7 +1430,7 @@ export class CommandProcessor {
               stateId: record.stateId,
               actorPlayerId: command.senderPlayerId,
               reason: command.reason,
-              changes: { conscriptionRate: { before: record.conscriptionRate, after: next.conscriptionRate } },
+              changes,
               createdAt: at
             }
           ];

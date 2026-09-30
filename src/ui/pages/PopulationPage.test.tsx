@@ -36,6 +36,21 @@ describe("PopulationPage", () => {
     expect(onAction).toHaveBeenCalledWith(expect.objectContaining({ type: "UPDATE_STATE_DEMOGRAPHY", stateId: "state-1", reason: "Исправление" }));
   });
 
+  it("refreshes correction drafts when the scene returns updated demographics", () => {
+    const onAction = vi.fn();
+    const { rerender } = render(<PopulationPage states={[{ id: "state-1", name: "Государство", rulingFactionId: null, active: true }]} demographics={[demographic]} conscriptionLaws={laws} onAction={onAction} />);
+
+    const humanResource = screen.getByLabelText("Текущий ЛР (тыс.)");
+    fireEvent.change(humanResource, { target: { value: "150" } });
+    fireEvent.change(screen.getByPlaceholderText("Например, импорт из таблицы"), { target: { value: "Исправление" } });
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить корректировку" }));
+
+    const updated = { ...demographic, humanResource: 150_000 };
+    rerender(<PopulationPage states={[{ id: "state-1", name: "Государство", rulingFactionId: null, active: true }]} demographics={[updated]} conscriptionLaws={laws} onAction={onAction} />);
+
+    expect(screen.getByLabelText("Текущий ЛР (тыс.)")).toHaveValue(150000);
+  });
+
   it("syncs population from the configured public sheet", async () => {
     const onSyncPopulation = vi.fn().mockResolvedValue({ applied: 1, humanResourceApplied: 0, conscriptionApplied: 0, entries: [], unmatchedStates: [], unmatchedConscriptionStates: [], skippedRows: [], errors: [] });
     render(<PopulationPage states={[]} demographics={[]} conscriptionLaws={laws} onAction={vi.fn()} onSyncPopulation={onSyncPopulation} />);
