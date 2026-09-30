@@ -62,7 +62,7 @@ export function authorizeArmyCommand(
     return ledBy(context, command.sideId);
   }
 
-  if (command.type === "REQUEST_ARMY_DISBAND") {
+  if (command.type === "REQUEST_ARMY_DISBAND" || command.type === "PURCHASE_ARMY_UPGRADE") {
     const army = context.armies.get(command.armyId);
     if (!army) return { allowed: false, reason: "ARMY_NOT_FOUND" };
     return ledBy(context, army.sideId);
