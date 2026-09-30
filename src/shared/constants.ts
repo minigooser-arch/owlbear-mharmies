@@ -56,6 +56,7 @@ export const MINECRAFT_GRID_TOP_RIGHT = { x: 0, z: -10000 } as const;
 export const METADATA_KEYS = {
   scene: `${EXTENSION_ID}/scene`,
   gridManifest: `${EXTENSION_ID}/grid-manifest`,
+  gridManifestPart: `${EXTENSION_ID}/grid-manifest-part`,
   gridChunk: `${EXTENSION_ID}/grid-chunk`,
   army: `${EXTENSION_ID}/army`,
   ship: `${EXTENSION_ID}/ship`,
