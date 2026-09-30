@@ -4,6 +4,8 @@ import { DEFAULT_CELL_STATE } from "../terrain/gridMap";
 import { GridStoragePort } from "../tests/helpers/gridStoragePort";
 import { MetadataRepository, RevisionConflict } from "./metadataRepository";
 import type { SceneState } from "../shared/types";
+import { GridChunkRepository } from "./gridChunkRepository";
+import { utf8Size } from "./gridChunkCodec";
 
 async function fixture() {
   const port = new GridStoragePort();
@@ -20,6 +22,7 @@ it("migrates embedded cells and rehydrates through a fresh repository", async ()
   const { port, repository, scene } = await fixture();
   await repository.writeScene({ ...scene, revision: 2 }, 1);
   expect((port.metadata[METADATA_KEYS.scene] as SceneState).gridMap.cells).toEqual({});
+  expect(port.metadata[METADATA_KEYS.gridManifest]).toMatchObject({ version: 2, revision: 1, partCount: 1 });
   expect(Object.keys(port.manifest().chunks)).toHaveLength(2);
   expect((await new MetadataRepository(port).readScene()).gridMap).toEqual(scene.gridMap);
   expect(port.items.every(item => item.visible === false && item.locked === true && item.disableHit === true)).toBe(true);
@@ -50,7 +53,49 @@ it("rewrites only the changed chunk and reuses all chunks for non-grid commands"
   const ids = structuredClone(port.manifest().chunks);
   await repository.writeScene({ ...next, revision: 4 }, 3);
   expect(port.manifest().chunks).toEqual(ids);
-  expect(port.items).toHaveLength(2);
+  expect(port.items).toHaveLength(3);
+});
+
+it("reads a v2 map from its deterministic manifest-part item", async () => {
+  const { port, repository, scene } = await fixture();
+  await repository.writeScene({ ...scene, revision: 2 }, 1);
+  const part = port.items.find(item => item.metadata[METADATA_KEYS.gridManifestPart] !== undefined);
+  expect(part?.id).toMatch(/^letopis-grid-manifest-1-0$/);
+  expect(await new MetadataRepository(port).readScene()).toEqual({ ...scene, revision: 2 });
+});
+
+it("rejects a missing or mixed-revision v2 manifest part", async () => {
+  const { port, repository, scene } = await fixture();
+  await repository.writeScene({ ...scene, revision: 2 }, 1);
+  const part = port.items.find(item => item.metadata[METADATA_KEYS.gridManifestPart] !== undefined);
+  if (!part) throw new Error("manifest part was not created");
+  port.items = port.items.filter(item => item.id !== part.id);
+  await expect(repository.readScene()).rejects.toThrow("GRID_CHUNK_MISSING");
+
+  const second = await fixture();
+  await second.repository.writeScene({ ...second.scene, revision: 2 }, 1);
+  const nextPart = second.port.items.find(item => item.metadata[METADATA_KEYS.gridManifestPart] !== undefined);
+  if (!nextPart) throw new Error("manifest part was not recreated");
+  const value = nextPart.metadata[METADATA_KEYS.gridManifestPart] as { revision: number };
+  nextPart.metadata[METADATA_KEYS.gridManifestPart] = { ...value, revision: value.revision + 1 };
+  await expect(second.repository.readScene()).rejects.toThrow("GRID_CHUNK_INVALID");
+});
+
+it("stages a large coordinate index as multiple bounded manifest parts", async () => {
+  const port = new GridStoragePort();
+  const current = { version: 1 as const, revision: 0, cells: {} };
+  const next = {
+    version: 1 as const,
+    revision: 1,
+    cells: Object.fromEntries(Array.from({ length: 900 }, (_, index) => [
+      `${index * 8},0`, { ...DEFAULT_CELL_STATE, terrainId: "plain" }
+    ]))
+  };
+  const staged = await new GridChunkRepository(port).stage(current, next, undefined);
+  const parts = staged.additions.filter(item => item.metadata[METADATA_KEYS.gridManifestPart] !== undefined);
+  expect(staged.manifest.partCount).toBeGreaterThan(1);
+  expect(parts).toHaveLength(staged.manifest.partCount);
+  expect(parts.every(item => utf8Size(item) <= 48 * 1024)).toBe(true);
 });
 
 it.each(["failAdd", "failCommit"] as const)("retains the entire previous map when %s occurs and supports retry", async failure => {
