@@ -73,19 +73,28 @@ export function applyPendingTurnHealing(army: ArmyState, amount = 10): ArmyState
   return healed ? { ...healed, healing: clearedHealing } : { ...army, healing: clearedHealing, revision: army.revision + 1 };
 }
 
-export function healArmyForTurn(army: ArmyState, amount: number, turnNumber: number): ArmyState | undefined {
+export function healArmyForTurn(
+  army: ArmyState,
+  amount: number,
+  turnNumber: number,
+  turnCap = 10,
+  hospitalCityId: string | null = null
+): ArmyState | undefined {
   if (!canHealArmy(army).allowed) return undefined;
   const used = army.healing?.checkedOnTurn === turnNumber ? army.healing.hpHealedThisTurn : 0;
   const normalized = Number.isFinite(amount) ? Math.max(0, Math.floor(amount)) : 0;
-  if (normalized <= 0 || normalized > 10 - used) return undefined;
+  if (normalized <= 0 || normalized > Math.max(0, turnCap - used)) return undefined;
   const healed = healArmy(army, normalized);
   if (!healed) return undefined;
   return {
     ...healed,
     healing: {
+      pending: false,
+      requestedOnTurn: null,
+      requestedByPlayerId: null,
       hpHealedThisTurn: used + Math.min(normalized, healed.health.hp - army.health.hp),
       checkedOnTurn: turnNumber,
-      hospitalCityId: army.healing?.hospitalCityId ?? null
+      hospitalCityId
     }
   };
 }
