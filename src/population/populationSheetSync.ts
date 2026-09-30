@@ -73,6 +73,7 @@ function normalizeLabel(value: string): string {
  * here: those may legitimately distinguish two backend keys.
  */
 function normalizeBackendCountryKey(value: string): string {
+  // The sheet and the state editor frequently differ only by case/spacing.
   return value
     .replace(/^\uFEFF/, "")
     .normalize("NFKC")
@@ -251,3 +252,4 @@ export async function syncPopulationFromPublicSheet(input: PopulationSyncInput):
   }
   return summary;
 }
+
