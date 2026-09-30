@@ -864,6 +864,16 @@ export class CommandProcessor {
 
           const movedShip = state.scene.ships?.[command.shipId];
           if (movedShip && movedShip.hp <= 0 && interception.triggered.length > 0) {
+            const xpSides = interception.triggered.flatMap((trigger) => {
+              const cruiser = state.scene.ships?.[trigger.cruiserShipId];
+              return cruiser && relationForSides(state.scene, cruiser.sideId, movedShip.sideId) === "ENEMY"
+                ? [cruiser.sideId]
+                : [];
+            });
+            interception.battle.experienceEligibleSideIds = [
+              ...new Set([...(interception.battle.experienceEligibleSideIds ?? []), ...xpSides])
+            ];
+            state.scene.activeNavalBattle = interception.battle;
             destroyReciprocalTransportCargo(state, command.shipId, movedShip);
             const sceneRevision = state.scene.revision;
             const destroyed = destroyShip(state.scene as NavalSceneState, command.shipId);
@@ -979,6 +989,11 @@ export class CommandProcessor {
           broadsideEvent,
           ...(interceptionRemovalEvent ? [interceptionRemovalEvent] : [])
         ];
+        if (result.target.hp <= 0 && relation === "ENEMY") {
+          battleAfterDamage.experienceEligibleSideIds = [
+            ...new Set([...(battleAfterDamage.experienceEligibleSideIds ?? []), attacker.sideId])
+          ];
+        }
         state.scene.activeNavalBattle = battleAfterDamage;
         if (result.target.hp <= 0) {
           destroyReciprocalTransportCargo(state, command.targetShipId, result.target);
