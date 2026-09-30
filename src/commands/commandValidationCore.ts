@@ -487,6 +487,17 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
       ? { type: "UPDATE_STATE_DEMOGRAPHY", stateId: value.stateId, patch, reason: value.reason.trim() }
       : undefined;
   },
+  UPDATE_STATES_DEMOGRAPHY: (value) => {
+    if (!denseArray(value.updates) || value.updates.length === 0 || value.updates.length > 256 || !boundedString(value.reason, 512)) return undefined;
+    const updates = value.updates.map((entry) => {
+      if (!isRecord(entry) || !sideId(entry.stateId)) return undefined;
+      const patch = demographyPatch(entry.patch);
+      return patch ? { stateId: entry.stateId, patch } : undefined;
+    });
+    return updates.every((entry): entry is NonNullable<typeof entry> => entry !== undefined)
+      ? { type: "UPDATE_STATES_DEMOGRAPHY", updates: updates as NonNullable<typeof updates[number]>[], reason: value.reason.trim() }
+      : undefined;
+  },
   UPSERT_CONSCRIPTION_LAW: (value) => {
     if (!isRecord(value.law) || !sideId(value.law.id) || !boundedString(value.law.name, 128) ||
         !finiteAtLeast(value.law.rate, 0) || value.law.rate > 1 || typeof value.law.active !== "boolean" || !boundedString(value.reason, 512)) return undefined;
@@ -657,3 +668,4 @@ export function validateArmyCommand(value: unknown): CommandValidationResult {
     }
   };
 }
+

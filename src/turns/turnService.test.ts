@@ -49,6 +49,31 @@ it("heals a supplied army after the global turn is completed", () => {
   expect(result.armies.a?.health.hp).toBe(40);
 });
 
+it("automatically completes one formation stage after a global turn", () => {
+  const current = scene();
+  current.demographics = [{
+    stateId: "red-state", population: 46_084, populationGrowthFactor: 1.003,
+    humanResource: 584, conscriptionLawId: "URGENT_CONSCRIPTION", conscriptionRate: 0.04,
+    humanResourceCapacity: 1_843.36, lastPopulationCalculationDate: "2026-09-29"
+  }];
+  const forming: ArmyState = {
+    ...army(0),
+    health: { hp: 5, maxHp: 40 },
+    formation: { active: true, cityId: null, hpAddedThisTurn: 5, checkedOnTurn: 1 }
+  };
+  const result = completeTurn(current, { a: forming }, {
+    source: "MANUAL",
+    completedAt: new Date("2026-09-30T10:00:00.000Z"),
+    armyCells: { a: { x: 0, y: 0 } }
+  });
+  expect(result.changed).toBe(true);
+  if (!result.changed) return;
+  expect(result.armies.a?.health.hp).toBe(20);
+  expect(result.armies.a?.formation).toMatchObject({ active: true, hpAddedThisTurn: 15, checkedOnTurn: 2 });
+  expect(result.scene.demographics?.[0]?.humanResource).toBe(509);
+  expect(result.scene.lrTransactions?.[0]).toMatchObject({ kind: "FORMATION", hp: 15, amount: 75 });
+});
+
 it("always starts the new turn in movement phase", () => {
   const current = scene();
   current.turn.phase = "POST_MOVEMENT";
@@ -275,3 +300,4 @@ it("exposes land battle and movement blockers before running a checkpoint", () =
     blockers: ["LAND_BATTLE_ACTIVE"]
   });
 });
+

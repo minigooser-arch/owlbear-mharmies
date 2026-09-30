@@ -616,6 +616,14 @@ export type ArmyCommandPayload =
     | { type: "SET_RELATION"; leftSideId: string; rightSideId: string; relation: SideRelation }
     | { type: "UPDATE_SETTINGS"; settings: Partial<SceneSettings> }
     | {
+        type: "UPDATE_STATES_DEMOGRAPHY";
+        updates: Array<{
+          stateId: string;
+          patch: Partial<Pick<StateDemography, "population" | "populationGrowthFactor" | "humanResource" | "conscriptionLawId" | "conscriptionRate">>;
+        }>;
+        reason: string;
+      }
+    | {
         type: "UPDATE_STATE_DEMOGRAPHY";
         stateId: string;
         patch: Partial<Pick<StateDemography, "population" | "populationGrowthFactor" | "humanResource" | "conscriptionLawId" | "conscriptionRate">>;
@@ -694,3 +702,4 @@ export interface ValidationIssue {
 export type ValidationResult<T> =
   | { ok: true; value: T }
   | { ok: false; issue: ValidationIssue };
+

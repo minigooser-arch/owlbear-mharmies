@@ -8,6 +8,7 @@ import { shipBunkeringBonusAtCell } from "../cities/cityEffects";
 import { readCell } from "../terrain/gridMap";
 import type { ArmyState, GridCellCoord, SceneState, TurnState, Vector2 } from "../shared/types";
 import { runTurnCheckpoint } from "./turnCheckpointPipeline";
+import { applyAutomaticArmyFormation } from "./formationCheckpoint";
 import { preCheckpointTurnBlockers, type TurnBlocker } from "./turnCompletionGuard";
 import { deferredBoundary, getLatestStandardTurnBoundary, getNextStandardTurnBoundary } from "./turnSchedule";
 
@@ -197,6 +198,10 @@ export function completeTurn(
     );
   }
 
+  // Newly created armies are formed automatically at the turn boundary. The
+  // formation debit is recorded in the same scene transaction as the turn.
+  nextArmies = applyAutomaticArmyFormation(nextScene, nextArmies, nextTurn, input.completedAt.toISOString());
+
   // Restore each ship's class strategic movement budget without changing its order or combat state.
   if (nextScene.ships) {
     for (const [shipId, ship] of Object.entries(nextScene.ships)) {
@@ -363,3 +368,4 @@ export function deferredBoundaryId(turn: TurnState): string | undefined {
   const date = new Date(turn.deferredUntil);
   return Number.isFinite(date.getTime()) ? deferredBoundary(date).id : undefined;
 }
+

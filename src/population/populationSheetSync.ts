@@ -11,6 +11,14 @@ export interface PopulationSyncPlanEntry {
   conscriptionRate?: number;
 }
 
+export type PopulationCorrectionPatch = Pick<StateDemography, "population" | "populationGrowthFactor"> &
+  Partial<Pick<StateDemography, "humanResource" | "conscriptionLawId" | "conscriptionRate">>;
+
+export interface PopulationCorrection {
+  stateId: string;
+  patch: PopulationCorrectionPatch;
+}
+
 export interface PopulationSyncPlan {
   entries: PopulationSyncPlanEntry[];
   unmatchedStates: string[];
@@ -38,7 +46,9 @@ export interface PopulationSyncInput {
   demographics: readonly StateDemography[];
   conscriptionLaws?: readonly ConscriptionLaw[];
   fetcher?: (url: string) => Promise<PopulationFetchResponse>;
-  applyCorrection: (stateId: string, patch: Pick<StateDemography, "population" | "populationGrowthFactor"> & Partial<Pick<StateDemography, "humanResource" | "conscriptionLawId" | "conscriptionRate">>) => Promise<unknown>;
+  applyCorrection: (stateId: string, patch: PopulationCorrectionPatch) => Promise<unknown>;
+  /** Optional atomic path used by the Owlbear adapter to persist one sync package. */
+  applyCorrections?: (corrections: readonly PopulationCorrection[]) => Promise<unknown>;
 }
 
 function normalizeLabel(value: string): string {
@@ -183,9 +193,8 @@ export async function syncPopulationFromPublicSheet(input: PopulationSyncInput):
   summary.unmatchedStates = plan.unmatchedStates;
   summary.unmatchedConscriptionStates = plan.unmatchedConscriptionStates;
   summary.skippedRows = plan.skippedRows;
-  for (const entry of plan.entries) {
-    try {
-      const patch: Pick<StateDemography, "population" | "populationGrowthFactor"> & Partial<Pick<StateDemography, "humanResource" | "conscriptionLawId" | "conscriptionRate">> = {
+  const corrections: PopulationCorrection[] = plan.entries.map((entry) => {
+      const patch: PopulationCorrectionPatch = {
         population: entry.population,
         populationGrowthFactor: entry.populationGrowthFactor
       };
@@ -194,13 +203,30 @@ export async function syncPopulationFromPublicSheet(input: PopulationSyncInput):
         patch.conscriptionLawId = entry.conscriptionLawId;
         patch.conscriptionRate = entry.conscriptionRate;
       }
-      await input.applyCorrection(entry.stateId, patch);
-      summary.applied += 1;
-      if (entry.humanResource !== undefined) summary.humanResourceApplied += 1;
-      if (entry.conscriptionLawId) summary.conscriptionApplied += 1;
+      return { stateId: entry.stateId, patch };
+    });
+  if (input.applyCorrections) {
+    try {
+      await input.applyCorrections(corrections);
+      summary.applied = corrections.length;
+      summary.humanResourceApplied = corrections.filter(({ patch }) => patch.humanResource !== undefined).length;
+      summary.conscriptionApplied = corrections.filter(({ patch }) => patch.conscriptionLawId !== undefined).length;
     } catch (error) {
-      summary.errors.push(`${entry.stateId}: ${error instanceof Error ? error.message : String(error)}`);
+      const message = error instanceof Error ? error.message : String(error);
+      summary.errors.push(...corrections.map(({ stateId }) => `${stateId}: ${message}`));
+    }
+  } else {
+    for (const correction of corrections) {
+      try {
+        await input.applyCorrection(correction.stateId, correction.patch);
+        summary.applied += 1;
+        if (correction.patch.humanResource !== undefined) summary.humanResourceApplied += 1;
+        if (correction.patch.conscriptionLawId) summary.conscriptionApplied += 1;
+      } catch (error) {
+        summary.errors.push(`${correction.stateId}: ${error instanceof Error ? error.message : String(error)}`);
+      }
     }
   }
   return summary;
 }
+

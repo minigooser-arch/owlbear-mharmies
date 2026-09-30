@@ -1414,6 +1414,42 @@ export class CommandProcessor {
         state.scene.demographyAudit = [...(state.scene.demographyAudit ?? []), corrected.entry];
         return undefined;
       }
+      case "UPDATE_STATES_DEMOGRAPHY": {
+        const defaultLaw = state.scene.conscriptionLaws?.find((law) => law.active) ?? {
+          id: "GENERAL_MOBILIZATION", name: "Всеобщая мобилизация", rate: 0.24, active: true
+        };
+        const at = this.now().toISOString();
+        let demographics = [...(state.scene.demographics ?? [])];
+        const audit = [...(state.scene.demographyAudit ?? [])];
+        for (const update of command.updates) {
+          const stateEntity = state.scene.states.find((candidate) => candidate.id === update.stateId);
+          if (!stateEntity) return "STATE_NOT_FOUND";
+          const existingRecord = demographics.find((candidate) => candidate.stateId === update.stateId);
+          const record = existingRecord ?? {
+            stateId: update.stateId,
+            population: 0,
+            populationGrowthFactor: 1,
+            humanResource: 0,
+            conscriptionLawId: defaultLaw.id,
+            conscriptionRate: defaultLaw.rate,
+            humanResourceCapacity: 0,
+            lastPopulationCalculationDate: null
+          };
+          let corrected: ReturnType<typeof applyDemographyCorrection>;
+          try {
+            corrected = applyDemographyCorrection(record, update.patch, command.reason, command.senderPlayerId, at);
+          } catch {
+            return "DEMOGRAPHY_CORRECTION_REASON_REQUIRED";
+          }
+          demographics = existingRecord
+            ? demographics.map((candidate) => candidate.stateId === update.stateId ? corrected.record : candidate)
+            : [...demographics, corrected.record];
+          audit.push(corrected.entry);
+        }
+        state.scene.demographics = demographics;
+        state.scene.demographyAudit = audit;
+        return undefined;
+      }
       case "UPSERT_CONSCRIPTION_LAW": {
         const existing = state.scene.conscriptionLaws ?? [];
         state.scene.conscriptionLaws = [...existing.filter((law) => law.id !== command.law.id), structuredClone(command.law)];
@@ -1946,3 +1982,4 @@ export class CommandProcessor {
     }
   }
 }
+

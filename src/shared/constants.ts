@@ -60,6 +60,8 @@ export const METADATA_KEYS = {
   gridChunk: `${EXTENSION_ID}/grid-chunk`,
   lrLedgerManifest: `${EXTENSION_ID}/lr-ledger-manifest`,
   lrLedgerPart: `${EXTENSION_ID}/lr-ledger-part`,
+  demographyAuditManifest: `${EXTENSION_ID}/demography-audit-manifest`,
+  demographyAuditPart: `${EXTENSION_ID}/demography-audit-part`,
   army: `${EXTENSION_ID}/army`,
   ship: `${EXTENSION_ID}/ship`,
   barrier: `${EXTENSION_ID}/barrier`,

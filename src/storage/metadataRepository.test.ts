@@ -87,6 +87,50 @@ function scene(revision: number): SceneState {
 }
 
 describe("MetadataRepository", () => {
+  it("stores a large demography audit outside scene metadata and rehydrates it", async () => {
+    const port = new GridStoragePort();
+    const repository = new MetadataRepository(port);
+    const initial = await repository.readScene();
+    const audit = Array.from({ length: 500 }, (_, index) => ({
+      id: `audit-${index}`,
+      stateId: `state-${index % 20}`,
+      actorPlayerId: "admin",
+      reason: "Импорт из Google Sheets",
+      changes: {
+        population: { before: 1_000_000 + index, after: 1_000_100 + index },
+        humanResource: { before: 200_000 + index, after: 200_100 + index },
+        conscriptionLawId: { before: "URGENT_CONSCRIPTION", after: "PARTIAL_MOBILIZATION" }
+      },
+      createdAt: "2026-09-30T00:00:00.000Z"
+    }));
+
+    await repository.writeScene({ ...initial, revision: 1, demographyAudit: audit }, 0);
+
+    expect(JSON.stringify(port.metadata[METADATA_KEYS.scene]).length).toBeLessThan(48 * 1024);
+    expect(await new MetadataRepository(port).readScene()).toMatchObject({ demographyAudit: audit });
+  });
+
+  it("migrates a legacy inline demography audit into hidden parts on the next write", async () => {
+    const port = new GridStoragePort();
+    const repository = new MetadataRepository(port);
+    const initial = await repository.readScene();
+    const audit = {
+      id: "legacy-audit",
+      stateId: "state",
+      actorPlayerId: "admin",
+      reason: "Ручная корректировка",
+      changes: { population: { before: 10, after: 20 } },
+      createdAt: "2026-09-30T00:00:00.000Z"
+    };
+    port.metadata[METADATA_KEYS.scene] = { ...initial, demographyAudit: [audit] };
+
+    const loaded = await repository.readScene();
+    await repository.writeScene({ ...loaded, revision: loaded.revision + 1 }, loaded.revision);
+
+    expect((port.metadata[METADATA_KEYS.scene] as Record<string, unknown>).demographyAudit).toEqual([]);
+    expect(await new MetadataRepository(port).readScene()).toMatchObject({ demographyAudit: [audit] });
+  });
+
   it("stores a large LR journal outside scene metadata and rehydrates it", async () => {
     const port = new GridStoragePort();
     const repository = new MetadataRepository(port);
