@@ -115,9 +115,13 @@ function normalizeGridCells(value: unknown): GridCellCoord[] {
 
 function normalizeSettings(value: unknown): SceneSettings {
   if (!isRecord(value)) return { ...DEFAULT_SETTINGS };
-  const armyFormationCostPerHp = nonNegativeInteger(value.armyFormationCostPerHp)
+  const rawArmyFormationCostPerHp = nonNegativeInteger(value.armyFormationCostPerHp)
     ? value.armyFormationCostPerHp
-    : (DEFAULT_SETTINGS.armyFormationCostPerHp ?? 5000);
+    : (DEFAULT_SETTINGS.armyFormationCostPerHp ?? 10000);
+  // 5,000 was the previous built-in formation rate. The rules now define 10,000/HP.
+  const armyFormationCostPerHp = rawArmyFormationCostPerHp === 5000
+    ? 10000
+    : rawArmyFormationCostPerHp;
   const armyHealingCostPerHp = nonNegativeInteger(value.armyHealingCostPerHp)
     ? value.armyHealingCostPerHp
     : (DEFAULT_SETTINGS.armyHealingCostPerHp ?? 5000);
