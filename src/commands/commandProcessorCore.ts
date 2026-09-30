@@ -50,7 +50,7 @@ import {
   resolveCruiserInterceptionsForStep
 } from "../naval/interception/cruiserInterception";
 import { hasNavalBattleLineOfSight } from "../naval/battle/navalBattleLineOfSight";
-import { embarkArmy, disembarkArmy, validateTransportInteraction } from "../naval/transport/transportRules";
+import { embarkArmy, disembarkArmy, shipEmbarkedArmyIds, validateTransportInteraction } from "../naval/transport/transportRules";
 import { commitHospitalSupport } from "../naval/hospital/hospitalSupport";
 import { commitShoreBombardment, type ShoreBombardmentSectorResolver } from "../naval/shore/shoreBombardment";
 import { applyShipRevealUntilNextTurn } from "../naval/detection/navalVisibility";
@@ -68,7 +68,8 @@ import {
   shipEffectiveMaxHp,
   shipEffectiveMovement,
   armyEffectiveMovementUnits,
-  terrainRegistryForArmy
+  terrainRegistryForArmy,
+  transportLoadingIsFree
 } from "../upgrades/unitUpgrades";
 
 export interface CommandState {
@@ -129,15 +130,18 @@ function destroyReciprocalTransportCargo(
   shipId: string,
   ship: ShipState
 ): void {
-  if (ship.classId !== "TRANSPORT" || ship.embarkedArmyId == null) return;
-  const cargoId = ship.embarkedArmyId;
-  const cargo = state.armies[cargoId];
-  if (!cargo || cargo.embarkedOnShipId !== shipId) return;
-  const destroyed = destroyArmy(state.armies, state.scene.battleGroups, cargoId);
-  state.armies = destroyed.armies;
-  state.scene.battleGroups = destroyed.battleGroups;
+  if (ship.classId !== "TRANSPORT") return;
+  const cargoIds = shipEmbarkedArmyIds(ship);
+  for (const cargoId of cargoIds) {
+    const cargo = state.armies[cargoId];
+    if (!cargo || cargo.embarkedOnShipId !== shipId) continue;
+    const destroyed = destroyArmy(state.armies, state.scene.battleGroups, cargoId);
+    state.armies = destroyed.armies;
+    state.scene.battleGroups = destroyed.battleGroups;
+  }
+  const cargoSet = new Set(cargoIds);
   state.scene.transportEmbarkRequests = (state.scene.transportEmbarkRequests ?? [])
-    .filter((request) => request.shipId !== shipId && request.armyId !== cargoId);
+    .filter((request) => request.shipId !== shipId && !cargoSet.has(request.armyId));
 }
 
 function emptyPlannedRoute(startCell: GridCellCoord = { x: 0, y: 0 }): ArmyState["plannedRoute"] {
@@ -633,7 +637,7 @@ export class CommandProcessor {
           });
           return undefined;
         }
-        const embarked = embarkArmy(command.shipId, ship, command.armyId, army, transportArmyMovementCostAtCell(state.scene, armyCell));
+        const embarked = embarkArmy(command.shipId, ship, command.armyId, army, transportLoadingIsFree(ship) ? 0 : transportArmyMovementCostAtCell(state.scene, armyCell));
         state.scene.ships ??= {};
         state.scene.ships[command.shipId] = embarked.ship;
         state.armies[command.armyId] = embarked.army;
@@ -669,7 +673,7 @@ export class CommandProcessor {
             cellSupportsDomain(state.scene, shipCell, "SEA")
         });
         if (!geometry.ok) return geometry.reason;
-        const embarked = embarkArmy(command.shipId, ship, command.armyId, army, transportArmyMovementCostAtCell(state.scene, armyCell));
+        const embarked = embarkArmy(command.shipId, ship, command.armyId, army, transportLoadingIsFree(ship) ? 0 : transportArmyMovementCostAtCell(state.scene, armyCell));
         state.scene.ships ??= {};
         state.scene.ships[command.shipId] = embarked.ship;
         state.armies[command.armyId] = embarked.army;
@@ -714,7 +718,7 @@ export class CommandProcessor {
         if (political.allowedCellCount === 0) {
           return political.blockedReason ?? "INVALID_POLITICAL_CONFIG";
         }
-        const disembarked = disembarkArmy(command.shipId, ship, command.armyId, army, transportArmyMovementCostAtCell(state.scene, command.targetCell));
+        const disembarked = disembarkArmy(command.shipId, ship, command.armyId, army, transportLoadingIsFree(ship) ? 0 : transportArmyMovementCostAtCell(state.scene, command.targetCell));
         if (!disembarked.ok) return disembarked.reason;
         const occupantIds = Object.entries(state.armies)
           .filter(([armyId, candidate]) => armyId !== command.armyId && candidate.health.hp > 0 && candidate.embarkedOnShipId == null)
