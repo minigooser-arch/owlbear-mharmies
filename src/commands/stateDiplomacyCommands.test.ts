@@ -77,8 +77,8 @@ function executeInScene(payload: Record<string, unknown>, currentScene: SceneSta
 }
 
 describe("state diplomacy commands", () => {
-  it("uses command protocol v5 and rejects legacy protocol v4", () => {
-    expect(COMMAND_PROTOCOL_VERSION).toBe(5);
+  it("uses command protocol v6 and rejects legacy protocol v5", () => {
+    expect(COMMAND_PROTOCOL_VERSION).toBe(6);
     expect(validateArmyCommand(envelope({
       type: "SET_STATE_MILITARY_ACCESS",
       fromStateId: "russia",
