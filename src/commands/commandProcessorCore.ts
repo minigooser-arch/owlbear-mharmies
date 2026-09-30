@@ -589,18 +589,19 @@ export class CommandProcessor {
         state.scene.ships ??= {};
         state.scene.ships[command.shipId] = result.ship;
         const movementGain = Math.max(0, shipEffectiveMovement(result.ship) - previousMovement);
-        const battle = state.scene.activeNavalBattle;
+                const battle = state.scene.activeNavalBattle;
+        const currentBattleMovement = battle?.movementRemainingByShip[command.shipId];
         if (
           movementGain > 0 &&
           battle?.status === "ACTIVE" &&
           battle.participantShipIds.includes(command.shipId) &&
-          battle.movementRemainingByShip[command.shipId] !== undefined
+          currentBattleMovement !== undefined
         ) {
           state.scene.activeNavalBattle = {
             ...battle,
             movementRemainingByShip: {
               ...battle.movementRemainingByShip,
-              [command.shipId]: battle.movementRemainingByShip[command.shipId] + movementGain
+              [command.shipId]: currentBattleMovement + movementGain
             },
             revision: battle.revision + 1
           };
