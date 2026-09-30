@@ -48,6 +48,7 @@ export interface ArmyView {
   upgrades?: ArmyUpgrades;
   formationActive?: boolean;
   formationHpAddedThisTurn?: number;
+  formationTurnCap?: number;
   healingHpHealedThisTurn?: number;
   healingPending?: boolean;
   supplied: boolean;
