@@ -83,6 +83,18 @@ import {
 import { semanticSnapshotEqual, semanticValueEqual } from "./snapshotEquality";
 import { CityCellPickerSession, type CityCellPickSnapshot } from "./cityCellPickerSession";
 import { armyTokenPickerOptions } from "./armyTokenPicker";
+import {
+  hospitalSupportDice,
+  hospitalSupportRange,
+  shipDetectionBonus,
+  shipEffectiveArmor,
+  shipEffectiveAttackDice,
+  shipEffectiveMaxHp,
+  shipEffectiveMovement,
+  shipEffectiveRangeMax,
+  transportCapacity,
+  transportLoadingIsFree
+} from "../upgrades/unitUpgrades";
 
 export interface SnapshotInput {
   role: "GM" | "PLAYER";
@@ -384,20 +396,29 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
       className: definition.name,
       status: state.status,
       hp: state.hp,
-      maxHp: definition.maxHp,
+      maxHp: shipEffectiveMaxHp(state),
       temporaryHp: state.temporaryHp,
-      armor: definition.armor,
-      movementMax: definition.movement,
+      armor: shipEffectiveArmor(state),
+      movementMax: shipEffectiveMovement(state),
       movementRemaining: state.globalMovementRemaining,
       plannedRouteCellCount: state.plannedRoute.length,
       facing: state.facing,
-      normalDice: definition.normalDice,
+      normalDice: shipEffectiveAttackDice(state),
       normalRangeMin: definition.normalRangeMin,
-      normalRangeMax: definition.normalRangeMax,
+      normalRangeMax: shipEffectiveRangeMax(state),
       embarkedArmyId: state.embarkedArmyId,
       additionalEmbarkedArmyId: state.additionalEmbarkedArmyId ?? null,
       detectionOverride: state.detectionOverride,
-      effectiveDetectionRange: (state.detectionOverride ?? input.scene.settings.defaultDetectionRangeCells) + (input.gridDpi ? lighthouseDetectionBonusAtCell(input.scene, new StrategicGridAdapter({ dpi: input.gridDpi, offset: { x: 0, y: 0 } }).sceneToCell(item.position)) : 0),
+      effectiveDetectionRange:
+        (state.detectionOverride ?? input.scene.settings.defaultDetectionRangeCells) +
+        shipDetectionBonus(state) +
+        (input.gridDpi ? lighthouseDetectionBonusAtCell(input.scene, new StrategicGridAdapter({ dpi: input.gridDpi, offset: { x: 0, y: 0 } }).sceneToCell(item.position)) : 0),
+      experience: state.experience ?? 0,
+      upgrades: structuredClone(state.upgrades ?? {}),
+      hospitalSupportDice: hospitalSupportDice(state),
+      hospitalSupportRange: hospitalSupportRange(state),
+      transportCapacity: transportCapacity(state),
+      transportLoadingFree: transportLoadingIsFree(state),
       broadsideTargets,
       hospitalSupportTargets,
       shoreBombardmentTargets,
