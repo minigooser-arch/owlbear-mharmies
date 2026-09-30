@@ -771,7 +771,7 @@ describe("CommandProcessor", () => {
     expect(result.status).toBe("ACCEPTED");
     if (result.status !== "ACCEPTED") return;
     expect(result.state.armies["army-red"]?.experience).toBe(1.5);
-    expect(result.state.armies["army-red"]?.status).toBe("READY");
+    expect(result.state.armies["army-red"]?.status).toBe("PAUSED");
     expect(result.state.armies["registered-image"]).toBeUndefined();
     expect(result.state.scene.battleGroups).toEqual([]);
   });
