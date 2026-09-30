@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE, METADATA_KEYS } from "../shared/constants";
+import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE, EXTENSION_ID, METADATA_KEYS } from "../shared/constants";
 import type { ArmyState, ItemUpdate, SceneItemRecord, SceneState } from "../shared/types";
 import {
   CommitPreconditionFailed,
@@ -10,6 +10,8 @@ import {
 } from "./metadataRepository";
 import { GridStoragePort } from "../tests/helpers/gridStoragePort";
 import { DEFAULT_CELL_STATE } from "../terrain/gridMap";
+
+const LR_LEDGER_MANIFEST_KEY = `${EXTENSION_ID}/lr-ledger-manifest`;
 
 class MemoryPort implements MetadataPort {
   sceneMetadata: Record<string, unknown> = {};
@@ -85,6 +87,67 @@ function scene(revision: number): SceneState {
 }
 
 describe("MetadataRepository", () => {
+  it("stores a large LR journal outside scene metadata and rehydrates it", async () => {
+    const port = new GridStoragePort();
+    const repository = new MetadataRepository(port);
+    const initial = await repository.readScene();
+    const transactions = Array.from({ length: 500 }, (_, index) => ({
+      id: `transaction-${index}`,
+      requestId: `request-${index}`,
+      createdAt: "2026-09-30T00:00:00.000Z",
+      turnNumber: 1,
+      actorPlayerId: "player",
+      sideId: "red",
+      sideName: "Red",
+      cityId: "city",
+      cityName: "London",
+      armyId: `army-${index}`,
+      armyName: `Army ${index}`,
+      kind: "FORMATION" as const,
+      hp: 5,
+      ratePerHp: 5_000,
+      amount: 25_000,
+      status: "PENDING" as const
+    }));
+
+    await repository.writeScene({ ...initial, revision: 1, lrTransactions: transactions }, 0);
+
+    expect(JSON.stringify(port.metadata[METADATA_KEYS.scene]).length).toBeLessThan(48 * 1024);
+    expect(port.metadata[LR_LEDGER_MANIFEST_KEY]).toBeDefined();
+    expect(await new MetadataRepository(port).readScene()).toMatchObject({ lrTransactions: transactions });
+  });
+
+  it("migrates legacy inline LR transactions into the hidden journal on the next write", async () => {
+    const port = new GridStoragePort();
+    const repository = new MetadataRepository(port);
+    const initial = await repository.readScene();
+    const transaction = {
+      id: "legacy-transaction",
+      requestId: "legacy-request",
+      createdAt: "2026-09-30T00:00:00.000Z",
+      turnNumber: 1,
+      actorPlayerId: "player",
+      sideId: "red",
+      sideName: "Red",
+      cityId: null,
+      cityName: null,
+      armyId: "army",
+      armyName: "Army",
+      kind: "HEALING" as const,
+      hp: 10,
+      ratePerHp: 5_000,
+      amount: 50_000,
+      status: "PENDING" as const
+    };
+    port.metadata[METADATA_KEYS.scene] = { ...initial, lrTransactions: [transaction] };
+
+    const loaded = await repository.readScene();
+    await repository.writeScene({ ...loaded, revision: loaded.revision + 1 }, loaded.revision);
+
+    expect((port.metadata[METADATA_KEYS.scene] as Record<string, unknown>).lrTransactions).toEqual([]);
+    expect(await new MetadataRepository(port).readScene()).toMatchObject({ lrTransactions: [transaction] });
+  });
+
   it("reads one stable item frame and hydrates a grid from the same scene item list", async () => {
     const port = new GridStoragePort();
     const repository = new MetadataRepository(port);
@@ -236,3 +299,4 @@ describe("MetadataRepository", () => {
     expect(port.items[0]?.metadata).toEqual({ "another/extension": { keep: true } });
   });
 });
+

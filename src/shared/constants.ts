@@ -58,6 +58,8 @@ export const METADATA_KEYS = {
   gridManifest: `${EXTENSION_ID}/grid-manifest`,
   gridManifestPart: `${EXTENSION_ID}/grid-manifest-part`,
   gridChunk: `${EXTENSION_ID}/grid-chunk`,
+  lrLedgerManifest: `${EXTENSION_ID}/lr-ledger-manifest`,
+  lrLedgerPart: `${EXTENSION_ID}/lr-ledger-part`,
   army: `${EXTENSION_ID}/army`,
   ship: `${EXTENSION_ID}/ship`,
   barrier: `${EXTENSION_ID}/barrier`,
@@ -137,3 +139,4 @@ export const DEFAULT_TURN_STATE: TurnState & { phase: "MOVEMENT" } = {
   lastCompletedBy: null,
   lastProcessedBoundaryId: null
 };
+
