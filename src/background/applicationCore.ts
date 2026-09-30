@@ -96,6 +96,7 @@ import {
   type HeartbeatLease
 } from "./coordinator";
 import { BackgroundRuntime, type BackgroundRuntimePort } from "./runtime";
+import { armyTerrainMovementCostUnits, terrainRegistryForArmy } from "../upgrades/unitUpgrades";
 
 type BarrierPurpose = "movement" | "vision";
 
