@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { BattleGroup } from "../../shared/types";
+import type { BattleGroup, LandBattleOutcome } from "../../shared/types";
 import type {
   ArmyView,
   NavalBattleAreaDraftView,
@@ -17,12 +17,23 @@ interface BattleCardProps {
   onAction(command: UiCommand): void;
 }
 
+const LAND_OUTCOMES: Array<{ value: LandBattleOutcome; label: string }> = [
+  { value: "FULL_VICTORY", label: "Полная победа · +1,5 XP" },
+  { value: "VICTORY", label: "Победа · +1 XP" },
+  { value: "RETREAT", label: "Отступление · +0,5 XP" },
+  { value: "DEFEAT", label: "Поражение · 0 XP" }
+];
+
 function BattleCard({ battle, armies, isGM, onAction }: BattleCardProps) {
   const [draft, setDraft] = useState(battle.name);
+  const [outcomes, setOutcomes] = useState<Record<string, LandBattleOutcome | "">>({});
 
   useEffect(() => {
     setDraft(battle.name);
   }, [battle.name]);
+  useEffect(() => {
+    setOutcomes(Object.fromEntries(battle.participantIds.map((armyId) => [armyId, ""])));
+  }, [battle.battleId, battle.participantIds.join("|")]);
 
   const trimmed = draft.trim();
   const nameLength = [...trimmed].length;
@@ -58,18 +69,49 @@ function BattleCard({ battle, armies, isGM, onAction }: BattleCardProps) {
       <div className="battle-participants" aria-label="Армии в бою">
         {participantArmies.map((army) => (
           <div className="battle-participant-row" key={army.id}>
-            <div><strong>{army.name}</strong><span>{army.sideName}</span></div><strong>♥ {army.healthHp} / {army.healthMaxHp}</strong>
+            <div><strong>{army.name}</strong><span>{army.sideName}</span></div>
+            <strong>♥ {army.healthHp} / {army.healthMaxHp}</strong>
+            {isGM && (
+              <select
+                aria-label={`Результат боя для ${army.name}`}
+                value={outcomes[army.id] ?? ""}
+                onChange={(event) => setOutcomes((current) => ({
+                  ...current,
+                  [army.id]: event.target.value as LandBattleOutcome | ""
+                }))}
+              >
+                <option value="">Выберите результат</option>
+                {LAND_OUTCOMES.map((outcome) => (
+                  <option key={outcome.value} value={outcome.value}>{outcome.label}</option>
+                ))}
+              </select>
+            )}
           </div>
         ))}
       </div>
       {isGM && (
         <div className="battle-management">
           <button
+            className="button primary"
+            type="button"
+            disabled={battle.participantIds.some((armyId) => !outcomes[armyId])}
+            onClick={() => onAction({
+              type: "RESOLVE_LAND_BATTLE",
+              battleId: battle.battleId,
+              results: battle.participantIds.map((armyId) => ({
+                armyId,
+                outcome: outcomes[armyId] as LandBattleOutcome
+              }))
+            })}
+          >
+            Завершить бой и начислить опыт
+          </button>
+          <button
             className="button danger subtle"
             type="button"
             onClick={() => onAction({ type: "RELEASE_BATTLE_GROUP", battleId: battle.battleId })}
           >
-            Развести армии
+            Развести без результата
           </button>
         </div>
       )}
