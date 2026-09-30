@@ -50,7 +50,7 @@ function normalizeLabel(value: string): string {
     // in-extension law catalog stores only the canonical name.
     .replace(/\([^)]*\)/g, " ")
     .replace(/[‐‑‒–—]/g, "-")
-    .replace(/[«»\"']/g, "")
+    .replace(/[«»"']/g, "")
     .replace(/\s+/g, " ")
     .trim();
 }
