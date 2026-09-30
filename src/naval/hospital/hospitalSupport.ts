@@ -4,7 +4,7 @@ import type {
   ShipState
 } from "../../shared/types";
 import { useNavalAction } from "../battle/navalRoundFlow";
-import { SHIP_CLASSES } from "../ships/shipClasses";
+import { hospitalSupportDice, hospitalSupportRange, shipEffectiveMaxHp } from "../../upgrades/unitUpgrades";
 
 export type HospitalSupportFailure =
   | "SHIP_NOT_ACTIVE"
@@ -30,8 +30,9 @@ export type HospitalSupportValidation =
   | { ok: true }
   | { ok: false; reason: HospitalSupportFailure };
 
-function orthogonallyAdjacent(left: GridCellCoord, right: GridCellCoord): boolean {
-  return Math.abs(left.x - right.x) + Math.abs(left.y - right.y) === 1;
+function withinSupportRange(left: GridCellCoord, right: GridCellCoord, range: number): boolean {
+  const distance = Math.abs(left.x - right.x) + Math.abs(left.y - right.y);
+  return distance >= 1 && distance <= range;
 }
 
 export function validateHospitalSupport(input: HospitalSupportInput): HospitalSupportValidation {
@@ -56,7 +57,7 @@ export function validateHospitalSupport(input: HospitalSupportInput): HospitalSu
   if (input.battle.exitedShipIds.includes(input.targetId)) {
     return { ok: false, reason: "TARGET_EXITED" };
   }
-  if (!orthogonallyAdjacent(input.hospitalCell, input.targetCell)) {
+  if (!withinSupportRange(input.hospitalCell, input.targetCell, hospitalSupportRange(input.hospital))) {
     return { ok: false, reason: "TARGET_NOT_ADJACENT" };
   }
   return { ok: true };
@@ -81,8 +82,11 @@ export function commitHospitalSupport(input: CommitHospitalSupportInput): Commit
   const validation = validateHospitalSupport(input);
   if (!validation.ok) return validation;
 
-  const rolledTemporaryHp = input.rollD6() + input.rollD6();
-  const maxHp = SHIP_CLASSES[input.target.classId].maxHp;
+  let rolledTemporaryHp = 0;
+  for (let index = 0; index < hospitalSupportDice(input.hospital); index += 1) {
+    rolledTemporaryHp += input.rollD6();
+  }
+  const maxHp = shipEffectiveMaxHp(input.target);
   const availableCapacity = Math.max(0, maxHp - input.target.hp - input.target.temporaryHp);
   const grantedTemporaryHp = Math.min(rolledTemporaryHp, availableCapacity);
   const target: ShipState = {
