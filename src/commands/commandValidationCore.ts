@@ -323,6 +323,25 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
     const armyId = armyIdOnly(value);
     return armyId ? { type: "UNREGISTER_ARMY", armyId } : undefined;
   },
+  PURCHASE_ARMY_UPGRADE: (value) =>
+    boundedString(value.armyId) &&
+    (value.branch === "recovery" || value.branch === "motorization" || value.branch === "reconnaissance") &&
+    (value.level === 1 || value.level === 2 || value.level === 3) &&
+    (value.variant === "A" || value.variant === "B")
+      ? { type: "PURCHASE_ARMY_UPGRADE", armyId: value.armyId, branch: value.branch, level: value.level, variant: value.variant } as ArmyCommandPayload
+      : undefined,
+  RESOLVE_LAND_BATTLE: (value) => {
+    if (!boundedString(value.battleId) || !denseArray(value.results) || value.results.length === 0) return undefined;
+    const results: Array<{ armyId: string; outcome: "FULL_VICTORY" | "VICTORY" | "RETREAT" | "DEFEAT" }> = [];
+    const seen = new Set<string>();
+    for (const entry of value.results) {
+      if (!isRecord(entry) || !boundedString(entry.armyId) || seen.has(entry.armyId)) return undefined;
+      if (entry.outcome !== "FULL_VICTORY" && entry.outcome !== "VICTORY" && entry.outcome !== "RETREAT" && entry.outcome !== "DEFEAT") return undefined;
+      seen.add(entry.armyId);
+      results.push({ armyId: entry.armyId, outcome: entry.outcome });
+    }
+    return { type: "RESOLVE_LAND_BATTLE", battleId: value.battleId, results };
+  },
   REGISTER_SHIP: (value) =>
     boundedString(value.itemId) && sideId(value.sideId) &&
     (value.classId === "BATTLESHIP" || value.classId === "CRUISER" || value.classId === "IRONCLAD" || value.classId === "HOSPITAL" || value.classId === "TRANSPORT") &&
