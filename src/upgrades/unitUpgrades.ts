@@ -5,7 +5,8 @@ import type {
   ShipState,
   UpgradeLevel,
   UpgradeTrack,
-  UpgradeVariant
+  UpgradeVariant,
+  TerrainRegistryState
 } from "../shared/types";
 import { SHIP_CLASSES } from "../naval/ships/shipClasses";
 import type { LandBattleOutcome } from "../shared/types";
@@ -324,4 +325,23 @@ export function landBattleExperience(outcome: LandBattleOutcome): number {
   if (outcome === "VICTORY") return 1;
   if (outcome === "RETREAT") return 0.5;
   return 0;
+}
+
+
+export function terrainRegistryForArmy(
+  army: Pick<ArmyState, "upgrades">,
+  terrain: TerrainRegistryState
+): TerrainRegistryState {
+  return {
+    ...structuredClone(terrain),
+    types: Object.fromEntries(
+      Object.entries(terrain.types).map(([id, type]) => {
+        const supportsLand = type.movementDomains === undefined || type.movementDomains.includes("LAND");
+        return [id, supportsLand
+          ? { ...structuredClone(type), movementCostUnits: armyTerrainMovementCostUnits(army, id, type.movementCostUnits) }
+          : structuredClone(type)
+        ];
+      })
+    )
+  };
 }
