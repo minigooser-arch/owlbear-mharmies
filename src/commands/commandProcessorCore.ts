@@ -66,7 +66,8 @@ import {
   purchaseArmyUpgrade,
   purchaseShipUpgrade,
   shipEffectiveArmor,
-  shipEffectiveMaxHp
+  shipEffectiveMaxHp,
+  shipEffectiveMovement
 } from "../upgrades/unitUpgrades";
 
 export interface CommandState {
@@ -502,6 +503,37 @@ export class CommandProcessor {
         state.scene.battleGroups = destroyed.battleGroups;
         return undefined;
       }
+      case "PURCHASE_ARMY_UPGRADE": {
+        const army = state.armies[command.armyId];
+        if (!army) return "ARMY_NOT_FOUND";
+        const result = purchaseArmyUpgrade(army, command.branch, command.level, command.variant);
+        if (!result.ok) return result.reason;
+        state.armies[command.armyId] = result.army;
+        return undefined;
+      }
+      case "RESOLVE_LAND_BATTLE": {
+        const battle = state.scene.battleGroups.find((candidate) => candidate.battleId === command.battleId);
+        if (!battle) return "BATTLE_NOT_FOUND";
+        const participantIds = [...battle.participantIds].sort();
+        const resultIds = command.results.map((entry) => entry.armyId).sort();
+        if (
+          participantIds.length !== resultIds.length ||
+          participantIds.some((armyId, index) => armyId !== resultIds[index])
+        ) return "BATTLE_RESULTS_INCOMPLETE";
+        for (const result of command.results) {
+          const army = state.armies[result.armyId];
+          if (!army) return "ARMY_NOT_FOUND";
+          state.armies[result.armyId] = {
+            ...army,
+            experience: (army.experience ?? 0) + landBattleExperience(result.outcome),
+            revision: army.revision + 1
+          };
+        }
+        const released = releaseBattleGroup(state.scene.battleGroups, armyMap(state), command.battleId);
+        state.scene.battleGroups = released.groups;
+        state.armies = Object.fromEntries(released.armies);
+        return undefined;
+      }
       case "REGISTER_SHIP": {
         const item = state.items[command.itemId];
         if (!item) return "ITEM_NOT_FOUND";
@@ -534,6 +566,33 @@ export class CommandProcessor {
         const destroyed = destroyShip(state.scene as NavalSceneState, command.shipId);
         state.scene = destroyed.scene;
         state.scene.revision = sceneRevision;
+        return undefined;
+      }
+      case "PURCHASE_SHIP_UPGRADE": {
+        const ship = state.scene.ships?.[command.shipId];
+        if (!ship) return "SHIP_NOT_FOUND";
+        const previousMovement = shipEffectiveMovement(ship);
+        const result = purchaseShipUpgrade(ship, command.level, command.variant);
+        if (!result.ok) return result.reason;
+        state.scene.ships ??= {};
+        state.scene.ships[command.shipId] = result.ship;
+        const movementGain = Math.max(0, shipEffectiveMovement(result.ship) - previousMovement);
+        const battle = state.scene.activeNavalBattle;
+        if (
+          movementGain > 0 &&
+          battle?.status === "ACTIVE" &&
+          battle.participantShipIds.includes(command.shipId) &&
+          battle.movementRemainingByShip[command.shipId] !== undefined
+        ) {
+          state.scene.activeNavalBattle = {
+            ...battle,
+            movementRemainingByShip: {
+              ...battle.movementRemainingByShip,
+              [command.shipId]: battle.movementRemainingByShip[command.shipId] + movementGain
+            },
+            revision: battle.revision + 1
+          };
+        }
         return undefined;
       }
       case "SET_SHIP_ROUTE":
