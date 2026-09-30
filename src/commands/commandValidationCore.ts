@@ -336,6 +336,12 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
       ? { type: "REGISTER_CITY_SHIP", itemId: value.itemId, cityId: value.cityId, sideId: value.sideId, classId: value.classId, facing: value.facing }
       : undefined,
   UNREGISTER_SHIP: (value) => boundedString(value.shipId) ? { type: "UNREGISTER_SHIP", shipId: value.shipId } : undefined,
+  PURCHASE_SHIP_UPGRADE: (value) =>
+    boundedString(value.shipId) &&
+    (value.level === 1 || value.level === 2 || value.level === 3) &&
+    (value.variant === "A" || value.variant === "B")
+      ? { type: "PURCHASE_SHIP_UPGRADE", shipId: value.shipId, level: value.level, variant: value.variant } as ArmyCommandPayload
+      : undefined,
   SET_SHIP_ROUTE: (value) => {
     const startCell = parseGridCell(value.startCell);
     const finalFacing = value.finalFacing === undefined
