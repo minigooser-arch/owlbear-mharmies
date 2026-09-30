@@ -47,7 +47,10 @@ export function effectiveShipDetectionRange(
   baseDetectionRangeCells: number
 ): number {
   const bonus = ship.classId
-    ? shipDetectionBonus({ classId: ship.classId, upgrades: ship.upgrades })
+    ? shipDetectionBonus({
+        classId: ship.classId,
+        ...(ship.upgrades ? { upgrades: ship.upgrades } : {})
+      })
     : 0;
   return Math.max(0, (ship.detectionOverride ?? baseDetectionRangeCells) + bonus);
 }
