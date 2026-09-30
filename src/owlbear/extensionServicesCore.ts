@@ -285,6 +285,7 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
       healthHp: state.health.hp,
       healthMaxHp: state.health.maxHp,
       experience: state.experience ?? 0,
+      upgrades: structuredClone(state.upgrades ?? { recovery: {}, motorization: {}, reconnaissance: {} }),
       formationActive: state.formation?.active ?? false,
       formationHpAddedThisTurn: state.formation?.hpAddedThisTurn ?? 0,
       healingHpHealedThisTurn: state.healing?.hpHealedThisTurn ?? 0,
