@@ -6,6 +6,7 @@ import { readCell } from "../terrain/gridMap";
 import { classifyStateMovementAccess } from "./stateMovementAccess";
 import { findShortestForcedExitRoutes } from "./forcedExitPathfinder";
 import { armyTerrainMovementCostUnits } from "../upgrades/unitUpgrades";
+import { shipEmbarkedArmyIds } from "../naval/transport/transportRules";
 
 export function hasRightToRemain(scene: SceneState, army: ArmyState, cell: GridCellCoord): boolean {
   const access = classifyStateMovementAccess({
@@ -69,7 +70,8 @@ export function reconcileForcedExitStates(
   const result: ForcedExitState[] = [];
   for (const [armyId, army] of Object.entries(armies)) {
     const cell = armyCells[armyId];
-    if (army.health.hp <= 0 || (army.embarkedOnShipId && scene.ships?.[army.embarkedOnShipId]?.embarkedArmyId === armyId)) continue;
+    const embarkedShip = army.embarkedOnShipId ? scene.ships?.[army.embarkedOnShipId] : undefined;
+    if (army.health.hp <= 0 || (embarkedShip && shipEmbarkedArmyIds(embarkedShip).includes(armyId))) continue;
     if (!cell) { const previous = existing.get(armyId); if (previous) result.push(previous); continue; }
     if (hasRightToRemain(scene, army, cell)) continue;
     result.push(existing.get(armyId) ?? {armyId,startedOnTurn,originReason});
