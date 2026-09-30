@@ -1,13 +1,13 @@
 import { joinReinforcements, releaseBattleGroup } from "../battles/battleGroupService";
 import { destroyArmy } from "../armies/armyLifecycle";
-import { canHealArmy, requestArmyHealing } from "../health/armyHealth";
+import { canHealArmy, healArmyForTurn } from "../health/armyHealth";
 import { applyFormationHp, createFormationArmy, interruptFormation } from "../armies/armyFormation";
 import { appendLRTransaction } from "../finance/lrLedger";
 import { markLRTransactionRecorded } from "../finance/lrLedger";
 import { applyDemographyCorrection, debitHumanResource as debitHumanResourceFromState } from "../finance/humanResourceLedger";
 import { recalculateHumanResourceCapacity } from "../population/populationRules";
 import { isCityBuildingActive } from "../cities/cityBuildingRules";
-import { activeShipyardAtCell, coastalBatteryRetaliationDamage, marineStationAllowsCrossing, repairShipAtShipyard, seaFortBlocksDisembark, transportArmyMovementCostAtCell } from "../cities/cityEffects";
+import { activeShipyardAtCell, cityForCell, coastalBatteryRetaliationDamage, hasActiveCityBuilding, marineStationAllowsCrossing, repairShipAtShipyard, seaFortBlocksDisembark, transportArmyMovementCostAtCell } from "../cities/cityEffects";
 import { requestArmyDisband } from "../disband/disbandService";
 import { canRenumberTurn, cancelTurnDeferral, completeTurn, deferTurn, pauseAutoTurns, renumberSceneTurn, resumeAutoTurns } from "../turns/turnService";
 import { preCheckpointTurnBlockers } from "../turns/turnCompletionGuard";
@@ -60,6 +60,14 @@ import { removeStateRelations, setMilitaryAccess, setPairWar } from "../states/s
 import { applyPeaceTransfer, validatePeaceTransfer } from "../territory/peaceTransfer";
 import { closeRebellion, startRebellion } from "../rebellions/rebellionService";
 import { startCivilWar } from "../rebellions/civilWarService";
+import {
+  armyRecoveryHpCap,
+  landBattleExperience,
+  purchaseArmyUpgrade,
+  purchaseShipUpgrade,
+  shipEffectiveArmor,
+  shipEffectiveMaxHp
+} from "../upgrades/unitUpgrades";
 
 export interface CommandState {
   scene: SceneState;
@@ -410,24 +418,18 @@ export class CommandProcessor {
         const existingCell = existingItem ? this.cellForPosition(existingItem.position) : undefined;
         if (existingItem && (!existingCell || !city.cells.some((cell) => sameCell(cell, existingCell)))) return "ARMY_MUST_BE_IN_CITY";
         if (!existingItem && !side.armyTokenAsset) return "ARMY_TOKEN_NOT_CONFIGURED";
-        const formationRate = humanResourceRateInSceneUnits(state, command.sideId, state.scene.settings.armyFormationCostPerHp ?? 5000);
-        const formationAmount = 5 * formationRate;
-        const formationDebit = this.debitHumanResource(state, command.sideId, formationAmount, {
-          requestId: command.requestId,
-          actorPlayerId: command.senderPlayerId,
-          kind: "FORMATION",
+        const army = createFormationArmy({
           armyId,
-          armyName: existingItem?.name ?? armyId,
-          cityId: city.id,
-          cityName: city.name,
-          hp: 5,
-          ratePerHp: formationRate,
+          sideId: command.sideId,
+          status: "READY",
+          maxUnits: 10,
           turnNumber: state.scene.turn.turnNumber,
-          createdAt: this.now().toISOString()
+          experience: (city.buildings ?? []).reduce(
+            (total, building) => total + (building.type === "TRAINING_GROUND" || building.type === "MILITARY_ACADEMY" ? 0.5 : 0),
+            0
+          )
         });
-        if (formationDebit) return formationDebit;
-        const army = createFormationArmy({ armyId, sideId: command.sideId, status: "READY", maxUnits: 10, turnNumber: state.scene.turn.turnNumber, experience: (city.buildings ?? []).reduce((total, building) => total + (building.type === "TRAINING_GROUND" || building.type === "MILITARY_ACADEMY" ? 0.5 : 0), 0) });
-        army.formation = { active: true, cityId: city.id, hpAddedThisTurn: 5, checkedOnTurn: state.scene.turn.turnNumber };
+        army.formation = { active: true, cityId: city.id, hpAddedThisTurn: 0, checkedOnTurn: state.scene.turn.turnNumber };
         state.armies[armyId] = army;
         if (!existingItem && side.armyTokenAsset) {
           state.items[armyId] = {
@@ -453,20 +455,19 @@ export class CommandProcessor {
           state.items[armyId] = { ...existingItem, position: itemPosition };
         }
         state.items[armyId] = { ...state.items[armyId], metadata: { ...state.items[armyId]?.metadata, [METADATA_KEYS.army]: army } } as SceneItemRecord;
-        if (state.scene.demographics === undefined) state.scene.lrTransactions = appendLRTransaction(state.scene.lrTransactions ?? [], {
-          id: `${command.requestId}:formation`, requestId: command.requestId, createdAt: this.now().toISOString(), turnNumber: state.scene.turn.turnNumber,
-          actorPlayerId: command.senderPlayerId, sideId: command.sideId, sideName: state.scene.sides.find((side) => side.id === command.sideId)?.name ?? command.sideId,
-          cityId: city.id, cityName: city.name, armyId, armyName: state.items[armyId]?.name ?? armyId, kind: "FORMATION", hp: 5,
-          ratePerHp: formationRate, amount: formationAmount
-        });
         return undefined;
       }
       case "FORM_ARMY": {
         const army = state.armies[command.armyId];
         if (!army) return "ARMY_NOT_FOUND";
-        const formationRate = humanResourceRateInSceneUnits(state, army.sideId, state.scene.settings.armyFormationCostPerHp ?? 5000);
-        const result = applyFormationHp(army, command.hp, state.scene.turn.turnNumber, formationRate,
-          Boolean(army.formation?.cityId && (state.scene.strategicCities ?? []).find((city) => city.id === army.formation?.cityId)?.buildings?.some((building) => building.type === "BARRACKS")));
+        const formationRate = humanResourceRateInSceneUnits(state, army.sideId, state.scene.settings.armyFormationCostPerHp ?? 10000);
+        const result = applyFormationHp(
+          army,
+          command.hp,
+          state.scene.turn.turnNumber,
+          formationRate,
+          Boolean(army.formation?.cityId && hasActiveCityBuilding(state.scene, army.formation.cityId, "TRAINING_GROUND"))
+        );
         if (!result.ok) return result.reason;
         const formationKind = result.army.health.hp >= result.army.health.maxHp ? "COMPLETION" : "FORMATION";
         const cityId = army.formation?.cityId ?? null;
