@@ -1872,9 +1872,84 @@ export class CommandProcessor {
         if (!army) return "ARMY_NOT_FOUND";
         const permission = canHealArmy(army);
         if (!permission.allowed) return permission.reason;
-        const requested = requestArmyHealing(army, state.scene.turn.turnNumber, command.senderPlayerId);
-        if (!requested) return army.healing?.pending ? "HEALING_ALREADY_REQUESTED" : "HEALING_UNAVAILABLE";
-        state.armies[command.armyId] = requested;
+        if (!this.cellForPosition) return "ARMY_POSITION_UNAVAILABLE";
+        const position = commandPosition(state, command.armyId);
+        if (!position) return "ARMY_POSITION_UNAVAILABLE";
+        const cell = this.cellForPosition(position);
+        const city = cityForCell(state.scene, cell);
+        const hasHospital = city ? hasActiveCityBuilding(state.scene, city.id, "MILITARY_HOSPITAL") : false;
+        const terrainId = readCell(state.scene.gridMap, cell).terrainId ?? state.scene.terrain.defaultTerrainId;
+        const location = hasHospital
+          ? "HOSPITAL" as const
+          : city || terrainId === "road"
+            ? "CITY_OR_ROAD" as const
+            : "FIELD" as const;
+        const turnCap = armyRecoveryHpCap(army, location);
+        const used = army.healing?.checkedOnTurn === state.scene.turn.turnNumber
+          ? army.healing.hpHealedThisTurn
+          : 0;
+        const remainingTurnCap = Math.max(0, turnCap - used);
+        const missingHp = Math.max(0, army.health.maxHp - army.health.hp);
+        if (remainingTurnCap <= 0 || missingHp <= 0) return "HEALING_UNAVAILABLE";
+
+        const configuredRate = state.scene.settings.armyHealingCostPerHp ?? 5000;
+        const ratePerHp = humanResourceRateInSceneUnits(state, army.sideId, configuredRate);
+        let affordableHp = Number.POSITIVE_INFINITY;
+        if (state.scene.demographics !== undefined) {
+          const side = state.scene.sides.find((candidate) => candidate.id === army.sideId);
+          if (!side?.stateId) return "STATE_REQUIRED";
+          const demography = state.scene.demographics.find((record) => record.stateId === side.stateId);
+          if (!demography) return "STATE_NOT_FOUND";
+          affordableHp = ratePerHp > 0 ? Math.floor(demography.humanResource / ratePerHp) : remainingTurnCap;
+        }
+        const hp = Math.min(remainingTurnCap, missingHp, affordableHp);
+        if (!Number.isFinite(hp) ? false : hp <= 0) return "INSUFFICIENT_HUMAN_RESOURCE";
+        const healedHp = Number.isFinite(hp) ? hp : Math.min(remainingTurnCap, missingHp);
+        if (healedHp <= 0) return "HEALING_UNAVAILABLE";
+
+        const healed = healArmyForTurn(
+          army,
+          healedHp,
+          state.scene.turn.turnNumber,
+          turnCap,
+          hasHospital ? city?.id ?? null : null
+        );
+        if (!healed) return "HEALING_UNAVAILABLE";
+        const amount = healedHp * ratePerHp;
+        const debit = this.debitHumanResource(state, army.sideId, amount, {
+          requestId: command.requestId,
+          actorPlayerId: command.senderPlayerId,
+          kind: "HEALING",
+          armyId: command.armyId,
+          armyName: state.items[command.armyId]?.name ?? command.armyId,
+          cityId: city?.id ?? null,
+          cityName: city?.name ?? null,
+          hp: healedHp,
+          ratePerHp,
+          turnNumber: state.scene.turn.turnNumber,
+          createdAt: this.now().toISOString()
+        });
+        if (debit) return debit;
+        state.armies[command.armyId] = healed;
+        if (state.scene.demographics === undefined) {
+          state.scene.lrTransactions = appendLRTransaction(state.scene.lrTransactions ?? [], {
+            id: `${command.requestId}:healing`,
+            requestId: command.requestId,
+            createdAt: this.now().toISOString(),
+            turnNumber: state.scene.turn.turnNumber,
+            actorPlayerId: command.senderPlayerId,
+            sideId: army.sideId,
+            sideName: state.scene.sides.find((side) => side.id === army.sideId)?.name ?? army.sideId,
+            cityId: city?.id ?? null,
+            cityName: city?.name ?? null,
+            armyId: command.armyId,
+            armyName: state.items[command.armyId]?.name ?? command.armyId,
+            kind: "HEALING",
+            hp: healedHp,
+            ratePerHp,
+            amount
+          });
+        }
         return undefined;
       }
       case "REQUEST_ARMY_DISBAND": {
