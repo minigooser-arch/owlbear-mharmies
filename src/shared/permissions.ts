@@ -67,7 +67,7 @@ export function authorizeArmyCommand(
     if (!army) return { allowed: false, reason: "ARMY_NOT_FOUND" };
     return ledBy(context, army.sideId);
   }
-  if (command.type === "REPAIR_SHIP_AT_SHIPYARD") {
+  if (command.type === "REPAIR_SHIP_AT_SHIPYARD" || command.type === "PURCHASE_SHIP_UPGRADE") {
     const ship = context.ships?.get(command.shipId);
     if (!ship) return { allowed: false, reason: "SHIP_NOT_FOUND" };
     return ledBy(context, ship.sideId);
