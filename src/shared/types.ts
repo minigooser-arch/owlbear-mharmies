@@ -566,7 +566,7 @@ export interface ItemUpdate {
   [key: string]: unknown;
 }
 
-export const COMMAND_PROTOCOL_VERSION = 5 as const;
+export const COMMAND_PROTOCOL_VERSION = 6 as const;
 
 export interface CommandEnvelope {
   protocolVersion: typeof COMMAND_PROTOCOL_VERSION;
