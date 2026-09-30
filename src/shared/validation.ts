@@ -4,6 +4,7 @@ import type {
   ArmyOverrides,
   ArmyState,
   ArmyStatus,
+  ArmyUpgrades,
   BarrierState,
   BarrierVisibility,
   BattleGroup,
@@ -38,6 +39,8 @@ import type {
   TransportEmbarkRequest,
   TurnPhase,
   TurnState,
+  UpgradeTrack,
+  UpgradeVariant,
   ValidationResult,
   Vector2,
   VisibilityRecalculationMode,
@@ -561,6 +564,8 @@ function normalizeShip(value: unknown): ShipState | undefined {
     shoreBombardmentUsedOnTurn: nullableNonNegativeInteger(value.shoreBombardmentUsedOnTurn),
     logisticsActionUsedOnTurn: nullableNonNegativeInteger(value.logisticsActionUsedOnTurn),
     revision: nonNegative(value.revision) ? Math.floor(value.revision) : 0,
+    experience: nonNegative(value.experience) ? value.experience : 0,
+    upgrades: normalizeUpgradeTrack(value.upgrades),
     ...(nonNegativeInteger(value.repairedHpThisTurn) ? { repairedHpThisTurn: value.repairedHpThisTurn } : {}),
     ...(nonNegativeInteger(value.repairedOnTurn) ? { repairedOnTurn: value.repairedOnTurn } : {})
   };
@@ -840,6 +845,7 @@ export function normalizeArmyState(raw: unknown): ValidationResult<ArmyState> {
       };
     })(),
     experience: nonNegative(raw.experience) ? raw.experience : 0,
+    upgrades: normalizeArmyUpgrades(raw.upgrades),
     formation: (() => {
       const formation = isRecord(raw.formation) ? raw.formation : {};
       return {
