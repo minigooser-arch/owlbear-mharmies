@@ -20,8 +20,11 @@ export function createRegisteredShip(sideId: string, classId: ShipClassId, facin
     battleId: null,
     detectionOverride: null,
     embarkedArmyId: null,
+    additionalEmbarkedArmyId: null,
     shoreBombardmentUsedOnTurn: null,
     logisticsActionUsedOnTurn: null,
+    experience: 0,
+    upgrades: {},
     revision: 1
   };
 }
