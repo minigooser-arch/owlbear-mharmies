@@ -24,6 +24,8 @@ describe("notificationMessage", () => {
     ["ITEM_NOT_FOUND", "Выбранный объект не найден на сцене."],
     ["IMAGE_REQUIRED", "Для армии необходимо выбрать изображение."],
     ["ALREADY_REGISTERED", "Выбранное изображение уже зарегистрировано как армия."],
+    ["PERSISTENCE_FAILED", "Армия сформирована, но не удалось сохранить её токен в сцене. Проверьте выбранный ассет армии и повторите действие."],
+    ["SCENE_ITEM_CREATION_UNAVAILABLE", "В этой сцене нельзя создать токен армии. Перезагрузите расширение и повторите действие."],
     ["SIDE_NOT_FOUND", "Выбранная сторона не найдена."],
     ["ARMY_NOT_READY", "Сначала остановите армию, чтобы изменить её маршрут."],
     ["NOT_FACTION_MEMBER", "Эта армия принадлежит другой фракции."],
@@ -55,6 +57,7 @@ describe("notificationMessage", () => {
   });
 
   it("uses a Russian fallback for an unknown rejection reason", () => {
-    expect(notificationMessage("UNEXPECTED_REASON")).toBe("Не удалось выполнить действие.");
+    expect(notificationMessage("UNEXPECTED_REASON")).toBe("Не удалось выполнить действие (код: UNEXPECTED_REASON).");
+    expect(notificationMessage("unexpected reason")).toBe("Не удалось выполнить действие.");
   });
 });

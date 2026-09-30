@@ -561,6 +561,7 @@ describe("ProductionEngine command boundary", () => {
       factionInfluenceId: "red", mayorId: null, isCapital: false, historicalBuildTypeCount: 0,
       buildings: [{ id: "military-department", type: "MILITARY_DEPARTMENT", cell: { x: 0, y: 0 } }]
     }];
+    const patchItemMetadata = vi.spyOn(fixture.port, "patchSceneItemMetadata");
     const engine = new ProductionEngine(fixture.port);
     engine.setCoordinator(true);
 
@@ -586,6 +587,7 @@ describe("ProductionEngine command boundary", () => {
     expect(fixture.sent.at(-1)).toMatchObject({ data: { status: "ACCEPTED" } });
     const spawned = fixture.items.find((item) => item.id === "army-spawn-city-army");
     expect(spawned).toMatchObject({ type: "IMAGE", position: { x: 50, y: 50 }, visible: false, metadata: { [METADATA_KEYS.army]: { sideId: "red" } } });
+    expect(patchItemMetadata.mock.calls.some(([itemId]) => itemId === "army-spawn-city-army")).toBe(false);
   });
 
   it("does not snap or move an army when registration is rejected", async () => {

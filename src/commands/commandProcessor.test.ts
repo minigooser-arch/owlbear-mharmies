@@ -375,6 +375,38 @@ describe("CommandProcessor", () => {
     }
   });
 
+  it("uses the sheet's thousand-person LR units when creating an army", () => {
+    const current = state();
+    current.scene.sides = current.scene.sides.map((side) => side.id === "red" ? { ...side, stateId: "red-state" } : side);
+    current.scene.states = [{ id: "red-state", name: "Красное государство", rulingFactionId: "red", active: true }];
+    current.scene.demographics = [{
+      stateId: "red-state", population: 46_084, populationGrowthFactor: 1.003, humanResource: 584,
+      conscriptionLawId: "URGENT_CONSCRIPTION", conscriptionRate: 0.04, humanResourceCapacity: 1_843.36,
+      lastPopulationCalculationDate: "2026-09-29"
+    }];
+    current.scene.gridMap.cells["0,0"] = {
+      terrainId: "plain", impassable: false, factionTerritoryIds: ["red"], recognizedStateId: "red-state", deFactoStateId: "red-state"
+    };
+    current.scene.sides = current.scene.sides.map((side) => side.id === "red" ? { ...side, stateId: "red-state" } : side);
+    current.scene.strategicCities = [{
+      id: "city-red", name: "Красный город", cells: [{ x: 0, y: 0 }], recognizedStateId: "red-state", deFactoStateId: "red-state",
+      factionInfluenceId: "red", mayorId: null, isCapital: false, historicalBuildTypeCount: 0,
+      buildings: [{ id: "military-department", type: "MILITARY_DEPARTMENT", cell: { x: 0, y: 0 } }]
+    }];
+    const candidate = current.items["candidate-image"];
+    if (!candidate) throw new Error("candidate image missing");
+    current.items["candidate-image"] = { ...candidate, position: { x: 10, y: 10 } };
+
+    const result = new CommandProcessor(() => new Date(), (position) => ({ x: Math.floor(position.x / 100), y: Math.floor(position.y / 100) }))
+      .execute(context("PLAYER", "leader", current), command({ type: "CREATE_CITY_ARMY", itemId: "candidate-image", cityId: "city-red", sideId: "red" }, "leader"));
+
+    expect(result.status).toBe("ACCEPTED");
+    if (result.status === "ACCEPTED") {
+      expect(result.state.scene.demographics?.[0]?.humanResource).toBe(559);
+      expect(result.state.scene.lrTransactions?.[0]).toMatchObject({ amount: 25, ratePerHp: 5 });
+    }
+  });
+
   it("rejects formation before changing HP when the state has insufficient LR", () => {
     const current = state();
     current.scene.sides = current.scene.sides.map((side) => side.id === "red" ? { ...side, stateId: "red-state" } : side);
@@ -418,6 +450,37 @@ describe("CommandProcessor", () => {
     if (result.status === "ACCEPTED") {
       expect(result.state.scene.demographics?.[0]?.humanResource).toBe(150);
       expect(result.state.scene.demographyAudit?.[0]).toMatchObject({ stateId: "red-state", reason: "Импорт из таблицы" });
+    }
+  });
+
+  it("recalculates the LR limit when a conscription law changes", () => {
+    const current = state();
+    current.scene.states = [{ id: "red-state", name: "Красное государство", rulingFactionId: "red", active: true }];
+    current.scene.conscriptionLaws = [{ id: "URGENT_CONSCRIPTION", name: "Срочный призыв", rate: 0.04, active: true }];
+    current.scene.demographics = [{
+      stateId: "red-state", population: 1_000, populationGrowthFactor: 1.003, humanResource: 100,
+      conscriptionLawId: "URGENT_CONSCRIPTION", conscriptionRate: 0.04, humanResourceCapacity: 200,
+      lastPopulationCalculationDate: "2026-09-28"
+    }];
+
+    const result = processor.execute(context("GM", "gm", current), command({
+      type: "UPSERT_CONSCRIPTION_LAW",
+      law: { id: "URGENT_CONSCRIPTION", name: "Срочный призыв", rate: 0.08, active: true },
+      reason: "Изменение закона"
+    }, "gm"));
+
+    expect(result.status).toBe("ACCEPTED");
+    if (result.status === "ACCEPTED") {
+      expect(result.state.scene.demographics?.[0]).toMatchObject({
+        conscriptionRate: 0.08,
+        humanResourceCapacity: 80,
+        humanResource: 80
+      });
+      expect(result.state.scene.demographyAudit?.at(-1)?.changes).toMatchObject({
+        conscriptionRate: { before: 0.04, after: 0.08 },
+        humanResourceCapacity: { before: 200, after: 80 },
+        humanResource: { before: 100, after: 80 }
+      });
     }
   });
 

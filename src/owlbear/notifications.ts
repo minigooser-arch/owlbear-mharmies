@@ -34,6 +34,8 @@ export type NotificationCode =
   | "INSUFFICIENT_HUMAN_RESOURCE"
   | "INVALID_AMOUNT"
   | "ALREADY_REGISTERED"
+  | "PERSISTENCE_FAILED"
+  | "SCENE_ITEM_CREATION_UNAVAILABLE"
   | "SIDE_NOT_FOUND"
   | "ARMY_NOT_READY"
   | "ROUTE_LIMIT"
@@ -120,6 +122,8 @@ const RUSSIAN_MESSAGES: Readonly<Record<NotificationCode, string>> = {
   INSUFFICIENT_HUMAN_RESOURCE: "Недостаточно людского ресурса для создания или комплектования армии.",
   INVALID_AMOUNT: "Указана недопустимая сумма людского ресурса.",
   ALREADY_REGISTERED: "Выбранное изображение уже зарегистрировано как армия.",
+  PERSISTENCE_FAILED: "Армия сформирована, но не удалось сохранить её токен в сцене. Проверьте выбранный ассет армии и повторите действие.",
+  SCENE_ITEM_CREATION_UNAVAILABLE: "В этой сцене нельзя создать токен армии. Перезагрузите расширение и повторите действие.",
   SIDE_NOT_FOUND: "Выбранная сторона не найдена.",
   ARMY_NOT_READY: "Сначала остановите армию, чтобы изменить её маршрут.",
   ROUTE_LIMIT: "Маршрут превышает допустимую длину.",
@@ -178,7 +182,11 @@ export interface NotificationPort {
 }
 
 export function notificationMessage(code: string): string {
-  return RUSSIAN_MESSAGES[code as NotificationCode] ?? UNKNOWN_FAILURE_MESSAGE;
+  return RUSSIAN_MESSAGES[code as NotificationCode] ?? (
+    /^[A-Z][A-Z0-9_]*$/.test(code)
+      ? `Не удалось выполнить действие (код: ${code}).`
+      : UNKNOWN_FAILURE_MESSAGE
+  );
 }
 
 export async function notifyRussian(
