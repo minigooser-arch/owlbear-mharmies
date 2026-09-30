@@ -5,7 +5,7 @@ export interface NavalDetectionShip {
   id: string;
   sideId: string;
   cell: GridCellCoord;
-  state: Pick<ShipState, "detectionOverride" | "classId" | "upgrades">;
+  state: Pick<ShipState, "detectionOverride"> & Partial<Pick<ShipState, "classId" | "upgrades">>;
 }
 
 export interface NavalDetectionGraph {
@@ -43,10 +43,13 @@ function recordDetection(
 }
 
 export function effectiveShipDetectionRange(
-  ship: Pick<ShipState, "detectionOverride" | "classId" | "upgrades">,
+  ship: Pick<ShipState, "detectionOverride"> & Partial<Pick<ShipState, "classId" | "upgrades">>,
   baseDetectionRangeCells: number
 ): number {
-  return Math.max(0, (ship.detectionOverride ?? baseDetectionRangeCells) + shipDetectionBonus(ship));
+  const bonus = ship.classId
+    ? shipDetectionBonus({ classId: ship.classId, upgrades: ship.upgrades })
+    : 0;
+  return Math.max(0, (ship.detectionOverride ?? baseDetectionRangeCells) + bonus);
 }
 
 export function buildNavalDetectionGraph(input: NavalDetectionInput): NavalDetectionGraph {
