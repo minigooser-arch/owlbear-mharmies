@@ -97,8 +97,8 @@ export function FleetPage({
         ship.classId === "TRANSPORT" &&
         ship.status === "READY" &&
         ship.hp > 0 &&
-        ship.embarkedArmyId === null &&
-        ship.movementRemaining > 0 &&
+        [ship.embarkedArmyId, ship.additionalEmbarkedArmyId ?? null].filter(Boolean).length < (ship.transportCapacity ?? 1) &&
+        (ship.transportLoadingFree === true || ship.movementRemaining > 0) &&
         (role === "GM" || leaderSideIds.has(ship.sideId))
       )
     : [];
@@ -126,8 +126,8 @@ export function FleetPage({
         ship.classId === "TRANSPORT" &&
         ship.status === "READY" &&
         ship.hp > 0 &&
-        ship.embarkedArmyId !== null &&
-        ship.movementRemaining > 0 &&
+        (ship.embarkedArmyId !== null || ship.additionalEmbarkedArmyId != null) &&
+        (ship.transportLoadingFree === true || ship.movementRemaining > 0) &&
         (role === "GM" || leaderSideIds.has(ship.sideId))
       )
     : [];
@@ -257,23 +257,24 @@ export function FleetPage({
             <small>Выберите место высадки кликом по клетке карты. Допустимость клетки проверяется сервером.</small>
           </div>
           <div className="registration-actions fleet-registration-actions">
-            {disembarkTransports.map((ship) => (
-              <button
-                key={ship.id}
-                className="button primary"
-                type="button"
-                onClick={() => {
-                  if (!ship.embarkedArmyId) return;
-                  onAction({
-                    type: "OPEN_TRANSPORT_LANDING",
-                    shipId: ship.id,
-                    armyId: ship.embarkedArmyId
-                  });
-                }}
-              >
-                Выбрать место высадки
-              </button>
-            ))}
+            {disembarkTransports.flatMap((ship) =>
+              [ship.embarkedArmyId, ship.additionalEmbarkedArmyId ?? null]
+                .filter((armyId): armyId is string => armyId !== null)
+                .map((armyId) => (
+                  <button
+                    key={`${ship.id}:${armyId}`}
+                    className="button primary"
+                    type="button"
+                    onClick={() => onAction({
+                      type: "OPEN_TRANSPORT_LANDING",
+                      shipId: ship.id,
+                      armyId
+                    })}
+                  >
+                    Высадить {armyNames.get(armyId) ?? "армию"} с {ship.name}
+                  </button>
+                ))
+            )}
           </div>
         </section>
       )}
