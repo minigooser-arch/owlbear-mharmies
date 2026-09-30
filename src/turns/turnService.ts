@@ -1,15 +1,14 @@
 import { destroyArmy } from "../armies/armyLifecycle";
-import { applyPendingTurnHealing } from "../health/armyHealth";
 import { validatePlannedRoute } from "../movement/movementRules";
 import { politicalRouteGate } from "../movement/authoritativeStateMovement";
 import { forcedExitRouteGate, forcedExitTurnRoute } from "../movement/forcedExitService";
-import { SHIP_CLASSES } from "../naval/ships/shipClasses";
 import { shipBunkeringBonusAtCell } from "../cities/cityEffects";
 import { readCell } from "../terrain/gridMap";
 import type { ArmyState, GridCellCoord, SceneState, TurnState, Vector2 } from "../shared/types";
 import { runTurnCheckpoint } from "./turnCheckpointPipeline";
 import { preCheckpointTurnBlockers, type TurnBlocker } from "./turnCompletionGuard";
 import { deferredBoundary, getLatestStandardTurnBoundary, getNextStandardTurnBoundary } from "./turnSchedule";
+import { armyEffectiveMovementUnits, shipEffectiveMovement, terrainRegistryForArmy } from "../upgrades/unitUpgrades";
 
 export type TurnCompletionSource = "SCHEDULE" | "MANUAL";
 
@@ -43,9 +42,10 @@ function prepareArmyForNewTurn(
   nextTurn: number,
   positionForCell?: (cell: GridCellCoord) => Vector2
 ): ArmyState {
+  const movementUnits = armyEffectiveMovementUnits(army);
   let next: ArmyState = {
     ...army,
-    movement: { maxUnits: 10, remainingUnits: army.formation?.active ? 0 : 10, enteredRouteCellCount: 0 },
+    movement: { maxUnits: movementUnits, remainingUnits: army.formation?.active ? 0 : movementUnits, enteredRouteCellCount: 0 },
     ...(army.formation ? { formation: { ...army.formation, hpAddedThisTurn: 0, checkedOnTurn: nextTurn } } : {}),
     ...(army.healing ? { healing: { ...army.healing, pending: false, requestedOnTurn: null, requestedByPlayerId: null, hpHealedThisTurn: 0, checkedOnTurn: nextTurn, hospitalCityId: null } } : {}),
     revision: army.revision + 1
@@ -57,7 +57,7 @@ function prepareArmyForNewTurn(
     const gate = forcedExitRouteGate(scene, armyId, next, armyCell, planned.cells, nextTurn);
     if (gate) {
       const preferred = planned.executeOnTurn === nextTurn && !gate.blockedReason ? planned.cells : [];
-      const cells = forcedExitTurnRoute(scene, next, armyCell, 10, preferred);
+      const cells = forcedExitTurnRoute(scene, next, armyCell, movementUnits, preferred);
       next = {...next, route: cells.map(positionForCell), plannedRoute: {
         startCell: {...armyCell}, executeOnTurn: nextTurn, cells, totalCostUnits: 0,
         validatedRevision: scene.revision, requiresReplan: false
@@ -179,12 +179,6 @@ export function completeTurn(
   nextScene = checkpoint.scene;
   nextArmies = checkpoint.armies;
 
-  // Requested free recovery is applied after the turn checkpoint (including supply damage)
-  // and before the new movement phase becomes available.
-  for (const [armyId, army] of Object.entries(nextArmies)) {
-    nextArmies[armyId] = applyPendingTurnHealing(army);
-  }
-
   // Open the new movement phase only after every strategic checkpoint effect completed.
   for (const [armyId, army] of Object.entries(nextArmies)) {
     nextArmies[armyId] = prepareArmyForNewTurn(
@@ -202,7 +196,7 @@ export function completeTurn(
     for (const [shipId, ship] of Object.entries(nextScene.ships)) {
       nextScene.ships[shipId] = {
         ...ship,
-        globalMovementRemaining: SHIP_CLASSES[ship.classId].movement + (input.shipCells?.[shipId] ? shipBunkeringBonusAtCell(nextScene, input.shipCells[shipId]) : 0),
+        globalMovementRemaining: shipEffectiveMovement(ship) + (input.shipCells?.[shipId] ? shipBunkeringBonusAtCell(nextScene, input.shipCells[shipId]) : 0),
         movementSpentThisTurn: false,
         revision: ship.revision + 1
       };
