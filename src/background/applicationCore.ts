@@ -986,6 +986,7 @@ export class ProductionEngine {
       command.type === "EMBARK_ARMY" ||
       command.type === "ACCEPT_EMBARK_ARMY" ||
       command.type === "DISEMBARK_ARMY" ||
+      command.type === "HEAL_ARMY" ||
       command.type === "CREATE_CITY_ARMY"
     ) {
       try {
