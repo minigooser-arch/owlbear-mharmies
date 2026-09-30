@@ -114,7 +114,7 @@ describe("MetadataRepository", () => {
     port.getSceneItems = async () => { itemReads += 1; return readItems(); };
     const itemFrame = await repository.readItemFrame();
     expect(itemReads).toBe(1);
-    expect(itemFrame.items).toHaveLength(4);
+    expect(itemFrame.items).toHaveLength(5);
     expect(itemFrame.armies.map((record) => record.item.id)).toEqual(["army"]);
     expect(itemFrame.ships.map((record) => record.item.id)).toEqual(["ship"]);
     expect(itemFrame.barriers.map((record) => record.item.id)).toEqual(["barrier"]);

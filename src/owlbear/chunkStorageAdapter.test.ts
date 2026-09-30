@@ -41,7 +41,7 @@ it("persists hidden chunks using real SDK builders and restores them", async () 
   scene.gridMap.cells["0,0"] = { ...DEFAULT_CELL_STATE, terrainId: "plain" };
   scene.gridMap.revision = 1; scene.revision = 1;
   await repository.writeScene(scene, 0);
-  expect(memory.items).toHaveLength(1);
+  expect(memory.items).toHaveLength(2);
   expect(memory.items[0]).toMatchObject({ type: "LABEL", visible: false, locked: true, disableHit: true, text: { plainText: "" } });
   expect((await repository.readScene()).gridMap).toEqual(scene.gridMap);
 });
@@ -66,7 +66,7 @@ it("saves, reloads, renders and edits every cell of a 61 by 115 map", async () =
   await repository.writeScene(scene, 0);
   const loaded = await new MetadataRepository(adapter).readScene();
   expect(loaded.gridMap).toEqual(scene.gridMap);
-  expect(memory.items).toHaveLength(120);
+  expect(memory.items).toHaveLength(121);
   const overlays = new MapOverlayService({ ...adapter, createId: () => crypto.randomUUID() });
   await overlays.reconcile({ viewerRole: "GM", dpi: 100, gridMap: loaded.gridMap, terrain: loaded.terrain, sides: [], states: [] });
   expect(local.items).toHaveLength(1);
@@ -80,4 +80,19 @@ it("saves, reloads, renders and edits every cell of a 61 by 115 map", async () =
   const mountain = local.items.find(item => (item.metadata[METADATA_KEYS.mapOverlay] as { key?: string }).key === "TERRAIN/mountains/60,114/60,114");
   expect(mountain?.style).toMatchObject({ fillColor: "#808080" });
   for (const request of [...memory.requests, ...local.requests]) expect(utf8Size(request)).toBeLessThanOrEqual(48 * 1024);
+}, 20000);
+
+it("keeps a large coordinate index below the scene request limit", async () => {
+  const { memory, adapter } = fixture();
+  const repository = new MetadataRepository(adapter);
+  const scene = await repository.readScene();
+  scene.gridMap.cells = Object.fromEntries(Array.from({ length: 900 }, (_, index) => [
+    `${index * 8},0`, { ...DEFAULT_CELL_STATE, terrainId: "plain" }
+  ]));
+  scene.gridMap.revision = 1;
+  scene.revision = 1;
+  await repository.writeScene(scene, 0);
+  expect((memory.metadata[METADATA_KEYS.gridManifest] as { partCount: number }).partCount).toBeGreaterThan(1);
+  expect((await repository.readScene()).gridMap).toEqual(scene.gridMap);
+  for (const request of memory.requests) expect(utf8Size(request)).toBeLessThanOrEqual(48 * 1024);
 }, 20000);

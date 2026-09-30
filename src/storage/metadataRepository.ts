@@ -233,7 +233,7 @@ export class MetadataRepository {
     }
     const chunks = new GridChunkRepository(this.port);
     const addSceneItems = this.port.addSceneItems.bind(this.port);
-    const staged = chunks.stage(current.gridMap, next.gridMap, readGridManifest(metadata));
+    const staged = await chunks.stage(current.gridMap, next.gridMap, readGridManifest(metadata));
     const update = { [METADATA_KEYS.scene]: { ...next, gridMap: { ...next.gridMap, cells: {} } }, [METADATA_KEYS.gridManifest]: staged.manifest };
     if (utf8Size(update) > 48 * 1024) throw new GridStorageError("GRID_METADATA_TOO_LARGE");
     try {
@@ -249,7 +249,7 @@ export class MetadataRepository {
       await chunks.cleanup(staged.additions.map(item => item.id));
       throw error;
     }
-    await chunks.cleanup(staged.superseded);
+    await chunks.cleanup([...staged.superseded, ...staged.supersededManifestParts]);
   }
 
   async readArmies(): Promise<ArmyRecord[]> {
