@@ -537,6 +537,13 @@ export class CommandProcessor {
         const released = releaseBattleGroup(state.scene.battleGroups, armyMap(state), command.battleId);
         state.scene.battleGroups = released.groups;
         state.armies = Object.fromEntries(released.armies);
+        for (const participantId of battle.participantIds) {
+          const participant = state.armies[participantId];
+          if (!participant || participant.health.hp > 0) continue;
+          const destroyed = destroyArmy(state.armies, state.scene.battleGroups, participantId);
+          state.armies = destroyed.armies;
+          state.scene.battleGroups = destroyed.battleGroups;
+        }
         return undefined;
       }
       case "REGISTER_SHIP": {
@@ -1094,9 +1101,16 @@ export class CommandProcessor {
           currentTurn: state.scene.turn.turnNumber
         });
         if (result.target.health.hp <= 0) {
-          const destroyed = destroyArmy(state.armies, state.scene.battleGroups, command.armyId);
-          state.armies = destroyed.armies;
-          state.scene.battleGroups = destroyed.battleGroups;
+          const belongsToLandBattle = state.scene.battleGroups.some((group) =>
+            group.participantIds.includes(command.armyId)
+          );
+          if (belongsToLandBattle) {
+            state.armies[command.armyId] = result.target;
+          } else {
+            const destroyed = destroyArmy(state.armies, state.scene.battleGroups, command.armyId);
+            state.armies = destroyed.armies;
+            state.scene.battleGroups = destroyed.battleGroups;
+          }
         } else {
           state.armies[command.armyId] = result.target;
         }
@@ -1941,6 +1955,13 @@ export class CommandProcessor {
         if (maxHp <= 0 || command.hp < 0) return "INVALID_HP";
         const hp = Math.min(command.hp, maxHp);
         if (hp === 0) {
+          const belongsToLandBattle = state.scene.battleGroups.some((group) =>
+            group.participantIds.includes(command.armyId)
+          );
+          if (belongsToLandBattle) {
+            state.armies[command.armyId] = bumpArmy(army, { health: { hp: 0, maxHp } });
+            return undefined;
+          }
           const destroyed = destroyArmy(state.armies, state.scene.battleGroups, command.armyId);
           state.armies = destroyed.armies;
           state.scene.battleGroups = destroyed.battleGroups;
