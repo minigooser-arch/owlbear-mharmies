@@ -5,6 +5,7 @@ import type {
 } from "../../shared/types";
 import { applyShipDamage } from "../ships/shipDamage";
 import { SHIP_CLASSES } from "../ships/shipClasses";
+import { shipEffectiveArmor, shipEffectiveAttackDice, shipEffectiveRangeMax } from "../../upgrades/unitUpgrades";
 import { isInIroncladAdjacentSpecialMask, isInNormalBroadsideMask } from "./broadsideMask";
 import { useNavalAction } from "./navalRoundFlow";
 
@@ -74,7 +75,9 @@ export function validateBroadsideTarget(
   }
 
   const weapon = SHIP_CLASSES[input.attacker.classId];
-  if (weapon.normalDice <= 0 || weapon.normalRangeMax <= 0) {
+  const attackDice = shipEffectiveAttackDice(input.attacker);
+  const rangeMax = shipEffectiveRangeMax(input.attacker);
+  if (attackDice <= 0 || rangeMax <= 0) {
     return { ok: false, reason: "SHIP_UNARMED" };
   }
   if (input.battle.exitedShipIds.includes(input.targetId)) {
@@ -88,7 +91,7 @@ export function validateBroadsideTarget(
   }
 
   const range = input.distanceCells(input.attackerCell, input.targetCell);
-  if (range < weapon.normalRangeMin || range > weapon.normalRangeMax) {
+  if (range < weapon.normalRangeMin || range > rangeMax) {
     return { ok: false, reason: "OUT_OF_RANGE", range };
   }
   if (!input.hasLineOfSight(input.attackerCell, input.targetCell)) {
@@ -189,11 +192,11 @@ export function commitBroadsideAttack(
       input.attackerCell,
       input.targetCell
     );
-  const dice = special ? 3 : SHIP_CLASSES[attacker.classId].normalDice;
+  const dice = shipEffectiveAttackDice(attacker, special);
   let rolledDamage = 0;
   for (let index = 0; index < dice; index += 1) rolledDamage += input.rollD6();
 
-  const armor = special ? 0 : SHIP_CLASSES[target.classId].armor;
+  const armor = special ? 0 : shipEffectiveArmor(target);
   const damage = Math.max(0, rolledDamage - armor);
   const updatedTarget = applyShipDamage(target, damage);
   const updatedShips = {
