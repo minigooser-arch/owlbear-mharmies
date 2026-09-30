@@ -355,6 +355,9 @@ export function FleetPage({
         {filtered.map((ship) => {
           const sideColor = sides.find((side) => side.id === ship.sideId)?.color ?? "#687F91";
           const embarkedArmyName = ship.embarkedArmyId ? armyNames.get(ship.embarkedArmyId) : undefined;
+          const additionalEmbarkedArmyName = ship.additionalEmbarkedArmyId
+            ? armyNames.get(ship.additionalEmbarkedArmyId)
+            : undefined;
           const canPlanRoute = role === "GM" || leaderSideIds.has(ship.sideId);
           return (
             <ShipCard
@@ -367,6 +370,7 @@ export function FleetPage({
               routePlanningEnabled={movementPhase}
               relations={relations}
               {...(embarkedArmyName !== undefined ? { embarkedArmyName } : {})}
+              {...(additionalEmbarkedArmyName !== undefined ? { additionalEmbarkedArmyName } : {})}
               onAction={onAction}
             />
           );
