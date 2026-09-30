@@ -19,6 +19,21 @@ describe("population sheet sync", () => {
     expect(result.unmatchedStates).toEqual(["state-2"]);
   });
 
+  it("matches backend countries case-insensitively and ignores surrounding whitespace", () => {
+    const result = buildPopulationSyncPlan(
+      [{ country: "BULGARIA", population: 6_447_000, growthRate: 1.001 }],
+      [{ id: "bulgaria", name: "Болгария", rulingFactionId: null, active: true, backendCountry: " Bulgaria " }]
+    );
+
+    expect(result.entries).toEqual([{
+      stateId: "bulgaria",
+      country: "Bulgaria",
+      population: 6_447_000,
+      populationGrowthFactor: 1.001
+    }]);
+    expect(result.unmatchedStates).toEqual([]);
+  });
+
   it("fetches the public csv and applies only population fields", async () => {
     const applyCorrection = vi.fn().mockResolvedValue(undefined);
     const result = await syncPopulationFromPublicSheet({
@@ -175,4 +190,3 @@ describe("population sheet sync", () => {
     }]);
   });
 });
-

@@ -65,6 +65,23 @@ function normalizeLabel(value: string): string {
     .trim();
 }
 
+/**
+ * Country identifiers come from two independently maintained sheets/settings
+ * fields. They are identifiers, not display labels, so only normalize the
+ * transport noise that must not change identity (BOM, Unicode form, case and
+ * whitespace). In particular, do not strip punctuation or parenthesized text
+ * here: those may legitimately distinguish two backend keys.
+ */
+function normalizeBackendCountryKey(value: string): string {
+  return value
+    .replace(/^\uFEFF/, "")
+    .normalize("NFKC")
+    .replace(/[\u00A0\u2007\u202F]/g, " ")
+    .trim()
+    .toLocaleLowerCase("en-US")
+    .replace(/\s+/g, " ");
+}
+
 function hasRequiredHeaders(csv: string): boolean {
   const header = (csv.split(/\r?\n/, 1)[0] ?? "").replace(/^\uFEFF/, "");
   const columns = header.split(/[;,]/).map((column) => column.replace(/^\s*"|"\s*$/g, "").trim().toLowerCase());
@@ -80,11 +97,16 @@ export function buildPopulationSyncPlan(
   const rowsByCountry = new Map<string, BackendPopulationRow>();
   const skippedRows: string[] = [];
   for (const row of rows) {
-    if (rowsByCountry.has(row.country)) {
+    const key = normalizeBackendCountryKey(row.country);
+    if (!key) {
+      skippedRows.push(`${row.country}:empty`);
+      continue;
+    }
+    if (rowsByCountry.has(key)) {
       skippedRows.push(`${row.country}:duplicate`);
       continue;
     }
-    rowsByCountry.set(row.country, row);
+    rowsByCountry.set(key, row);
   }
 
   const entries: PopulationSyncPlanEntry[] = [];
@@ -109,7 +131,7 @@ export function buildPopulationSyncPlan(
   const lawsByName = new Map(conscriptionLaws.map((law) => [normalizeLabel(law.name), law]));
   for (const state of states) {
     const country = state.backendCountry?.trim();
-    const row = country ? rowsByCountry.get(country) : undefined;
+    const row = country ? rowsByCountry.get(normalizeBackendCountryKey(country)) : undefined;
     if (!country || !row) {
       unmatchedStates.push(state.id);
       continue;
@@ -229,4 +251,3 @@ export async function syncPopulationFromPublicSheet(input: PopulationSyncInput):
   }
   return summary;
 }
-
