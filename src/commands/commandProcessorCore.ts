@@ -67,7 +67,9 @@ import {
   purchaseShipUpgrade,
   shipEffectiveArmor,
   shipEffectiveMaxHp,
-  shipEffectiveMovement
+  shipEffectiveMovement,
+  armyEffectiveMovementUnits,
+  terrainRegistryForArmy
 } from "../upgrades/unitUpgrades";
 
 export interface CommandState {
@@ -1582,7 +1584,7 @@ export class CommandProcessor {
         }
         const routeCity = (state.scene.strategicCities ?? []).find((city) => city.cells.some((cell) => sameCell(cell, command.startCell)));
         const marineCrossing = routeCity ? marineStationAllowsCrossing(state.scene, routeCity.id, command.cells) : false;
-        const routeTerrain = marineCrossing ? structuredClone(state.scene.terrain) : state.scene.terrain;
+        const routeTerrain = terrainRegistryForArmy(army, state.scene.terrain);
         if (marineCrossing && routeTerrain.types.sea) routeTerrain.types.sea = { ...routeTerrain.types.sea, movementDomains: ["LAND", "SEA"] };
         const validation = validatePlannedRoute({
           start: command.startCell,
