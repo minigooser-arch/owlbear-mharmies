@@ -77,6 +77,7 @@ export interface ShipView {
   normalRangeMin: number;
   normalRangeMax: number;
   embarkedArmyId: string | null;
+  additionalEmbarkedArmyId?: string | null;
   detectionOverride: number | null;
   effectiveDetectionRange: number;
   navalRoundNumber?: number;
