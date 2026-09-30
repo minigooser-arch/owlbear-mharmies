@@ -20,7 +20,7 @@ export function createFormationArmy(options: CreateFormationArmyOptions): ArmySt
     route: [],
     plannedRoute: { startCell: { x: 0, y: 0 }, executeOnTurn: 0, cells: [], totalCostUnits: 0, validatedRevision: 0, requiresReplan: false },
     movement: { maxUnits: options.maxUnits, remainingUnits: 0, enteredRouteCellCount: 0 },
-    health: { hp: 5, maxHp: 40 },
+    health: { hp: 0, maxHp: 40 },
     supply: { supplied: true, checkedOnTurn: options.turnNumber },
     disband: { pending: false, requestedOnTurn: null, requestedByPlayerId: null },
     currentWaypointIndex: 0,
@@ -30,25 +30,25 @@ export function createFormationArmy(options: CreateFormationArmyOptions): ArmySt
     revision: 1,
     ...(options.directOwnerPlayerId ? { directOwnerPlayerId: options.directOwnerPlayerId } : {}),
     experience: options.experience,
-    formation: { active: true, cityId: null, hpAddedThisTurn: 5, checkedOnTurn: options.turnNumber },
+    formation: { active: true, cityId: null, hpAddedThisTurn: 0, checkedOnTurn: options.turnNumber },
     healing: { pending: false, requestedOnTurn: null, requestedByPlayerId: null, hpHealedThisTurn: 0, checkedOnTurn: options.turnNumber, hospitalCityId: null }
   };
 }
 
-export function formationCapForTurn(hasBarracks: boolean, hpAddedThisTurn: number): number {
-  return Math.max(0, (hasBarracks ? 25 : 15) - hpAddedThisTurn);
+export function formationCapForTurn(hasTrainingCenter: boolean, hpAddedThisTurn: number): number {
+  return Math.max(0, (hasTrainingCenter ? 15 : 10) - hpAddedThisTurn);
 }
 
 export type FormationResult =
   | { ok: true; army: ArmyState; amount: number }
   | { ok: false; reason: "FORMATION_COMPLETE" | "FORMATION_INTERRUPTED" | "FORMATION_CAP" | "INVALID_HP" };
 
-export function applyFormationHp(army: ArmyState, hp: number, turnNumber: number, ratePerHp: number, hasBarracks = false): FormationResult {
+export function applyFormationHp(army: ArmyState, hp: number, turnNumber: number, ratePerHp: number, hasTrainingCenter = false): FormationResult {
   if (!army.formation?.active) return { ok: false, reason: "FORMATION_COMPLETE" };
   if (army.status === "IN_BATTLE") return { ok: false, reason: "FORMATION_INTERRUPTED" };
   if (!Number.isInteger(hp) || hp <= 0) return { ok: false, reason: "INVALID_HP" };
   const currentTurn = army.formation.checkedOnTurn === turnNumber ? army.formation.hpAddedThisTurn : 0;
-  const allowed = Math.min(formationCapForTurn(hasBarracks, currentTurn), army.health.maxHp - army.health.hp);
+  const allowed = Math.min(formationCapForTurn(hasTrainingCenter, currentTurn), army.health.maxHp - army.health.hp);
   if (hp > allowed) return { ok: false, reason: "FORMATION_CAP" };
   const nextHp = army.health.hp + hp;
   const active = nextHp < army.health.maxHp;
