@@ -78,9 +78,9 @@ function prepareArmyForNewTurn(
       start: next.plannedRoute.startCell,
       cells: next.plannedRoute.cells,
       sideId: next.sideId,
-      terrain: scene.terrain,
+      terrain: terrainRegistryForArmy(next, scene.terrain),
       wars: scene.wars,
-      remainingUnits: 10,
+      remainingUnits: movementUnits,
       readCell: (cell) => readCell(scene.gridMap, cell),
       armyStateAllowsMovement: true
     });
