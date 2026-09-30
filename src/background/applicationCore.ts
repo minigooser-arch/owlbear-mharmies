@@ -709,7 +709,7 @@ export class ProductionEngine {
             start: remainingStart,
             cells: authorizedCells,
             sideId: record.state.sideId,
-            terrain: scene.terrain,
+            terrain: terrainRegistryForArmy(record.state, scene.terrain),
             wars: scene.wars,
             remainingUnits: record.state.movement.remainingUnits,
             readCell: (cell) => readCell(scene.gridMap, cell),
@@ -853,9 +853,14 @@ export class ProductionEngine {
           finalCell: strategicGrid.sceneToCell(frame.to),
           remainingUnits: frame.record.state.movement.remainingUnits,
           costForCell: (cell) => {
-            const cost = getDestinationMovementCostUnits(scene.terrain, readCell(scene.gridMap, cell));
+            const destination = readCell(scene.gridMap, cell);
+            const cost = getDestinationMovementCostUnits(scene.terrain, destination);
             if (cost === undefined) throw new Error(`Invalid terrain for strategic cell ${cell.x},${cell.y}`);
-            return cost;
+            return armyTerrainMovementCostUnits(
+              record.state,
+              destination.terrainId ?? scene.terrain.defaultTerrainId,
+              cost
+            );
           }
         });
         frame.state = {
