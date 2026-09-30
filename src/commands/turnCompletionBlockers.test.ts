@@ -49,7 +49,7 @@ function context(current: SceneState): CommandContext {
 function command(): ArmyCommand {
   return {
     type: "COMPLETE_TURN_NOW",
-    protocolVersion: 5,
+    protocolVersion: 6,
     requestId: "request",
     senderPlayerId: "gm",
     senderConnectionId: "gm-connection",
