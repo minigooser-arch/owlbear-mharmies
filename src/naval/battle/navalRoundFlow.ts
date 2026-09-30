@@ -1,5 +1,5 @@
 import type { NavalBattleState, ShipState } from "../../shared/types";
-import { SHIP_CLASSES } from "../ships/shipClasses";
+import { shipEffectiveMovement } from "../../upgrades/unitUpgrades";
 
 function eligibleShipIds(
   battle: NavalBattleState,
@@ -38,7 +38,7 @@ function resetPerRoundState(
     eligibleIds.map((shipId) => {
       const ship = ships[shipId];
       if (!ship) throw new Error(`Missing eligible ship ${shipId}`);
-      return [shipId, SHIP_CLASSES[ship.classId].movement];
+      return [shipId, shipEffectiveMovement(ship)];
     })
   );
   battle.actionUsedByShip = Object.fromEntries(eligibleIds.map((shipId) => [shipId, false]));
