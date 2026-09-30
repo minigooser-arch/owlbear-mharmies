@@ -8,6 +8,7 @@ import type {
   UpgradeVariant
 } from "../shared/types";
 import { SHIP_CLASSES } from "../naval/ships/shipClasses";
+import type { LandBattleOutcome } from "../shared/types";
 
 export const UPGRADE_COST: Readonly<Record<UpgradeLevel, number>> = Object.freeze({
   1: 1,
@@ -297,4 +298,12 @@ export function transportCapacity(ship: Pick<ShipState, "classId" | "upgrades">)
 
 export function transportLoadingIsFree(ship: Pick<ShipState, "classId" | "upgrades">): boolean {
   return ship.classId === "TRANSPORT" && hasShipUpgrade(ship, 3, "B");
+}
+
+
+export function landBattleExperience(outcome: LandBattleOutcome): number {
+  if (outcome === "FULL_VICTORY") return 1.5;
+  if (outcome === "VICTORY") return 1;
+  if (outcome === "RETREAT") return 0.5;
+  return 0;
 }
