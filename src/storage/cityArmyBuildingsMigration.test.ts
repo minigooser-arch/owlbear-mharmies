@@ -37,7 +37,7 @@ describe("city army buildings migration", () => {
         lrTransactions: [],
         strategicCities: [{ id: "city-1" }],
         settings: {
-          armyFormationCostPerHp: 5000,
+          armyFormationCostPerHp: 10000,
           armyHealingCostPerHp: 5000,
           hospitalHealingCostPerHp: 2500
         }
