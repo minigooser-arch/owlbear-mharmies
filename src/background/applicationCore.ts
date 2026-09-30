@@ -857,7 +857,7 @@ export class ProductionEngine {
             const cost = getDestinationMovementCostUnits(scene.terrain, destination);
             if (cost === undefined) throw new Error(`Invalid terrain for strategic cell ${cell.x},${cell.y}`);
             return armyTerrainMovementCostUnits(
-              record.state,
+              frame.record.state,
               destination.terrainId ?? scene.terrain.defaultTerrainId,
               cost
             );
