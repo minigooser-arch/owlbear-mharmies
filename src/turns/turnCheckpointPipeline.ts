@@ -4,6 +4,7 @@ import { applyEncirclementCheckpoint } from "../supply/encirclementService";
 import { isArmySupplied } from "../supply/supplyService";
 import type { ArmyState, GridCellCoord, SceneState } from "../shared/types";
 import { applyTerritorialScoreCheckpoint } from "../wars/territorialScore";
+import { shipEmbarkedArmyIds } from "../naval/transport/transportRules";
 
 export interface TurnCheckpointDomain {
   scene: SceneState;
@@ -44,8 +45,9 @@ function applySupplyCheckpoint(
     const factionState = stateForFaction(scene, army.sideId);
     const armyCell = armyCells[armyId];
     const embarkedShipId = army.embarkedOnShipId ?? null;
-    const genuinelyEmbarked = embarkedShipId !== null &&
-      scene.ships?.[embarkedShipId]?.embarkedArmyId === armyId;
+    const embarkedShip = embarkedShipId !== null ? scene.ships?.[embarkedShipId] : undefined;
+    const genuinelyEmbarked = embarkedShip !== undefined &&
+      shipEmbarkedArmyIds(embarkedShip).includes(armyId);
     const supplied = genuinelyEmbarked
       ? true
       : factionState && armyCell
