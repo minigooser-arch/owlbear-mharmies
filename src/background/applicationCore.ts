@@ -87,6 +87,7 @@ import { buildSceneDetectionGraph, detectedShipIdsForSide } from "../visibility/
 import { LocalCloneReconciler, UpdateOriginGuard } from "../visibility/localCloneReconciler";
 import { VisionLightService } from "../visibility/visionLightService";
 import { visibleArmyIdsForPlayer } from "../visibility/visibilityEngine";
+import { shipEmbarkedArmyIds } from "../naval/transport/transportRules";
 import { applyPopulationCalendarToScene } from "../population/populationRules";
 import type { OwlbearPort } from "../owlbear/sdkAdapter";
 import {
@@ -286,7 +287,8 @@ function isArmyMovementEligible(record: ArmyRecord, scene: SceneState): boolean 
   if (!movingNow && !recoverableCoordinatorPause) return false;
   const shipId = record.state.embarkedOnShipId;
   if (shipId == null) return true;
-  return scene.ships?.[shipId]?.embarkedArmyId !== record.item.id;
+  const ship = scene.ships?.[shipId];
+  return !ship || !shipEmbarkedArmyIds(ship).includes(record.item.id);
 }
 
 export function hasEligibleArmyMovement(armies: readonly ArmyRecord[], scene: SceneState): boolean {
@@ -379,7 +381,7 @@ export class ProductionEngine {
     const reciprocallyEmbarkedArmyIds = new Set(armies.flatMap(({ item, state }) => {
       if (state.embarkedOnShipId == null) return [];
       const ship = scene.ships?.[state.embarkedOnShipId];
-      return ship?.embarkedArmyId === item.id ? [item.id] : [];
+      return ship && shipEmbarkedArmyIds(ship).includes(item.id) ? [item.id] : [];
     }));
     const activeLandArmies = armies.filter(({ item }) => !reciprocallyEmbarkedArmyIds.has(item.id));
     const armyDetectionUnits = activeLandArmies.map(({ item, state }) => ({
