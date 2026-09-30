@@ -730,6 +730,52 @@ describe("CommandProcessor", () => {
     expect(playerContext.state).toEqual(before);
   });
 
+  it("resolves a land battle per army, awards XP, and removes zero-HP participants afterwards", () => {
+    const commandState = state();
+    const red = commandState.armies["army-red"];
+    const defeated = commandState.armies["registered-image"];
+    if (!red || !defeated) throw new Error("Missing army fixtures");
+    commandState.armies["army-red"] = {
+      ...red,
+      status: "IN_BATTLE",
+      battleGroupId: "battle",
+      experience: 0,
+      health: { hp: 20, maxHp: 40 }
+    };
+    commandState.armies["registered-image"] = {
+      ...defeated,
+      status: "IN_BATTLE",
+      battleGroupId: "battle",
+      experience: 0.5,
+      health: { hp: 0, maxHp: 40 }
+    };
+    commandState.scene.battleGroups = [{
+      battleId: "battle",
+      name: "Бой 1",
+      participantIds: ["army-red", "registered-image"],
+      revision: 1
+    }];
+
+    const result = processor.execute(
+      context("GM", "gm", commandState),
+      command({
+        type: "RESOLVE_LAND_BATTLE",
+        battleId: "battle",
+        results: [
+          { armyId: "army-red", outcome: "FULL_VICTORY" },
+          { armyId: "registered-image", outcome: "DEFEAT" }
+        ]
+      })
+    );
+
+    expect(result.status).toBe("ACCEPTED");
+    if (result.status !== "ACCEPTED") return;
+    expect(result.state.armies["army-red"]?.experience).toBe(1.5);
+    expect(result.state.armies["army-red"]?.status).toBe("READY");
+    expect(result.state.armies["registered-image"]).toBeUndefined();
+    expect(result.state.scene.battleGroups).toEqual([]);
+  });
+
   it("rejects renaming a missing battle", () => {
     expect(processor.execute(
       context("GM", "gm"),
