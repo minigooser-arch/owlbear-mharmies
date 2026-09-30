@@ -189,10 +189,10 @@ function revalidateArmyRoute(state: CommandState, armyId: string): void {
     start: remainingStart,
     cells: remainingCells,
     sideId: army.sideId,
-    terrain: state.scene.terrain,
+    terrain: terrainRegistryForArmy(army, state.scene.terrain),
     wars: state.scene.wars,
     remainingUnits: army.plannedRoute.executeOnTurn > state.scene.turn.turnNumber
-      ? 10
+      ? armyEffectiveMovementUnits(army)
       : army.movement.remainingUnits,
     readCell: (cell) => readCell(state.scene.gridMap, cell),
     armyStateAllowsMovement: !army.formation?.active && (army.status === "READY" || army.status === "PAUSED" || army.status === "MOVING")
@@ -1628,7 +1628,7 @@ export class CommandProcessor {
           sideId: army.sideId,
           terrain: routeTerrain,
           wars: state.scene.wars,
-          remainingUnits: 10,
+          remainingUnits: armyEffectiveMovementUnits(army),
           readCell: (cell) => readCell(state.scene.gridMap, cell),
           armyStateAllowsMovement: true
         });
