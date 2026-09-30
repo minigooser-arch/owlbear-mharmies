@@ -103,6 +103,7 @@ import {
   armyRevealsEnemyHp,
   armyTerrainMovementCostUnits,
   shipDetectionBonus,
+  shipEffectiveMaxHp,
   terrainRegistryForArmy
 } from "../upgrades/unitUpgrades";
 
@@ -1626,7 +1627,7 @@ export class ProductionEngine {
           name: item.name?.trim() || definition.name,
           position: item.position,
           hp: state.hp,
-          maxHp: definition.maxHp,
+          maxHp: shipEffectiveMaxHp(state),
           color: sideColors.get(state.sideId) ?? "#ffffff"
         }];
       }),
