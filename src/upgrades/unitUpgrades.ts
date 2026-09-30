@@ -106,7 +106,11 @@ export function purchaseArmyUpgrade(
 
   const upgrades = { ...(army.upgrades ?? emptyArmyUpgrades()) };
   upgrades[branch] = setTrackChoice(track, level, variant);
-  const nextMaxHp = armyEffectiveMaxHp({ ...army, upgrades });
+  const upgradedArmy = { ...army, upgrades };
+  const nextMaxHp = armyEffectiveMaxHp(upgradedArmy);
+  const previousMaxUnits = armyEffectiveMovementUnits(army);
+  const nextMaxUnits = armyEffectiveMovementUnits(upgradedArmy);
+  const movementBonus = Math.max(0, nextMaxUnits - previousMaxUnits);
   return {
     ok: true,
     army: {
@@ -116,6 +120,13 @@ export function purchaseArmyUpgrade(
       health: {
         hp: Math.min(army.health.hp, nextMaxHp),
         maxHp: nextMaxHp
+      },
+      movement: {
+        ...army.movement,
+        maxUnits: nextMaxUnits,
+        remainingUnits: army.formation?.active
+          ? 0
+          : Math.min(nextMaxUnits, army.movement.remainingUnits + movementBonus)
       },
       revision: army.revision + 1
     }
@@ -139,7 +150,10 @@ export function purchaseShipUpgrade(
   const experience = ship.experience ?? 0;
   if (experience < cost) return { ok: false, reason: "INSUFFICIENT_EXPERIENCE" };
   const upgrades = setTrackChoice(ship.upgrades, level, variant);
-  const maxHp = shipEffectiveMaxHp({ ...ship, upgrades });
+  const upgradedShip = { ...ship, upgrades };
+  const maxHp = shipEffectiveMaxHp(upgradedShip);
+  const previousMovement = shipEffectiveMovement(ship);
+  const nextMovement = shipEffectiveMovement(upgradedShip);
   return {
     ok: true,
     ship: {
@@ -147,6 +161,10 @@ export function purchaseShipUpgrade(
       experience: experience - cost,
       upgrades,
       hp: Math.min(ship.hp, maxHp),
+      globalMovementRemaining: Math.min(
+        nextMovement,
+        ship.globalMovementRemaining + Math.max(0, nextMovement - previousMovement)
+      ),
       revision: ship.revision + 1
     }
   };
