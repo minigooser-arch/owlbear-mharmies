@@ -6,12 +6,13 @@ export interface PopulationSyncPlanEntry {
   country: string;
   population: number;
   populationGrowthFactor: number;
+  humanResource?: number;
   conscriptionLawId?: string;
   conscriptionRate?: number;
 }
 
 export type PopulationCorrectionPatch = Pick<StateDemography, "population" | "populationGrowthFactor"> &
-  Partial<Pick<StateDemography, "conscriptionLawId" | "conscriptionRate">>;
+  Partial<Pick<StateDemography, "humanResource" | "conscriptionLawId" | "conscriptionRate">>;
 
 export interface PopulationCorrection {
   stateId: string;
@@ -27,6 +28,7 @@ export interface PopulationSyncPlan {
 
 export interface PopulationSyncSummary extends PopulationSyncPlan {
   applied: number;
+  humanResourceApplied: number;
   conscriptionApplied: number;
   errors: string[];
 }
@@ -149,6 +151,7 @@ export function buildPopulationSyncPlan(
         // same thousand-person unit.
         ?? categoriesByPopulation.get(row.population);
       const law = category ? lawsByName.get(normalizeLabel(category.category)) : undefined;
+      if (category?.humanResource !== undefined) entry.humanResource = category.humanResource;
       if (law) {
         entry.conscriptionLawId = law.id;
         entry.conscriptionRate = law.rate;
@@ -162,7 +165,7 @@ export function buildPopulationSyncPlan(
 }
 
 export async function syncPopulationFromPublicSheet(input: PopulationSyncInput): Promise<PopulationSyncSummary> {
-  const summary: PopulationSyncSummary = { applied: 0, conscriptionApplied: 0, entries: [], unmatchedStates: [], unmatchedConscriptionStates: [], skippedRows: [], errors: [] };
+  const summary: PopulationSyncSummary = { applied: 0, humanResourceApplied: 0, conscriptionApplied: 0, entries: [], unmatchedStates: [], unmatchedConscriptionStates: [], skippedRows: [], errors: [] };
   const url = input.csvUrl.trim();
   if (!url) {
     summary.errors.push("CSV URL не задан");
@@ -216,7 +219,8 @@ export async function syncPopulationFromPublicSheet(input: PopulationSyncInput):
   const corrections: PopulationCorrection[] = plan.entries.map((entry) => {
       const patch: PopulationCorrectionPatch = {
         population: entry.population,
-        populationGrowthFactor: entry.populationGrowthFactor
+        populationGrowthFactor: entry.populationGrowthFactor,
+        ...(entry.humanResource !== undefined ? { humanResource: entry.humanResource } : {})
       };
       if (entry.conscriptionLawId && entry.conscriptionRate !== undefined) {
         patch.conscriptionLawId = entry.conscriptionLawId;
@@ -228,6 +232,7 @@ export async function syncPopulationFromPublicSheet(input: PopulationSyncInput):
     try {
       await input.applyCorrections(corrections);
       summary.applied = corrections.length;
+      summary.humanResourceApplied = corrections.filter(({ patch }) => patch.humanResource !== undefined).length;
       summary.conscriptionApplied = corrections.filter(({ patch }) => patch.conscriptionLawId !== undefined).length;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -238,6 +243,7 @@ export async function syncPopulationFromPublicSheet(input: PopulationSyncInput):
       try {
         await input.applyCorrection(correction.stateId, correction.patch);
         summary.applied += 1;
+        if (correction.patch.humanResource !== undefined) summary.humanResourceApplied += 1;
         if (correction.patch.conscriptionLawId) summary.conscriptionApplied += 1;
       } catch (error) {
         summary.errors.push(`${correction.stateId}: ${error instanceof Error ? error.message : String(error)}`);
