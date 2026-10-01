@@ -6,7 +6,7 @@ import { parseMapEntityFocus } from "./entityFocus";
 export interface EntityContextMenuPort {
   create(entry: Parameters<typeof OBR.contextMenu.create>[0]): Promise<void> | void;
   remove(id: string): Promise<void> | void;
-  getSceneItem(itemId: string): Promise<Item | undefined>;
+  getSceneItem(itemId: string): Promise<Pick<Item, "id" | "metadata"> | undefined>;
   setPlayerMetadata(update: Record<string, unknown>): Promise<void>;
   openAction(): Promise<void>;
   show(message: string, variant: "ERROR" | "WARNING" | "SUCCESS"): Promise<void>;
