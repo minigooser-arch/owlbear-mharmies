@@ -1,7 +1,7 @@
 import { joinReinforcements, releaseBattleGroup } from "../battles/battleGroupService";
 import { destroyArmy } from "../armies/armyLifecycle";
 import { canHealArmy, healArmyForTurn } from "../health/armyHealth";
-import { applyFormationHp, createFormationArmy, interruptFormation } from "../armies/armyFormation";
+import { createFormationArmy, interruptFormation } from "../armies/armyFormation";
 import { appendLRTransaction } from "../finance/lrLedger";
 import { markLRTransactionRecorded } from "../finance/lrLedger";
 import { applyDemographyCorrection, debitHumanResource as debitHumanResourceFromState } from "../finance/humanResourceLedger";
