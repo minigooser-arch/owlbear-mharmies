@@ -15,7 +15,7 @@ describe("army formation", () => {
     expect(army.experience).toBe(1);
   });
 
-  it("applies 10/15 HP per-turn limits and the 10k-per-HP formation cost", () => {
+  it("applies 10/15 HP per-turn limits with barracks and the 10k-per-HP formation cost", () => {
     expect(formationCapForTurn(false, 0)).toBe(10);
     expect(formationCapForTurn(true, 0)).toBe(15);
     expect(formationCapForTurn(false, 5)).toBe(5);
