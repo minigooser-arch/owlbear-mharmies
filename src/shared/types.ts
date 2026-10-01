@@ -55,6 +55,10 @@ export interface SceneSettings {
   populationSheetCsvUrl?: string;
   /** Public Google Sheets CSV endpoint for the state/conscription category sheet. */
   conscriptionSheetCsvUrl?: string;
+  /** Apps Script web app used as the authoritative population/LR transaction gateway. */
+  humanResourceApiUrl?: string;
+  /** Shared scene token for the Apps Script transaction gateway. */
+  humanResourceApiToken?: string;
 }
 
 export interface ArmyTokenAsset {
