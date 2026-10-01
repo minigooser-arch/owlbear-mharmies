@@ -26,12 +26,14 @@ export function entityInteractionProxySourceId(item: Pick<SceneItemRecord, "meta
 
 export function createEntityInteractionProxy(
   source: SceneItemRecord,
-  createId: () => string = () => crypto.randomUUID()
+  createId: () => string = () => crypto.randomUUID(),
+  createdUserId?: string
 ): SceneItemRecord {
   const { width, height } = imageDimensions(source);
   const proxyScale: Vector2 = { x: 1, y: 1 };
   return {
     id: createId(),
+    ...(createdUserId ? { createdUserId } : {}),
     type: "SHAPE",
     name: "Летопись: объект",
     position: { ...source.position },
