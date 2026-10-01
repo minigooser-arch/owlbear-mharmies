@@ -143,9 +143,25 @@ function spendLRBatch_(body) {
     totals[operation.country] = (totals[operation.country] || 0) + operation.amount;
   });
 
+  const expectedBefore = {};
+  operations.forEach(function (operation) {
+    if (operation.expectedHumanResourceBefore === '') return;
+    const expected = Number(operation.expectedHumanResourceBefore);
+    if (!Number.isFinite(expected)) throw new Error('INVALID_EXPECTED_HUMAN_RESOURCE');
+    if (expectedBefore[operation.country] !== undefined &&
+        !nearlyEqual_(expectedBefore[operation.country], expected)) {
+      throw new Error('INCONSISTENT_EXPECTED_HUMAN_RESOURCE');
+    }
+    expectedBefore[operation.country] = expected;
+  });
+
   Object.keys(totals).forEach(function (country) {
     const entry = index[country];
     if (!entry) throw new Error('COUNTRY_NOT_FOUND:' + country);
+    if (expectedBefore[country] !== undefined &&
+        !nearlyEqual_(entry.humanResource, expectedBefore[country])) {
+      throw new StateChangedError(snapshot_());
+    }
     if (entry.humanResource + 1e-9 < totals[country]) {
       throw new InsufficientResourceError(snapshot_());
     }
@@ -498,6 +514,7 @@ function normalizeOperations_(raw) {
     return {
       country: country,
       amount: amount,
+      expectedHumanResourceBefore: value.expectedHumanResourceBefore === undefined ? '' : Number(value.expectedHumanResourceBefore),
       kind: value.kind ? String(value.kind) : '',
       hp: value.hp === undefined ? '' : Number(value.hp),
       ratePerHp: value.ratePerHp === undefined ? '' : Number(value.ratePerHp),
@@ -580,14 +597,16 @@ function requireString_(value, code) {
 function errorResponse_(error) {
   const code = error instanceof InsufficientResourceError
     ? 'INSUFFICIENT_HUMAN_RESOURCE'
-    : error && error.message
+    : error instanceof StateChangedError
+      ? 'STATE_CHANGED'
+      : error && error.message
       ? String(error.message)
       : 'INTERNAL_ERROR';
   return {
     ok: false,
     code: code,
     message: code === 'INTERNAL_ERROR' ? 'Internal Apps Script error.' : code,
-    ...(error instanceof InsufficientResourceError ? { states: error.states } : {})
+    ...(error instanceof InsufficientResourceError || error instanceof StateChangedError ? { states: error.states } : {})
   };
 }
 
@@ -600,5 +619,11 @@ function json_(payload) {
 function InsufficientResourceError(states) {
   this.name = 'InsufficientResourceError';
   this.message = 'INSUFFICIENT_HUMAN_RESOURCE';
+  this.states = states || [];
+}
+
+function StateChangedError(states) {
+  this.name = 'StateChangedError';
+  this.message = 'STATE_CHANGED';
   this.states = states || [];
 }
