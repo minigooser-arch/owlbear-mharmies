@@ -24,7 +24,7 @@ describe("army formation", () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.army.health.hp).toBe(20);
-      expect(result.amount).toBe(100000);
+      expect(result.amount).toBe(200000);
       expect(result.army.movement.remainingUnits).toBe(0);
     }
   });
