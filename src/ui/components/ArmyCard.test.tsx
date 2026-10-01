@@ -135,3 +135,24 @@ it("does not offer recovery to an unsupplied army", () => {
   render(<ArmyCard army={{ ...redArmy, supplied: false }} isGM={false} canEditRoute canRequestDisband onAction={vi.fn()} />);
   expect(screen.queryByRole("button", { name: "Лечиться" })).not.toBeInTheDocument();
 });
+
+
+it("shows treatment in progress to both player and GM views", () => {
+  const pendingArmy = {
+    ...redArmy,
+    supplied: true,
+    healingPending: true,
+    healingRemainingThisTurn: 0
+  };
+  const { rerender } = render(
+    <ArmyCard army={pendingArmy} isGM={false} canEditRoute canRequestDisband onAction={vi.fn()} />
+  );
+  const playerButton = screen.getByRole("button", { name: "В процессе лечения" });
+  expect(playerButton).toBeDisabled();
+  expect(screen.queryByRole("button", { name: "Лечиться" })).not.toBeInTheDocument();
+
+  rerender(
+    <ArmyCard army={pendingArmy} isGM canEditRoute canRequestDisband onAction={vi.fn()} />
+  );
+  expect(screen.getByRole("button", { name: "В процессе лечения" })).toBeDisabled();
+});
