@@ -1,3 +1,4 @@
+import { normalizeCityBuildingLocations } from "../cities/cityBuildingRules";
 import { resolveCityDeFactoState } from "../cities/strategicCities";
 import { createGridErrorReporter } from "./gridErrorReporter";
 import { forcedExitRouteGate, hasRightToRemain } from "../movement/forcedExitService";
@@ -352,6 +353,26 @@ export class ProductionEngine {
     this.coordinator = active;
     this.activeCoordinatorConnectionId = active ? connectionId : undefined;
     if (active) this.lastMovementAt = performance.now();
+  }
+
+  async normalizeCityBuildingLocations(): Promise<void> {
+    if (!this.coordinator) return;
+    const scene = await this.repository.readScene();
+    const cities = scene.strategicCities ?? [];
+    const normalizedCities = normalizeCityBuildingLocations(cities);
+    if (JSON.stringify(cities) === JSON.stringify(normalizedCities)) return;
+
+    const expectedRevision = scene.revision;
+    const canCommit = this.captureCoordinatorGuard();
+    await this.repository.writeScene(
+      {
+        ...scene,
+        strategicCities: normalizedCities,
+        revision: expectedRevision + 1
+      },
+      expectedRevision,
+      (current) => canCommit() && current.revision === expectedRevision
+    );
   }
 
   isCoordinator(): boolean {
@@ -1964,6 +1985,11 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
     writeHeartbeat: (heartbeat) => engine.writeCoordinatorHeartbeat(heartbeat),
     onTransition: (active, activeConnectionId) => {
       engine.setCoordinator(active, activeConnectionId);
+      if (active) {
+        void engine.normalizeCityBuildingLocations().catch((error) => {
+          gridErrors.report(error, "city-building-location-normalization");
+        });
+      }
       for (const listener of coordinatorListeners) listener(active);
     }
   });
