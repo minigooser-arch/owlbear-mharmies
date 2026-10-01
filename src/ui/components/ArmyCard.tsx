@@ -203,25 +203,25 @@ export function ArmyCard({ army, sideColor = "#687F91", isGM, canEditRoute, canR
         </div>
       )}
 
-      {canEditRoute && army.supplied && army.status !== "IN_BATTLE" && !army.formationActive && army.healthHp < army.healthMaxHp && (
+      {army.healingPending ? (
+        <div className="card-actions">
+          <button className="button subtle" type="button" disabled>
+            В процессе лечения
+          </button>
+        </div>
+      ) : canEditRoute && army.supplied && army.status !== "IN_BATTLE" && !army.formationActive && army.healthHp < army.healthMaxHp ? (
         <div className="card-actions">
           <button
             className="button subtle"
             type="button"
-            disabled={army.healingPending || army.healingRemainingThisTurn === 0}
-            title={
-              army.healingPending
-                ? "Лечение уже запущено"
-                : army.healingRemainingThisTurn === 0
-                  ? "Лимит лечения на этот ход исчерпан"
-                  : undefined
-            }
+            disabled={army.healingRemainingThisTurn === 0}
+            title={army.healingRemainingThisTurn === 0 ? "Лимит лечения на этот ход исчерпан" : undefined}
             onClick={() => onAction({ type: "HEAL_ARMY", armyId: army.id, amount: 1 })}
           >
-            {army.healingPending ? "В процессе лечения" : "Лечиться"}
+            Лечиться
           </button>
         </div>
-      )}
+      ) : null}
 
       <ArmyUpgradePanel army={army} enabled={canEditRoute} onAction={onAction} />
 
