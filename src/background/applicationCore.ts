@@ -459,7 +459,7 @@ export class ProductionEngine {
     const shipSources = sceneItems.filter((item) => (scene.ships ?? {})[item.id] !== undefined);
     const unitSources = [...armies.map((record) => record.item), ...shipSources];
     if (this.isCoordinator()) {
-      await this.reconcileEntityInteractionProxies(unitSources, sceneItems);
+      await this.reconcileEntityInteractionProxies(unitSources, sceneItems, playerId);
     }
     const visibleSourceIds = new Set([...visible, ...visibleShips]);
     await this.cloneReconciler.reconcile(
@@ -512,7 +512,7 @@ export class ProductionEngine {
         continue;
       }
       if (!entityInteractionProxyMatchesSource(proxy, source)) {
-        const desired = createEntityInteractionProxy(source, () => proxy.id);
+        const desired = createEntityInteractionProxy(source, () => proxy.id, createdUserId);
         writes.push(this.port.updateSceneItem(proxy.id, {
           position: desired.position,
           rotation: desired.rotation,
@@ -533,7 +533,7 @@ export class ProductionEngine {
     }
 
     for (const source of sources) {
-      if (!proxyBySourceId.has(source.id)) creates.push(createEntityInteractionProxy(source));
+      if (!proxyBySourceId.has(source.id)) creates.push(createEntityInteractionProxy(source, undefined, createdUserId));
     }
 
     await Promise.all(writes);
