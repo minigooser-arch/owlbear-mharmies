@@ -594,6 +594,71 @@ describe("CommandProcessor", () => {
     });
   });
 
+  it("uses the hospital healing rate when an active military hospital is present", () => {
+    const current = state();
+    current.scene.sides = current.scene.sides.map((side) =>
+      side.id === "red" ? { ...side, stateId: "red-state" } : side
+    );
+    current.scene.states = [{
+      id: "red-state",
+      name: "Красное государство",
+      rulingFactionId: "red",
+      active: true
+    }];
+    current.scene.demographics = [{
+      stateId: "red-state",
+      population: 1_000,
+      populationGrowthFactor: 1.003,
+      humanResource: 15,
+      conscriptionLawId: "GENERAL_MOBILIZATION",
+      conscriptionRate: 0.24,
+      humanResourceCapacity: 240,
+      lastPopulationCalculationDate: "2026-09-28"
+    }];
+    current.scene.gridMap.cells["0,0"] = {
+      terrainId: "plain",
+      impassable: false,
+      factionTerritoryIds: ["red"],
+      recognizedStateId: "red-state",
+      deFactoStateId: "red-state"
+    };
+    current.scene.strategicCities = [{
+      id: "city-red",
+      name: "Красный город",
+      cells: [{ x: 0, y: 0 }],
+      recognizedStateId: "red-state",
+      deFactoStateId: "red-state",
+      factionInfluenceId: "red",
+      mayorId: null,
+      isCapital: false,
+      historicalBuildTypeCount: 0,
+      buildings: [{ id: "hospital", type: "MILITARY_HOSPITAL", cell: { x: 0, y: 0 } }]
+    }];
+    const redArmy = current.armies["army-red"];
+    if (!redArmy) throw new Error("red army missing");
+    current.armies["army-red"] = { ...redArmy, health: { hp: 30, maxHp: 50 } };
+
+    const positioned = new CommandProcessor(
+      () => new Date("2026-09-30T08:00:00.000Z"),
+      (position) => ({ x: Math.floor(position.x / 100), y: Math.floor(position.y / 100) })
+    );
+    const result = positioned.execute(
+      context("PLAYER", "leader", current),
+      command({ type: "HEAL_ARMY", armyId: "army-red", amount: 10 }, "leader")
+    );
+
+    expect(result.status).toBe("ACCEPTED");
+    if (result.status !== "ACCEPTED") return;
+    expect(result.state.armies["army-red"]?.health.hp).toBe(36);
+    expect(result.state.scene.demographics?.[0]?.humanResource).toBe(0);
+    expect(result.state.lrTransactions?.at(-1)).toMatchObject({
+      kind: "HEALING",
+      hp: 6,
+      ratePerHp: 2.5,
+      amount: 15
+    });
+  });
+
   it("rejects a crafted player registration without mutating state", () => {
     const playerContext = context("PLAYER", "member");
     const before = structuredClone(playerContext.state);
