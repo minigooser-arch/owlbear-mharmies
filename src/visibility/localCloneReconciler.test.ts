@@ -92,7 +92,7 @@ describe("LocalCloneReconciler", () => {
       .reconcile(new Set(["source-a"]), [routedSource]);
 
     expect(port.localItems[0]).toMatchObject({
-      locked: true,
+      locked: false,
       disableHit: false,
       metadata: {
         [METADATA_KEYS.localClone]: { sourceItemId: "source-a", hasRoute: true }
