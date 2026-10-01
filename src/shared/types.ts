@@ -653,7 +653,7 @@ export type ArmyCommandPayload =
     | {
         type: "UPDATE_STATE_DEMOGRAPHY";
         stateId: string;
-        patch: Partial<Pick<StateDemography, "population" | "populationGrowthFactor" | "humanResource" | "conscriptionLawId" | "conscriptionRate">>;
+        patch: Partial<Pick<StateDemography, "population" | "populationGrowthFactor" | "conscriptionLawId" | "conscriptionRate">>;
         reason: string;
       }
     | { type: "UPSERT_CONSCRIPTION_LAW"; law: ConscriptionLaw; reason: string }
