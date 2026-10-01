@@ -45,13 +45,23 @@ export function registerEntityContextMenu(
     icons: [
       {
         icon: iconUrl,
+        label: "Открыть объект",
+        filter: {
+          min: 1,
+          max: 1,
+          every: [
+            { key: ["metadata", METADATA_KEYS.localClone, "sourceItemId"], operator: "!=", value: undefined }
+          ]
+        }
+      },
+      {
+        icon: iconUrl,
         label: "Открыть армию",
         filter: {
           min: 1,
           max: 1,
-          some: [
-            { key: ["metadata", METADATA_KEYS.army], operator: "!=", value: undefined },
-            { key: ["metadata", METADATA_KEYS.localClone, "sourceItemId"], operator: "!=", value: undefined }
+          every: [
+            { key: ["metadata", METADATA_KEYS.army], operator: "!=", value: undefined }
           ]
         }
       },
@@ -61,9 +71,8 @@ export function registerEntityContextMenu(
         filter: {
           min: 1,
           max: 1,
-          some: [
-            { key: ["metadata", METADATA_KEYS.ship], operator: "!=", value: undefined },
-            { key: ["metadata", METADATA_KEYS.localClone, "sourceItemId"], operator: "!=", value: undefined }
+          every: [
+            { key: ["metadata", METADATA_KEYS.ship], operator: "!=", value: undefined }
           ]
         }
       },
@@ -73,7 +82,7 @@ export function registerEntityContextMenu(
         filter: {
           min: 1,
           max: 1,
-          some: [
+          every: [
             { key: ["metadata", METADATA_KEYS.cityMarker], operator: "!=", value: undefined }
           ]
         }
