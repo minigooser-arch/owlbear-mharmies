@@ -264,6 +264,7 @@ function spendLRBatch_(body) {
       spreadsheet_().getSheetByName(BACKEND_SHEET).getRange(write.row, 3).setValue(write.before);
     });
     SpreadsheetApp.flush();
+    PropertiesService.getScriptProperties().deleteProperty(pendingKey);
     throw error;
   }
 }
