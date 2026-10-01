@@ -99,7 +99,7 @@ export const DEFAULT_SETTINGS: SceneSettings = {
   interpolationEnabled: true,
   armyFormationCostPerHp: 10000,
   armyHealingCostPerHp: 5000,
-  hospitalHealingCostPerHp: 5000,
+  hospitalHealingCostPerHp: 2500,
   populationTimeZone: "Europe/Moscow",
   populationSheetCsvUrl: DEFAULT_POPULATION_SHEET_CSV_URL,
   conscriptionSheetCsvUrl: DEFAULT_CONSCRIPTION_SHEET_CSV_URL
