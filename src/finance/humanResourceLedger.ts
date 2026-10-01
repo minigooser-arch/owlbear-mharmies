@@ -96,7 +96,6 @@ export function applyDemographyCorrection(
   next.populationGrowthFactor = next.populationGrowthFactor > 0 ? next.populationGrowthFactor : record.populationGrowthFactor;
   next.conscriptionRate = Math.min(1, Math.max(0, next.conscriptionRate));
   next.humanResourceCapacity = Math.max(0, next.population * next.conscriptionRate);
-  next.humanResource = Math.min(Math.max(0, next.humanResource), next.humanResourceCapacity);
   if (next.humanResourceCapacity !== record.humanResourceCapacity) {
     changes.humanResourceCapacity = { before: record.humanResourceCapacity, after: next.humanResourceCapacity };
   }
