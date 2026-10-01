@@ -59,13 +59,32 @@ describe("entity context menu registration", () => {
     const cloneIcon = entry.icons[0];
     if (!cloneIcon) throw new Error("Local clone icon was not registered");
     expect(cloneIcon.label).toBe("Открыть объект");
-    expect(cloneIcon.filter?.some).toContainEqual({
+    expect(cloneIcon.filter?.every).toContainEqual({
       key: ["metadata", METADATA_KEYS.entityInteractionProxy, "sourceItemId"],
       operator: "!=",
-      value: undefined
+      value: undefined,
+      coordinator: "||"
     });
-    expect(cloneIcon.filter?.some).toContainEqual({
+    expect(cloneIcon.filter?.every).toContainEqual({
       key: ["metadata", METADATA_KEYS.localClone, "sourceItemId"],
+      operator: "!=",
+      value: undefined,
+      coordinator: "||"
+    });
+    expect(cloneIcon.filter?.every).toContainEqual({
+      key: ["metadata", METADATA_KEYS.army],
+      operator: "!=",
+      value: undefined,
+      coordinator: "||"
+    });
+    expect(cloneIcon.filter?.every).toContainEqual({
+      key: ["metadata", METADATA_KEYS.ship],
+      operator: "!=",
+      value: undefined,
+      coordinator: "||"
+    });
+    expect(cloneIcon.filter?.every).toContainEqual({
+      key: ["metadata", METADATA_KEYS.cityMarker],
       operator: "!=",
       value: undefined
     });
@@ -100,7 +119,7 @@ describe("entity context menu registration", () => {
         type: "SHAPE",
         name: "Летопись: объект",
         visible: true,
-        locked: true,
+        locked: false,
         disableHit: false,
         disableAutoZIndex: true,
         position: { x: 0, y: 0 },
