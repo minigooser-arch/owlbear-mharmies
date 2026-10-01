@@ -84,6 +84,7 @@ import { semanticSnapshotEqual, semanticValueEqual } from "./snapshotEquality";
 import { CityCellPickerSession, type CityCellPickSnapshot } from "./cityCellPickerSession";
 import { armyTokenPickerOptions } from "./armyTokenPicker";
 import { ENTITY_FOCUS_METADATA_KEY, readEntityFocusFromPlayerMetadata } from "./entityContextMenu";
+import { resolveEntityFocusFromSelection } from "./entitySelectionAccess";
 import {
   hospitalSupportDice,
   hospitalSupportRange,
@@ -642,6 +643,37 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
   cityCellPicker.start();
 
   let observedLocalCloneSourceIds = new Set<string>();
+  let lastEntitySelectionId: string | undefined;
+
+  const handleEntitySelection = async (): Promise<void> => {
+    const selection = await OBR.player.getSelection();
+    const selectedId = selection?.length === 1 ? selection[0] : undefined;
+    if (selectedId === lastEntitySelectionId) return;
+    lastEntitySelectionId = selectedId;
+    if (!selectedId) return;
+
+    const [localItems, sceneItems] = await Promise.all([
+      adapter.getLocalItems(),
+      adapter.getSceneItems()
+    ]);
+    const focus = resolveEntityFocusFromSelection(
+      selectedId,
+      localItems,
+      sceneItems,
+      {
+        armyIds: new Set(snapshot.armies.map((army) => army.id)),
+        shipIds: new Set((snapshot.ships ?? []).map((ship) => ship.id)),
+        cityIds: new Set((snapshot.strategicCities ?? []).map((city) => city.id))
+      }
+    );
+    if (!focus) return;
+
+    // Local army/ship clones are not supported by Owlbear's context-menu API.
+    // The normal Move tool can still select a locked image with a double click,
+    // so selection becomes the reliable fallback entry point for the inspector.
+    await OBR.player.setMetadata({ [ENTITY_FOCUS_METADATA_KEY]: focus });
+    await OBR.action.open();
+  };
   const loadSnapshot = async (): Promise<RawExtensionSnapshot> => {
     const [sceneReady, role, playerId, playerName, playerColor, party, playerMetadata] = await Promise.all([
       OBR.scene.isReady(),
@@ -735,7 +767,10 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
     OBR.scene.items.onChange(triggerRefresh),
     OBR.scene.local.onChange(triggerLocalRefresh),
     OBR.scene.onMetadataChange(triggerRefresh),
-    OBR.player.onChange(triggerRefresh),
+    OBR.player.onChange(() => {
+      triggerRefresh();
+      void handleEntitySelection().catch((error) => console.error("Entity selection handling failed", error));
+    }),
     OBR.party.onChange(triggerRefresh),
     adapter.on(NAVAL_BATTLE_AREA_DRAFT_CHANNEL, (event) => {
       if (snapshot.role !== "GM") return;
