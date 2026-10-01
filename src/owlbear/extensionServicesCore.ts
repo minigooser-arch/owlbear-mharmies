@@ -643,7 +643,7 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
 
   let observedLocalCloneSourceIds = new Set<string>();
   const loadSnapshot = async (): Promise<RawExtensionSnapshot> => {
-    const [sceneReady, role, playerId, playerName, playerColor, party] = await Promise.all([
+    const [sceneReady, role, playerId, playerName, playerColor, party, playerMetadata] = await Promise.all([
       OBR.scene.isReady(),
       OBR.player.getRole(),
       OBR.player.getId(),
