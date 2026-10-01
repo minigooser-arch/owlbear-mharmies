@@ -51,6 +51,7 @@ export interface ArmyView {
   formationHpAddedThisTurn?: number;
   formationTurnCap?: number;
   healingHpHealedThisTurn?: number;
+  healingRemainingThisTurn?: number;
   healingPending?: boolean;
   supplied: boolean;
   supplyCheckedOnTurn: number;
