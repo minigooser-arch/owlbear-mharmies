@@ -463,7 +463,14 @@ export class ProductionEngine {
     const shipSources = sceneItems.filter((item) => (scene.ships ?? {})[item.id] !== undefined);
     const unitSources = [...armies.map((record) => record.item), ...shipSources];
     if (this.isCoordinator()) {
-      await this.reconcileEntityInteractionProxies(unitSources, sceneItems);
+      try {
+        await this.reconcileEntityInteractionProxies(unitSources, sceneItems);
+      } catch (error) {
+        // Interaction proxies are only a map-access affordance. A proxy failure
+        // must never prevent authoritative tokens, local clones, or map overlays
+        // from being reconciled.
+        this.reportOperationalError(error, "entity-interaction-proxy-reconciliation");
+      }
     }
     const visibleSourceIds = new Set([...visible, ...visibleShips]);
     await this.cloneReconciler.reconcile(
