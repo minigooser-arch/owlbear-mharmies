@@ -1245,7 +1245,19 @@ export class ProductionEngine {
         }
       }
     }
-    const result = new CommandProcessor(
+    const needsAuthoritativeHumanResource =
+      command.type === "HEAL_ARMY" || command.type === "COMPLETE_TURN_NOW";
+    const sheetGateway = needsAuthoritativeHumanResource
+      ? new HumanResourceSheetGateway({
+          url: scene.settings.humanResourceApiUrl ?? "",
+          token: scene.settings.humanResourceApiToken ?? ""
+        })
+      : undefined;
+    const previousTransactionIds = new Set(
+      (commandState.scene.lrTransactions ?? []).map((transaction) => transaction.id)
+    );
+
+    const executeCommand = (state: CommandState) => new CommandProcessor(
       () => this.wallClock(),
       commandCellForPosition,
       commandPositionForCell,
@@ -1261,10 +1273,130 @@ export class ProductionEngine {
         playerId: sender.playerId,
         connectionId: sender.connectionId,
         connectedPlayerIds: sender.connectedPlayerIds,
-        state: commandState
+        state
       },
       command
     );
+
+    let result = undefined as ReturnType<typeof executeCommand>;
+    let sheetSpend:
+      | Awaited<ReturnType<HumanResourceSheetGateway["spendBatch"]>>
+      | undefined;
+    let sheetSpendOperations: HumanResourceSheetOperation[] = [];
+    let authoritativeScene = commandState.scene;
+
+    if (needsAuthoritativeHumanResource) {
+      if (!sheetGateway?.configured) {
+        await sendCommandAck(this.port, {
+          requestId: command.requestId,
+          status: "REJECTED",
+          reason: "HUMAN_RESOURCE_SHEET_NOT_CONFIGURED",
+          coordinatorConnectionId: await this.currentConnectionId(),
+          recipientConnectionId: sender.connectionId
+        });
+        return;
+      }
+      try {
+        const snapshot = await sheetGateway.snapshot();
+        authoritativeScene = applyHumanResourceSheetSnapshot(commandState.scene, snapshot);
+      } catch (error) {
+        await sendCommandAck(this.port, {
+          requestId: command.requestId,
+          status: "REJECTED",
+          reason: error instanceof HumanResourceSheetError ? error.code : "HUMAN_RESOURCE_SHEET_UNAVAILABLE",
+          coordinatorConnectionId: await this.currentConnectionId(),
+          recipientConnectionId: sender.connectionId
+        });
+        return;
+      }
+    }
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      commandState.scene = authoritativeScene;
+      result = executeCommand(commandState);
+      if (result.status !== "ACCEPTED" || !needsAuthoritativeHumanResource) break;
+
+      const newTransactions = (result.state.scene.lrTransactions ?? [])
+        .filter((transaction) =>
+          !previousTransactionIds.has(transaction.id) && transaction.status === "PENDING"
+        );
+
+      if (newTransactions.length === 0) break;
+
+      const spends = humanResourceSpendsBetween(authoritativeScene, result.state.scene);
+      const spendByState = new Map(spends.map((spend) => [spend.stateId, spend.amount]));
+      sheetSpendOperations = newTransactions.map((transaction) => {
+        const state = result.state.scene.states.find((candidate) => candidate.id === transaction.stateId);
+        const country = state?.backendCountry?.trim();
+        if (!country) throw new HumanResourceSheetError(
+          "STATE_BACKEND_COUNTRY_MISSING",
+          transaction.stateName ?? transaction.stateId ?? transaction.sideName
+        );
+        return {
+          country,
+          amount: transaction.amount,
+          kind: transaction.kind,
+          hp: transaction.hp,
+          stateId: transaction.stateId ?? undefined,
+          stateName: transaction.stateName ?? undefined,
+          armyId: transaction.armyId,
+          armyName: transaction.armyName,
+          cityId: transaction.cityId,
+          cityName: transaction.cityName,
+          actorPlayerId: transaction.actorPlayerId,
+          turnNumber: transaction.turnNumber
+        };
+      });
+
+      const expectedByState = new Map<string, number>();
+      for (const operation of sheetSpendOperations) {
+        if (!operation.stateId) continue;
+        expectedByState.set(
+          operation.stateId,
+          (expectedByState.get(operation.stateId) ?? 0) + operation.amount
+        );
+      }
+      for (const [stateId, amount] of spendByState) {
+        if (Math.abs((expectedByState.get(stateId) ?? 0) - amount) > 1e-9) {
+          throw new HumanResourceSheetError("HUMAN_RESOURCE_SPEND_LEDGER_MISMATCH");
+        }
+      }
+
+      try {
+        sheetSpend = await sheetGateway!.spendBatch(command.requestId, sheetSpendOperations);
+        result.state.scene = applyHumanResourceSheetSnapshot(result.state.scene, {
+          states: sheetSpend.states,
+          appliedAt: sheetSpend.appliedAt
+        });
+        result.state.scene = markHumanResourceTransactionsRecorded(
+          result.state.scene,
+          newTransactions.map((transaction) => transaction.id),
+          "GOOGLE_SHEETS",
+          sheetSpend.appliedAt
+        );
+        break;
+      } catch (error) {
+        if (
+          attempt === 0 &&
+          error instanceof HumanResourceSheetError &&
+          error.states.length > 0
+        ) {
+          authoritativeScene = applyHumanResourceSheetSnapshot(commandState.scene, {
+            states: error.states
+          });
+          continue;
+        }
+        await sendCommandAck(this.port, {
+          requestId: command.requestId,
+          status: "REJECTED",
+          reason: error instanceof HumanResourceSheetError ? error.code : "HUMAN_RESOURCE_SHEET_UNAVAILABLE",
+          coordinatorConnectionId: await this.currentConnectionId(),
+          recipientConnectionId: sender.connectionId
+        });
+        return;
+      }
+    }
+
     const coordinatorConnectionId = await this.currentConnectionId();
     if (result.status === "ACCEPTED" && command.type === "REGISTER_ARMY") {
       const item = sceneItems.find((candidate) => candidate.id === command.itemId);
