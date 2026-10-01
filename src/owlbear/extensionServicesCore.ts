@@ -56,6 +56,7 @@ import { armyFormationCap, cityForCell, hasActiveCityBuilding, lighthouseDetecti
 import { shipEmbarkedArmyIds } from "../naval/transport/transportRules";
 import { territorialCityContributions } from "../wars/territorialScore";
 import { isFactionStateAtWar } from "../states/stateRules";
+import { readCell } from "../terrain/gridMap";
 import { MetadataRepository, type ArmyRecord, type MetadataItemFrame, type ShipRecord } from "../storage/metadataRepository";
 import type {
   ArmyView,
