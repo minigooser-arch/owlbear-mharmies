@@ -183,13 +183,14 @@ function normalizeStrategicCities(value: unknown, stateIds: ReadonlySet<string>)
       "MILITARY_LOGISTICS_CENTER", "POST_STATION", "PORT", "SHIPYARD", "MARINE_STATION",
       "CANAL", "LIGHTHOUSE", "BUNKERING_STATION", "SEA_FORT"
     ]);
+    const cityAnchor = cells[0];
     const buildings: CityBuilding[] = Array.isArray(raw.buildings)
       ? raw.buildings
           .filter((building): building is UnknownRecord => isRecord(building) && nonEmptyString(building.id))
           .map((building) => {
             const cell = normalizeGridCell(building.cell);
-            return cell && allowedBuildingTypes.has(building.type as CityBuildingType)
-              ? { id: building.id, type: building.type as CityBuildingType, cell }
+            return cell && cityAnchor && allowedBuildingTypes.has(building.type as CityBuildingType)
+              ? { id: building.id, type: building.type as CityBuildingType, cell: { ...cityAnchor } }
               : undefined;
           })
           .filter((building): building is CityBuilding => building !== undefined)
