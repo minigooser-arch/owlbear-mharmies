@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => {
     startBackgroundApplication: vi.fn(),
     registerInterceptionContextMenu: vi.fn(),
     registerRouteContextMenu: vi.fn(),
+    registerEntityContextMenu: vi.fn(),
     contextMenuCreate: vi.fn(),
     contextMenuRemove: vi.fn(),
     notificationShow: vi.fn()
@@ -26,6 +27,10 @@ vi.mock("@owlbear-rodeo/sdk", () => ({
     },
     notification: { show: mocks.notificationShow }
   }
+}));
+
+vi.mock("../owlbear/entityContextMenu", () => ({
+  registerEntityContextMenu: mocks.registerEntityContextMenu
 }));
 
 vi.mock("./application", () => ({
@@ -46,6 +51,7 @@ beforeEach(() => {
   mocks.startBackgroundApplication.mockReset();
   mocks.registerInterceptionContextMenu.mockReset();
   mocks.registerRouteContextMenu.mockReset();
+  mocks.registerEntityContextMenu.mockReset();
   mocks.contextMenuCreate.mockReset();
   mocks.contextMenuRemove.mockReset();
   mocks.notificationShow.mockReset();
@@ -69,6 +75,7 @@ it("registers persistent interception and token route context menus and disposes
   mocks.startBackgroundApplication.mockResolvedValue(application);
   mocks.registerInterceptionContextMenu.mockResolvedValue(removeInterceptionContextMenu);
   mocks.registerRouteContextMenu.mockResolvedValue(removeRouteContextMenu);
+  mocks.registerEntityContextMenu.mockResolvedValue(vi.fn(async () => undefined));
 
   await import("./index");
   mocks.readyCallback()?.();
@@ -76,6 +83,7 @@ it("registers persistent interception and token route context menus and disposes
   await vi.waitFor(() => expect(mocks.startBackgroundApplication).toHaveBeenCalledTimes(1));
   await vi.waitFor(() => expect(mocks.registerInterceptionContextMenu).toHaveBeenCalledTimes(1));
   await vi.waitFor(() => expect(mocks.registerRouteContextMenu).toHaveBeenCalledTimes(1));
+  await vi.waitFor(() => expect(mocks.registerEntityContextMenu).toHaveBeenCalledTimes(1));
 
   const expectedPort = expect.objectContaining({
     create: expect.any(Function),
