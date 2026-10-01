@@ -114,6 +114,7 @@ it("registers persistent interception and token route context menus and disposes
   expect(mocks.contextMenuCreate).toHaveBeenCalledWith(sdkEntry);
   expect(mocks.contextMenuRemove).toHaveBeenCalledWith("route-test");
 
+  await vi.waitFor(() => expect(window.addEventListener).toHaveBeenCalledTimes(1));
   mocks.unloadCallback()?.();
   await vi.waitFor(() => expect(removeInterceptionContextMenu).toHaveBeenCalledTimes(1));
   await vi.waitFor(() => expect(removeRouteContextMenu).toHaveBeenCalledTimes(1));
