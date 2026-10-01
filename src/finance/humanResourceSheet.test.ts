@@ -130,7 +130,9 @@ describe("human resource sheet gateway", () => {
   it("calculates LR spend from the authoritative before/after snapshots", () => {
     const before = scene();
     const after = structuredClone(before);
-    after.demographics![0]!.humanResource = 95;
+    const afterDemography = after.demographics?.[0];
+    if (!afterDemography) throw new Error("missing demography");
+    afterDemography.humanResource = 95;
 
     expect(humanResourceSpendsBetween(before, after)).toEqual([{
       stateId: "state-1",
@@ -143,8 +145,11 @@ describe("human resource sheet gateway", () => {
   it("fails closed when a state has no backend country mapping", () => {
     const before = scene();
     const after = structuredClone(before);
-    after.demographics![0]!.humanResource = 95;
-    after.states[0]!.backendCountry = null;
+    const afterDemography = after.demographics?.[0];
+    const afterState = after.states[0];
+    if (!afterDemography || !afterState) throw new Error("missing state data");
+    afterDemography.humanResource = 95;
+    afterState.backendCountry = null;
 
     expect(() => humanResourceSpendsBetween(before, after)).toThrowError(
       new HumanResourceSheetError("STATE_BACKEND_COUNTRY_MISSING", "Государство")
