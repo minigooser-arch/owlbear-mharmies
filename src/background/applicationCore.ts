@@ -95,6 +95,13 @@ import { VisionLightService } from "../visibility/visionLightService";
 import { visibleArmyIdsForPlayer } from "../visibility/visibilityEngine";
 import { shipEmbarkedArmyIds } from "../naval/transport/transportRules";
 import { applyPopulationCalendarToScene } from "../population/populationRules";
+import {
+  HumanResourceSheetError,
+  HumanResourceSheetGateway,
+  applyHumanResourceSheetSnapshot,
+  humanResourceSpendsBetween,
+  markHumanResourceTransactionsRecorded
+} from "../finance/humanResourceSheet";
 import type { OwlbearPort } from "../owlbear/sdkAdapter";
 import {
   CoordinatorLease,
