@@ -106,7 +106,7 @@ describe("ShipCard shore bombardment", () => {
   it("uses 2d6 for a cruiser and hides the control when no targets are exposed", () => {
     const { rerender } = render(
       <ShipCard
-        ship={{ ...battleship, id: "cruiser", classId: "CRUISER", className: "Крейсер" }}
+        ship={{ ...battleship, id: "cruiser", classId: "CRUISER", className: "Крейсер", normalDice: 2, normalRangeMin: 1, normalRangeMax: 2 }}
         sideColor="#f00"
         isGM={false}
         canPlanRoute

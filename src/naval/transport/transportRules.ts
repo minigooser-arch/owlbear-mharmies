@@ -4,6 +4,7 @@ import type {
   ShipState,
   TurnPhase
 } from "../../shared/types";
+import { transportCapacity, transportLoadingIsFree } from "../../upgrades/unitUpgrades";
 
 export type TransportInteractionFailure =
   | "NOT_MOVEMENT_PHASE"
@@ -42,13 +43,18 @@ function validInteractionGeometry(input: TransportInteractionInput): boolean {
   return orthogonallyAdjacent(input.shipCell, input.interactionCell);
 }
 
+export function shipEmbarkedArmyIds(ship: Pick<ShipState, "embarkedArmyId" | "additionalEmbarkedArmyId">): string[] {
+  return [ship.embarkedArmyId, ship.additionalEmbarkedArmyId ?? null]
+    .filter((armyId): armyId is string => armyId !== null);
+}
+
 export function isReciprocallyEmbarked(
   shipId: string,
   ship: ShipState,
   armyId: string,
   army: ArmyState
 ): boolean {
-  return ship.embarkedArmyId === armyId && army.embarkedOnShipId === shipId;
+  return shipEmbarkedArmyIds(ship).includes(armyId) && army.embarkedOnShipId === shipId;
 }
 
 export function validateTransportInteraction(
@@ -61,7 +67,7 @@ export function validateTransportInteraction(
     return { ok: false, reason: "SHIP_NOT_TRANSPORT" };
   }
   if (input.action === "EMBARK") {
-    if (input.ship.embarkedArmyId !== null) {
+    if (shipEmbarkedArmyIds(input.ship).length >= transportCapacity(input.ship)) {
       return { ok: false, reason: "TRANSPORT_OCCUPIED" };
     }
     if (input.army.embarkedOnShipId != null) {
@@ -75,6 +81,9 @@ export function validateTransportInteraction(
 }
 
 function consumeTransportMovement(ship: ShipState): ShipState {
+  if (transportLoadingIsFree(ship)) {
+    return { ...ship, revision: ship.revision + 1 };
+  }
   return {
     ...ship,
     globalMovementRemaining: 0,
@@ -116,10 +125,12 @@ export function embarkArmy(
   army: ArmyState,
   armyMovementCost = 0
 ): { ship: ShipState; army: ArmyState } {
+  const firstSlotFree = ship.embarkedArmyId === null;
   return {
     ship: {
       ...consumeTransportMovement(ship),
-      embarkedArmyId: armyId
+      embarkedArmyId: firstSlotFree ? armyId : ship.embarkedArmyId,
+      additionalEmbarkedArmyId: firstSlotFree ? (ship.additionalEmbarkedArmyId ?? null) : armyId
     },
     army: pauseArmyForTransport(army, shipId, armyMovementCost)
   };
@@ -137,11 +148,20 @@ export function disembarkArmy(
   if (!isReciprocallyEmbarked(shipId, ship, armyId, army)) {
     return { ok: false, reason: "NOT_RECIPROCALLY_EMBARKED" };
   }
+  let embarkedArmyId = ship.embarkedArmyId;
+  let additionalEmbarkedArmyId = ship.additionalEmbarkedArmyId ?? null;
+  if (embarkedArmyId === armyId) {
+    embarkedArmyId = additionalEmbarkedArmyId;
+    additionalEmbarkedArmyId = null;
+  } else if (additionalEmbarkedArmyId === armyId) {
+    additionalEmbarkedArmyId = null;
+  }
   return {
     ok: true,
     ship: {
       ...consumeTransportMovement(ship),
-      embarkedArmyId: null
+      embarkedArmyId,
+      additionalEmbarkedArmyId
     },
     army: {
       ...army,

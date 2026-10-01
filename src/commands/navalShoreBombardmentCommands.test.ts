@@ -183,13 +183,14 @@ describe("naval shore bombardment command", () => {
     expect(result.state.scene.activeNavalBattle).toBeNull();
   });
 
-  it("destroys a zero-hp army through the normal army lifecycle and cleans its land battle", () => {
+  it("keeps a zero-hp land-battle participant until the GM resolves the battle", () => {
     const result = processor([6, 6, 6]).execute(context("leader", state(5)), bombardmentCommand());
 
     expect(result.status).toBe("ACCEPTED");
     if (result.status !== "ACCEPTED") return;
-    expect(result.state.armies.army).toBeUndefined();
-    expect(result.state.scene.battleGroups).toEqual([]);
+    expect(result.state.armies.army?.health.hp).toBe(0);
+    expect(result.state.scene.battleGroups).toHaveLength(1);
+    expect(result.state.scene.battleGroups[0]?.participantIds).toContain("army");
   });
 
   it("uses the canonical exact battleship broadside without an injected resolver", () => {

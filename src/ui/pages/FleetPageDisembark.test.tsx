@@ -70,7 +70,7 @@ it("opens the landing-cell tool for a controlled transport carrying an army", ()
     />
   );
 
-  fireEvent.click(screen.getByRole("button", { name: "Выбрать место высадки" }));
+  fireEvent.click(screen.getByRole("button", { name: "Высадить 1-я армия с Транспорт №1" }));
   expect(onAction).toHaveBeenCalledWith({
     type: "OPEN_TRANSPORT_LANDING",
     shipId: "transport",
@@ -90,5 +90,5 @@ it("does not expose landing controls to an ordinary member", () => {
     />
   );
 
-  expect(screen.queryByRole("button", { name: "Выбрать место высадки" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Высадить 1-я армия с Транспорт №1" })).toBeNull();
 });

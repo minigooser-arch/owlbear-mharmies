@@ -97,7 +97,7 @@ export const DEFAULT_SETTINGS: SceneSettings = {
   movementUpdateRate: 5,
   visibilityUpdateRate: 4,
   interpolationEnabled: true,
-  armyFormationCostPerHp: 5000,
+  armyFormationCostPerHp: 10000,
   armyHealingCostPerHp: 5000,
   hospitalHealingCostPerHp: 2500,
   populationTimeZone: "Europe/Moscow",

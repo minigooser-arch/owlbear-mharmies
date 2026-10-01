@@ -5,6 +5,7 @@ import type {
 } from "../../shared/types";
 import { isInNormalBroadsideMask } from "../battle/broadsideMask";
 import { SHIP_CLASSES } from "../ships/shipClasses";
+import { shipEffectiveAttackDice, shipEffectiveRangeMax } from "../../upgrades/unitUpgrades";
 
 export interface ShoreBombardmentSectorInput {
   attackerCell: GridCellCoord;
@@ -43,13 +44,12 @@ export interface ValidateShoreBombardmentTargetInput {
 }
 
 export type ShoreBombardmentValidation =
-  | { ok: true; range: number; dice: 2 | 3 }
+  | { ok: true; range: number; dice: number }
   | { ok: false; reason: ShoreBombardmentFailure; range?: number };
 
-function bombardmentDice(ship: ShipState): 2 | 3 | null {
-  if (ship.classId === "BATTLESHIP") return 3;
-  if (ship.classId === "CRUISER") return 2;
-  return null;
+function bombardmentDice(ship: ShipState): number | null {
+  if (ship.classId !== "BATTLESHIP" && ship.classId !== "CRUISER") return null;
+  return shipEffectiveAttackDice(ship);
 }
 
 export function validateShoreBombardmentTarget(
@@ -93,7 +93,7 @@ export function validateShoreBombardmentTarget(
 
   const weapon = SHIP_CLASSES[input.attacker.classId];
   const range = input.distanceCells(input.attackerCell, input.targetCell);
-  if (range < weapon.normalRangeMin || range > weapon.normalRangeMax) {
+  if (range < weapon.normalRangeMin || range > shipEffectiveRangeMax(input.attacker)) {
     return { ok: false, reason: "OUT_OF_RANGE", range };
   }
   if (!input.hasLineOfSight(input.attackerCell, input.targetCell)) {

@@ -120,7 +120,8 @@ export function startNavalBattle(
     events: [],
     startedOnTurn: scene.turn.turnNumber,
     startedAt: input.startedAt,
-    revision: 0
+    revision: 0,
+    experienceEligibleSideIds: []
   };
 
   const next = structuredClone(scene);
@@ -161,12 +162,14 @@ export function completeNavalBattle(scene: NavalSceneState): NavalSceneState {
   completedBattle.interceptions = {};
   completedBattle.revision += 1;
 
+  const xpSides = new Set(activeBattle.experienceEligibleSideIds ?? []);
   for (const shipId of activeBattle.participantShipIds) {
     const participant = next.ships[shipId];
     if (!participant || participant.battleId !== activeBattle.id) continue;
     participant.status = "READY";
     participant.battleId = null;
     participant.temporaryHp = 0;
+    if (xpSides.has(participant.sideId)) participant.experience = (participant.experience ?? 0) + 1;
     participant.revision += 1;
   }
 

@@ -1,7 +1,7 @@
 import type { GridCellCoord, SceneState, ShipState, StrategicCity } from "../shared/types";
 import { cellKey } from "../grid/strategicGrid";
 import { isCityBuildingActive } from "./cityBuildingRules";
-import { SHIP_CLASSES } from "../naval/ships/shipClasses";
+import { shipEffectiveMaxHp } from "../upgrades/unitUpgrades";
 
 function activeBuilding(scene: SceneState, city: StrategicCity, type: string) {
   const building = (city.buildings ?? []).find((candidate) => candidate.type === type);
@@ -14,7 +14,7 @@ export function cityForCell(scene: SceneState, cell: GridCellCoord): StrategicCi
 
 export function armyFormationCap(scene: SceneState, cityId: string | null): number {
   const city = cityId ? (scene.strategicCities ?? []).find((candidate) => candidate.id === cityId) : undefined;
-  return city && activeBuilding(scene, city, "BARRACKS") ? 25 : 15;
+  return city && activeBuilding(scene, city, "TRAINING_GROUND") ? 15 : 10;
 }
 
 export function hasActiveCityBuilding(scene: SceneState, cityId: string, type: string): boolean {
@@ -62,7 +62,7 @@ export function repairShipAtShipyard(scene: SceneState, ship: ShipState, shipCel
   const building = city && (city.buildings ?? []).find((candidate) => candidate.type === "SHIPYARD" && cellKey(candidate.cell) === cellKey(shipCell));
   if (!city || !building || !isCityBuildingActive(city, building, scene.gridMap, scene.states, scene.sides) || ship.status === "IN_NAVAL_BATTLE") return ship;
   const used = ship.repairedOnTurn === turnNumber ? ship.repairedHpThisTurn ?? 0 : 0;
-  const hp = Math.min(10 - used, Math.max(0, Math.floor(amount)), Math.max(0, SHIP_CLASSES[ship.classId].maxHp - ship.hp));
+  const hp = Math.min(10 - used, Math.max(0, Math.floor(amount)), Math.max(0, shipEffectiveMaxHp(ship) - ship.hp));
   if (hp <= 0) return ship;
   return { ...ship, hp: ship.hp + hp, repairedHpThisTurn: used + hp, repairedOnTurn: turnNumber, revision: ship.revision + 1 };
 }

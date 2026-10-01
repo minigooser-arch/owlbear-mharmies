@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { ShipFacing, SideRelation } from "../../shared/types";
+import type { ShipClassId, ShipFacing, SideRelation, UpgradeLevel, UpgradeVariant } from "../../shared/types";
 import type { ShipView, UiCommand } from "../state/useExtensionState";
 
 const FACING_LABELS: Record<ShipFacing, string> = {
@@ -8,6 +8,92 @@ const FACING_LABELS: Record<ShipFacing, string> = {
   SOUTH: "Юг",
   WEST: "Запад"
 };
+
+
+const SHIP_UPGRADES: Record<ShipClassId, Record<UpgradeLevel, Record<UpgradeVariant, string>>> = {
+  BATTLESHIP: {
+    1: { A: "Усиленный корпус — +5 максимальных HP", B: "Улучшенные машины — +1 ОП" },
+    2: { A: "Усиленное бронирование — +1 брони", B: "Наблюдательные посты — +1 клетка обнаружения" },
+    3: { A: "Тяжёлая артиллерия — +1 кубик урона", B: "Дальнобойная артиллерия — +1 к максимальной дальности" }
+  },
+  CRUISER: {
+    1: { A: "Форсированные машины — +1 ОП", B: "Усиленное наблюдение — +1 клетка обнаружения" },
+    2: { A: "Усиленный корпус — +5 максимальных HP", B: "Броневой пояс — +1 брони" },
+    3: { A: "Усиленное вооружение — +1 кубик урона", B: "Высокая скорость — ещё +2 ОП" }
+  },
+  IRONCLAD: {
+    1: { A: "Усиленный корпус — +5 максимальных HP", B: "Мощные машины — +1 ОП" },
+    2: { A: "Тяжёлая броня — +1 брони", B: "Дополнительные орудия — +1 кубик урона" },
+    3: { A: "Сверхтяжёлая броня — ещё +1 брони", B: "Тяжёлый залп — ещё +1 кубик урона" }
+  },
+  HOSPITAL: {
+    1: { A: "Усиленный корпус — +5 максимальных HP", B: "Быстроходное судно — +1 ОП" },
+    2: { A: "Защищённое судно — +1 брони", B: "Расширенный лазарет — поддержка +1d6 временных HP" },
+    3: { A: "Крупный госпиталь — поддержка ещё +1d6", B: "Дальняя поддержка — радиус поддержки до 2 клеток" }
+  },
+  TRANSPORT: {
+    1: { A: "Усиленный корпус — +5 максимальных HP", B: "Быстроходный транспорт — +1 ОП" },
+    2: { A: "Броневая защита — +1 брони", B: "Наблюдательные посты — +1 клетка обнаружения" },
+    3: { A: "Увеличенная вместимость — перевозка 2 армий", B: "Бесплатная погрузка — погрузка и выгрузка без ОП" }
+  }
+};
+
+function shipUpgradeChoice(ship: ShipView, level: UpgradeLevel): UpgradeVariant | undefined {
+  return level === 1 ? ship.upgrades?.level1 : level === 2 ? ship.upgrades?.level2 : ship.upgrades?.level3;
+}
+
+function ShipUpgradePanel({
+  ship,
+  enabled,
+  onAction
+}: {
+  ship: ShipView;
+  enabled: boolean;
+  onAction(command: UiCommand): void;
+}) {
+  const experience = ship.experience ?? 0;
+  return (
+    <details className="army-more ship-management">
+      <summary>Прокачка · опыт {experience}</summary>
+      <div className="army-control-groups">
+        {([1, 2, 3] as UpgradeLevel[]).map((level) => {
+          const selected = shipUpgradeChoice(ship, level);
+          const prerequisite = level === 1 || shipUpgradeChoice(ship, (level - 1) as UpgradeLevel) !== undefined;
+          const cost = level;
+          if (selected) {
+            return (
+              <p className="helper-text" key={level}>
+                {["I", "II", "III"][level - 1]}-{selected}: {SHIP_UPGRADES[ship.classId][level][selected]}
+              </p>
+            );
+          }
+          return (
+            <div className="card-actions" key={level}>
+              <span className="helper-text">{["I", "II", "III"][level - 1]} ур. · {cost} XP</span>
+              {(["A", "B"] as UpgradeVariant[]).map((variant) => (
+                <button
+                  className="button subtle"
+                  type="button"
+                  key={variant}
+                  disabled={!enabled || !prerequisite || experience < cost}
+                  title={SHIP_UPGRADES[ship.classId][level][variant]}
+                  onClick={() => onAction({
+                    type: "PURCHASE_SHIP_UPGRADE",
+                    shipId: ship.id,
+                    level,
+                    variant
+                  })}
+                >
+                  {variant}: {SHIP_UPGRADES[ship.classId][level][variant]}
+                </button>
+              ))}
+            </div>
+          );
+        })}
+      </div>
+    </details>
+  );
+}
 
 function clampHp(value: number, maxHp: number): number {
   return Math.max(0, Math.min(maxHp, Math.round(value)));
@@ -134,6 +220,7 @@ export function ShipCard({
   canRepair = false,
   routePlanningEnabled = true,
   embarkedArmyName,
+  additionalEmbarkedArmyName,
   relations = {},
   onAction
 }: {
@@ -144,6 +231,7 @@ export function ShipCard({
   canRepair?: boolean;
   routePlanningEnabled?: boolean;
   embarkedArmyName?: string;
+  additionalEmbarkedArmyName?: string;
   relations?: Readonly<Record<string, Readonly<Record<string, SideRelation>>>>;
   onAction(command: UiCommand): void;
 }) {
@@ -191,11 +279,8 @@ export function ShipCard({
   const selectedShoreBombardmentTarget = shoreBombardmentTargets.find(
     (target) => target.id === selectedShoreBombardmentTargetId
   );
-  const shoreBombardmentDice = ship.classId === "BATTLESHIP"
-    ? 3
-    : ship.classId === "CRUISER"
-      ? 2
-      : 0;
+  const shoreBombardmentDice =
+    ship.classId === "BATTLESHIP" || ship.classId === "CRUISER" ? ship.normalDice : 0;
   const canUseShoreBombardment =
     canPlanRoute &&
     !destroyed &&
@@ -243,6 +328,8 @@ export function ShipCard({
         <span><strong>Бортовой залп</strong>{broadside}</span>
         <span><strong>Переход</strong>{route}</span>
         {ship.embarkedArmyId && <span><strong>На борту</strong>{embarkedArmyName ?? "Перевозимая армия"}</span>}
+        {ship.additionalEmbarkedArmyId && <span><strong>На борту II</strong>{additionalEmbarkedArmyName ?? "Перевозимая армия"}</span>}
+        <span><strong>Опыт</strong>{ship.experience ?? 0}</span>
       </div>
 
       {canControlTactical && (
@@ -347,7 +434,7 @@ export function ShipCard({
                   });
                 }}
               >
-                Оказать поддержку (2d6)
+                Оказать поддержку ({ship.hospitalSupportDice ?? 2}d6)
               </button>
             </div>
           )}
@@ -436,6 +523,8 @@ export function ShipCard({
           </button>
         </div>
       )}
+
+      <ShipUpgradePanel ship={ship} enabled={canPlanRoute} onAction={onAction} />
 
       {isGM && (
         <details className="army-more ship-management">

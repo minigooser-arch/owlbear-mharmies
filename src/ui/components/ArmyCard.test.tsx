@@ -118,15 +118,14 @@ it("shows irreversible disband state and disables a second request", () => {
   expect(screen.queryByRole("button", { name: "Распустить армию" })).not.toBeInTheDocument();
 });
 
-it("schedules healing for the next global turn", () => {
+it("requests the maximum available recovery immediately", () => {
   const onAction = vi.fn();
   render(<ArmyCard army={{ ...redArmy, supplied: true }} isGM={false} canEditRoute canRequestDisband onAction={onAction} />);
-  fireEvent.click(screen.getByRole("button", { name: /лечить армию/i }));
-  expect(onAction).toHaveBeenCalledWith({ type: "HEAL_ARMY", armyId: "army-red", amount: 10 });
+  fireEvent.click(screen.getByRole("button", { name: "Восстановить максимум доступных HP" }));
+  expect(onAction).toHaveBeenCalledWith({ type: "HEAL_ARMY", armyId: "army-red", amount: 1 });
 });
 
-it("shows a pending healing request without offering a second request", () => {
-  render(<ArmyCard army={{ ...redArmy, supplied: true, healingPending: true }} isGM={false} canEditRoute canRequestDisband onAction={vi.fn()} />);
-  expect(screen.getByText(/Лечение запланировано/)).toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: /лечить армию/i })).not.toBeInTheDocument();
+it("does not offer recovery to an unsupplied army", () => {
+  render(<ArmyCard army={{ ...redArmy, supplied: false }} isGM={false} canEditRoute canRequestDisband onAction={vi.fn()} />);
+  expect(screen.queryByRole("button", { name: "Восстановить максимум доступных HP" })).not.toBeInTheDocument();
 });

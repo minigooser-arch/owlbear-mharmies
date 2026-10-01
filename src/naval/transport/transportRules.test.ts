@@ -136,6 +136,48 @@ describe("transport reciprocal state", () => {
     expect(isReciprocallyEmbarked("transport", result.ship, "army", result.army)).toBe(true);
   });
 
+  it("keeps ship and army movement untouched with transport III-B", () => {
+    const freeTransport = {
+      ...transport(),
+      upgrades: { level1: "A" as const, level2: "A" as const, level3: "B" as const },
+      globalMovementRemaining: 0,
+      movementSpentThisTurn: true
+    };
+    const carriedArmy = army({ movement: { maxUnits: 10, remainingUnits: 4, enteredRouteCellCount: 0 } });
+
+    const embarked = embarkArmy("transport", freeTransport, "army", carriedArmy, 0);
+    expect(embarked.ship.globalMovementRemaining).toBe(0);
+    expect(embarked.ship.movementSpentThisTurn).toBe(true);
+    expect(embarked.army.movement.remainingUnits).toBe(4);
+
+    const disembarked = disembarkArmy("transport", embarked.ship, "army", embarked.army, 0);
+    expect(disembarked.ok).toBe(true);
+    if (!disembarked.ok) return;
+    expect(disembarked.ship.globalMovementRemaining).toBe(0);
+    expect(disembarked.army.movement.remainingUnits).toBe(4);
+  });
+
+  it("allows transport III-A to carry two armies", () => {
+    const upgraded = {
+      ...transport(),
+      upgrades: { level1: "A" as const, level2: "A" as const, level3: "A" as const }
+    };
+    const first = embarkArmy("transport", upgraded, "army-1", army());
+    const second = embarkArmy("transport", first.ship, "army-2", army());
+
+    expect(second.ship.embarkedArmyId).toBe("army-1");
+    expect(second.ship.additionalEmbarkedArmyId).toBe("army-2");
+    expect(validateTransportInteraction({
+      action: "EMBARK",
+      phase: "MOVEMENT",
+      ship: second.ship,
+      army: army(),
+      shipCell: { x: 0, y: 0 },
+      interactionCell: { x: 1, y: 0 },
+      sameCellSupportsLandAndSea: false
+    })).toEqual({ ok: false, reason: "TRANSPORT_OCCUPIED" });
+  });
+
   it("disembarks only a reciprocal pair and also consumes transport movement", () => {
     const embarked = embarkArmy("transport", transport(), "army", army());
     const result = disembarkArmy("transport", embarked.ship, "army", embarked.army);

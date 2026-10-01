@@ -32,7 +32,7 @@ describe("battle names", () => {
       name: "Переправа"
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Развести армии" }));
+    fireEvent.click(screen.getByRole("button", { name: "Развести без результата" }));
     expect(onAction).toHaveBeenCalledWith({
       type: "RELEASE_BATTLE_GROUP",
       battleId: "battle-1"
@@ -66,7 +66,7 @@ describe("battle names", () => {
 
     expect(screen.getByText("Переправа")).toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: "Название боя" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Развести армии" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Развести без результата" })).not.toBeInTheDocument();
   });
 });
 

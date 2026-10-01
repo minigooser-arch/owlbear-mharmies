@@ -2,6 +2,7 @@ import type { BarrierSegment } from "../barriers/barrierGeometry";
 import type { GridDistancePort } from "../routes/routeMath";
 import type { ArmyState, SceneItemRecord, SceneState, ShipState } from "../shared/types";
 import { buildDetectionGraph, type DetectionGraph } from "./detectionGraph";
+import { armyConcealmentCells, armyEffectiveDetectionRange, shipDetectionBonus } from "../upgrades/unitUpgrades";
 
 export interface SceneDetectionArmy {
   item: SceneItemRecord;
@@ -20,8 +21,11 @@ export async function buildSceneDetectionGraph(input: {
     id: item.id,
     sideId: state.sideId,
     position: item.position,
-    detectionRangeCells:
-      state.overrides.detectionRangeCells ?? input.scene.settings.defaultDetectionRangeCells,
+    detectionRangeCells: armyEffectiveDetectionRange(
+      state,
+      state.overrides.detectionRangeCells ?? input.scene.settings.defaultDetectionRangeCells
+    ),
+    concealmentCells: armyConcealmentCells(state),
     ignoresVisionBarriers: state.ignoresVisionBarriers
   }));
   const shipDetectionUnits = Object.entries(input.scene.ships ?? {}).flatMap(([shipId, state]) => {
@@ -31,7 +35,9 @@ export async function buildSceneDetectionGraph(input: {
       id: shipId,
       sideId: state.sideId,
       position: item.position,
-      detectionRangeCells: state.detectionOverride ?? input.scene.settings.defaultDetectionRangeCells,
+      detectionRangeCells:
+        (state.detectionOverride ?? input.scene.settings.defaultDetectionRangeCells) + shipDetectionBonus(state),
+      concealmentCells: 0,
       ignoresVisionBarriers: false
     }];
   });

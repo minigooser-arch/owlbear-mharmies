@@ -4,6 +4,7 @@ import type {
   ArmyOverrides,
   ArmyState,
   ArmyStatus,
+  ArmyUpgrades,
   BarrierState,
   BarrierVisibility,
   BattleGroup,
@@ -38,6 +39,8 @@ import type {
   TransportEmbarkRequest,
   TurnPhase,
   TurnState,
+  UpgradeTrack,
+  UpgradeVariant,
   ValidationResult,
   Vector2,
   VisibilityRecalculationMode,
@@ -112,9 +115,13 @@ function normalizeGridCells(value: unknown): GridCellCoord[] {
 
 function normalizeSettings(value: unknown): SceneSettings {
   if (!isRecord(value)) return { ...DEFAULT_SETTINGS };
-  const armyFormationCostPerHp = nonNegativeInteger(value.armyFormationCostPerHp)
+  const rawArmyFormationCostPerHp = nonNegativeInteger(value.armyFormationCostPerHp)
     ? value.armyFormationCostPerHp
-    : (DEFAULT_SETTINGS.armyFormationCostPerHp ?? 5000);
+    : (DEFAULT_SETTINGS.armyFormationCostPerHp ?? 10000);
+  // 5,000 was the previous built-in formation rate. The rules now define 10,000/HP.
+  const armyFormationCostPerHp = rawArmyFormationCostPerHp === 5000
+    ? 10000
+    : rawArmyFormationCostPerHp;
   const armyHealingCostPerHp = nonNegativeInteger(value.armyHealingCostPerHp)
     ? value.armyHealingCostPerHp
     : (DEFAULT_SETTINGS.armyHealingCostPerHp ?? 5000);
@@ -475,7 +482,7 @@ function normalizeOverrides(value: unknown): ArmyOverrides {
 
 function normalizeMovement(value: unknown): ArmyMovementState {
   if (!isRecord(value)) return { maxUnits: 10, remainingUnits: 10, enteredRouteCellCount: 0 };
-  const maxUnits = 10;
+  const maxUnits = positiveInteger(value.maxUnits) ? value.maxUnits : 10;
   const remainingUnits = Number.isInteger(value.remainingUnits) && nonNegative(value.remainingUnits)
     ? Math.min(value.remainingUnits as number, maxUnits)
     : maxUnits;
@@ -483,6 +490,29 @@ function normalizeMovement(value: unknown): ArmyMovementState {
     ? value.enteredRouteCellCount as number
     : 0;
   return { maxUnits, remainingUnits, enteredRouteCellCount };
+}
+
+function normalizeUpgradeTrack(value: unknown): UpgradeTrack {
+  if (!isRecord(value)) return {};
+  const track: UpgradeTrack = {};
+  if (enumValue<UpgradeVariant>(value.level1, ["A", "B"])) track.level1 = value.level1;
+  if (track.level1 && enumValue<UpgradeVariant>(value.level2, ["A", "B"])) track.level2 = value.level2;
+  if (track.level2 && enumValue<UpgradeVariant>(value.level3, ["A", "B"])) track.level3 = value.level3;
+  return track;
+}
+
+function normalizeArmyUpgrades(value: unknown): ArmyUpgrades {
+  const source = isRecord(value) ? value : {};
+  const recovery = normalizeUpgradeTrack(source.recovery);
+  const motorization = normalizeUpgradeTrack(source.motorization);
+  const reconnaissance = normalizeUpgradeTrack(source.reconnaissance);
+  let thirdLevelKept = false;
+  for (const track of [recovery, motorization, reconnaissance]) {
+    if (!track.level3) continue;
+    if (!thirdLevelKept) thirdLevelKept = true;
+    else delete track.level3;
+  }
+  return { recovery, motorization, reconnaissance };
 }
 
 function normalizePlannedRoute(value: unknown): PlannedRoute {
@@ -558,9 +588,14 @@ function normalizeShip(value: unknown): ShipState | undefined {
     embarkedArmyId: value.embarkedArmyId === null || nonEmptyString(value.embarkedArmyId)
       ? value.embarkedArmyId as string | null
       : null,
+    additionalEmbarkedArmyId: value.additionalEmbarkedArmyId === null || nonEmptyString(value.additionalEmbarkedArmyId)
+      ? value.additionalEmbarkedArmyId as string | null
+      : null,
     shoreBombardmentUsedOnTurn: nullableNonNegativeInteger(value.shoreBombardmentUsedOnTurn),
     logisticsActionUsedOnTurn: nullableNonNegativeInteger(value.logisticsActionUsedOnTurn),
     revision: nonNegative(value.revision) ? Math.floor(value.revision) : 0,
+    experience: nonNegative(value.experience) ? value.experience : 0,
+    upgrades: normalizeUpgradeTrack(value.upgrades),
     ...(nonNegativeInteger(value.repairedHpThisTurn) ? { repairedHpThisTurn: value.repairedHpThisTurn } : {}),
     ...(nonNegativeInteger(value.repairedOnTurn) ? { repairedOnTurn: value.repairedOnTurn } : {})
   };
@@ -705,7 +740,8 @@ function normalizeNavalBattle(value: unknown): NavalBattleState | undefined {
     events: Array.isArray(value.events) ? structuredClone(value.events) : [],
     startedOnTurn: nonNegativeInteger(value.startedOnTurn) ? value.startedOnTurn : 0,
     startedAt: nonNegative(value.startedAt) ? value.startedAt : 0,
-    revision: nonNegative(value.revision) ? Math.floor(value.revision) : 0
+    revision: nonNegative(value.revision) ? Math.floor(value.revision) : 0,
+    experienceEligibleSideIds: uniqueStrings(value.experienceEligibleSideIds)
   };
 }
 
@@ -840,6 +876,7 @@ export function normalizeArmyState(raw: unknown): ValidationResult<ArmyState> {
       };
     })(),
     experience: nonNegative(raw.experience) ? raw.experience : 0,
+    upgrades: normalizeArmyUpgrades(raw.upgrades),
     formation: (() => {
       const formation = isRecord(raw.formation) ? raw.formation : {};
       return {

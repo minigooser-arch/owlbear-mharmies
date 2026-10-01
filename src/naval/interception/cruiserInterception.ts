@@ -7,7 +7,7 @@ import type {
 import { isInNormalBroadsideMask } from "../battle/broadsideMask";
 import { endNavalShipTurn, useNavalAction } from "../battle/navalRoundFlow";
 import { applyShipDamage } from "../ships/shipDamage";
-import { SHIP_CLASSES } from "../ships/shipClasses";
+import { shipEffectiveArmor, shipEffectiveAttackDice } from "../../upgrades/unitUpgrades";
 
 export type CruiserInterceptionFailure =
   | "BATTLE_NOT_ACTIVE"
@@ -181,9 +181,13 @@ export function resolveCruiserInterceptionsForStep(
 
   for (const cruiserId of matchingCruiserIds) {
     const currentTarget = ships[input.movingShipId];
-    if (!currentTarget) continue;
-    const rolledDamage = input.rollD6() + input.rollD6();
-    const armor = SHIP_CLASSES[currentTarget.classId].armor;
+    const cruiser = ships[cruiserId];
+    if (!currentTarget || !cruiser) continue;
+    let rolledDamage = 0;
+    for (let index = 0; index < shipEffectiveAttackDice(cruiser); index += 1) {
+      rolledDamage += input.rollD6();
+    }
+    const armor = shipEffectiveArmor(currentTarget);
     const damage = Math.max(0, rolledDamage - armor);
     ships[input.movingShipId] = applyShipDamage(currentTarget, damage);
     triggered.push({

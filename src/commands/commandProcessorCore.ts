@@ -1,13 +1,13 @@
 import { joinReinforcements, releaseBattleGroup } from "../battles/battleGroupService";
 import { destroyArmy } from "../armies/armyLifecycle";
-import { canHealArmy, requestArmyHealing } from "../health/armyHealth";
+import { canHealArmy, healArmyForTurn } from "../health/armyHealth";
 import { applyFormationHp, createFormationArmy, interruptFormation } from "../armies/armyFormation";
 import { appendLRTransaction } from "../finance/lrLedger";
 import { markLRTransactionRecorded } from "../finance/lrLedger";
 import { applyDemographyCorrection, debitHumanResource as debitHumanResourceFromState } from "../finance/humanResourceLedger";
 import { recalculateHumanResourceCapacity } from "../population/populationRules";
 import { isCityBuildingActive } from "../cities/cityBuildingRules";
-import { activeShipyardAtCell, coastalBatteryRetaliationDamage, marineStationAllowsCrossing, repairShipAtShipyard, seaFortBlocksDisembark, transportArmyMovementCostAtCell } from "../cities/cityEffects";
+import { activeShipyardAtCell, cityForCell, coastalBatteryRetaliationDamage, hasActiveCityBuilding, marineStationAllowsCrossing, repairShipAtShipyard, seaFortBlocksDisembark, transportArmyMovementCostAtCell } from "../cities/cityEffects";
 import { requestArmyDisband } from "../disband/disbandService";
 import { canRenumberTurn, cancelTurnDeferral, completeTurn, deferTurn, pauseAutoTurns, renumberSceneTurn, resumeAutoTurns } from "../turns/turnService";
 import { preCheckpointTurnBlockers } from "../turns/turnCompletionGuard";
@@ -20,7 +20,6 @@ import { unenteredRouteCells } from "../movement/strategicProgress";
 import { createRegisteredShip, destroyShip } from "../naval/ships/shipLifecycle";
 import { resolvePlannedShipRoutes } from "../naval/ships/shipMovementPhase";
 import { occupiedByOtherLiveShip } from "../naval/ships/shipCellOccupancy";
-import { SHIP_CLASSES } from "../naval/ships/shipClasses";
 import { cellSupportsDomain } from "../terrain/movementDomains";
 import { authorizeArmyCommand } from "../shared/permissions";
 import { METADATA_KEYS } from "../shared/constants";
@@ -51,7 +50,7 @@ import {
   resolveCruiserInterceptionsForStep
 } from "../naval/interception/cruiserInterception";
 import { hasNavalBattleLineOfSight } from "../naval/battle/navalBattleLineOfSight";
-import { embarkArmy, disembarkArmy, validateTransportInteraction } from "../naval/transport/transportRules";
+import { embarkArmy, disembarkArmy, shipEmbarkedArmyIds, validateTransportInteraction } from "../naval/transport/transportRules";
 import { commitHospitalSupport } from "../naval/hospital/hospitalSupport";
 import { commitShoreBombardment, type ShoreBombardmentSectorResolver } from "../naval/shore/shoreBombardment";
 import { applyShipRevealUntilNextTurn } from "../naval/detection/navalVisibility";
@@ -60,6 +59,18 @@ import { removeStateRelations, setMilitaryAccess, setPairWar } from "../states/s
 import { applyPeaceTransfer, validatePeaceTransfer } from "../territory/peaceTransfer";
 import { closeRebellion, startRebellion } from "../rebellions/rebellionService";
 import { startCivilWar } from "../rebellions/civilWarService";
+import {
+  armyRecoveryHpCap,
+  landBattleExperience,
+  purchaseArmyUpgrade,
+  purchaseShipUpgrade,
+  shipEffectiveArmor,
+  shipEffectiveMaxHp,
+  shipEffectiveMovement,
+  armyEffectiveMovementUnits,
+  terrainRegistryForArmy,
+  transportLoadingIsFree
+} from "../upgrades/unitUpgrades";
 
 export interface CommandState {
   scene: SceneState;
@@ -119,15 +130,18 @@ function destroyReciprocalTransportCargo(
   shipId: string,
   ship: ShipState
 ): void {
-  if (ship.classId !== "TRANSPORT" || ship.embarkedArmyId == null) return;
-  const cargoId = ship.embarkedArmyId;
-  const cargo = state.armies[cargoId];
-  if (!cargo || cargo.embarkedOnShipId !== shipId) return;
-  const destroyed = destroyArmy(state.armies, state.scene.battleGroups, cargoId);
-  state.armies = destroyed.armies;
-  state.scene.battleGroups = destroyed.battleGroups;
+  if (ship.classId !== "TRANSPORT") return;
+  const cargoIds = shipEmbarkedArmyIds(ship);
+  for (const cargoId of cargoIds) {
+    const cargo = state.armies[cargoId];
+    if (!cargo || cargo.embarkedOnShipId !== shipId) continue;
+    const destroyed = destroyArmy(state.armies, state.scene.battleGroups, cargoId);
+    state.armies = destroyed.armies;
+    state.scene.battleGroups = destroyed.battleGroups;
+  }
+  const cargoSet = new Set(cargoIds);
   state.scene.transportEmbarkRequests = (state.scene.transportEmbarkRequests ?? [])
-    .filter((request) => request.shipId !== shipId && request.armyId !== cargoId);
+    .filter((request) => request.shipId !== shipId && !cargoSet.has(request.armyId));
 }
 
 function emptyPlannedRoute(startCell: GridCellCoord = { x: 0, y: 0 }): ArmyState["plannedRoute"] {
@@ -175,10 +189,10 @@ function revalidateArmyRoute(state: CommandState, armyId: string): void {
     start: remainingStart,
     cells: remainingCells,
     sideId: army.sideId,
-    terrain: state.scene.terrain,
+    terrain: terrainRegistryForArmy(army, state.scene.terrain),
     wars: state.scene.wars,
     remainingUnits: army.plannedRoute.executeOnTurn > state.scene.turn.turnNumber
-      ? 10
+      ? armyEffectiveMovementUnits(army)
       : army.movement.remainingUnits,
     readCell: (cell) => readCell(state.scene.gridMap, cell),
     armyStateAllowsMovement: !army.formation?.active && (army.status === "READY" || army.status === "PAUSED" || army.status === "MOVING")
@@ -410,24 +424,18 @@ export class CommandProcessor {
         const existingCell = existingItem ? this.cellForPosition(existingItem.position) : undefined;
         if (existingItem && (!existingCell || !city.cells.some((cell) => sameCell(cell, existingCell)))) return "ARMY_MUST_BE_IN_CITY";
         if (!existingItem && !side.armyTokenAsset) return "ARMY_TOKEN_NOT_CONFIGURED";
-        const formationRate = humanResourceRateInSceneUnits(state, command.sideId, state.scene.settings.armyFormationCostPerHp ?? 5000);
-        const formationAmount = 5 * formationRate;
-        const formationDebit = this.debitHumanResource(state, command.sideId, formationAmount, {
-          requestId: command.requestId,
-          actorPlayerId: command.senderPlayerId,
-          kind: "FORMATION",
+        const army = createFormationArmy({
           armyId,
-          armyName: existingItem?.name ?? armyId,
-          cityId: city.id,
-          cityName: city.name,
-          hp: 5,
-          ratePerHp: formationRate,
+          sideId: command.sideId,
+          status: "READY",
+          maxUnits: 10,
           turnNumber: state.scene.turn.turnNumber,
-          createdAt: this.now().toISOString()
+          experience: (city.buildings ?? []).reduce(
+            (total, building) => total + (building.type === "TRAINING_GROUND" || building.type === "MILITARY_ACADEMY" ? 0.5 : 0),
+            0
+          )
         });
-        if (formationDebit) return formationDebit;
-        const army = createFormationArmy({ armyId, sideId: command.sideId, status: "READY", maxUnits: 10, turnNumber: state.scene.turn.turnNumber, experience: (city.buildings ?? []).reduce((total, building) => total + (building.type === "TRAINING_GROUND" || building.type === "MILITARY_ACADEMY" ? 0.5 : 0), 0) });
-        army.formation = { active: true, cityId: city.id, hpAddedThisTurn: 5, checkedOnTurn: state.scene.turn.turnNumber };
+        army.formation = { active: true, cityId: city.id, hpAddedThisTurn: 0, checkedOnTurn: state.scene.turn.turnNumber };
         state.armies[armyId] = army;
         if (!existingItem && side.armyTokenAsset) {
           state.items[armyId] = {
@@ -453,20 +461,19 @@ export class CommandProcessor {
           state.items[armyId] = { ...existingItem, position: itemPosition };
         }
         state.items[armyId] = { ...state.items[armyId], metadata: { ...state.items[armyId]?.metadata, [METADATA_KEYS.army]: army } } as SceneItemRecord;
-        if (state.scene.demographics === undefined) state.scene.lrTransactions = appendLRTransaction(state.scene.lrTransactions ?? [], {
-          id: `${command.requestId}:formation`, requestId: command.requestId, createdAt: this.now().toISOString(), turnNumber: state.scene.turn.turnNumber,
-          actorPlayerId: command.senderPlayerId, sideId: command.sideId, sideName: state.scene.sides.find((side) => side.id === command.sideId)?.name ?? command.sideId,
-          cityId: city.id, cityName: city.name, armyId, armyName: state.items[armyId]?.name ?? armyId, kind: "FORMATION", hp: 5,
-          ratePerHp: formationRate, amount: formationAmount
-        });
         return undefined;
       }
       case "FORM_ARMY": {
         const army = state.armies[command.armyId];
         if (!army) return "ARMY_NOT_FOUND";
-        const formationRate = humanResourceRateInSceneUnits(state, army.sideId, state.scene.settings.armyFormationCostPerHp ?? 5000);
-        const result = applyFormationHp(army, command.hp, state.scene.turn.turnNumber, formationRate,
-          Boolean(army.formation?.cityId && (state.scene.strategicCities ?? []).find((city) => city.id === army.formation?.cityId)?.buildings?.some((building) => building.type === "BARRACKS")));
+        const formationRate = humanResourceRateInSceneUnits(state, army.sideId, state.scene.settings.armyFormationCostPerHp ?? 10000);
+        const result = applyFormationHp(
+          army,
+          command.hp,
+          state.scene.turn.turnNumber,
+          formationRate,
+          Boolean(army.formation?.cityId && hasActiveCityBuilding(state.scene, army.formation.cityId, "TRAINING_GROUND"))
+        );
         if (!result.ok) return result.reason;
         const formationKind = result.army.health.hp >= result.army.health.maxHp ? "COMPLETION" : "FORMATION";
         const cityId = army.formation?.cityId ?? null;
@@ -501,6 +508,44 @@ export class CommandProcessor {
         state.scene.battleGroups = destroyed.battleGroups;
         return undefined;
       }
+      case "PURCHASE_ARMY_UPGRADE": {
+        const army = state.armies[command.armyId];
+        if (!army) return "ARMY_NOT_FOUND";
+        const result = purchaseArmyUpgrade(army, command.branch, command.level, command.variant);
+        if (!result.ok) return result.reason;
+        state.armies[command.armyId] = result.army;
+        return undefined;
+      }
+      case "RESOLVE_LAND_BATTLE": {
+        const battle = state.scene.battleGroups.find((candidate) => candidate.battleId === command.battleId);
+        if (!battle) return "BATTLE_NOT_FOUND";
+        const participantIds = [...battle.participantIds].sort();
+        const resultIds = command.results.map((entry) => entry.armyId).sort();
+        if (
+          participantIds.length !== resultIds.length ||
+          participantIds.some((armyId, index) => armyId !== resultIds[index])
+        ) return "BATTLE_RESULTS_INCOMPLETE";
+        for (const result of command.results) {
+          const army = state.armies[result.armyId];
+          if (!army) return "ARMY_NOT_FOUND";
+          state.armies[result.armyId] = {
+            ...army,
+            experience: (army.experience ?? 0) + landBattleExperience(result.outcome),
+            revision: army.revision + 1
+          };
+        }
+        const released = releaseBattleGroup(state.scene.battleGroups, armyMap(state), command.battleId);
+        state.scene.battleGroups = released.groups;
+        state.armies = Object.fromEntries(released.armies);
+        for (const participantId of battle.participantIds) {
+          const participant = state.armies[participantId];
+          if (!participant || participant.health.hp > 0) continue;
+          const destroyed = destroyArmy(state.armies, state.scene.battleGroups, participantId);
+          state.armies = destroyed.armies;
+          state.scene.battleGroups = destroyed.battleGroups;
+        }
+        return undefined;
+      }
       case "REGISTER_SHIP": {
         const item = state.items[command.itemId];
         if (!item) return "ITEM_NOT_FOUND";
@@ -533,6 +578,34 @@ export class CommandProcessor {
         const destroyed = destroyShip(state.scene as NavalSceneState, command.shipId);
         state.scene = destroyed.scene;
         state.scene.revision = sceneRevision;
+        return undefined;
+      }
+      case "PURCHASE_SHIP_UPGRADE": {
+        const ship = state.scene.ships?.[command.shipId];
+        if (!ship) return "SHIP_NOT_FOUND";
+        const previousMovement = shipEffectiveMovement(ship);
+        const result = purchaseShipUpgrade(ship, command.level, command.variant);
+        if (!result.ok) return result.reason;
+        state.scene.ships ??= {};
+        state.scene.ships[command.shipId] = result.ship;
+        const movementGain = Math.max(0, shipEffectiveMovement(result.ship) - previousMovement);
+                const battle = state.scene.activeNavalBattle;
+        const currentBattleMovement = battle?.movementRemainingByShip[command.shipId];
+        if (
+          movementGain > 0 &&
+          battle?.status === "ACTIVE" &&
+          battle.participantShipIds.includes(command.shipId) &&
+          currentBattleMovement !== undefined
+        ) {
+          state.scene.activeNavalBattle = {
+            ...battle,
+            movementRemainingByShip: {
+              ...battle.movementRemainingByShip,
+              [command.shipId]: currentBattleMovement + movementGain
+            },
+            revision: battle.revision + 1
+          };
+        }
         return undefined;
       }
       case "SET_SHIP_ROUTE":
@@ -572,7 +645,7 @@ export class CommandProcessor {
           });
           return undefined;
         }
-        const embarked = embarkArmy(command.shipId, ship, command.armyId, army, transportArmyMovementCostAtCell(state.scene, armyCell));
+        const embarked = embarkArmy(command.shipId, ship, command.armyId, army, transportLoadingIsFree(ship) ? 0 : transportArmyMovementCostAtCell(state.scene, armyCell));
         state.scene.ships ??= {};
         state.scene.ships[command.shipId] = embarked.ship;
         state.armies[command.armyId] = embarked.army;
@@ -608,7 +681,7 @@ export class CommandProcessor {
             cellSupportsDomain(state.scene, shipCell, "SEA")
         });
         if (!geometry.ok) return geometry.reason;
-        const embarked = embarkArmy(command.shipId, ship, command.armyId, army, transportArmyMovementCostAtCell(state.scene, armyCell));
+        const embarked = embarkArmy(command.shipId, ship, command.armyId, army, transportLoadingIsFree(ship) ? 0 : transportArmyMovementCostAtCell(state.scene, armyCell));
         state.scene.ships ??= {};
         state.scene.ships[command.shipId] = embarked.ship;
         state.armies[command.armyId] = embarked.army;
@@ -653,7 +726,7 @@ export class CommandProcessor {
         if (political.allowedCellCount === 0) {
           return political.blockedReason ?? "INVALID_POLITICAL_CONFIG";
         }
-        const disembarked = disembarkArmy(command.shipId, ship, command.armyId, army, transportArmyMovementCostAtCell(state.scene, command.targetCell));
+        const disembarked = disembarkArmy(command.shipId, ship, command.armyId, army, transportLoadingIsFree(ship) ? 0 : transportArmyMovementCostAtCell(state.scene, command.targetCell));
         if (!disembarked.ok) return disembarked.reason;
         const occupantIds = Object.entries(state.armies)
           .filter(([armyId, candidate]) => armyId !== command.armyId && candidate.health.hp > 0 && candidate.embarkedOnShipId == null)
@@ -803,6 +876,16 @@ export class CommandProcessor {
 
           const movedShip = state.scene.ships?.[command.shipId];
           if (movedShip && movedShip.hp <= 0 && interception.triggered.length > 0) {
+            const xpSides = interception.triggered.flatMap((trigger) => {
+              const cruiser = state.scene.ships?.[trigger.cruiserShipId];
+              return cruiser && relationForSides(state.scene, cruiser.sideId, movedShip.sideId) === "ENEMY"
+                ? [cruiser.sideId]
+                : [];
+            });
+            interception.battle.experienceEligibleSideIds = [
+              ...new Set([...(interception.battle.experienceEligibleSideIds ?? []), ...xpSides])
+            ];
+            state.scene.activeNavalBattle = interception.battle;
             destroyReciprocalTransportCargo(state, command.shipId, movedShip);
             const sceneRevision = state.scene.revision;
             const destroyed = destroyShip(state.scene as NavalSceneState, command.shipId);
@@ -918,6 +1001,11 @@ export class CommandProcessor {
           broadsideEvent,
           ...(interceptionRemovalEvent ? [interceptionRemovalEvent] : [])
         ];
+        if (result.target.hp <= 0 && relation === "ENEMY") {
+          battleAfterDamage.experienceEligibleSideIds = [
+            ...new Set([...(battleAfterDamage.experienceEligibleSideIds ?? []), attacker.sideId])
+          ];
+        }
         state.scene.activeNavalBattle = battleAfterDamage;
         if (result.target.hp <= 0) {
           destroyReciprocalTransportCargo(state, command.targetShipId, result.target);
@@ -1014,9 +1102,16 @@ export class CommandProcessor {
           currentTurn: state.scene.turn.turnNumber
         });
         if (result.target.health.hp <= 0) {
-          const destroyed = destroyArmy(state.armies, state.scene.battleGroups, command.armyId);
-          state.armies = destroyed.armies;
-          state.scene.battleGroups = destroyed.battleGroups;
+          const belongsToLandBattle = state.scene.battleGroups.some((group) =>
+            group.participantIds.includes(command.armyId)
+          );
+          if (belongsToLandBattle) {
+            state.armies[command.armyId] = result.target;
+          } else {
+            const destroyed = destroyArmy(state.armies, state.scene.battleGroups, command.armyId);
+            state.armies = destroyed.armies;
+            state.scene.battleGroups = destroyed.battleGroups;
+          }
         } else {
           state.armies[command.armyId] = result.target;
         }
@@ -1027,7 +1122,7 @@ export class CommandProcessor {
           this.rollD6
         );
         if (retaliation > 0) {
-          const armor = SHIP_CLASSES[ship.classId].armor;
+          const armor = shipEffectiveArmor(ship);
           const damage = Math.max(0, retaliation - armor);
           const retaliated = { ...result.attacker, hp: Math.max(0, result.attacker.hp - damage), revision: result.attacker.revision + 1 };
           if (retaliated.hp <= 0) {
@@ -1238,7 +1333,7 @@ export class CommandProcessor {
       case "SET_SHIP_HP": {
         const ship = state.scene.ships?.[command.shipId];
         if (!ship) return "SHIP_NOT_FOUND";
-        const maxHp = SHIP_CLASSES[ship.classId].maxHp;
+        const maxHp = shipEffectiveMaxHp(ship);
         if (command.hp > maxHp) return "INVALID_HP";
         if (command.hp <= 0) {
           destroyReciprocalTransportCargo(state, command.shipId, ship);
@@ -1250,6 +1345,9 @@ export class CommandProcessor {
           embarkedArmyId: command.hp <= 0 && ship.classId === "TRANSPORT"
             ? null
             : ship.embarkedArmyId,
+          additionalEmbarkedArmyId: command.hp <= 0 && ship.classId === "TRANSPORT"
+            ? null
+            : ship.additionalEmbarkedArmyId ?? null,
           revision: ship.revision + 1
         };
         const battle = state.scene.activeNavalBattle;
@@ -1558,7 +1656,7 @@ export class CommandProcessor {
         }
         const routeCity = (state.scene.strategicCities ?? []).find((city) => city.cells.some((cell) => sameCell(cell, command.startCell)));
         const marineCrossing = routeCity ? marineStationAllowsCrossing(state.scene, routeCity.id, command.cells) : false;
-        const routeTerrain = marineCrossing ? structuredClone(state.scene.terrain) : state.scene.terrain;
+        const routeTerrain = terrainRegistryForArmy(army, state.scene.terrain);
         if (marineCrossing && routeTerrain.types.sea) routeTerrain.types.sea = { ...routeTerrain.types.sea, movementDomains: ["LAND", "SEA"] };
         const validation = validatePlannedRoute({
           start: command.startCell,
@@ -1566,7 +1664,7 @@ export class CommandProcessor {
           sideId: army.sideId,
           terrain: routeTerrain,
           wars: state.scene.wars,
-          remainingUnits: 10,
+          remainingUnits: armyEffectiveMovementUnits(army),
           readCell: (cell) => readCell(state.scene.gridMap, cell),
           armyStateAllowsMovement: true
         });
@@ -1894,6 +1992,13 @@ export class CommandProcessor {
         if (maxHp <= 0 || command.hp < 0) return "INVALID_HP";
         const hp = Math.min(command.hp, maxHp);
         if (hp === 0) {
+          const belongsToLandBattle = state.scene.battleGroups.some((group) =>
+            group.participantIds.includes(command.armyId)
+          );
+          if (belongsToLandBattle) {
+            state.armies[command.armyId] = bumpArmy(army, { health: { hp: 0, maxHp } });
+            return undefined;
+          }
           const destroyed = destroyArmy(state.armies, state.scene.battleGroups, command.armyId);
           state.armies = destroyed.armies;
           state.scene.battleGroups = destroyed.battleGroups;
@@ -1907,9 +2012,84 @@ export class CommandProcessor {
         if (!army) return "ARMY_NOT_FOUND";
         const permission = canHealArmy(army);
         if (!permission.allowed) return permission.reason;
-        const requested = requestArmyHealing(army, state.scene.turn.turnNumber, command.senderPlayerId);
-        if (!requested) return army.healing?.pending ? "HEALING_ALREADY_REQUESTED" : "HEALING_UNAVAILABLE";
-        state.armies[command.armyId] = requested;
+        if (!this.cellForPosition) return "ARMY_POSITION_UNAVAILABLE";
+        const position = commandPosition(state, command.armyId);
+        if (!position) return "ARMY_POSITION_UNAVAILABLE";
+        const cell = this.cellForPosition(position);
+        const city = cityForCell(state.scene, cell);
+        const hasHospital = city ? hasActiveCityBuilding(state.scene, city.id, "MILITARY_HOSPITAL") : false;
+        const terrainId = readCell(state.scene.gridMap, cell).terrainId ?? state.scene.terrain.defaultTerrainId;
+        const location = hasHospital
+          ? "HOSPITAL" as const
+          : city || terrainId === "road"
+            ? "CITY_OR_ROAD" as const
+            : "FIELD" as const;
+        const turnCap = armyRecoveryHpCap(army, location);
+        const used = army.healing?.checkedOnTurn === state.scene.turn.turnNumber
+          ? army.healing.hpHealedThisTurn
+          : 0;
+        const remainingTurnCap = Math.max(0, turnCap - used);
+        const missingHp = Math.max(0, army.health.maxHp - army.health.hp);
+        if (remainingTurnCap <= 0 || missingHp <= 0) return "HEALING_UNAVAILABLE";
+
+        const configuredRate = state.scene.settings.armyHealingCostPerHp ?? 5000;
+        const ratePerHp = humanResourceRateInSceneUnits(state, army.sideId, configuredRate);
+        let affordableHp = Number.POSITIVE_INFINITY;
+        if (state.scene.demographics !== undefined) {
+          const side = state.scene.sides.find((candidate) => candidate.id === army.sideId);
+          if (!side?.stateId) return "STATE_REQUIRED";
+          const demography = state.scene.demographics.find((record) => record.stateId === side.stateId);
+          if (!demography) return "STATE_NOT_FOUND";
+          affordableHp = ratePerHp > 0 ? Math.floor(demography.humanResource / ratePerHp) : remainingTurnCap;
+        }
+        const hp = Math.min(remainingTurnCap, missingHp, affordableHp);
+        if (!Number.isFinite(hp) ? false : hp <= 0) return "INSUFFICIENT_HUMAN_RESOURCE";
+        const healedHp = Number.isFinite(hp) ? hp : Math.min(remainingTurnCap, missingHp);
+        if (healedHp <= 0) return "HEALING_UNAVAILABLE";
+
+        const healed = healArmyForTurn(
+          army,
+          healedHp,
+          state.scene.turn.turnNumber,
+          turnCap,
+          hasHospital ? city?.id ?? null : null
+        );
+        if (!healed) return "HEALING_UNAVAILABLE";
+        const amount = healedHp * ratePerHp;
+        const debit = this.debitHumanResource(state, army.sideId, amount, {
+          requestId: command.requestId,
+          actorPlayerId: command.senderPlayerId,
+          kind: "HEALING",
+          armyId: command.armyId,
+          armyName: state.items[command.armyId]?.name ?? command.armyId,
+          cityId: city?.id ?? null,
+          cityName: city?.name ?? null,
+          hp: healedHp,
+          ratePerHp,
+          turnNumber: state.scene.turn.turnNumber,
+          createdAt: this.now().toISOString()
+        });
+        if (debit) return debit;
+        state.armies[command.armyId] = healed;
+        if (state.scene.demographics === undefined) {
+          state.scene.lrTransactions = appendLRTransaction(state.scene.lrTransactions ?? [], {
+            id: `${command.requestId}:healing`,
+            requestId: command.requestId,
+            createdAt: this.now().toISOString(),
+            turnNumber: state.scene.turn.turnNumber,
+            actorPlayerId: command.senderPlayerId,
+            sideId: army.sideId,
+            sideName: state.scene.sides.find((side) => side.id === army.sideId)?.name ?? army.sideId,
+            cityId: city?.id ?? null,
+            cityName: city?.name ?? null,
+            armyId: command.armyId,
+            armyName: state.items[command.armyId]?.name ?? command.armyId,
+            kind: "HEALING",
+            hp: healedHp,
+            ratePerHp,
+            amount
+          });
+        }
         return undefined;
       }
       case "REQUEST_ARMY_DISBAND": {

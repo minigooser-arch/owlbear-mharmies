@@ -37,7 +37,7 @@ it("starts a new turn with exactly five OP and starts only routes due on that tu
   expect(result.armies.a?.status).toBe("MOVING");
 });
 
-it("heals a supplied army after the global turn is completed", () => {
+it("does not defer army recovery to the global-turn boundary", () => {
   const damaged = { ...army(17), health: { hp: 30, maxHp: 50 }, healing: { pending: true, requestedOnTurn: 1, requestedByPlayerId: "leader", hpHealedThisTurn: 0, checkedOnTurn: 1, hospitalCityId: null } };
   const result = completeTurn(scene(), { a: damaged }, {
     source: "MANUAL",
@@ -46,7 +46,7 @@ it("heals a supplied army after the global turn is completed", () => {
   });
   expect(result.changed).toBe(true);
   if (!result.changed) return;
-  expect(result.armies.a?.health.hp).toBe(40);
+  expect(result.armies.a?.health.hp).toBe(30);
 });
 
 it("automatically completes one formation stage after a global turn", () => {
@@ -58,8 +58,8 @@ it("automatically completes one formation stage after a global turn", () => {
   }];
   const forming: ArmyState = {
     ...army(0),
-    health: { hp: 5, maxHp: 40 },
-    formation: { active: true, cityId: null, hpAddedThisTurn: 5, checkedOnTurn: 1 }
+    health: { hp: 0, maxHp: 40 },
+    formation: { active: true, cityId: null, hpAddedThisTurn: 0, checkedOnTurn: 1 }
   };
   const result = completeTurn(current, { a: forming }, {
     source: "MANUAL",
@@ -68,10 +68,10 @@ it("automatically completes one formation stage after a global turn", () => {
   });
   expect(result.changed).toBe(true);
   if (!result.changed) return;
-  expect(result.armies.a?.health.hp).toBe(20);
-  expect(result.armies.a?.formation).toMatchObject({ active: true, hpAddedThisTurn: 15, checkedOnTurn: 2 });
-  expect(result.scene.demographics?.[0]?.humanResource).toBe(509);
-  expect(result.scene.lrTransactions?.[0]).toMatchObject({ kind: "FORMATION", hp: 15, amount: 75 });
+  expect(result.armies.a?.health.hp).toBe(10);
+  expect(result.armies.a?.formation).toMatchObject({ active: true, hpAddedThisTurn: 10, checkedOnTurn: 2 });
+  expect(result.scene.demographics?.[0]?.humanResource).toBe(484);
+  expect(result.scene.lrTransactions?.[0]).toMatchObject({ kind: "FORMATION", hp: 10, amount: 100, ratePerHp: 10 });
 });
 
 it("always starts the new turn in movement phase", () => {

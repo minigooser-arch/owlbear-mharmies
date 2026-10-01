@@ -7,6 +7,7 @@ export interface DetectionUnit {
   sideId: string;
   position: Vector2;
   detectionRangeCells: number;
+  concealmentCells?: number;
   ignoresVisionBarriers: boolean;
 }
 
@@ -62,7 +63,7 @@ export async function buildDetectionGraph(input: DetectionGraphInput): Promise<D
       if (!pair) return;
       const { observer, target } = pair;
       const distance = await input.distancePort.distance(observer.position, target.position);
-      if (distance > observer.detectionRangeCells) continue;
+      if (distance > Math.max(0, observer.detectionRangeCells - (target.concealmentCells ?? 0))) continue;
       if (!observer.ignoresVisionBarriers && firstBarrierIntersection(
         { from: observer.position, to: target.position }, input.visionBarriers
       )) continue;

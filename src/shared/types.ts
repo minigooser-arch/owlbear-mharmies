@@ -18,6 +18,20 @@ export type TurnPhase = "MOVEMENT" | "POST_MOVEMENT";
 export type ShipClassId = "BATTLESHIP" | "CRUISER" | "IRONCLAD" | "HOSPITAL" | "TRANSPORT";
 export type ShipFacing = "NORTH" | "EAST" | "SOUTH" | "WEST";
 export type ShipStatus = "READY" | "IN_NAVAL_BATTLE";
+export type UpgradeVariant = "A" | "B";
+export type UpgradeLevel = 1 | 2 | 3;
+export interface UpgradeTrack {
+  level1?: UpgradeVariant;
+  level2?: UpgradeVariant;
+  level3?: UpgradeVariant;
+}
+export type ArmyUpgradeBranch = "recovery" | "motorization" | "reconnaissance";
+export interface ArmyUpgrades {
+  recovery: UpgradeTrack;
+  motorization: UpgradeTrack;
+  reconnaissance: UpgradeTrack;
+}
+export type LandBattleOutcome = "FULL_VICTORY" | "VICTORY" | "RETREAT" | "DEFEAT";
 
 export interface SceneSettings {
   defaultDetectionRangeCells: number;
@@ -301,11 +315,14 @@ export interface ShipState {
   battleId: string | null;
   detectionOverride: number | null;
   embarkedArmyId: string | null;
+  additionalEmbarkedArmyId?: string | null;
   shoreBombardmentUsedOnTurn: number | null;
   logisticsActionUsedOnTurn: number | null;
   revision: number;
   repairedHpThisTurn?: number;
   repairedOnTurn?: number;
+  experience?: number;
+  upgrades?: UpgradeTrack;
 }
 
 export interface NavalBattleRequest {
@@ -362,6 +379,8 @@ export interface NavalBattleState {
   startedOnTurn: number;
   startedAt: number;
   revision: number;
+  /** A side is listed once it has sunk at least one enemy ship in this battle. */
+  experienceEligibleSideIds?: string[];
 }
 
 /**
@@ -510,6 +529,7 @@ export interface ArmyState {
   battleGroupId?: string;
   stopReason?: "BARRIER" | "COORDINATOR_GAP" | "MANUAL" | "ARRIVED" | "INVALID_ROUTE" | "BATTLE";
   experience?: number;
+  upgrades?: ArmyUpgrades;
   formation?: ArmyFormationState;
   healing?: ArmyHealingState;
 }
@@ -546,7 +566,7 @@ export interface ItemUpdate {
   [key: string]: unknown;
 }
 
-export const COMMAND_PROTOCOL_VERSION = 5 as const;
+export const COMMAND_PROTOCOL_VERSION = 6 as const;
 
 export interface CommandEnvelope {
   protocolVersion: typeof COMMAND_PROTOCOL_VERSION;
@@ -564,9 +584,12 @@ export type ArmyCommandPayload =
     | { type: "CREATE_CITY_ARMY"; itemId?: string; cityId: string; sideId: string }
     | { type: "FORM_ARMY"; armyId: string; hp: number }
     | { type: "UNREGISTER_ARMY"; armyId: string }
+    | { type: "PURCHASE_ARMY_UPGRADE"; armyId: string; branch: ArmyUpgradeBranch; level: UpgradeLevel; variant: UpgradeVariant }
+    | { type: "RESOLVE_LAND_BATTLE"; battleId: string; results: Array<{ armyId: string; outcome: LandBattleOutcome }> }
     | { type: "REGISTER_SHIP"; itemId: string; sideId: string; classId: ShipClassId; facing: ShipFacing }
     | { type: "REGISTER_CITY_SHIP"; itemId: string; cityId: string; sideId: string; classId: ShipClassId; facing: ShipFacing }
     | { type: "UNREGISTER_SHIP"; shipId: string }
+    | { type: "PURCHASE_SHIP_UPGRADE"; shipId: string; level: UpgradeLevel; variant: UpgradeVariant }
     | { type: "SET_SHIP_ROUTE"; shipId: string; startCell: GridCellCoord; cells: GridCellCoord[]; finalFacing?: ShipFacing }
     | { type: "SET_SHIP_HP"; shipId: string; hp: number }
     | { type: "REPAIR_SHIP_AT_SHIPYARD"; shipId: string; amount: number }

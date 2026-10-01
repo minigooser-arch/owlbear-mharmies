@@ -5,6 +5,8 @@ import { cellSupportsDomain } from "../terrain/movementDomains";
 import { readCell } from "../terrain/gridMap";
 import { classifyStateMovementAccess } from "./stateMovementAccess";
 import { findShortestForcedExitRoutes } from "./forcedExitPathfinder";
+import { armyTerrainMovementCostUnits } from "../upgrades/unitUpgrades";
+import { shipEmbarkedArmyIds } from "../naval/transport/transportRules";
 
 export function hasRightToRemain(scene: SceneState, army: ArmyState, cell: GridCellCoord): boolean {
   const access = classifyStateMovementAccess({
@@ -68,7 +70,8 @@ export function reconcileForcedExitStates(
   const result: ForcedExitState[] = [];
   for (const [armyId, army] of Object.entries(armies)) {
     const cell = armyCells[armyId];
-    if (army.health.hp <= 0 || (army.embarkedOnShipId && scene.ships?.[army.embarkedOnShipId]?.embarkedArmyId === armyId)) continue;
+    const embarkedShip = army.embarkedOnShipId ? scene.ships?.[army.embarkedOnShipId] : undefined;
+    if (army.health.hp <= 0 || (embarkedShip && shipEmbarkedArmyIds(embarkedShip).includes(armyId))) continue;
     if (!cell) { const previous = existing.get(armyId); if (previous) result.push(previous); continue; }
     if (hasRightToRemain(scene, army, cell)) continue;
     result.push(existing.get(armyId) ?? {armyId,startedOnTurn,originReason});
@@ -97,7 +100,10 @@ export function forcedExitTurnRoute(scene: SceneState, army: ArmyState, start: G
     : forcedExitRoutes(scene, army, start)[0] ?? [];
   const result: GridCellCoord[] = [];
   for (const cell of route) {
-    const cost = getDestinationMovementCostUnits(scene.terrain, readCell(scene.gridMap, cell));
+    const destination = readCell(scene.gridMap, cell);
+    const baseCost = getDestinationMovementCostUnits(scene.terrain, destination);
+    const terrainId = destination.terrainId ?? scene.terrain.defaultTerrainId;
+    const cost = baseCost === undefined ? undefined : armyTerrainMovementCostUnits(army, terrainId, baseCost);
     if (cost === undefined || cost > budget) break;
     result.push({...cell});
     budget -= cost;

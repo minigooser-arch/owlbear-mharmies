@@ -224,6 +224,27 @@ describe("naval battle lifecycle", () => {
     })).toThrow("Initiating ship must participate");
   });
 
+  it("awards at most one XP to every surviving participant on a side that sank an enemy", () => {
+    const active = startNavalBattle(scene(), {
+      battleId: "battle-1",
+      requestId: null,
+      initiatingShipId: "red",
+      participantShipIds: ["red", "blue"],
+      areaCells: areaCells(),
+      snapshots: snapshots(),
+      startedAt: 123,
+      rollD20: rolls(18, 10)
+    });
+    if (!active.activeNavalBattle) throw new Error("Missing active battle fixture");
+    active.activeNavalBattle.experienceEligibleSideIds = ["red", "red"];
+    active.activeNavalBattle.exitedShipIds = ["red"];
+
+    const result = completeNavalBattle(active);
+
+    expect(result.ships.red?.experience).toBe(1);
+    expect(result.ships.blue?.experience ?? 0).toBe(0);
+  });
+
   it("completes and archives the battle, releases surviving ships, clears temporary hp, restores movement phase, and preserves strategic snapshots", () => {
     const active = startNavalBattle(scene(), {
       battleId: "battle-1",

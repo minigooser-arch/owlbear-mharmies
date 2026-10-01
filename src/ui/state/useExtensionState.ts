@@ -3,6 +3,7 @@ import type { StrategicCityCommandPayload } from "../../cities/strategicCityComm
 import type {
   ArmyCommandPayload,
   ArmyStatus,
+  ArmyUpgrades,
   BattleGroup,
   GridCellCoord,
   MovementDenialReason,
@@ -20,6 +21,7 @@ import type {
   StateDemography,
   TerrainRegistryState,
   TurnState,
+  UpgradeTrack,
   Vector2,
   WarState
 } from "../../shared/types";
@@ -43,8 +45,10 @@ export interface ArmyView {
   healthHp: number;
   healthMaxHp: number;
   experience?: number;
+  upgrades?: ArmyUpgrades;
   formationActive?: boolean;
   formationHpAddedThisTurn?: number;
+  formationTurnCap?: number;
   healingHpHealedThisTurn?: number;
   healingPending?: boolean;
   supplied: boolean;
@@ -77,7 +81,14 @@ export interface ShipView {
   normalRangeMin: number;
   normalRangeMax: number;
   embarkedArmyId: string | null;
+  additionalEmbarkedArmyId?: string | null;
   detectionOverride: number | null;
+  experience?: number;
+  upgrades?: UpgradeTrack;
+  hospitalSupportDice?: number;
+  hospitalSupportRange?: number;
+  transportCapacity?: number;
+  transportLoadingFree?: boolean;
   effectiveDetectionRange: number;
   navalRoundNumber?: number;
   isCurrentNavalTurn?: boolean;

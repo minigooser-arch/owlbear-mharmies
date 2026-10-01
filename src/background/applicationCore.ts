@@ -87,6 +87,7 @@ import { buildSceneDetectionGraph, detectedShipIdsForSide } from "../visibility/
 import { LocalCloneReconciler, UpdateOriginGuard } from "../visibility/localCloneReconciler";
 import { VisionLightService } from "../visibility/visionLightService";
 import { visibleArmyIdsForPlayer } from "../visibility/visibilityEngine";
+import { shipEmbarkedArmyIds } from "../naval/transport/transportRules";
 import { applyPopulationCalendarToScene } from "../population/populationRules";
 import type { OwlbearPort } from "../owlbear/sdkAdapter";
 import {
@@ -96,6 +97,15 @@ import {
   type HeartbeatLease
 } from "./coordinator";
 import { BackgroundRuntime, type BackgroundRuntimePort } from "./runtime";
+import {
+  armyConcealmentCells,
+  armyEffectiveDetectionRange,
+  armyRevealsEnemyHp,
+  armyTerrainMovementCostUnits,
+  shipDetectionBonus,
+  shipEffectiveMaxHp,
+  terrainRegistryForArmy
+} from "../upgrades/unitUpgrades";
 
 type BarrierPurpose = "movement" | "vision";
 
@@ -278,7 +288,8 @@ function isArmyMovementEligible(record: ArmyRecord, scene: SceneState): boolean 
   if (!movingNow && !recoverableCoordinatorPause) return false;
   const shipId = record.state.embarkedOnShipId;
   if (shipId == null) return true;
-  return scene.ships?.[shipId]?.embarkedArmyId !== record.item.id;
+  const ship = scene.ships?.[shipId];
+  return !ship || !shipEmbarkedArmyIds(ship).includes(record.item.id);
 }
 
 export function hasEligibleArmyMovement(armies: readonly ArmyRecord[], scene: SceneState): boolean {
@@ -371,15 +382,18 @@ export class ProductionEngine {
     const reciprocallyEmbarkedArmyIds = new Set(armies.flatMap(({ item, state }) => {
       if (state.embarkedOnShipId == null) return [];
       const ship = scene.ships?.[state.embarkedOnShipId];
-      return ship?.embarkedArmyId === item.id ? [item.id] : [];
+      return ship && shipEmbarkedArmyIds(ship).includes(item.id) ? [item.id] : [];
     }));
     const activeLandArmies = armies.filter(({ item }) => !reciprocallyEmbarkedArmyIds.has(item.id));
     const armyDetectionUnits = activeLandArmies.map(({ item, state }) => ({
       id: item.id,
       sideId: state.sideId,
       position: item.position,
-      detectionRangeCells:
-        state.overrides.detectionRangeCells ?? scene.settings.defaultDetectionRangeCells,
+      detectionRangeCells: armyEffectiveDetectionRange(
+        state,
+        state.overrides.detectionRangeCells ?? scene.settings.defaultDetectionRangeCells
+      ),
+      concealmentCells: armyConcealmentCells(state),
       ignoresVisionBarriers: state.ignoresVisionBarriers
     }));
     const shipDetectionUnits = Object.entries(scene.ships ?? {}).flatMap(([shipId, state]) => {
@@ -389,7 +403,9 @@ export class ProductionEngine {
         id: shipId,
         sideId: state.sideId,
         position: item.position,
-        detectionRangeCells: state.detectionOverride ?? scene.settings.defaultDetectionRangeCells,
+        detectionRangeCells:
+          (state.detectionOverride ?? scene.settings.defaultDetectionRangeCells) + shipDetectionBonus(state),
+        concealmentCells: 0,
         ignoresVisionBarriers: false
       }];
     });
@@ -420,6 +436,25 @@ export class ProductionEngine {
       revealUntilTurn: scene.navalRevealUntilTurn ?? {},
       currentTurn: scene.turn.turnNumber
     });
+    const armyStateById = new Map(activeLandArmies.map(({ item, state }) => [item.id, state]));
+    const hpVisibleArmyIds = new Set<string>();
+    if (role === "GM") {
+      for (const armyId of armyStateById.keys()) hpVisibleArmyIds.add(armyId);
+    } else {
+      for (const [armyId, army] of armyStateById) {
+        if (memberSideIds.includes(army.sideId)) hpVisibleArmyIds.add(armyId);
+      }
+      for (const sideId of memberSideIds) {
+        for (const [targetId, observerIds] of graph.observersBySide.get(sideId) ?? []) {
+          if (!armyStateById.has(targetId)) continue;
+          const hasReconIntel = [...observerIds].some((observerId) => {
+            const observer = armyStateById.get(observerId);
+            return observer !== undefined && armyRevealsEnemyHp(observer);
+          });
+          if (hasReconIntel) hpVisibleArmyIds.add(targetId);
+        }
+      }
+    }
     const shipSources = sceneItems.filter((item) => (scene.ships ?? {})[item.id] !== undefined);
     const visibleSourceIds = new Set([...visible, ...visibleShips]);
     await this.cloneReconciler.reconcile(
@@ -434,6 +469,7 @@ export class ProductionEngine {
       memberSideIds,
       leaderSideIds,
       visible,
+      hpVisibleArmyIds,
       sceneItems,
       visibleShips
     );
@@ -673,7 +709,7 @@ export class ProductionEngine {
             start: remainingStart,
             cells: authorizedCells,
             sideId: record.state.sideId,
-            terrain: scene.terrain,
+            terrain: terrainRegistryForArmy(record.state, scene.terrain),
             wars: scene.wars,
             remainingUnits: record.state.movement.remainingUnits,
             readCell: (cell) => readCell(scene.gridMap, cell),
@@ -817,9 +853,14 @@ export class ProductionEngine {
           finalCell: strategicGrid.sceneToCell(frame.to),
           remainingUnits: frame.record.state.movement.remainingUnits,
           costForCell: (cell) => {
-            const cost = getDestinationMovementCostUnits(scene.terrain, readCell(scene.gridMap, cell));
+            const destination = readCell(scene.gridMap, cell);
+            const cost = getDestinationMovementCostUnits(scene.terrain, destination);
             if (cost === undefined) throw new Error(`Invalid terrain for strategic cell ${cell.x},${cell.y}`);
-            return cost;
+            return armyTerrainMovementCostUnits(
+              frame.record.state,
+              destination.terrainId ?? scene.terrain.defaultTerrainId,
+              cost
+            );
           }
         });
         frame.state = {
@@ -986,6 +1027,7 @@ export class ProductionEngine {
       command.type === "EMBARK_ARMY" ||
       command.type === "ACCEPT_EMBARK_ARMY" ||
       command.type === "DISEMBARK_ARMY" ||
+      command.type === "HEAL_ARMY" ||
       command.type === "CREATE_CITY_ARMY"
     ) {
       try {
@@ -1481,6 +1523,7 @@ export class ProductionEngine {
     memberSideIds: readonly string[],
     leaderSideIds: readonly string[],
     visibleArmyIds: ReadonlySet<string>,
+    hpVisibleArmyIds: ReadonlySet<string>,
     sceneItems: readonly SceneItemRecord[],
     visibleShipIds: ReadonlySet<string>
   ): Promise<void> {
@@ -1505,8 +1548,10 @@ export class ProductionEngine {
           sourceItemId: item.id,
           sideId: state.sideId,
           position: item.position,
-          rangeCells:
+          rangeCells: armyEffectiveDetectionRange(
+            state,
             state.overrides.detectionRangeCells ?? scene.settings.defaultDetectionRangeCells
+          )
         })),
         { isGM: role === "GM", memberSideIds: new Set(memberSideIds) },
         await this.grid.getDpi()
@@ -1572,7 +1617,7 @@ export class ProductionEngine {
         maxHp: record.state.health.maxHp,
         color: sideColors.get(record.state.sideId) ?? "#ffffff"
       })),
-      visibleArmyIds
+      hpVisibleArmyIds
     );
 
     const sceneItemById = new Map(sceneItems.map((item) => [item.id, item]));
@@ -1587,7 +1632,7 @@ export class ProductionEngine {
           name: item.name?.trim() || definition.name,
           position: item.position,
           hp: state.hp,
-          maxHp: definition.maxHp,
+          maxHp: shipEffectiveMaxHp(state),
           color: sideColors.get(state.sideId) ?? "#ffffff"
         }];
       }),
