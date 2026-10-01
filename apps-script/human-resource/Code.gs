@@ -2,6 +2,9 @@ const SPREADSHEET_ID_FALLBACK = '1wlTrvSxeoQDPKO0s9C0ooKF3xMqmTfcCDB70y-1X2QA';
 const BACKEND_SHEET = 'backend';
 const STATES_SHEET = 'ГОСУДАРСТВА [1910]';
 const LOG_SHEET = 'ЛР_ОПЕРАЦИИ';
+const STATES_POPULATION_COL = 16; // P
+const STATES_LR_COL = 41; // AO
+const STATES_LAW_COL = 41; // AO on the details row
 const LOG_HEADERS = [
   'requestId', 'createdAt', 'country', 'stateId', 'stateName', 'kind', 'hp',
   'ratePerHp', 'amount', 'amountPeople', 'populationBefore', 'populationAfter',
@@ -104,38 +107,8 @@ function spendLRBatch_(body) {
       ok: true,
       requestId: requestId,
       states: snapshot_(),
-      operations: existing.map(logRowToOperation_),
+      operations: existing,
       appliedAt: existing[0].createdAt
-    };
-  }
-
-  const pendingKey = propertyKey_('PENDING_', requestId);
-  const pendingRaw = PropertiesService.getScriptProperties().getProperty(pendingKey);
-  if (pendingRaw) {
-    const pending = JSON.parse(pendingRaw);
-    const currentIndex = countryIndex_();
-    const reconciled = pending.operations.every(function (operation) {
-      const entry = currentIndex[operation.country];
-      return entry && nearlyEqual_(entry.population, operation.populationAfter);
-    });
-    if (!reconciled) throw new Error('REQUEST_INCOMPLETE');
-    pending.operations.forEach(function (operation) {
-      const entry = currentIndex[operation.country];
-      operation.humanResourceAfter = entry.humanResource;
-    });
-    const appliedAt = pending.appliedAt || new Date().toISOString();
-    appendLogRows_(pending.logRows.map(function (row, index) {
-      row[13] = pending.operations[index].humanResourceAfter;
-      row[21] = 'SPENT';
-      return row;
-    }));
-    PropertiesService.getScriptProperties().deleteProperty(pendingKey);
-    return {
-      ok: true,
-      requestId: requestId,
-      states: snapshot_(),
-      operations: pending.operations,
-      appliedAt: appliedAt
     };
   }
 
@@ -145,98 +118,47 @@ function spendLRBatch_(body) {
     totals[operation.country] = (totals[operation.country] || 0) + operation.amount;
   });
 
-  const expectedBefore = {};
-  operations.forEach(function (operation) {
-    if (operation.expectedHumanResourceBefore === '') return;
-    const expected = Number(operation.expectedHumanResourceBefore);
-    if (!Number.isFinite(expected)) throw new Error('INVALID_EXPECTED_HUMAN_RESOURCE');
-    if (expectedBefore[operation.country] !== undefined &&
-        !nearlyEqual_(expectedBefore[operation.country], expected)) {
-      throw new Error('INCONSISTENT_EXPECTED_HUMAN_RESOURCE');
-    }
-    expectedBefore[operation.country] = expected;
-  });
-
   Object.keys(totals).forEach(function (country) {
     const entry = index[country];
     if (!entry) throw new Error('COUNTRY_NOT_FOUND:' + country);
-    if (expectedBefore[country] !== undefined &&
-        !nearlyEqual_(entry.humanResource, expectedBefore[country])) {
-      throw new StateChangedError(snapshot_());
-    }
     if (entry.humanResource + 1e-9 < totals[country]) {
-      throw new InsufficientResourceError(snapshot_());
-    }
-    if (entry.population + 1e-9 < totals[country]) {
       throw new InsufficientResourceError(snapshot_());
     }
   });
 
   const appliedAt = new Date().toISOString();
+  const running = {};
   const appliedOperations = operations.map(function (operation) {
     const entry = index[operation.country];
-    const populationBefore = entry.population;
-    const populationAfter = populationBefore - operation.amount;
+    const before = running[operation.country] === undefined
+      ? entry.humanResource
+      : running[operation.country];
+    const after = before - operation.amount;
+    running[operation.country] = after;
     return {
       ...operation,
-      populationBefore: populationBefore,
-      populationAfter: populationAfter,
-      humanResourceBefore: entry.humanResource,
-      humanResourceAfter: null
+      requestId: requestId,
+      createdAt: appliedAt,
+      populationBefore: entry.population,
+      populationAfter: entry.population,
+      humanResourceBefore: before,
+      humanResourceAfter: after
     };
   });
 
-  const writes = [];
-  Object.keys(totals).forEach(function (country) {
-    const entry = index[country];
-    writes.push({
-      row: entry.backendRow,
-      before: entry.population,
-      after: entry.population - totals[country]
-    });
-  });
-
-  const logRows = appliedOperations.map(function (operation) {
-    return [
-      operation.requestId,
-      appliedAt,
-      operation.country,
-      operation.stateId || '',
-      operation.stateName || '',
-      operation.kind || '',
-      operation.hp || '',
-      operation.ratePerHp || '',
-      operation.amount,
-      operation.amount * 1000,
-      operation.populationBefore,
-      operation.populationAfter,
-      operation.humanResourceBefore,
-      '',
-      operation.armyId || '',
-      operation.armyName || '',
-      operation.cityId || '',
-      operation.cityName || '',
-      operation.actorPlayerId || '',
-      operation.turnNumber || '',
-      requestId,
-      'PENDING'
-    ];
-  });
-
-  PropertiesService.getScriptProperties().setProperty(
-    pendingKey,
-    JSON.stringify({
-      appliedAt: appliedAt,
-      operations: appliedOperations,
-      logRows: logRows
-    })
-  );
-
+  const stateSheet = spreadsheet_().getSheetByName(STATES_SHEET);
   const changed = [];
   try {
-    writes.forEach(function (write) {
-      spreadsheet_().getSheetByName(BACKEND_SHEET).getRange(write.row, 3).setValue(write.after);
-      changed.push(write);
+    Object.keys(totals).forEach(function (country) {
+      const entry = index[country];
+      stateSheet.getRange(entry.stateRow, STATES_LR_COL).setValue(
+        entry.humanResource - totals[country]
+      );
+      changed.push({
+        row: entry.stateRow,
+        before: entry.humanResource,
+        after: entry.humanResource - totals[country]
+      });
     });
     SpreadsheetApp.flush();
 
@@ -244,16 +166,11 @@ function spendLRBatch_(body) {
     appliedOperations.forEach(function (operation) {
       const entry = refreshed[operation.country];
       if (!entry) throw new Error('COUNTRY_NOT_FOUND_AFTER_WRITE:' + operation.country);
-      operation.humanResourceAfter = entry.humanResource;
-    });
-    logRows.forEach(function (row, index) {
-      row[13] = appliedOperations[index].humanResourceAfter;
-      row[21] = 'SPENT';
+      operation.humanResourceAfter = operation.humanResourceAfter;
+      operation.populationAfter = entry.population;
     });
 
-    appendLogRows_(logRows);
-    PropertiesService.getScriptProperties().deleteProperty(pendingKey);
-
+    appendLogRows_(appliedOperations.map(operationLogRow_));
     return {
       ok: true,
       requestId: requestId,
@@ -263,25 +180,26 @@ function spendLRBatch_(body) {
     };
   } catch (error) {
     changed.reverse().forEach(function (write) {
-      spreadsheet_().getSheetByName(BACKEND_SHEET).getRange(write.row, 3).setValue(write.before);
+      stateSheet.getRange(write.row, STATES_LR_COL).setValue(write.before);
     });
     SpreadsheetApp.flush();
-    PropertiesService.getScriptProperties().deleteProperty(pendingKey);
     throw error;
   }
 }
 
 function refundLRBatch_(body) {
   ensureDailyPopulationGrowth_();
+
   const refundRequestId = requireString_(body.requestId, 'REQUEST_ID_REQUIRED');
   const originalRequestId = requireString_(body.originalRequestId, 'ORIGINAL_REQUEST_ID_REQUIRED');
-  const existingRefund = findBatchRows_(originalRequestId, 'REFUNDED');
+
+  const existingRefund = findBatchRows_(refundRequestId, 'REFUNDED');
   if (existingRefund.length > 0) {
     return {
       ok: true,
       requestId: refundRequestId,
       states: snapshot_(),
-      operations: existingRefund.map(logRowToOperation_),
+      operations: existingRefund,
       appliedAt: existingRefund[0].createdAt
     };
   }
@@ -291,83 +209,70 @@ function refundLRBatch_(body) {
 
   const index = countryIndex_();
   const refundTotals = {};
-  spent.forEach(function (row) {
-    refundTotals[row.country] = (refundTotals[row.country] || 0) + Number(row.amount || 0);
+  spent.forEach(function (operation) {
+    refundTotals[operation.country] = (refundTotals[operation.country] || 0) + Number(operation.amount || 0);
   });
 
   Object.keys(refundTotals).forEach(function (country) {
     if (!index[country]) throw new Error('COUNTRY_NOT_FOUND:' + country);
   });
 
-  const appliedAt = new Date().toISOString();
-  const writes = Object.keys(refundTotals).map(function (country) {
-    const entry = index[country];
-    return {
-      country: country,
-      row: entry.backendRow,
-      before: entry.population,
-      after: entry.population + refundTotals[country]
-    };
-  });
-
+  const stateSheet = spreadsheet_().getSheetByName(STATES_SHEET);
   const changed = [];
+  const appliedAt = new Date().toISOString();
+
   try {
-    writes.forEach(function (write) {
-      spreadsheet_().getSheetByName(BACKEND_SHEET).getRange(write.row, 3).setValue(write.after);
-      changed.push(write);
+    Object.keys(refundTotals).forEach(function (country) {
+      const entry = index[country];
+      const after = entry.humanResource + refundTotals[country];
+      stateSheet.getRange(entry.stateRow, STATES_LR_COL).setValue(after);
+      changed.push({
+        row: entry.stateRow,
+        before: entry.humanResource,
+        after: after
+      });
     });
     SpreadsheetApp.flush();
 
     const refreshed = countryIndex_();
-    const logRows = spent.map(function (row, index) {
-      const country = row.country;
-      const entry = refreshed[country];
-      return [
-        refundRequestId + ':' + index,
-        appliedAt,
-        country,
-        row.stateId,
-        row.stateName,
-        'REFUND',
-        row.hp,
-        row.ratePerHp,
-        -Number(row.amount),
-        -Number(row.amount) * 1000,
-        row.populationAfter,
-        entry.population,
-        row.humanResourceAfter,
-        entry.humanResource,
-        row.armyId,
-        row.armyName,
-        row.cityId,
-        row.cityName,
-        'SYSTEM:REFUND',
-        row.turnNumber,
-        originalRequestId,
-        'REFUNDED'
-      ];
+    const logRows = spent.map(function (operation, indexNumber) {
+      const entry = refreshed[operation.country];
+      return {
+        requestId: refundRequestId + ':' + indexNumber,
+        createdAt: appliedAt,
+        country: operation.country,
+        stateId: operation.stateId,
+        stateName: operation.stateName,
+        kind: 'REFUND',
+        hp: operation.hp,
+        ratePerHp: operation.ratePerHp,
+        amount: -Number(operation.amount),
+        populationBefore: operation.populationAfter,
+        populationAfter: entry.population,
+        humanResourceBefore: operation.humanResourceAfter,
+        humanResourceAfter: entry.humanResource,
+        armyId: operation.armyId,
+        armyName: operation.armyName,
+        cityId: operation.cityId,
+        cityName: operation.cityName,
+        actorPlayerId: 'SYSTEM:REFUND',
+        turnNumber: operation.turnNumber,
+        batchRequestId: originalRequestId,
+        status: 'REFUNDED'
+      };
     });
-    appendLogRows_(logRows);
 
+    appendLogRows_(logRows.map(operationLogRow_));
     return {
       ok: true,
       requestId: refundRequestId,
       states: snapshot_(),
-      operations: logRows.map(function (row) {
-        return {
-          country: row[2],
-          amount: Math.abs(Number(row[8])),
-          populationBefore: row[10],
-          populationAfter: row[11],
-          humanResourceBefore: row[12],
-          humanResourceAfter: row[13]
-        };
-      }),
+      operations: logRows,
       appliedAt: appliedAt
     };
   } catch (error) {
     changed.reverse().forEach(function (write) {
-      spreadsheet_().getSheetByName(BACKEND_SHEET).getRange(write.row, 3).setValue(write.before);
+      stateSheet.getRange(write.row, STATES_LR_COL).setValue(write.before);
     });
     SpreadsheetApp.flush();
     throw error;
@@ -380,7 +285,9 @@ function snapshot_() {
     return {
       country: country,
       population: index[country].population,
-      humanResource: index[country].humanResource
+      humanResource: index[country].humanResource,
+      humanResourceCapacity: index[country].humanResourceCapacity,
+      conscriptionRate: index[country].conscriptionRate
     };
   });
 }
@@ -394,8 +301,11 @@ function countryIndex_() {
   const backendLastRow = backend.getLastRow();
   const backendValues = backend.getRange(1, 1, Math.max(backendLastRow, 1), 11).getValues();
   const stateLastRow = states.getLastRow();
-  const populationFormulas = states.getRange(1, 16, Math.max(stateLastRow, 1), 1).getFormulas();
-  const lrValues = states.getRange(1, 44, Math.max(stateLastRow, 1), 1).getValues();
+  const populationFormulas = states.getRange(1, STATES_POPULATION_COL, Math.max(stateLastRow, 1), 1).getFormulas();
+  const populationValues = states.getRange(1, STATES_POPULATION_COL, Math.max(stateLastRow, 1), 1).getValues();
+  const lrValues = states.getRange(1, STATES_LR_COL, Math.max(stateLastRow, 1), 1).getValues();
+  const lawValues = states.getRange(1, STATES_LAW_COL, Math.max(stateLastRow, 1) + 1, 1).getDisplayValues();
+  const nameValues = states.getRange(1, 11, Math.max(stateLastRow, 1), 1).getDisplayValues();
 
   const index = {};
   for (let row = 1; row < backendValues.length; row += 1) {
@@ -406,7 +316,10 @@ function countryIndex_() {
       backendRow: row + 1,
       population: Number(backendValues[row][2]) || 0,
       humanResource: 0,
-      stateRow: null
+      humanResourceCapacity: 0,
+      conscriptionRate: 0,
+      stateRow: null,
+      stateName: ''
     };
   }
 
@@ -419,12 +332,35 @@ function countryIndex_() {
       return index[country].backendRow === backendRow;
     });
     if (!backendEntry) return;
-    const lr = Number(lrValues[indexRow][0]);
-    index[backendEntry].humanResource = Number.isFinite(lr) ? lr : 0;
+
+    const population = Number(populationValues[indexRow][0]);
+    const rate = conscriptionRate_(String(lawValues[indexRow + 1] ? lawValues[indexRow + 1][0] : ''));
+    const humanResource = Number(lrValues[indexRow][0]);
+
+    index[backendEntry].population = Number.isFinite(population) ? population : index[backendEntry].population;
+    index[backendEntry].humanResource = Number.isFinite(humanResource) ? humanResource : 0;
+    index[backendEntry].humanResourceCapacity = calculateHumanResourceCapacity_(index[backendEntry].population, rate);
+    index[backendEntry].conscriptionRate = rate;
     index[backendEntry].stateRow = indexRow + 1;
+    index[backendEntry].stateName = String(nameValues[indexRow][0] || '').trim();
   });
 
   return index;
+}
+
+function conscriptionRate_(value) {
+  const text = String(value || '').toUpperCase();
+  if (text.indexOf('ВСЕХ ПОД РУЖЬЁ') >= 0) return 0.24;
+  if (text.indexOf('МАССОВАЯ МОБИЛИЗАЦИЯ') >= 0) return 0.18;
+  if (text.indexOf('ЧАСТИЧНАЯ МОБИЛИЗАЦИЯ') >= 0) return 0.08;
+  if (text.indexOf('СРОЧНЫЙ ПРИЗЫВ') >= 0) return 0.04;
+  if (text.indexOf('КОНТРАКТНАЯ СЛУЖБА') >= 0) return 0.02;
+  return 0;
+}
+
+function calculateHumanResourceCapacity_(population, rate) {
+  if (!Number.isFinite(population) || population <= 0 || !Number.isFinite(rate) || rate <= 0) return 0;
+  return Math.min(population, rate * population * Math.pow(4200 / population, 0.48));
 }
 
 function ensureDailyPopulationGrowth_() {
@@ -483,28 +419,31 @@ function findBatchRows_(batchRequestId, status) {
     .map(logRowToOperation_);
 }
 
-function logRowToOperation_(row) {
-  return {
-    requestId: String(row[0] || '') || undefined,
-    createdAt: String(row[1] || '') || undefined,
-    country: String(row[2] || ''),
-    stateId: String(row[3] || '') || undefined,
-    stateName: String(row[4] || '') || undefined,
-    kind: String(row[5] || '') || undefined,
-    hp: row[6] === '' ? undefined : Number(row[6]),
-    ratePerHp: row[7] === '' ? undefined : Number(row[7]),
-    amount: Math.abs(Number(row[8] || 0)),
-    populationBefore: Number(row[10] || 0),
-    populationAfter: Number(row[11] || 0),
-    humanResourceBefore: Number(row[12] || 0),
-    humanResourceAfter: Number(row[13] || 0),
-    armyId: String(row[14] || '') || undefined,
-    armyName: String(row[15] || '') || undefined,
-    cityId: String(row[16] || '') || undefined,
-    cityName: String(row[17] || '') || undefined,
-    actorPlayerId: String(row[18] || '') || undefined,
-    turnNumber: row[19] === '' ? undefined : Number(row[19])
-  };
+function operationLogRow_(operation) {
+  return [
+    operation.requestId || '',
+    operation.createdAt || '',
+    operation.country || '',
+    operation.stateId || '',
+    operation.stateName || '',
+    operation.kind || '',
+    operation.hp === undefined || operation.hp === '' ? '' : operation.hp,
+    operation.ratePerHp === undefined || operation.ratePerHp === '' ? '' : operation.ratePerHp,
+    operation.amount,
+    Number(operation.amount) * 1000,
+    operation.populationBefore,
+    operation.populationAfter,
+    operation.humanResourceBefore,
+    operation.humanResourceAfter,
+    operation.armyId || '',
+    operation.armyName || '',
+    operation.cityId || '',
+    operation.cityName || '',
+    operation.actorPlayerId || '',
+    operation.turnNumber === undefined || operation.turnNumber === '' ? '' : operation.turnNumber,
+    operation.batchRequestId || operation.requestId || '',
+    operation.status || 'SPENT'
+  ];
 }
 
 function normalizeOperations_(raw) {
