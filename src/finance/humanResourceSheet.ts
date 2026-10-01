@@ -30,7 +30,7 @@ export interface HumanResourceSheetAppliedOperation extends HumanResourceSheetOp
 }
 
 export interface HumanResourceSheetSnapshot {
-  states: HumanResourceSheetState[];
+  states: readonly HumanResourceSheetState[];
   appliedAt?: string;
 }
 
@@ -51,7 +51,7 @@ export interface HumanResourceSheetRefundResult {
 interface ApiSuccess {
   ok: true;
   requestId?: string;
-  states?: HumanResourceSheetState[];
+  states?: readonly HumanResourceSheetState[];
   operations?: HumanResourceSheetAppliedOperation[];
   appliedAt?: string;
 }
@@ -120,7 +120,7 @@ function parseAppliedOperation(value: unknown): HumanResourceSheetAppliedOperati
     ...(raw.cityId === null || typeof raw.cityId === "string" ? { cityId: raw.cityId } : {}),
     ...(raw.cityName === null || typeof raw.cityName === "string" ? { cityName: raw.cityName } : {}),
     ...(typeof raw.actorPlayerId === "string" ? { actorPlayerId: raw.actorPlayerId } : {}),
-    ...(Number.isInteger(raw.turnNumber) ? { turnNumber: raw.turnNumber } : {}),
+    ...(typeof raw.turnNumber === "number" && Number.isInteger(raw.turnNumber) ? { turnNumber: raw.turnNumber } : {}),
     populationBefore: raw.populationBefore,
     populationAfter: raw.populationAfter,
     humanResourceBefore: raw.humanResourceBefore,
@@ -137,7 +137,7 @@ function parseResponse(value: unknown): HumanResourceSheetApiResponse {
     return {
       ok: false,
       code: typeof raw.code === "string" ? raw.code : "UNKNOWN_ERROR",
-      message: typeof raw.message === "string" ? raw.message : undefined,
+      ...(typeof raw.message === "string" ? { message: raw.message } : {}),
       states: Array.isArray(raw.states) ? raw.states.map(parseState).filter((item): item is HumanResourceSheetState => item !== undefined) : []
     };
   }
@@ -148,7 +148,7 @@ function parseResponse(value: unknown): HumanResourceSheetApiResponse {
     operations: Array.isArray(raw.operations)
       ? raw.operations.map(parseAppliedOperation).filter((item): item is HumanResourceSheetAppliedOperation => item !== undefined)
       : [],
-    appliedAt: typeof raw.appliedAt === "string" ? raw.appliedAt : undefined
+    ...(typeof raw.appliedAt === "string" ? { appliedAt: raw.appliedAt } : {})
   };
 }
 
