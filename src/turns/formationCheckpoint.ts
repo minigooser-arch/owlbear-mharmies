@@ -17,6 +17,7 @@ function formationRateInSceneUnits(scene: SceneState, sideId: string, configured
   return configuredRate;
 }
 
+// Formation is resolved automatically once per completed global turn; there is no player action to advance it.
 export function applyAutomaticArmyFormation(
   scene: SceneState,
   armies: Readonly<Record<string, ArmyState>>,
