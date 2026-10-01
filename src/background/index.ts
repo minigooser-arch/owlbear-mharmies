@@ -10,6 +10,7 @@ import { RouteContextMenuService } from "./routeContextMenuService";
 
 
 async function syncCityMarkerMetadata(): Promise<void> {
+  if (typeof OBR.scene?.isReady !== "function") return;
   if (!(await OBR.scene.isReady())) return;
   const sceneMetadata = await OBR.scene.getMetadata();
   const migrated = migrateSceneState(sceneMetadata[METADATA_KEYS.scene] ?? { version: 5 });
@@ -68,9 +69,11 @@ OBR.onReady(() => {
         show: async (message, variant) => { await OBR.notification.show(message, variant); }
       }, iconUrl);
       await syncCityMarkerMetadata();
-      const removeCityMarkerSync = OBR.scene.onMetadataChange(() => {
-        void syncCityMarkerMetadata().catch((error) => console.error("City marker metadata sync failed", error));
-      });
+      const removeCityMarkerSync = typeof OBR.scene?.onMetadataChange === "function"
+        ? OBR.scene.onMetadataChange(() => {
+            void syncCityMarkerMetadata().catch((error) => console.error("City marker metadata sync failed", error));
+          })
+        : () => undefined;
       window.addEventListener("beforeunload", () => {
         void Promise.allSettled([
           removeInterceptionContextMenu(),
