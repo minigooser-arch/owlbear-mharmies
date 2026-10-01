@@ -16,6 +16,49 @@ describe("entity context menu", () => {
     })).toEqual({ type: "SHIP", id: "ship-1" });
   });
 
+  it("resolves a scene interaction proxy through its source token", async () => {
+    type Entry = Parameters<Parameters<typeof registerEntityContextMenu>[0]["create"]>[0];
+    const entries: Entry[] = [];
+    const focused: unknown[] = [];
+    const port = {
+      create: async (entry: Entry) => { entries.push(entry); },
+      remove: async () => undefined,
+      getSceneItem: async () => ({
+        id: "army-source",
+        metadata: { [METADATA_KEYS.army]: { sideId: "red" } }
+      }),
+      setPlayerMetadata: async (update: Record<string, unknown>) => { focused.push(update); },
+      openAction: async () => undefined,
+      show: async () => undefined
+    };
+
+    await registerEntityContextMenu(port, "/icon.png");
+    const entry = entries[0];
+    if (!entry?.onClick) throw new Error("Context menu click handler was not registered");
+
+    await entry.onClick({
+      items: [{
+        id: "proxy-army",
+        type: "SHAPE",
+        name: "Летопись: объект",
+        visible: true,
+        locked: true,
+        disableHit: false,
+        position: { x: 0, y: 0 },
+        rotation: 0,
+        scale: { x: 1, y: 1 },
+        metadata: {
+          [METADATA_KEYS.entityInteractionProxy]: { sourceItemId: "army-source" }
+        }
+      } as unknown as Item],
+      selectionBounds: { min: { x: 0, y: 0 }, max: { x: 1, y: 1 }, width: 1, height: 1, center: { x: 0.5, y: 0.5 } }
+    }, "entity-access");
+
+    expect(focused).toEqual([{
+      "com.letopis.army-control/entity-focus": { type: "ARMY", id: "army-source" }
+    }]);
+  });
+
   it("resolves city markers through the marker metadata", () => {
     expect(entityFocusFromItem({
       id: "city-token",
