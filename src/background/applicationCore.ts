@@ -1434,7 +1434,7 @@ export class ProductionEngine {
       command
     );
 
-    let result = undefined as ReturnType<typeof executeCommand>;
+    let result: ReturnType<typeof executeCommand> | undefined;
     let sheetSpend:
       | Awaited<ReturnType<HumanResourceSheetGateway["spendBatch"]>>
       | undefined;
@@ -1552,6 +1552,17 @@ export class ProductionEngine {
         });
         return;
       }
+    }
+
+    if (!result) {
+      await sendCommandAck(this.port, {
+        requestId: command.requestId,
+        status: "REJECTED",
+        reason: "COMMAND_EXECUTION_FAILED",
+        coordinatorConnectionId: await this.currentConnectionId(),
+        recipientConnectionId: sender.connectionId
+      });
+      return;
     }
 
     const coordinatorConnectionId = await this.currentConnectionId();
