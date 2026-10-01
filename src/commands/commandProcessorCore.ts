@@ -2035,7 +2035,9 @@ export class CommandProcessor {
         const missingHp = Math.max(0, army.health.maxHp - army.health.hp);
         if (remainingTurnCap <= 0 || missingHp <= 0) return "HEALING_UNAVAILABLE";
 
-        const configuredRate = state.scene.settings.armyHealingCostPerHp ?? 5000;
+        const configuredRate = hasHospital
+          ? state.scene.settings.hospitalHealingCostPerHp ?? 2500
+          : state.scene.settings.armyHealingCostPerHp ?? 5000;
         const ratePerHp = humanResourceRateInSceneUnits(state, army.sideId, configuredRate);
         let affordableHp = Number.POSITIVE_INFINITY;
         if (state.scene.demographics !== undefined) {
