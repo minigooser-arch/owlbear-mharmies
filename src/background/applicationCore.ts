@@ -1464,6 +1464,7 @@ export class ProductionEngine {
       }
     }
 
+    const activeSheetGateway = activeSheetGateway;
     for (let attempt = 0; attempt < 2; attempt += 1) {
       commandState.scene = authoritativeScene;
       const attemptResult = executeCommand(commandState);
@@ -1519,7 +1520,7 @@ export class ProductionEngine {
       }
 
       try {
-        sheetSpend = await sheetGateway.spendBatch(command.requestId, sheetSpendOperations);
+        sheetSpend = await activeSheetGateway.spendBatch(command.requestId, sheetSpendOperations);
         attemptResult.state.scene = applyHumanResourceSheetSnapshot(attemptResult.state.scene, {
           states: sheetSpend.states,
           appliedAt: sheetSpend.appliedAt
@@ -1649,10 +1650,10 @@ export class ProductionEngine {
       }
     }
     const rollbackSheetSpend = async (): Promise<boolean> => {
-      if (!sheetSpend || !sheetGateway) return true;
+      if (!sheetSpend || !activeSheetGateway) return true;
       for (let attempt = 0; attempt < 3; attempt += 1) {
         try {
-          await sheetGateway.refundBatch(
+          await activeSheetGateway.refundBatch(
             `refund:${command.requestId}`,
             command.requestId,
             sheetSpendOperations
