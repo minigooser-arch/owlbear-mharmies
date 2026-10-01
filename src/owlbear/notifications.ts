@@ -55,7 +55,8 @@ export type NotificationCode =
   | "ARMY_TRANSFER_FORBIDDEN"
   | "ARMY_ENCIRCLED"
     | "HEALING_UNAVAILABLE"
-| "DISBAND_ALREADY_REQUESTED"
+  | "HEALING_ALREADY_REQUESTED"
+  | "DISBAND_ALREADY_REQUESTED"
   | "MOVEMENT_CONSUMED_FOR_TURN"
   | "ROUTE_NOT_ACTIVE_TURN"
   | "ROUTE_REQUIRES_REPLAN"
@@ -145,7 +146,8 @@ const RUSSIAN_MESSAGES: Readonly<Record<NotificationCode, string>> = {
   ARMY_TRANSFER_FORBIDDEN: "Сухопутную армию нельзя передать другой фракции.",
   ARMY_ENCIRCLED: "Окружённую армию нельзя лечить.",
     HEALING_UNAVAILABLE: "Лечение на этот ход недоступно: лимит уже исчерпан или армия полностью восстановлена.",
-DISBAND_ALREADY_REQUESTED: "Роспуск этой армии уже объявлен и не может быть отменён.",
+  HEALING_ALREADY_REQUESTED: "Армия уже проходит лечение в этом ходу.",
+  DISBAND_ALREADY_REQUESTED: "Роспуск этой армии уже объявлен и не может быть отменён.",
   MOVEMENT_CONSUMED_FOR_TURN: "После начала боя армия потеряла всё движение этого хода.",
   ROUTE_NOT_ACTIVE_TURN: "Этот маршрут назначен на другой глобальный ход.",
   ROUTE_REQUIRES_REPLAN: "Старый маршрут нужно спланировать заново.",
