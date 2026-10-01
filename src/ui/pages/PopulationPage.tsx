@@ -12,13 +12,12 @@ interface PopulationPageProps {
   onSyncPopulation?: () => Promise<PopulationSyncSummary>;
 }
 
-type DemographyDraft = Pick<StateDemography, "population" | "populationGrowthFactor" | "humanResource" | "conscriptionLawId" | "conscriptionRate">;
+type DemographyDraft = Pick<StateDemography, "population" | "populationGrowthFactor" | "conscriptionLawId" | "conscriptionRate">;
 
 function draftFor(record: StateDemography): DemographyDraft {
   return {
     population: record.population,
     populationGrowthFactor: record.populationGrowthFactor,
-    humanResource: record.humanResource,
     conscriptionLawId: record.conscriptionLawId,
     conscriptionRate: record.conscriptionRate
   };
@@ -58,7 +57,6 @@ export function PopulationPage({ states, demographics, conscriptionLaws, onActio
       const result = await onSyncPopulation();
       const details = [
         `Обновлено записей: ${result.applied}`,
-        `ЛР из таблицы: ${result.humanResourceApplied ?? 0}`,
         `Категорий призыва: ${result.conscriptionApplied}`,
         result.unmatchedStates.length > 0 ? `Без соответствия: ${result.unmatchedStates.length}` : "",
         (result.unmatchedConscriptionStates?.length ?? 0) > 0 ? `Без категории призыва: ${result.unmatchedConscriptionStates?.length}` : "",
@@ -94,8 +92,7 @@ export function PopulationPage({ states, demographics, conscriptionLaws, onActio
               <div className="form-grid">
                 <label>Население (тыс.)<input type="number" min="0" step="any" value={draft.population} onChange={(event) => updateDraft(record, { population: Number(event.target.value) })} /></label>
                 <label>Коэффициент роста<input type="number" min="0.000001" step="0.000001" value={draft.populationGrowthFactor} onChange={(event) => updateDraft(record, { populationGrowthFactor: Number(event.target.value) })} /></label>
-                <label>Текущий ЛР (тыс.)<input type="number" min="0" step="any" value={draft.humanResource} onChange={(event) => updateDraft(record, { humanResource: Number(event.target.value) })} /></label>
-                <label>Закон о призыве<select value={draft.conscriptionLawId} onChange={(event) => { const law = conscriptionLaws.find((candidate) => candidate.id === event.target.value); updateDraft(record, { conscriptionLawId: event.target.value, ...(law ? { conscriptionRate: law.rate } : {}) }); }}><option value="">Выберите закон</option>{conscriptionLaws.map((law) => <option key={law.id} value={law.id}>{law.name} ({(law.rate * 100).toLocaleString("ru-RU")}%)</option>)}</select></label>
+                                <label>Закон о призыве<select value={draft.conscriptionLawId} onChange={(event) => { const law = conscriptionLaws.find((candidate) => candidate.id === event.target.value); updateDraft(record, { conscriptionLawId: event.target.value, ...(law ? { conscriptionRate: law.rate } : {}) }); }}><option value="">Выберите закон</option>{conscriptionLaws.map((law) => <option key={law.id} value={law.id}>{law.name} ({(law.rate * 100).toLocaleString("ru-RU")}%)</option>)}</select></label>
                 <label>Ставка закона<input type="number" min="0" max="1" step="0.01" value={draft.conscriptionRate} onChange={(event) => updateDraft(record, { conscriptionRate: Number(event.target.value) })} /></label>
                 <label>Причина изменения<input required value={reasons[record.stateId] ?? ""} onChange={(event) => setReasons((current) => ({ ...current, [record.stateId]: event.target.value }))} placeholder="Например, импорт из таблицы" /></label>
               </div>
