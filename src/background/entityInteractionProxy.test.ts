@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { METADATA_KEYS } from "../shared/constants";
+import type { SceneItemRecord } from "../shared/types";
 import { createEntityInteractionProxy, entityInteractionProxyMatchesSource, entityInteractionProxySourceId } from "./entityInteractionProxy";
 
 const source = {
@@ -17,7 +18,7 @@ const source = {
     [METADATA_KEYS.army]: { sideId: "red" }
   },
   image: { width: 40, height: 30 }
-} as never;
+} as unknown as SceneItemRecord;
 
 describe("entity interaction proxy", () => {
   it("creates a transparent hit-testable scene item linked to the source", () => {
