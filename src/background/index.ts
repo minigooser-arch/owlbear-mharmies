@@ -29,7 +29,7 @@ async function syncCityMarkerMetadata(): Promise<void> {
     for (const item of draft) {
       const cityId = cityByMarker.get(item.id);
       if (cityId) item.metadata[METADATA_KEYS.cityMarker] = cityId;
-      else delete item.metadata[METADATA_KEYS.cityMarker];
+      else item.metadata[METADATA_KEYS.cityMarker] = undefined;
     }
   });
 }
