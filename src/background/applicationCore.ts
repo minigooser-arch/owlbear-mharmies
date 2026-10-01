@@ -1470,6 +1470,7 @@ export class ProductionEngine {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       commandState.scene = authoritativeScene;
       result = executeCommand(commandState);
+      if (!result) throw new Error("COMMAND_EXECUTION_FAILED");
       if (result.status !== "ACCEPTED" || !needsAuthoritativeHumanResource) break;
 
       const newTransactions = (result.state.scene.lrTransactions ?? [])
