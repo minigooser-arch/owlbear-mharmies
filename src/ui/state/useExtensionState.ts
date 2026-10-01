@@ -26,6 +26,7 @@ import type {
   WarState
 } from "../../shared/types";
 import type { DiagnosticTestId } from "../../owlbear/diagnostics";
+import type { MapEntityFocus } from "../../owlbear/entityFocus";
 
 export interface ArmyView {
   id: string;
