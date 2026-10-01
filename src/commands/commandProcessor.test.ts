@@ -629,12 +629,13 @@ describe("CommandProcessor", () => {
       if (result.status !== "ACCEPTED") return;
       expect(result.state.armies["army-red"]?.health.hp).toBe(10 + expectedHp);
       expect(result.state.armies["army-red"]?.healing?.hpHealedThisTurn).toBe(expectedHp);
-      expect(result.state.scene.demographics?.[0]?.humanResource).toBe(1_000 - expectedHp * 5);
+      const expectedRate = withHospital ? 2.5 : 5;
+      expect(result.state.scene.demographics?.[0]?.humanResource).toBe(1_000 - expectedHp * expectedRate);
       expect(result.state.scene.lrTransactions?.at(-1)).toMatchObject({
         kind: "HEALING",
         hp: expectedHp,
-        ratePerHp: 5,
-        amount: expectedHp * 5
+        ratePerHp: expectedRate,
+        amount: expectedHp * expectedRate
       });
     }
   );
