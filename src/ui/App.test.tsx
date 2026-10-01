@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE } from "../shared/constants";
 import { App } from "./App";
 import type { ExtensionServices, RawExtensionSnapshot } from "./state/useExtensionState";
@@ -197,6 +197,18 @@ it("passes pending naval requests from the GM snapshot into the battles page", (
   expect(screen.getByRole("heading", { name: "Заявки на морской бой" })).toBeInTheDocument();
   expect(screen.getByText("Аврора")).toBeInTheDocument();
   expect(screen.getByText("Баян")).toBeInTheDocument();
+});
+
+it("opens a focused army as a full-panel inspector and closes it through the cross", () => {
+  const clearFocusedEntity = vi.fn(async () => undefined);
+  render(<App services={services({
+    focusedEntity: { type: "ARMY", id: "own-a" },
+    clearFocusedEntity
+  })} />);
+  expect(screen.getByRole("complementary", { name: "Объект карты" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Войска" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Закрыть" }));
+  expect(clearFocusedEntity).toHaveBeenCalledTimes(1);
 });
 
 it("renders loading, no-scene, and future-schema states", () => {
