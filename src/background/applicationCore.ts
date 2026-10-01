@@ -98,6 +98,7 @@ import { applyPopulationCalendarToScene } from "../population/populationRules";
 import {
   HumanResourceSheetError,
   HumanResourceSheetGateway,
+  type HumanResourceSheetOperation,
   applyHumanResourceSheetSnapshot,
   humanResourceSpendsBetween,
   markHumanResourceTransactionsRecorded
