@@ -407,27 +407,13 @@ describe("CommandProcessor", () => {
     }
   });
 
-  it("rejects formation before changing HP when the state has insufficient LR", () => {
+  it("rejects manual army formation because formation is automatic", () => {
     const current = state();
-    current.scene.sides = current.scene.sides.map((side) => side.id === "red" ? { ...side, stateId: "red-state" } : side);
-    current.scene.states = [{ id: "red-state", name: "Красное государство", rulingFactionId: "red", active: true }];
-    current.scene.demographics = [{
-      stateId: "red-state", population: 1000, populationGrowthFactor: 1.003, humanResource: 10_000,
-      conscriptionLawId: "GENERAL_MOBILIZATION", conscriptionRate: 0.24, humanResourceCapacity: 240,
-      lastPopulationCalculationDate: "2026-09-28"
-    }];
-    const redArmy = current.armies["army-red"];
-    if (!redArmy) throw new Error("red army missing");
-    current.armies["army-red"] = {
-      ...redArmy,
-      health: { hp: 30, maxHp: 40 },
-      formation: { active: true, cityId: null, hpAddedThisTurn: 0, checkedOnTurn: 1 }
-    };
-
-    const result = processor.execute(context("PLAYER", "leader", current), command({ type: "FORM_ARMY", armyId: "army-red", hp: 5 }, "leader"));
-
-    expect(result).toEqual({ status: "REJECTED", reason: "INSUFFICIENT_HUMAN_RESOURCE" });
-    expect(current.armies["army-red"]?.health.hp).toBe(30);
+    const result = processor.execute(
+      context("PLAYER", "leader", current),
+      command({ type: "FORM_ARMY", armyId: "army-red", hp: 5 }, "leader")
+    );
+    expect(result).toEqual({ status: "REJECTED", reason: "FORMATION_AUTOMATIC_ONLY" });
   });
 
   it("lets the GM correct a state demographic record with an audit reason", () => {
