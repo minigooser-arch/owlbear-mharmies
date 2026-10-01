@@ -193,7 +193,7 @@ function refundLRBatch_(body) {
   const refundRequestId = requireString_(body.requestId, 'REQUEST_ID_REQUIRED');
   const originalRequestId = requireString_(body.originalRequestId, 'ORIGINAL_REQUEST_ID_REQUIRED');
 
-  const existingRefund = findBatchRows_(refundRequestId, 'REFUNDED');
+  const existingRefund = findRefundRowsByRequestId_(refundRequestId);
   if (existingRefund.length > 0) {
     return {
       ok: true,
@@ -206,6 +206,16 @@ function refundLRBatch_(body) {
 
   const spent = findBatchRows_(originalRequestId, 'SPENT');
   if (spent.length === 0) throw new Error('ORIGINAL_LR_BATCH_NOT_FOUND');
+  const alreadyRefunded = findBatchRows_(originalRequestId, 'REFUNDED');
+  if (alreadyRefunded.length > 0) {
+    return {
+      ok: true,
+      requestId: refundRequestId,
+      states: snapshot_(),
+      operations: alreadyRefunded,
+      appliedAt: alreadyRefunded[0].createdAt
+    };
+  }
 
   const index = countryIndex_();
   const refundTotals = {};
@@ -415,6 +425,19 @@ function findBatchRows_(batchRequestId, status) {
   return values
     .filter(function (row) {
       return String(row[20] || '') === batchRequestId && (!status || String(row[21] || '') === status);
+    })
+    .map(logRowToOperation_);
+}
+
+function findRefundRowsByRequestId_(refundRequestId) {
+  const sheet = ensureLogSheet_();
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+  const values = sheet.getRange(2, 1, lastRow - 1, LOG_HEADERS.length).getValues();
+  return values
+    .filter(function (row) {
+      return String(row[21] || '') === 'REFUNDED' &&
+        String(row[0] || '').indexOf(String(refundRequestId) + ':') === 0;
     })
     .map(logRowToOperation_);
 }
