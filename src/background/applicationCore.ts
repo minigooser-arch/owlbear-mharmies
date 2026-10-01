@@ -85,7 +85,6 @@ import { GridStorageError } from "../storage/gridChunkCodec";
 import { buildDetectionGraph } from "../visibility/detectionGraph";
 import { buildSceneDetectionGraph, detectedShipIdsForSide } from "../visibility/sceneDetectionGraph";
 import { LocalCloneReconciler, UpdateOriginGuard } from "../visibility/localCloneReconciler";
-import { createEntityInteractionProxy, entityInteractionProxyMatchesSource, entityInteractionProxySourceId } from "./entityInteractionProxy";
 import { VisionLightService } from "../visibility/visionLightService";
 import { visibleArmyIdsForPlayer } from "../visibility/visibilityEngine";
 import { shipEmbarkedArmyIds } from "../naval/transport/transportRules";
@@ -458,9 +457,7 @@ export class ProductionEngine {
     }
     const shipSources = sceneItems.filter((item) => (scene.ships ?? {})[item.id] !== undefined);
     const unitSources = [...armies.map((record) => record.item), ...shipSources];
-    if (this.isCoordinator()) {
-      await this.reconcileEntityInteractionProxies(unitSources, sceneItems, playerId);
-    }
+}
     const visibleSourceIds = new Set([...visible, ...visibleShips]);
     await this.cloneReconciler.reconcile(
       visibleSourceIds,
@@ -482,62 +479,6 @@ export class ProductionEngine {
 
   movementTick(itemFrame?: MetadataItemFrame): Promise<void> {
     return this.enqueueMutation(() => this.movementTickNow(itemFrame));
-  }
-
-  private async reconcileEntityInteractionProxies(
-    sources: readonly SceneItemRecord[],
-    sceneItems: readonly SceneItemRecord[]
-  ): Promise<void> {
-    const sourceById = new Map(sources.map((source) => [source.id, source]));
-    const proxies = sceneItems.filter((item) => entityInteractionProxySourceId(item) !== undefined);
-    const proxyBySourceId = new Map<string, SceneItemRecord>();
-    const duplicateProxyIds: string[] = [];
-
-    for (const proxy of proxies) {
-      const sourceItemId = entityInteractionProxySourceId(proxy);
-      if (!sourceItemId) continue;
-      if (proxyBySourceId.has(sourceItemId)) duplicateProxyIds.push(proxy.id);
-      else proxyBySourceId.set(sourceItemId, proxy);
-    }
-
-    if (duplicateProxyIds.length > 0) await this.port.deleteSceneItems(duplicateProxyIds);
-
-    const writes: Promise<void>[] = [];
-    const creates: SceneItemRecord[] = [];
-
-    for (const [sourceId, proxy] of proxyBySourceId) {
-      const source = sourceById.get(sourceId);
-      if (!source) {
-        writes.push(this.port.deleteSceneItems([proxy.id]));
-        continue;
-      }
-      if (!entityInteractionProxyMatchesSource(proxy, source)) {
-        const desired = createEntityInteractionProxy(source, () => proxy.id, createdUserId);
-        writes.push(this.port.updateSceneItem(proxy.id, {
-          position: desired.position,
-          rotation: desired.rotation,
-          scale: desired.scale,
-          layer: desired.layer,
-          zIndex: desired.zIndex,
-          visible: true,
-          locked: true,
-          disableHit: false,
-          disableAutoZIndex: true,
-          metadata: desired.metadata,
-          width: desired.width,
-          height: desired.height,
-          shapeType: desired.shapeType,
-          style: desired.style
-        }));
-      }
-    }
-
-    for (const source of sources) {
-      if (!proxyBySourceId.has(source.id)) creates.push(createEntityInteractionProxy(source, undefined, createdUserId));
-    }
-
-    await Promise.all(writes);
-    if (creates.length > 0) await this.port.addSceneItems(creates);
   }
 
   private async hideVisibleAuthoritativeUnits(
