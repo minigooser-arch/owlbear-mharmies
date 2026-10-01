@@ -42,9 +42,11 @@ export function createEntityInteractionProxy(
     layer: source.layer ?? "CHARACTER",
     zIndex: Math.max(1_000_000, (source.zIndex ?? 0) + 1),
     visible: true,
-    locked: true,
+    locked: false,
     disableHit: false,
     disableAutoZIndex: true,
+    attachedTo: source.id,
+    disableAttachmentBehavior: ["VISIBLE", "SCALE", "ROTATION", "LOCKED"],
     metadata: {
       [METADATA_KEYS.entityInteractionProxy]: {
         sourceItemId: source.id
@@ -76,9 +78,12 @@ export function entityInteractionProxyMatchesSource(
     proxy.layer === candidate.layer &&
     proxy.zIndex === candidate.zIndex &&
     proxy.visible === true &&
-    proxy.locked === true &&
+    proxy.locked === false &&
     proxy.disableHit === false &&
     proxy.disableAutoZIndex === true &&
+    proxy.attachedTo === source.id &&
+    JSON.stringify(proxy.disableAttachmentBehavior ?? []) ===
+      JSON.stringify(["VISIBLE", "SCALE", "ROTATION", "LOCKED"]) &&
     JSON.stringify(proxy.metadata[METADATA_KEYS.entityInteractionProxy]) ===
       JSON.stringify(candidate.metadata[METADATA_KEYS.entityInteractionProxy]) &&
     proxy.width === candidate.width &&
