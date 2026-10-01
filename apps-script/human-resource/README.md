@@ -10,13 +10,17 @@ The script uses:
 - `backend!C` — population, in thousands of people.
 - `backend!K` — daily population growth factor.
 - `ГОСУДАРСТВА [1910]!P` — population projection used by the state sheet.
-- `ГОСУДАРСТВА [1910]!AO` — current human resource, in thousands of people.
+- `ГОСУДАРСТВА [1910]!AR` — current human resource, calculated by the existing sheet formula.
 - `ГОСУДАРСТВА [1910]!AO` on the following details row — conscription law.
 - `ЛР_ОПЕРАЦИИ` — immutable LR transaction journal.
 
 ### Important
 
-`AO` is the mutable LR balance. When the first LR transaction is made for a state, an existing AO formula is replaced by its numeric current balance. The population in `backend!C` is never reduced when manpower is spent.
+`AR` is not a mutable balance. It remains the existing formula in the state sheet and is recalculated automatically from the current population in `P`/`backend!C` and the conscription law in `AO`.
+
+When LR is spent, the gateway does not write to `AR`. It first verifies the current formula-derived LR in `AR`, then reduces the state's population in `backend!C` by the spent LR amount. Because population is stored in thousands, `5` means 5,000 people. The state sheet recalculates `P` and then `AR` automatically.
+
+Refunds work in the opposite direction: they restore the spent population amount in `backend!C`, after which the existing sheet formula recalculates LR. No LR formula is replaced.
 
 The gateway calculates the LR capacity using the same formula previously used by the state sheet:
 
@@ -42,7 +46,7 @@ Amounts sent by Owlbear are in thousands of people: `5` means 5,000 people.
 
 The trigger runs every minute but only performs the daily population update once, at/after 00:06 in the spreadsheet timezone. The last applied calendar date is stored in Script Properties.
 
-Population growth changes only `backend!C`. It never rewrites the current LR in AO.
+Population growth changes only `backend!C`. It never writes the derived LR formula in `AR`.
 
 Both daily growth and LR spend/refund operations use the same `LockService.getScriptLock()`.
 
@@ -52,18 +56,19 @@ The extension sends one `spendLRBatch` request per game command. The script:
 
 1. acquires the script lock;
 2. applies any due population growth;
-3. reads the current AO LR balances;
+3. reads the current formula-derived LR from `AR`;
 4. checks the complete batch before writing anything;
 5. if any state lacks enough LR, changes nothing and returns the authoritative snapshot;
-6. otherwise subtracts the LR amount directly from the corresponding AO cells;
-7. writes the individual audit rows;
-8. returns the authoritative population/LR snapshot.
+6. otherwise subtracts the LR amount from the corresponding state's population in `backend!C`;
+7. flushes the sheet so `P` and `AR` recalculate;
+8. writes the individual audit rows;
+9. returns the authoritative population/LR snapshot.
 
 Repeated request IDs are idempotent and do not spend LR twice.
 
 ## Refund
 
-A refund is used only when Owlbear has spent the batch in Sheets but cannot persist the corresponding scene transaction. Refund adds the original LR amount back to the current AO balance; it never restores an old population snapshot.
+A refund is used only when Owlbear has spent the batch in Sheets but cannot persist the corresponding scene transaction. Refund restores the original population amount in `backend!C`; it never writes to `AR` and never restores an old LR snapshot.
 
 Refunds are also idempotent.
 
