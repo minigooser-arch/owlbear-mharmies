@@ -80,8 +80,8 @@ describe("entity context menu registration", () => {
         metadata: {
           [METADATA_KEYS.localClone]: { sourceItemId: "army-source" }
         }
-      } as Item]
-    });
+      } as unknown as Item]
+    }, "entity-access");
 
     expect(focused).toEqual([{
       "com.letopis.army-control/entity-focus": { type: "ARMY", id: "army-source" }
