@@ -59,12 +59,13 @@ describe("entity context menu registration", () => {
     const cloneIcon = entry.icons[0];
     if (!cloneIcon) throw new Error("Local clone icon was not registered");
     expect(cloneIcon.label).toBe("Открыть объект");
-    expect(cloneIcon.filter.every).toContainEqual({
+    expect(cloneIcon.filter?.every).toContainEqual({
       key: ["metadata", METADATA_KEYS.localClone, "sourceItemId"],
       operator: "!=",
       value: undefined
     });
 
+    if (!entry.onClick) throw new Error("Context menu click handler was not registered");
     await entry.onClick({
       items: [{
         id: "clone-army",
@@ -80,7 +81,8 @@ describe("entity context menu registration", () => {
         metadata: {
           [METADATA_KEYS.localClone]: { sourceItemId: "army-source" }
         }
-      } as unknown as Item]
+      } as unknown as Item],
+      selectionBounds: { min: { x: 0, y: 0 }, max: { x: 1, y: 1 } }
     }, "entity-access");
 
     expect(focused).toEqual([{
