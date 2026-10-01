@@ -209,7 +209,7 @@ export interface ExtensionServices {
   send(command: UiCommand): Promise<unknown>;
   sendStrategic?(command: StrategicCityCommandPayload): Promise<unknown>;
   runDiagnostic(testId: DiagnosticTestId): Promise<unknown>;
-  clearFocusedEntity(): Promise<void>;
+  clearFocusedEntity?: () => Promise<void>;
 }
 
 export interface ExtensionViewModel extends RawExtensionSnapshot {
