@@ -3,7 +3,7 @@ const BACKEND_SHEET = 'backend';
 const STATES_SHEET = 'ГОСУДАРСТВА [1910]';
 const LOG_SHEET = 'ЛР_ОПЕРАЦИИ';
 const STATES_POPULATION_COL = 16; // P
-const STATES_LR_COL = 41; // AO
+const STATES_LR_COL = 44; // AR (formula-derived current LR)
 const STATES_LAW_COL = 41; // AO on the details row
 const LOG_HEADERS = [
   'requestId', 'createdAt', 'country', 'stateId', 'stateName', 'kind', 'hp',
@@ -124,50 +124,49 @@ function spendLRBatch_(body) {
     if (entry.humanResource + 1e-9 < totals[country]) {
       throw new InsufficientResourceError(snapshot_());
     }
+    if (entry.population + 1e-9 < totals[country]) {
+      throw new Error('INSUFFICIENT_POPULATION:' + country);
+    }
   });
 
   const appliedAt = new Date().toISOString();
   const running = {};
-  const appliedOperations = operations.map(function (operation) {
-    const entry = index[operation.country];
-    const before = running[operation.country] === undefined
-      ? entry.humanResource
-      : running[operation.country];
-    const after = before - operation.amount;
-    running[operation.country] = after;
-    return {
-      ...operation,
-      requestId: requestId,
-      createdAt: appliedAt,
-      populationBefore: entry.population,
-      populationAfter: entry.population,
-      humanResourceBefore: before,
-      humanResourceAfter: after
-    };
-  });
-
-  const stateSheet = spreadsheet_().getSheetByName(STATES_SHEET);
   const changed = [];
+  const backend = spreadsheet_().getSheetByName(BACKEND_SHEET);
+
   try {
     Object.keys(totals).forEach(function (country) {
       const entry = index[country];
-      stateSheet.getRange(entry.stateRow, STATES_LR_COL).setValue(
-        entry.humanResource - totals[country]
-      );
+      const beforePopulation = entry.population;
+      const afterPopulation = beforePopulation - totals[country];
+      backend.getRange(entry.backendRow, 3).setValue(afterPopulation);
       changed.push({
-        row: entry.stateRow,
-        before: entry.humanResource,
-        after: entry.humanResource - totals[country]
+        row: entry.backendRow,
+        before: beforePopulation,
+        after: afterPopulation
       });
     });
+
     SpreadsheetApp.flush();
 
     const refreshed = countryIndex_();
-    appliedOperations.forEach(function (operation) {
-      const entry = refreshed[operation.country];
-      if (!entry) throw new Error('COUNTRY_NOT_FOUND_AFTER_WRITE:' + operation.country);
-      operation.humanResourceAfter = operation.humanResourceAfter;
-      operation.populationAfter = entry.population;
+    const appliedOperations = operations.map(function (operation) {
+      const entryBefore = index[operation.country];
+      const entryAfter = refreshed[operation.country];
+      const before = running[operation.country] === undefined
+        ? entryBefore.humanResource
+        : running[operation.country];
+      const after = entryAfter.humanResource;
+      running[operation.country] = after;
+      return {
+        ...operation,
+        requestId: requestId,
+        createdAt: appliedAt,
+        populationBefore: entryBefore.population,
+        populationAfter: entryAfter.population,
+        humanResourceBefore: before,
+        humanResourceAfter: after
+      };
     });
 
     appendLogRows_(appliedOperations.map(operationLogRow_));
@@ -180,7 +179,7 @@ function spendLRBatch_(body) {
     };
   } catch (error) {
     changed.reverse().forEach(function (write) {
-      stateSheet.getRange(write.row, STATES_LR_COL).setValue(write.before);
+      backend.getRange(write.row, 3).setValue(write.before);
     });
     SpreadsheetApp.flush();
     throw error;
@@ -227,25 +226,23 @@ function refundLRBatch_(body) {
     if (!index[country]) throw new Error('COUNTRY_NOT_FOUND:' + country);
   });
 
-  const stateSheet = spreadsheet_().getSheetByName(STATES_SHEET);
+  const backend = spreadsheet_().getSheetByName(BACKEND_SHEET);
   const changed = [];
-  const beforeByCountry = {};
-  Object.keys(refundTotals).forEach(function (country) {
-    beforeByCountry[country] = index[country].humanResource;
-  });
   const appliedAt = new Date().toISOString();
 
   try {
     Object.keys(refundTotals).forEach(function (country) {
       const entry = index[country];
-      const after = entry.humanResource + refundTotals[country];
-      stateSheet.getRange(entry.stateRow, STATES_LR_COL).setValue(after);
+      const before = entry.population;
+      const after = before + refundTotals[country];
+      backend.getRange(entry.backendRow, 3).setValue(after);
       changed.push({
-        row: entry.stateRow,
-        before: entry.humanResource,
+        row: entry.backendRow,
+        before: before,
         after: after
       });
     });
+
     SpreadsheetApp.flush();
 
     const refreshed = countryIndex_();
@@ -261,9 +258,9 @@ function refundLRBatch_(body) {
         hp: operation.hp,
         ratePerHp: operation.ratePerHp,
         amount: -Number(operation.amount),
-        populationBefore: operation.populationAfter,
+        populationBefore: operation.populationBefore,
         populationAfter: entry.population,
-        humanResourceBefore: beforeByCountry[operation.country],
+        humanResourceBefore: operation.humanResourceBefore,
         humanResourceAfter: entry.humanResource,
         armyId: operation.armyId,
         armyName: operation.armyName,
@@ -286,7 +283,7 @@ function refundLRBatch_(body) {
     };
   } catch (error) {
     changed.reverse().forEach(function (write) {
-      stateSheet.getRange(write.row, STATES_LR_COL).setValue(write.before);
+      backend.getRange(write.row, 3).setValue(write.before);
     });
     SpreadsheetApp.flush();
     throw error;
