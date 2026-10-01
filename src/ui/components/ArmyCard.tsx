@@ -204,7 +204,17 @@ export function ArmyCard({ army, sideColor = "#687F91", isGM, canEditRoute, canR
       )}
 
       {canEditRoute && army.supplied && army.status !== "IN_BATTLE" && !army.formationActive && army.healthHp < army.healthMaxHp && (
-        <div className="card-actions"><button className="button subtle" type="button" onClick={() => onAction({ type: "HEAL_ARMY", armyId: army.id, amount: 1 })}>Лечиться</button></div>
+        <div className="card-actions">
+          <button
+            className="button subtle"
+            type="button"
+            disabled={army.healingRemainingThisTurn === 0}
+            title={army.healingRemainingThisTurn === 0 ? "Лимит лечения на этот ход исчерпан" : undefined}
+            onClick={() => onAction({ type: "HEAL_ARMY", armyId: army.id, amount: 1 })}
+          >
+            Лечиться
+          </button>
+        </div>
       )}
 
       <ArmyUpgradePanel army={army} enabled={canEditRoute} onAction={onAction} />
