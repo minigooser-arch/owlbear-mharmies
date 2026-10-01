@@ -40,6 +40,7 @@ import { hasNavalBattleLineOfSight } from "../naval/battle/navalBattleLineOfSigh
 import { hasNavalLineOfSight } from "../naval/detection/navalLineOfSight";
 import { getDueTurnBoundary } from "../turns/turnSchedule";
 import { completeTurn } from "../turns/turnService";
+import { applyPopulationCalendarToScene } from "../population/populationRules";
 import { getDestinationMovementCostUnits } from "../terrain/terrainRegistry";
 import { GridDistanceService } from "../grid/gridDistance";
 import { StrategicGridAdapter } from "../grid/strategicGrid";
