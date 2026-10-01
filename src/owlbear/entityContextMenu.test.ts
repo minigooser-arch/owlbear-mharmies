@@ -59,7 +59,12 @@ describe("entity context menu registration", () => {
     const cloneIcon = entry.icons[0];
     if (!cloneIcon) throw new Error("Local clone icon was not registered");
     expect(cloneIcon.label).toBe("Открыть объект");
-    expect(cloneIcon.filter?.every).toContainEqual({
+    expect(cloneIcon.filter?.some).toContainEqual({
+      key: ["metadata", METADATA_KEYS.entityInteractionProxy, "sourceItemId"],
+      operator: "!=",
+      value: undefined
+    });
+    expect(cloneIcon.filter?.some).toContainEqual({
       key: ["metadata", METADATA_KEYS.localClone, "sourceItemId"],
       operator: "!=",
       value: undefined
@@ -88,5 +93,33 @@ describe("entity context menu registration", () => {
     expect(focused).toEqual([{
       "com.letopis.army-control/entity-focus": { type: "ARMY", id: "army-source" }
     }]);
+
+    await entry.onClick({
+      items: [{
+        id: "proxy-army",
+        type: "SHAPE",
+        name: "Летопись: объект",
+        visible: true,
+        locked: true,
+        disableHit: false,
+        disableAutoZIndex: true,
+        position: { x: 0, y: 0 },
+        rotation: 0,
+        scale: { x: 1, y: 1 },
+        metadata: {
+          [METADATA_KEYS.entityInteractionProxy]: { sourceItemId: "army-source" }
+        }
+      } as unknown as Item],
+      selectionBounds: { min: { x: 0, y: 0 }, max: { x: 1, y: 1 }, width: 1, height: 1, center: { x: 0.5, y: 0.5 } }
+    }, "entity-access");
+
+    expect(focused).toEqual([
+      {
+        "com.letopis.army-control/entity-focus": { type: "ARMY", id: "army-source" }
+      },
+      {
+        "com.letopis.army-control/entity-focus": { type: "ARMY", id: "army-source" }
+      }
+    ]);
   });
 });
