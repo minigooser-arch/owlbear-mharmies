@@ -6,64 +6,78 @@ This Apps Script project is the authoritative gateway for population and human-r
 
 The script uses:
 
-- `backend!A` — country key
-- `backend!C` — population, in thousands of people
-- `backend!K` — daily population growth factor
-- `ГОСУДАРСТВА [1910]!P` — formula projection of population
-- `ГОСУДАРСТВА [1910]!AR` — formula-derived human resource
+- `backend!A` — stable country key.
+- `backend!C` — population, in thousands of people.
+- `backend!K` — daily population growth factor.
+- `ГОСУДАРСТВА [1910]!P` — population projection used by the state sheet.
+- `ГОСУДАРСТВА [1910]!AO` — current human resource, in thousands of people.
+- `ГОСУДАРСТВА [1910]!AO` on the following details row — conscription law.
+- `ЛР_ОПЕРАЦИИ` — immutable LR transaction journal.
 
-The script **only writes `backend!C`**. It never writes `P` or `AR`.
+### Important
 
-The audit sheet is `ЛР_ОПЕРАЦИИ`. It keeps one row per game LR transaction even when several transactions are applied atomically in one batch.
+`AO` is the mutable LR balance. When the first LR transaction is made for a state, an existing AO formula is replaced by its numeric current balance. The population in `backend!C` is never reduced when manpower is spent.
+
+The gateway calculates the LR capacity using the same formula previously used by the state sheet:
+
+`capacity = min(population, rate * population * (4200 / population)^0.48)`
+
+Amounts sent by Owlbear are in thousands of people: `5` means 5,000 people.
 
 ## First setup
 
 1. Create/open an Apps Script project and copy `Code.gs` into it.
 2. In **Project Settings → Script properties**, add:
-   - `SPREADSHEET_ID` = the spreadsheet ID (the code already contains the current table ID as a fallback).
+   - `SPREADSHEET_ID` = the spreadsheet ID (the code contains the current table ID as a fallback).
    - `API_TOKEN` = a long random secret shared with the Owlbear scene settings.
 3. Run `initializeGateway()` once and grant the requested permissions. It intentionally leaves growth in a migration-pending state.
 4. Verify that the old 00:06 growth script has already applied today's growth (if today is after 00:06), or that today's growth has not happened yet (if before 00:06).
-5. Run `confirmCurrentGrowthBaseline()` once. This is the explicit migration marker that prevents the new project from ever guessing whether the old script already ran.
+5. Run `confirmCurrentGrowthBaseline()` once. This prevents the new project from guessing whether the old growth script already ran.
 6. Deploy **Deploy → New deployment → Web app**.
-7. Execute the web app as the script owner and allow the web app to be accessed by anyone who has the URL. The API itself additionally requires `API_TOKEN`.
+7. Execute the web app as the script owner and allow access to anyone who has the URL. The API additionally requires `API_TOKEN`.
 8. Put the deployed `/exec` URL and the same token into the Owlbear settings under the human-resource Apps Script API fields.
 9. Disable the old standalone 00:06 population-growth trigger/script. The new project is the sole owner of daily population growth.
 
 ## Daily growth
 
-The trigger runs every minute but only performs the daily update once, at/after 00:06 in the spreadsheet timezone. The last applied calendar date is stored in Script Properties.
+The trigger runs every minute but only performs the daily population update once, at/after 00:06 in the spreadsheet timezone. The last applied calendar date is stored in Script Properties.
 
-Population growth is:
+Population growth changes only `backend!C`. It never rewrites the current LR in AO.
 
-`population = roundHalfUp(population * growth_rate)`
-
-and the result is written only to `backend!C`.
-
-Both the daily growth and LR spend/refund operations use the same `LockService.getScriptLock()`.
+Both daily growth and LR spend/refund operations use the same `LockService.getScriptLock()`.
 
 ## LR spend
 
 The extension sends one `spendLRBatch` request per game command. The script:
 
 1. acquires the script lock;
-2. ensures the current day's population growth has been applied;
-3. reads the current formula-derived AR values;
-4. checks every operation in the batch;
-5. if any operation lacks LR, changes nothing and returns the current snapshot;
-6. otherwise decreases only the corresponding `backend!C` cells;
-7. flushes the spreadsheet and rereads formula-derived LR;
-8. writes the individual audit rows;
-9. returns the authoritative population/LR snapshot.
+2. applies any due population growth;
+3. reads the current AO LR balances;
+4. checks the complete batch before writing anything;
+5. if any state lacks enough LR, changes nothing and returns the authoritative snapshot;
+6. otherwise subtracts the LR amount directly from the corresponding AO cells;
+7. writes the individual audit rows;
+8. returns the authoritative population/LR snapshot.
 
-Repeated `batchRequestId` values are idempotent and do not spend population twice.
+Repeated request IDs are idempotent and do not spend LR twice.
 
 ## Refund
 
-A refund is used only when Owlbear has spent the batch in Sheets but cannot persist the corresponding scene transaction. Refund adds the original amount back to the **current** `backend!C` value; it never restores an old population snapshot, so intervening growth or other operations are not overwritten.
+A refund is used only when Owlbear has spent the batch in Sheets but cannot persist the corresponding scene transaction. Refund adds the original LR amount back to the current AO balance; it never restores an old population snapshot.
+
+Refunds are also idempotent.
 
 ## Owlbear side
 
-The extension treats Google Sheets values as authoritative. The local `humanResource` field is only a cache used to calculate the prospective command result. After a successful batch, the returned Sheets values replace that cache and the individual LR transaction balances are marked as recorded.
+The extension treats Google Sheets as authoritative for current population and LR whenever the Apps Script gateway is configured.
 
-No local daily population growth is performed by Owlbear.
+For healing and automatic turn completion:
+
+1. Owlbear reads the current sheet snapshot.
+2. Existing game mechanics calculate the exact LR delta.
+3. The gateway atomically spends that delta in AO.
+4. The returned sheet balances replace the local LR cache.
+5. The local transaction is marked `RECORDED`.
+6. If scene persistence fails, Owlbear calls the compensating refund endpoint.
+
+Thus the persistent LR balance lives in the spreadsheet, while Owlbear keeps only a synchronized cache for game-state rendering.
