@@ -105,8 +105,6 @@ export const DEFAULT_SETTINGS: SceneSettings = {
   populationTimeZone: "Europe/Moscow",
   populationSheetCsvUrl: DEFAULT_POPULATION_SHEET_CSV_URL,
   conscriptionSheetCsvUrl: DEFAULT_CONSCRIPTION_SHEET_CSV_URL,
-  humanResourceApiUrl: "",
-  humanResourceApiToken: ""
 };
 
 export const DEFAULT_CONSCRIPTION_LAWS: ConscriptionLaw[] = [
