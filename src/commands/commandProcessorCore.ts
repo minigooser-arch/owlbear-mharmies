@@ -1975,6 +1975,7 @@ export class CommandProcessor {
       case "HEAL_ARMY": {
         const army = state.armies[command.armyId];
         if (!army) return "ARMY_NOT_FOUND";
+        if (army.healing?.pending) return "HEALING_ALREADY_REQUESTED";
         const permission = canHealArmy(army);
         if (!permission.allowed) return permission.reason;
         if (!this.cellForPosition) return "ARMY_POSITION_UNAVAILABLE";
