@@ -4,6 +4,8 @@ export interface HumanResourceSheetState {
   country: string;
   population: number;
   humanResource: number;
+  humanResourceCapacity: number;
+  conscriptionRate: number;
 }
 
 export interface HumanResourceSheetOperation {
@@ -91,11 +93,15 @@ function parseState(value: unknown): HumanResourceSheetState | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
   const raw = value as Record<string, unknown>;
   if (typeof raw.country !== "string" || !raw.country.trim()) return undefined;
-  if (!finiteNonNegative(raw.population) || !finiteNonNegative(raw.humanResource)) return undefined;
+  if (!finiteNonNegative(raw.population) || !finiteNonNegative(raw.humanResource) ||
+      !finiteNonNegative(raw.humanResourceCapacity) || !finiteNonNegative(raw.conscriptionRate) ||
+      raw.conscriptionRate > 1) return undefined;
   return {
     country: raw.country.trim(),
     population: raw.population,
-    humanResource: raw.humanResource
+    humanResource: raw.humanResource,
+    humanResourceCapacity: raw.humanResourceCapacity,
+    conscriptionRate: raw.conscriptionRate
   };
 }
 
@@ -287,7 +293,9 @@ export function applyHumanResourceSheetSnapshot(
       ...record,
       population: sheet.population,
       humanResource: sheet.humanResource,
-      humanResourceCapacity: Math.max(record.humanResourceCapacity, sheet.humanResource)
+      humanResourceCapacity: sheet.humanResourceCapacity,
+      conscriptionRate: sheet.conscriptionRate,
+      conscriptionLawId: record.conscriptionLawId
     };
   });
   return JSON.stringify(demographics) === JSON.stringify(scene.demographics)
