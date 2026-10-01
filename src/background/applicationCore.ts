@@ -637,22 +637,33 @@ export class ProductionEngine {
     const now = this.wallClock();
     const frame = await this.repository.readFrame();
     const sourceScene = frame.scene;
-    const scene = applyPopulationCalendarToScene(sourceScene, now);
-    const armyRecords = frame.items.armies;
-    const barrierRecords = frame.items.barriers;
-    const sceneItems = frame.items.items;
-    if (!canCommit()) return;
-    const boundary = getDueTurnBoundary(now, scene.turn);
+    const boundary = getDueTurnBoundary(now, sourceScene.turn);
+
+    const sheetGateway = new HumanResourceSheetGateway({
+      url: sourceScene.settings.humanResourceApiUrl ?? "",
+      token: sourceScene.settings.humanResourceApiToken ?? ""
+    });
+
     if (!boundary) {
-      if (scene !== sourceScene) {
+      if (!sheetGateway.configured) return;
+      try {
+        const snapshot = await sheetGateway.snapshot();
+        const syncedScene = applyHumanResourceSheetSnapshot(sourceScene, snapshot);
+        if (syncedScene === sourceScene || !canCommit()) return;
         await this.repository.writeScene(
-          { ...scene, revision: sourceScene.revision + 1 },
+          { ...syncedScene, revision: sourceScene.revision + 1 },
           sourceScene.revision,
           (current) => canCommit() && current.revision === sourceScene.revision
         );
+      } catch (error) {
+        this.reportOperationalError(error, "human-resource-sheet-snapshot");
       }
       return;
     }
+
+    const armyRecords = frame.items.armies;
+    const barrierRecords = frame.items.barriers;
+    const sceneItems = frame.items.items;
     const armies = Object.fromEntries(armyRecords.map((record) => [record.item.id, record.state]));
     let strategicGrid: StrategicGridAdapter;
     try {
@@ -672,39 +683,182 @@ export class ProductionEngine {
       record.item.id,
       strategicGrid.sceneToCell(record.item.position)
     ]));
-    const completion = completeTurn(scene, armies, {
-      source: "SCHEDULE",
-      completedAt: now,
-      boundaryId: boundary.id,
-      positionForCell: (cell) => strategicGrid.cellToSceneCenter(cell),
-      armyCells,
-      shipCells
-    });
-    if (!completion.changed) {
-      if (scene !== sourceScene) {
-        await this.repository.writeScene(
-          { ...scene, revision: sourceScene.revision + 1 },
-          sourceScene.revision,
-          (current) => canCommit() && current.revision === sourceScene.revision
+
+    let authoritativeScene = sourceScene;
+    let sheetSpend:
+      | Awaited<ReturnType<HumanResourceSheetGateway["spendBatch"]>>
+      | undefined;
+    let sheetSpendOperations: HumanResourceSheetOperation[] = [];
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      if (!sheetGateway.configured) {
+        // We allow the turn to proceed only when no LR transaction is produced.
+        // This preserves the existing turn mechanics while refusing to invent a local LR balance.
+        authoritativeScene = sourceScene;
+      } else {
+        try {
+          const snapshot = await sheetGateway.snapshot();
+          authoritativeScene = applyHumanResourceSheetSnapshot(sourceScene, snapshot);
+        } catch (error) {
+          this.reportOperationalError(error, "human-resource-sheet-snapshot");
+          return;
+        }
+      }
+
+      const completion = completeTurn(authoritativeScene, armies, {
+        source: "SCHEDULE",
+        completedAt: now,
+        boundaryId: boundary.id,
+        positionForCell: (cell) => strategicGrid.cellToSceneCenter(cell),
+        armyCells,
+        shipCells
+      });
+      if (!completion.changed) return;
+
+      const previous: CommandState = {
+        scene: authoritativeScene,
+        armies,
+        barriers: Object.fromEntries(barrierRecords.map((record) => [record.item.id, record.state])),
+        items: Object.fromEntries(sceneItems.map((item) => [item.id, item])),
+        positions: Object.fromEntries(sceneItems.map((item) => [item.id, item.position]))
+      };
+      let next: CommandState = {
+        ...structuredClone(previous),
+        scene: { ...completion.scene, revision: authoritativeScene.revision + 1 },
+        armies: completion.armies
+      };
+
+      const previousTransactionIds = new Set(
+        (previous.scene.lrTransactions ?? []).map((transaction) => transaction.id)
+      );
+      const newTransactions = (next.scene.lrTransactions ?? [])
+        .filter((transaction) =>
+          !previousTransactionIds.has(transaction.id) && transaction.status === "PENDING"
         );
+
+      if (newTransactions.length > 0) {
+        if (!sheetGateway.configured) {
+          this.reportOperationalError(
+            new HumanResourceSheetError("HUMAN_RESOURCE_SHEET_NOT_CONFIGURED"),
+            "human-resource-sheet-spend"
+          );
+          return;
+        }
+
+        const spends = humanResourceSpendsBetween(previous.scene, next.scene);
+        const spendByState = new Map(spends.map((spend) => [spend.stateId, spend.amount]));
+        sheetSpendOperations = newTransactions.map((transaction) => {
+          const state = next.scene.states.find((candidate) => candidate.id === transaction.stateId);
+          const country = state?.backendCountry?.trim();
+          if (!country) throw new HumanResourceSheetError(
+            "STATE_BACKEND_COUNTRY_MISSING",
+            transaction.stateName ?? transaction.stateId ?? transaction.sideName
+          );
+          return {
+            country,
+            amount: transaction.amount,
+            kind: transaction.kind,
+            hp: transaction.hp,
+            stateId: transaction.stateId ?? undefined,
+            stateName: transaction.stateName ?? undefined,
+            armyId: transaction.armyId,
+            armyName: transaction.armyName,
+            cityId: transaction.cityId,
+            cityName: transaction.cityName,
+            actorPlayerId: transaction.actorPlayerId,
+            turnNumber: transaction.turnNumber
+          };
+        });
+
+        const expectedByState = new Map<string, number>();
+        for (const operation of sheetSpendOperations) {
+          if (!operation.stateId) continue;
+          expectedByState.set(
+            operation.stateId,
+            (expectedByState.get(operation.stateId) ?? 0) + operation.amount
+          );
+        }
+        for (const [stateId, amount] of spendByState) {
+          if (Math.abs((expectedByState.get(stateId) ?? 0) - amount) > 1e-9) {
+            throw new HumanResourceSheetError("HUMAN_RESOURCE_SPEND_LEDGER_MISMATCH");
+          }
+        }
+
+        try {
+          sheetSpend = await sheetGateway.spendBatch(
+            `auto-turn-${boundary.id}`,
+            sheetSpendOperations
+          );
+          next.scene = applyHumanResourceSheetSnapshot(next.scene, {
+            states: sheetSpend.states,
+            appliedAt: sheetSpend.appliedAt
+          });
+          next.scene = markHumanResourceTransactionsRecorded(
+            next.scene,
+            newTransactions.map((transaction) => transaction.id),
+            "GOOGLE_SHEETS",
+            sheetSpend.appliedAt
+          );
+        } catch (error) {
+          if (
+            attempt === 0 &&
+            error instanceof HumanResourceSheetError &&
+            error.states.length > 0
+          ) {
+            authoritativeScene = applyHumanResourceSheetSnapshot(sourceScene, {
+              states: error.states
+            });
+            continue;
+          }
+          this.reportOperationalError(error, "human-resource-sheet-spend");
+          return;
+        }
+      }
+
+      if (!canCommit()) {
+        if (sheetSpend) {
+          try {
+            await sheetGateway.refundBatch(
+              `refund:auto-turn-${boundary.id}`,
+              `auto-turn-${boundary.id}`,
+              sheetSpendOperations
+            );
+          } catch (error) {
+            this.reportOperationalError(error, "human-resource-sheet-refund");
+          }
+        }
+        return;
+      }
+
+      try {
+        await this.persistCommandState(next, previous, sceneItems);
+      } catch (error) {
+        if (sheetSpend) {
+          let refunded = false;
+          for (let refundAttempt = 0; refundAttempt < 3; refundAttempt += 1) {
+            try {
+              await sheetGateway.refundBatch(
+                `refund:auto-turn-${boundary.id}`,
+                `auto-turn-${boundary.id}`,
+                sheetSpendOperations
+              );
+              refunded = true;
+              break;
+            } catch (refundError) {
+              if (refundAttempt === 2) this.reportOperationalError(refundError, "human-resource-sheet-refund");
+            }
+          }
+          if (!refunded) return;
+        }
+        if (error instanceof RevisionConflict) {
+          this.reportOperationalError(error, "turn-persistence-conflict");
+        } else {
+          this.reportOperationalError(error, "turn-persistence");
+        }
+        return;
       }
       return;
     }
-
-    const previous: CommandState = {
-      scene,
-      armies,
-      barriers: Object.fromEntries(barrierRecords.map((record) => [record.item.id, record.state])),
-      items: Object.fromEntries(sceneItems.map((item) => [item.id, item])),
-      positions: Object.fromEntries(sceneItems.map((item) => [item.id, item.position]))
-    };
-    const next: CommandState = {
-      ...structuredClone(previous),
-      scene: { ...completion.scene, revision: scene.revision + 1 },
-      armies: completion.armies
-    };
-    if (!canCommit()) return;
-    await this.persistCommandState(next, previous, sceneItems);
   }
 
   private async movementTickNow(initialItemFrame?: MetadataItemFrame): Promise<void> {
