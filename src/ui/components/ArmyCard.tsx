@@ -196,22 +196,6 @@ export function ArmyCard({ army, sideColor = "#687F91", isGM, canEditRoute, canR
       {army.routeRequiresReplan && <p className="route-warning">⚠ Старый маршрут нужно проложить заново по стратегической сетке.</p>}
       {invalidMessage && <p className="route-warning">⚠ {invalidMessage}</p>}
 
-      {canEditRoute && army.formationActive && (() => {
-        const remainingCap = Math.max(0, (army.formationTurnCap ?? 10) - (army.formationHpAddedThisTurn ?? 0));
-        const hp = Math.min(remainingCap, Math.max(0, army.healthMaxHp - army.healthHp));
-        return hp > 0 ? (
-          <div className="card-actions primary-card-action">
-            <button
-              className="button primary wide"
-              type="button"
-              onClick={() => onAction({ type: "FORM_ARMY", armyId: army.id, hp })}
-            >
-              Комплектовать армию (+{hp} HP)
-            </button>
-          </div>
-        ) : <p className="helper-text">Лимит комплектования на этот ход исчерпан.</p>;
-      })()}
-
       {canChangeRoute && (
         <div className="card-actions primary-card-action" aria-label="Маршрут армии">
           <button className="button primary wide" type="button" onClick={() => onAction({ type: "EDIT_ROUTE", armyId: army.id })}>{hasRoute ? "Изменить маршрут" : "Проложить маршрут"}</button>
@@ -220,7 +204,7 @@ export function ArmyCard({ army, sideColor = "#687F91", isGM, canEditRoute, canR
       )}
 
       {canEditRoute && army.supplied && army.status !== "IN_BATTLE" && !army.formationActive && army.healthHp < army.healthMaxHp && (
-        <div className="card-actions"><button className="button subtle" type="button" onClick={() => onAction({ type: "HEAL_ARMY", armyId: army.id, amount: 1 })}>Восстановить максимум доступных HP</button></div>
+        <div className="card-actions"><button className="button subtle" type="button" onClick={() => onAction({ type: "HEAL_ARMY", armyId: army.id, amount: 1 })}>Лечиться</button></div>
       )}
 
       <ArmyUpgradePanel army={army} enabled={canEditRoute} onAction={onAction} />
