@@ -83,6 +83,7 @@ import {
 import { semanticSnapshotEqual, semanticValueEqual } from "./snapshotEquality";
 import { CityCellPickerSession, type CityCellPickSnapshot } from "./cityCellPickerSession";
 import { armyTokenPickerOptions } from "./armyTokenPicker";
+import { ENTITY_FOCUS_METADATA_KEY, readEntityFocusFromPlayerMetadata } from "./entityContextMenu";
 import {
   hospitalSupportDice,
   hospitalSupportRange,
@@ -695,6 +696,12 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
     const currentDraft = snapshot.navalBattleAreaDraft;
     const keepDraft = role === "GM" && currentDraft !== undefined &&
       nextSnapshot.pendingNavalBattleRequests?.some((request) => request.id === currentDraft.requestId) === true;
+    const focusedEntity = readEntityFocusFromPlayerMetadata(playerMetadata);
+    const focusedEntityVisible = focusedEntity !== undefined && (
+      (focusedEntity.type === "ARMY" && nextSnapshot.armies.some((army) => army.id === focusedEntity.id)) ||
+      (focusedEntity.type === "SHIP" && (nextSnapshot.ships ?? []).some((ship) => ship.id === focusedEntity.id)) ||
+      (focusedEntity.type === "CITY" && (nextSnapshot.strategicCities ?? []).some((city) => city.id === focusedEntity.id))
+    );
     return {
       ...nextSnapshot,
       ...(keepDraft ? {
