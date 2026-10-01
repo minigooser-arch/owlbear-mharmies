@@ -64,6 +64,7 @@ export const METADATA_KEYS = {
   demographyAuditPart: `${EXTENSION_ID}/demography-audit-part`,
   army: `${EXTENSION_ID}/army`,
   ship: `${EXTENSION_ID}/ship`,
+  cityMarker: `${EXTENSION_ID}/city-marker`,
   barrier: `${EXTENSION_ID}/barrier`,
   localClone: `${EXTENSION_ID}/local-clone`,
   routeOverlay: `${EXTENSION_ID}/route-overlay`,
