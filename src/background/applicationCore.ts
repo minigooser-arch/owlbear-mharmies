@@ -1469,21 +1469,21 @@ export class ProductionEngine {
 
     for (let attempt = 0; attempt < 2; attempt += 1) {
       commandState.scene = authoritativeScene;
-      result = executeCommand(commandState);
-      if (!result) throw new Error("COMMAND_EXECUTION_FAILED");
-      if (result.status !== "ACCEPTED" || !needsAuthoritativeHumanResource) break;
+      const attemptResult = executeCommand(commandState);
+      result = attemptResult;
+      if (attemptResult.status !== "ACCEPTED" || !needsAuthoritativeHumanResource) break;
 
-      const newTransactions = (result.state.scene.lrTransactions ?? [])
+      const newTransactions = (attemptResult.state.scene.lrTransactions ?? [])
         .filter((transaction) =>
           !previousTransactionIds.has(transaction.id) && transaction.status === "PENDING"
         );
 
       if (newTransactions.length === 0) break;
 
-      const spends = humanResourceSpendsBetween(authoritativeScene, result.state.scene);
+      const spends = humanResourceSpendsBetween(authoritativeScene, attemptResult.state.scene);
       const spendByState = new Map(spends.map((spend) => [spend.stateId, spend.amount]));
       sheetSpendOperations = newTransactions.map((transaction) => {
-        const state = result.state.scene.states.find((candidate) => candidate.id === transaction.stateId);
+        const state = attemptResult.state.scene.states.find((candidate) => candidate.id === transaction.stateId);
         const country = state?.backendCountry?.trim();
         if (!country) throw new HumanResourceSheetError(
           "STATE_BACKEND_COUNTRY_MISSING",
@@ -1522,12 +1522,12 @@ export class ProductionEngine {
 
       try {
         sheetSpend = await sheetGateway!.spendBatch(command.requestId, sheetSpendOperations);
-        result.state.scene = applyHumanResourceSheetSnapshot(result.state.scene, {
+        attemptResult.state.scene = applyHumanResourceSheetSnapshot(attemptResult.state.scene, {
           states: sheetSpend.states,
           appliedAt: sheetSpend.appliedAt
         });
-        result.state.scene = markHumanResourceTransactionsRecorded(
-          result.state.scene,
+        attemptResult.state.scene = markHumanResourceTransactionsRecorded(
+          attemptResult.state.scene,
           sheetSpend.operations,
           "GOOGLE_SHEETS",
           sheetSpend.appliedAt
