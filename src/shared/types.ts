@@ -646,7 +646,7 @@ export type ArmyCommandPayload =
         type: "UPDATE_STATES_DEMOGRAPHY";
         updates: Array<{
           stateId: string;
-          patch: Partial<Pick<StateDemography, "population" | "populationGrowthFactor" | "humanResource" | "conscriptionLawId" | "conscriptionRate">>;
+          patch: Partial<Pick<StateDemography, "population" | "populationGrowthFactor" | "conscriptionLawId" | "conscriptionRate">>;
         }>;
         reason: string;
       }
