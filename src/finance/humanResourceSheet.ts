@@ -296,22 +296,31 @@ export function applyHumanResourceSheetSnapshot(
 
 export function markHumanResourceTransactionsRecorded(
   scene: SceneState,
-  transactionIds: readonly string[],
+  transactions: readonly HumanResourceSheetAppliedOperation[],
   recordedByPlayerId: string,
   recordedAt: string
 ): SceneState {
-  if (!scene.lrTransactions || transactionIds.length === 0) return scene;
-  const ids = new Set(transactionIds);
-  const lrTransactions: LRTransaction[] = scene.lrTransactions.map((transaction) =>
-    ids.has(transaction.id)
-      ? {
-          ...structuredClone(transaction),
-          status: "RECORDED",
-          recordedByPlayerId,
-          recordedAt
-        }
-      : structuredClone(transaction)
+  if (!scene.lrTransactions || transactions.length === 0) return scene;
+  const byRequestId = new Map(
+    transactions
+      .filter((transaction) => transaction.requestId)
+      .map((transaction) => [
+        transaction.requestId as string,
+        transaction
+      ])
   );
+  const lrTransactions: LRTransaction[] = scene.lrTransactions.map((transaction) => {
+    const confirmed = byRequestId.get(transaction.requestId);
+    if (!confirmed) return structuredClone(transaction);
+    return {
+      ...structuredClone(transaction),
+      balanceBefore: confirmed.humanResourceBefore,
+      balanceAfter: confirmed.humanResourceAfter,
+      status: "RECORDED",
+      recordedByPlayerId,
+      recordedAt
+    };
+  });
   return { ...scene, lrTransactions };
 }
 
