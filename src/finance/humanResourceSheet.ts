@@ -36,14 +36,14 @@ export interface HumanResourceSheetSnapshot {
 
 export interface HumanResourceSheetSpendResult {
   requestId: string;
-  states: HumanResourceSheetState[];
+  states: readonly HumanResourceSheetState[];
   operations: HumanResourceSheetAppliedOperation[];
   appliedAt: string;
 }
 
 export interface HumanResourceSheetRefundResult {
   requestId: string;
-  states: HumanResourceSheetState[];
+  states: readonly HumanResourceSheetState[];
   operations: HumanResourceSheetAppliedOperation[];
   appliedAt: string;
 }
@@ -60,7 +60,7 @@ interface ApiFailure {
   ok: false;
   code: string;
   message?: string;
-  states?: HumanResourceSheetState[];
+  states?: readonly HumanResourceSheetState[];
 }
 
 export type HumanResourceSheetApiResponse = ApiSuccess | ApiFailure;
