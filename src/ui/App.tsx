@@ -72,7 +72,7 @@ export function App({ services }: { services: ExtensionServices }) {
             relations={state.relations}
             turnPhase={state.turn.phase}
             onAction={send}
-            onClose={() => void services.clearFocusedEntity()}
+            onClose={() => void services.clearFocusedEntity?.()}
           />
         )}
         {isGM && navalRequestCount > 0 && tab !== "BATTLES" && <aside className="registration-card naval-request-notice" role="status" aria-label="Заявки на морской бой"><div className="registration-copy"><strong>Заявки на морской бой: {navalRequestCount}</strong><small>Есть ожидающие решения ведущего заявки. Все они собраны в одном списке.</small></div><button className="button primary" type="button" onClick={() => setGmTab("BATTLES")}>Открыть заявки</button></aside>}
