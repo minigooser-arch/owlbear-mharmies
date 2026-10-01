@@ -86,6 +86,6 @@ describe("city building location normalization", () => {
       { id: "barracks", type: "BARRACKS", cell: { x: 12, y: -4 } },
       { id: "hospital", type: "MILITARY_HOSPITAL", cell: { x: 12, y: -4 } }
     ]);
-    expect(city.buildings?.[0].cell).toEqual({ x: 99, y: 99 });
+    expect(city.buildings?.[0]?.cell).toEqual({ x: 99, y: 99 });
   });
 });
