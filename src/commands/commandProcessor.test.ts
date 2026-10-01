@@ -651,7 +651,7 @@ describe("CommandProcessor", () => {
     if (result.status !== "ACCEPTED") return;
     expect(result.state.armies["army-red"]?.health.hp).toBe(36);
     expect(result.state.scene.demographics?.[0]?.humanResource).toBe(0);
-    expect(result.state.lrTransactions?.at(-1)).toMatchObject({
+    expect(result.state.scene.lrTransactions?.at(-1)).toMatchObject({
       kind: "HEALING",
       hp: 6,
       ratePerHp: 2.5,
