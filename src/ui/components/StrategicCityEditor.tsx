@@ -89,7 +89,9 @@ function StrategicCityRow({
   const [capital, setCapital] = useState(city.isCapital);
   const [error, setError] = useState<string | null>(null);
   const [buildingType, setBuildingType] = useState<CityBuildingType>("MILITARY_DEPARTMENT");
-  const [buildingCell, setBuildingCell] = useState("0,0");
+  const [buildingCell, setBuildingCell] = useState(
+    city.cells[0] ? `${city.cells[0].x},${city.cells[0].y}` : "0,0"
+  );
 
   const beginEditing = () => {
     if (editing) {
