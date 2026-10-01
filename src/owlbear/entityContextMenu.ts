@@ -34,22 +34,44 @@ export function registerEntityContextMenu(
 ): Promise<() => Promise<void>> {
   return Promise.resolve(port.create({
     id: ENTITY_CONTEXT_MENU_ID,
-    icons: [{
-      icon: iconUrl,
-      label: "Открыть в военной панели",
-      filter: {
-        min: 1,
-        max: 1,
-        every: [
-          { key: ["metadata", METADATA_KEYS.localClone], value: undefined }
-        ],
-        some: [
-          { key: ["metadata", METADATA_KEYS.army], operator: "!=", value: undefined },
-          { key: ["metadata", METADATA_KEYS.ship], operator: "!=", value: undefined },
-          { key: ["metadata", METADATA_KEYS.cityMarker], operator: "!=", value: undefined }
-        ]
+    icons: [
+      {
+        icon: iconUrl,
+        label: "Открыть армию",
+        filter: {
+          min: 1,
+          max: 1,
+          every: [
+            { key: ["metadata", METADATA_KEYS.localClone], value: undefined },
+            { key: ["metadata", METADATA_KEYS.army], operator: "!=", value: undefined }
+          ]
+        }
+      },
+      {
+        icon: iconUrl,
+        label: "Открыть корабль",
+        filter: {
+          min: 1,
+          max: 1,
+          every: [
+            { key: ["metadata", METADATA_KEYS.localClone], value: undefined },
+            { key: ["metadata", METADATA_KEYS.ship], operator: "!=", value: undefined }
+          ]
+        }
+      },
+      {
+        icon: iconUrl,
+        label: "Открыть город",
+        filter: {
+          min: 1,
+          max: 1,
+          every: [
+            { key: ["metadata", METADATA_KEYS.localClone], value: undefined },
+            { key: ["metadata", METADATA_KEYS.cityMarker], operator: "!=", value: undefined }
+          ]
+        }
       }
-    }],
+    ],
     onClick: async (context) => {
       const item = context.items[0];
       if (!item) return;
