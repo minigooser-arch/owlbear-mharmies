@@ -113,7 +113,7 @@ it("copies image render fields and adds source metadata to a new local ID", () =
   });
 });
 
-it("builds local image clones as locked but hit-testable and preserves text semantics", () => {
+it("builds local image clones as selectable and hit-testable", () => {
   const clone = createSdkImageClone({
     id: "source",
     type: "IMAGE",
