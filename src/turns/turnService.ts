@@ -7,6 +7,7 @@ import { readCell } from "../terrain/gridMap";
 import type { ArmyState, GridCellCoord, SceneState, TurnState, Vector2 } from "../shared/types";
 import { runTurnCheckpoint } from "./turnCheckpointPipeline";
 import { applyAutomaticArmyFormation } from "./formationCheckpoint";
+import { applyPendingTurnHealing } from "../health/armyHealth";
 import { preCheckpointTurnBlockers, type TurnBlocker } from "./turnCompletionGuard";
 import { deferredBoundary, getLatestStandardTurnBoundary, getNextStandardTurnBoundary } from "./turnSchedule";
 import { armyEffectiveMovementUnits, shipEffectiveMovement, terrainRegistryForArmy } from "../upgrades/unitUpgrades";
@@ -179,6 +180,12 @@ export function completeTurn(
   }, nextTurn);
   nextScene = checkpoint.scene;
   nextArmies = checkpoint.armies;
+
+  // Treatment requested during the previous turn is applied now, at the start
+  // of the new global turn, after supply/encirclement checkpoint effects.
+  for (const [armyId, army] of Object.entries(nextArmies)) {
+    nextArmies[armyId] = applyPendingTurnHealing(army);
+  }
 
   // Open the new movement phase only after every strategic checkpoint effect completed.
   for (const [armyId, army] of Object.entries(nextArmies)) {
