@@ -1073,8 +1073,12 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
     },
     send,
     clearFocusedEntity: async () => {
-      await OBR.player.setMetadata({ [ENTITY_FOCUS_METADATA_KEY]: undefined });
+      // OBR player metadata is a patch object: undefined does not reliably
+      // remove an existing key. Null does, and readEntityFocus... treats it
+      // as an empty focus.
+      await OBR.player.setMetadata({ [ENTITY_FOCUS_METADATA_KEY]: null });
       refreshCoordinator.request();
+      await refreshCoordinator.whenIdle();
     },
     runDiagnostic: (testId) => diagnostics.run(testId),
     stop: () => {
