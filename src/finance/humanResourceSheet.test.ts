@@ -88,7 +88,9 @@ describe("human resource sheet gateway", () => {
     expect(result.states[0]).toEqual({
       country: "country-a",
       population: 1001,
-      humanResource: 100.1
+      humanResource: 100.1,
+      humanResourceCapacity: 120,
+      conscriptionRate: 0.04
     });
   });
 
