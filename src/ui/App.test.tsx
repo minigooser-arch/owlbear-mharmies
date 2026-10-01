@@ -201,10 +201,11 @@ it("passes pending naval requests from the GM snapshot into the battles page", (
 
 it("opens a focused army as a full-panel inspector and closes it through the cross", () => {
   const clearFocusedEntity = vi.fn(async () => undefined);
-  render(<App services={services({
-    focusedEntity: { type: "ARMY", id: "own-a" },
-    clearFocusedEntity
-  })} />);
+  const focusedServices = services({
+    focusedEntity: { type: "ARMY", id: "own-a" }
+  });
+  focusedServices.clearFocusedEntity = clearFocusedEntity;
+  render(<App services={focusedServices} />);
   expect(screen.getByRole("complementary", { name: "Объект карты" })).toBeInTheDocument();
   expect(screen.getByRole("heading", { name: "Войска" })).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Закрыть" }));
