@@ -56,12 +56,36 @@ export function registerEntityContextMenu(
         filter: {
           min: 1,
           max: 1,
-          some: [
-            { key: ["metadata", METADATA_KEYS.entityInteractionProxy, "sourceItemId"], operator: "!=", value: undefined },
-            { key: ["metadata", METADATA_KEYS.localClone, "sourceItemId"], operator: "!=", value: undefined },
-            { key: ["metadata", METADATA_KEYS.army], operator: "!=", value: undefined },
-            { key: ["metadata", METADATA_KEYS.ship], operator: "!=", value: undefined },
-            { key: ["metadata", METADATA_KEYS.cityMarker], operator: "!=", value: undefined }
+          every: [
+            {
+              key: ["metadata", METADATA_KEYS.entityInteractionProxy, "sourceItemId"],
+              operator: "!=",
+              value: undefined,
+              coordinator: "||"
+            },
+            {
+              key: ["metadata", METADATA_KEYS.localClone, "sourceItemId"],
+              operator: "!=",
+              value: undefined,
+              coordinator: "||"
+            },
+            {
+              key: ["metadata", METADATA_KEYS.army],
+              operator: "!=",
+              value: undefined,
+              coordinator: "||"
+            },
+            {
+              key: ["metadata", METADATA_KEYS.ship],
+              operator: "!=",
+              value: undefined,
+              coordinator: "||"
+            },
+            {
+              key: ["metadata", METADATA_KEYS.cityMarker],
+              operator: "!=",
+              value: undefined
+            }
           ]
         }
       }
