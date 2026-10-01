@@ -65,7 +65,7 @@ OBR.onReady(() => {
         ...contextMenuPort,
         setPlayerMetadata: (update) => OBR.player.setMetadata(update),
         openAction: () => OBR.action.open(),
-        show: (message, variant) => OBR.notification.show(message, variant)
+        show: async (message, variant) => { await OBR.notification.show(message, variant); }
       }, iconUrl);
       await syncCityMarkerMetadata();
       const removeCityMarkerSync = OBR.scene.onMetadataChange(() => {
