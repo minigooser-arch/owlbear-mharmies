@@ -652,6 +652,8 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
     lastEntitySelectionId = selectedId;
     if (!selectedId) return;
 
+    await refreshCoordinator.whenIdle();
+
     const [localItems, sceneItems] = await Promise.all([
       adapter.getLocalItems(),
       adapter.getSceneItems()
