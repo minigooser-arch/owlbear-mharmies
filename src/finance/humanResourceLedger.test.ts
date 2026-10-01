@@ -95,18 +95,15 @@ describe("human resource ledger", () => {
 
   it("returns a separately auditable administrative correction", () => {
     const result = applyDemographyCorrection(demography(), {
-      humanResource: 150,
       populationGrowthFactor: 1.004
     }, "Импорт из таблицы", "gm", "2026-09-28T12:00:00.000Z");
 
-    expect(result.record).toMatchObject({ humanResource: 150, populationGrowthFactor: 1.004 });
+    expect(result.record).toMatchObject({ humanResource: 100, populationGrowthFactor: 1.004 });
     expect(result.entry).toMatchObject({
       stateId: "state-1",
       actorPlayerId: "gm",
       reason: "Импорт из таблицы",
-      changes: {
-        humanResource: { before: 100, after: 150 }
-      }
+      changes: { populationGrowthFactor: { before: 1.003, after: 1.004 } }
     });
   });
 });
