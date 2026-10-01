@@ -207,7 +207,7 @@ it("opens a focused army as a full-panel inspector and closes it through the cro
   focusedServices.clearFocusedEntity = clearFocusedEntity;
   render(<App services={focusedServices} />);
   expect(screen.getByRole("complementary", { name: "Объект карты" })).toBeInTheDocument();
-  expect(screen.getByRole("heading", { name: "Своя армия" })).toBeInTheDocument();
+  expect(screen.getAllByText("Своя армия")).toHaveLength(2);
   fireEvent.click(screen.getByRole("button", { name: "Закрыть" }));
   expect(clearFocusedEntity).toHaveBeenCalledTimes(1);
 });
