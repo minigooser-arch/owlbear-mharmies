@@ -1482,6 +1482,26 @@ export class ProductionEngine {
         result.state.positions[command.armyId] = snapped.start;
       }
     }
+    const rollbackSheetSpend = async (): Promise<boolean> => {
+      if (!sheetSpend || !sheetGateway) return true;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          await sheetGateway.refundBatch(
+            `refund:${command.requestId}`,
+            command.requestId,
+            sheetSpendOperations
+          );
+          sheetSpend = undefined;
+          return true;
+        } catch (error) {
+          if (attempt === 2) {
+            this.reportOperationalError(error, "human-resource-sheet-refund");
+          }
+        }
+      }
+      return false;
+    };
+
     if (result.status === "ACCEPTED") {
       const commitScene = await this.repository.readScene();
       const leaseMatches = this.activeCoordinatorConnectionId === undefined ||
@@ -1491,10 +1511,11 @@ export class ProductionEngine {
         !leaseMatches ||
         commitScene.revision !== commandState.scene.revision
       ) {
+        const refunded = await rollbackSheetSpend();
         await sendCommandAck(this.port, {
           requestId: command.requestId,
-          status: "CONFLICT",
-          actualRevision: commitScene.revision,
+          status: refunded ? "CONFLICT" : "REJECTED",
+          ...(refunded ? { actualRevision: commitScene.revision } : { reason: "HUMAN_RESOURCE_SHEET_COMPENSATION_FAILED" }),
           coordinatorConnectionId,
           recipientConnectionId: sender.connectionId
         });
@@ -1503,6 +1524,17 @@ export class ProductionEngine {
       try {
         await this.persistCommandState(result.state, commandState, sceneItems);
       } catch (error) {
+        const refunded = await rollbackSheetSpend();
+        if (!refunded) {
+          await sendCommandAck(this.port, {
+            requestId: command.requestId,
+            status: "REJECTED",
+            reason: "HUMAN_RESOURCE_SHEET_COMPENSATION_FAILED",
+            coordinatorConnectionId,
+            recipientConnectionId: sender.connectionId
+          });
+          return;
+        }
         if (error instanceof RevisionConflict) {
           await sendCommandAck(this.port, { requestId: command.requestId, status: "CONFLICT", actualRevision: error.actualRevision,
             coordinatorConnectionId, recipientConnectionId: sender.connectionId });
