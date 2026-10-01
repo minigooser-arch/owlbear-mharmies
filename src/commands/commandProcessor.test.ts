@@ -428,13 +428,13 @@ describe("CommandProcessor", () => {
     const result = processor.execute(context("GM", "gm", current), command({
       type: "UPDATE_STATE_DEMOGRAPHY",
       stateId: "red-state",
-      patch: { humanResource: 150 },
+      patch: { population: 1_001 },
       reason: "Импорт из таблицы"
     }, "gm"));
 
     expect(result.status).toBe("ACCEPTED");
     if (result.status === "ACCEPTED") {
-      expect(result.state.scene.demographics?.[0]?.humanResource).toBe(150);
+      expect(result.state.scene.demographics?.[0]?.humanResource).toBe(100);
       expect(result.state.scene.demographyAudit?.[0]).toMatchObject({ stateId: "red-state", reason: "Импорт из таблицы" });
     }
   });
@@ -452,8 +452,8 @@ describe("CommandProcessor", () => {
     const result = processor.execute(context("GM", "gm", current), command({
       type: "UPDATE_STATES_DEMOGRAPHY",
       updates: [
-        { stateId: "red-state", patch: { population: 110, humanResource: 22 } },
-        { stateId: "blue-state", patch: { population: 210, humanResource: 31 } }
+        { stateId: "red-state", patch: { population: 110 } },
+        { stateId: "blue-state", patch: { population: 210 } }
       ],
       reason: "Импорт из Google Sheets"
     }));
@@ -485,13 +485,11 @@ describe("CommandProcessor", () => {
     if (result.status === "ACCEPTED") {
       expect(result.state.scene.demographics?.[0]).toMatchObject({
         conscriptionRate: 0.08,
-        humanResourceCapacity: 80,
-        humanResource: 80
+        humanResourceCapacity: 80
       });
       expect(result.state.scene.demographyAudit?.at(-1)?.changes).toMatchObject({
         conscriptionRate: { before: 0.04, after: 0.08 },
-        humanResourceCapacity: { before: 200, after: 80 },
-        humanResource: { before: 100, after: 80 }
+        humanResourceCapacity: { before: 200, after: 80 }
       });
     }
   });
@@ -503,12 +501,12 @@ describe("CommandProcessor", () => {
     const result = processor.execute(context("GM", "gm", current), command({
       type: "UPDATE_STATE_DEMOGRAPHY",
       stateId: "red-state",
-      patch: { population: 1_000_000, populationGrowthFactor: 1.003, humanResource: 100_000 },
+      patch: { population: 1_000_000, populationGrowthFactor: 1.003 },
       reason: "Создание записи"
     }, "gm"));
 
     expect(result.status).toBe("ACCEPTED");
-    if (result.status === "ACCEPTED") expect(result.state.scene.demographics?.[0]).toMatchObject({ stateId: "red-state", population: 1_000_000, humanResource: 100_000 });
+    if (result.status === "ACCEPTED") expect(result.state.scene.demographics?.[0]).toMatchObject({ stateId: "red-state", population: 1_000_000, humanResource: 0 });
   });
 
   it("spawns the configured faction token in the city when no token is selected", () => {

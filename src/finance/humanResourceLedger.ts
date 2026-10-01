@@ -77,7 +77,7 @@ export function debitHumanResource(
 
 export function applyDemographyCorrection(
   record: StateDemography,
-  patch: Partial<Pick<StateDemography, "population" | "populationGrowthFactor" | "humanResource" | "conscriptionLawId" | "conscriptionRate">>,
+  patch: Partial<Pick<StateDemography, "population" | "populationGrowthFactor" | "conscriptionLawId" | "conscriptionRate">>,
   reason: string,
   actorPlayerId: string,
   at: string
@@ -86,7 +86,7 @@ export function applyDemographyCorrection(
   if (!normalizedReason) throw new Error("DEMOGRAPHY_CORRECTION_REASON_REQUIRED");
   const next = { ...record };
   const changes: DemographyAuditEntry["changes"] = {};
-  for (const key of ["population", "populationGrowthFactor", "humanResource", "conscriptionLawId", "conscriptionRate"] as const) {
+  for (const key of ["population", "populationGrowthFactor", "conscriptionLawId", "conscriptionRate"] as const) {
     const value = patch[key];
     if (value === undefined || value === record[key]) continue;
     if (typeof value === "number" && (!Number.isFinite(value) || value < 0)) continue;
@@ -96,10 +96,6 @@ export function applyDemographyCorrection(
   next.populationGrowthFactor = next.populationGrowthFactor > 0 ? next.populationGrowthFactor : record.populationGrowthFactor;
   next.conscriptionRate = Math.min(1, Math.max(0, next.conscriptionRate));
   next.humanResourceCapacity = Math.max(0, next.population * next.conscriptionRate);
-  next.humanResource = Math.min(Math.max(0, next.humanResource), next.humanResourceCapacity);
-  if (next.humanResource !== record.humanResource && !changes.humanResource) {
-    changes.humanResource = { before: record.humanResource, after: next.humanResource };
-  }
   if (next.humanResourceCapacity !== record.humanResourceCapacity) {
     changes.humanResourceCapacity = { before: record.humanResourceCapacity, after: next.humanResourceCapacity };
   }

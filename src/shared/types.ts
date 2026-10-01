@@ -55,6 +55,10 @@ export interface SceneSettings {
   populationSheetCsvUrl?: string;
   /** Public Google Sheets CSV endpoint for the state/conscription category sheet. */
   conscriptionSheetCsvUrl?: string;
+  /** Apps Script web app used as the authoritative population/LR transaction gateway. */
+  humanResourceApiUrl?: string;
+  /** Shared scene token for the Apps Script transaction gateway. */
+  humanResourceApiToken?: string;
 }
 
 export interface ArmyTokenAsset {
@@ -642,14 +646,14 @@ export type ArmyCommandPayload =
         type: "UPDATE_STATES_DEMOGRAPHY";
         updates: Array<{
           stateId: string;
-          patch: Partial<Pick<StateDemography, "population" | "populationGrowthFactor" | "humanResource" | "conscriptionLawId" | "conscriptionRate">>;
+          patch: Partial<Pick<StateDemography, "population" | "populationGrowthFactor" | "conscriptionLawId" | "conscriptionRate">>;
         }>;
         reason: string;
       }
     | {
         type: "UPDATE_STATE_DEMOGRAPHY";
         stateId: string;
-        patch: Partial<Pick<StateDemography, "population" | "populationGrowthFactor" | "humanResource" | "conscriptionLawId" | "conscriptionRate">>;
+        patch: Partial<Pick<StateDemography, "population" | "populationGrowthFactor" | "conscriptionLawId" | "conscriptionRate">>;
         reason: string;
       }
     | { type: "UPSERT_CONSCRIPTION_LAW"; law: ConscriptionLaw; reason: string }

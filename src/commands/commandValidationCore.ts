@@ -250,6 +250,14 @@ function parseSettings(value: unknown): Partial<SceneSettings> | undefined {
     if (!boundedString(value.conscriptionSheetCsvUrl, 1024)) return undefined;
     result.conscriptionSheetCsvUrl = value.conscriptionSheetCsvUrl.trim();
   }
+  if ("humanResourceApiUrl" in value) {
+    if (!boundedString(value.humanResourceApiUrl, 2048)) return undefined;
+    result.humanResourceApiUrl = value.humanResourceApiUrl.trim();
+  }
+  if ("humanResourceApiToken" in value) {
+    if (!boundedString(value.humanResourceApiToken, 512)) return undefined;
+    result.humanResourceApiToken = value.humanResourceApiToken.trim();
+  }
   return result;
 }
 

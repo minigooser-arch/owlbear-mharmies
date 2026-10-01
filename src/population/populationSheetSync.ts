@@ -219,9 +219,9 @@ export async function syncPopulationFromPublicSheet(input: PopulationSyncInput):
   const corrections: PopulationCorrection[] = plan.entries.map((entry) => {
       const patch: PopulationCorrectionPatch = {
         population: entry.population,
-        populationGrowthFactor: entry.populationGrowthFactor
+        populationGrowthFactor: entry.populationGrowthFactor,
+        ...(entry.humanResource !== undefined ? { humanResource: entry.humanResource } : {})
       };
-      if (entry.humanResource !== undefined) patch.humanResource = entry.humanResource;
       if (entry.conscriptionLawId && entry.conscriptionRate !== undefined) {
         patch.conscriptionLawId = entry.conscriptionLawId;
         patch.conscriptionRate = entry.conscriptionRate;
