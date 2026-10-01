@@ -35,8 +35,8 @@ export function createFormationArmy(options: CreateFormationArmyOptions): ArmySt
   };
 }
 
-export function formationCapForTurn(hasTrainingCenter: boolean, hpAddedThisTurn: number): number {
-  return Math.max(0, (hasTrainingCenter ? 15 : 10) - hpAddedThisTurn);
+export function formationCapForTurn(hasBarracks: boolean, hpAddedThisTurn: number): number {
+  return Math.max(0, (hasBarracks ? 15 : 10) - hpAddedThisTurn);
 }
 
 export type FormationResult =
