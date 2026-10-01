@@ -94,7 +94,6 @@ import {
 import { VisionLightService } from "../visibility/visionLightService";
 import { visibleArmyIdsForPlayer } from "../visibility/visibilityEngine";
 import { shipEmbarkedArmyIds } from "../naval/transport/transportRules";
-import { applyPopulationCalendarToScene } from "../population/populationRules";
 import {
   HumanResourceSheetError,
   HumanResourceSheetGateway,
@@ -684,7 +683,7 @@ export class ProductionEngine {
       strategicGrid.sceneToCell(record.item.position)
     ]));
 
-    let authoritativeScene = sourceScene;
+    let authoritativeScene: SceneState;
     let sheetSpend:
       | Awaited<ReturnType<HumanResourceSheetGateway["spendBatch"]>>
       | undefined;
@@ -722,7 +721,7 @@ export class ProductionEngine {
         items: Object.fromEntries(sceneItems.map((item) => [item.id, item])),
         positions: Object.fromEntries(sceneItems.map((item) => [item.id, item.position]))
       };
-      let next: CommandState = {
+      const next: CommandState = {
         ...structuredClone(previous),
         scene: { ...completion.scene, revision: authoritativeScene.revision + 1 },
         armies: completion.armies
@@ -807,9 +806,6 @@ export class ProductionEngine {
             error instanceof HumanResourceSheetError &&
             error.states.length > 0
           ) {
-            authoritativeScene = applyHumanResourceSheetSnapshot(sourceScene, {
-              states: error.states
-            });
             continue;
           }
           this.reportOperationalError(error, "human-resource-sheet-spend");
@@ -1523,7 +1519,7 @@ export class ProductionEngine {
       }
 
       try {
-        sheetSpend = await sheetGateway!.spendBatch(command.requestId, sheetSpendOperations);
+        sheetSpend = await sheetGateway.spendBatch(command.requestId, sheetSpendOperations);
         attemptResult.state.scene = applyHumanResourceSheetSnapshot(attemptResult.state.scene, {
           states: sheetSpend.states,
           appliedAt: sheetSpend.appliedAt
