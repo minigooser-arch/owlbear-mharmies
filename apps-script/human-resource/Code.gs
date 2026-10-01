@@ -419,6 +419,32 @@ function findBatchRows_(batchRequestId, status) {
     .map(logRowToOperation_);
 }
 
+function logRowToOperation_(row) {
+  return {
+    requestId: String(row[0] || '') || undefined,
+    createdAt: String(row[1] || '') || undefined,
+    country: String(row[2] || ''),
+    stateId: String(row[3] || '') || undefined,
+    stateName: String(row[4] || '') || undefined,
+    kind: String(row[5] || '') || undefined,
+    hp: row[6] === '' ? undefined : Number(row[6]),
+    ratePerHp: row[7] === '' ? undefined : Number(row[7]),
+    amount: Math.abs(Number(row[8] || 0)),
+    populationBefore: Number(row[10] || 0),
+    populationAfter: Number(row[11] || 0),
+    humanResourceBefore: Number(row[12] || 0),
+    humanResourceAfter: Number(row[13] || 0),
+    armyId: String(row[14] || '') || undefined,
+    armyName: String(row[15] || '') || undefined,
+    cityId: String(row[16] || '') || undefined,
+    cityName: String(row[17] || '') || undefined,
+    actorPlayerId: String(row[18] || '') || undefined,
+    turnNumber: row[19] === '' ? undefined : Number(row[19]),
+    batchRequestId: String(row[20] || '') || undefined,
+    status: String(row[21] || '') || undefined
+  };
+}
+
 function operationLogRow_(operation) {
   return [
     operation.requestId || '',
