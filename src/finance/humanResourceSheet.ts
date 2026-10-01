@@ -1,4 +1,4 @@
-import type { LRTransaction, SceneState, StateDemography } from "../shared/types";
+import type { LRTransaction, SceneState } from "../shared/types";
 
 export interface HumanResourceSheetState {
   country: string;
@@ -325,14 +325,3 @@ export function markHumanResourceTransactionsRecorded(
   return { ...scene, lrTransactions };
 }
 
-export function authoritativeDemographyFromSheet(
-  record: StateDemography,
-  sheet: HumanResourceSheetState
-): StateDemography {
-  return {
-    ...record,
-    population: sheet.population,
-    humanResource: sheet.humanResource,
-    humanResourceCapacity: Math.max(record.humanResourceCapacity, sheet.humanResource)
-  };
-}
