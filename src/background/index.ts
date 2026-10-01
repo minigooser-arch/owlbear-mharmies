@@ -69,7 +69,9 @@ OBR.onReady(() => {
       const removeEntityContextMenu = await registerEntityContextMenu({
         ...contextMenuPort,
         setPlayerMetadata: (update) => OBR.player.setMetadata(update),
-        openAction: () => OBR.action.open(),
+        openAction: async () => {
+          if (!(await OBR.action.isOpen())) await OBR.action.open();
+        },
         show: async (message, variant) => { await OBR.notification.show(message, variant); }
       }, iconUrl);
       await syncCityMarkerMetadata();
