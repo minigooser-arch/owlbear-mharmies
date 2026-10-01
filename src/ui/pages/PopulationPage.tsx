@@ -74,7 +74,7 @@ export function PopulationPage({ states, demographics, conscriptionLaws, onActio
 
   return (
     <section aria-labelledby="population-title">
-      <div className="section-heading wiki-page-heading"><div><p className="eyebrow">Экономика государств</p><h2 id="population-title">Население и ЛР</h2><p className="page-description">Google Sheets используется как источник населения и текущего ЛР. Все числовые значения населения и ЛР хранятся в тысячах человек: 46 084 = 46М 084Т. Изменения читаются из публичного CSV и применяются только мастером; запись обратно в таблицу не выполняется.</p></div></div>
+      <div className="section-heading wiki-page-heading"><div><p className="eyebrow">Экономика государств</p><h2 id="population-title">Население и ЛР</h2><p className="page-description">Google Sheets используется как источник населения и текущего ЛР. Все числовые значения населения и ЛР хранятся в тысячах человек: 46 084 = 46М 084Т. Синхронизация читает таблицу, а игровые списания ЛР проходят через Apps Script и записываются обратно в таблицу.</p></div></div>
       {onSyncPopulation && <div className="registration-card population-sync-card">
         <div className="registration-copy"><strong>Синхронизация с Google Sheets</strong><small>{settings?.populationSheetCsvUrl ?? "Адрес CSV населения не задан"}<br />{settings?.conscriptionSheetCsvUrl ?? "Адрес CSV призыва не задан"}</small></div>
         <button className="button primary" type="button" onClick={() => void syncPopulation()} disabled={syncing}>{syncing ? "Загрузка…" : "Синхронизировать с Google Sheets"}</button>
