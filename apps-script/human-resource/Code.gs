@@ -53,14 +53,8 @@ function initializeGateway() {
   const sheet = spreadsheet_();
   ensureLogSheet_();
 
-  const now = new Date();
-  const timezone = sheet.getSpreadsheetTimeZone() || 'Europe/Moscow';
-  const local = localParts_(now, timezone);
-  if (local.hour > 0 || (local.hour === 0 && local.minute >= 6)) {
-    props.setProperty('LAST_GROWTH_DATE', local.date);
-  } else {
-    props.setProperty('LAST_GROWTH_DATE', previousDate_(local.date));
-  }
+  props.setProperty('GROWTH_MIGRATION_PENDING', 'true');
+  props.deleteProperty('LAST_GROWTH_DATE');
 
   ScriptApp.getProjectTriggers()
     .filter(function (trigger) {
@@ -74,6 +68,19 @@ function initializeGateway() {
     .create();
 
   return 'Gateway initialized. Disable the old population-growth trigger before using this project.';
+}
+
+function confirmCurrentGrowthBaseline() {
+  const props = PropertiesService.getScriptProperties();
+  const ss = spreadsheet_();
+  const timezone = ss.getSpreadsheetTimeZone() || 'Europe/Moscow';
+  const local = localParts_(new Date(), timezone);
+  props.setProperty(
+    'LAST_GROWTH_DATE',
+    local.hour === 0 && local.minute < 6 ? previousDate_(local.date) : local.date
+  );
+  props.deleteProperty('GROWTH_MIGRATION_PENDING');
+  return 'Growth baseline confirmed for ' + props.getProperty('LAST_GROWTH_DATE') + '.';
 }
 
 function runDailyPopulationGrowth() {
@@ -407,6 +414,9 @@ function ensureDailyPopulationGrowth_() {
   const timezone = ss.getSpreadsheetTimeZone() || 'Europe/Moscow';
   const local = localParts_(new Date(), timezone);
   if (local.hour === 0 && local.minute < 6) return;
+  if (props.getProperty('GROWTH_MIGRATION_PENDING') === 'true') {
+    throw new Error('GROWTH_MIGRATION_PENDING');
+  }
   if (props.getProperty('LAST_GROWTH_DATE') === local.date) return;
 
   const backend = ss.getSheetByName(BACKEND_SHEET);
