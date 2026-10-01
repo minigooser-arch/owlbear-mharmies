@@ -61,6 +61,23 @@ describe("metadata validation", () => {
     if (result.ok) expect(result.value.settings).toEqual(DEFAULT_SETTINGS);
   });
 
+  it("migrates legacy formation and hospital recovery rates to the current mechanics", () => {
+    const result = normalizeSceneState(scene({
+      settings: {
+        ...DEFAULT_SETTINGS,
+        armyFormationCostPerHp: 5000,
+        armyHealingCostPerHp: 5000,
+        hospitalHealingCostPerHp: 2500
+      }
+    }));
+
+    expect(result.status ?? result.ok).toBeTruthy();
+    if (!result.ok) return;
+    expect(result.value.settings.armyFormationCostPerHp).toBe(10000);
+    expect(result.value.settings.armyHealingCostPerHp).toBe(5000);
+    expect(result.value.settings.hospitalHealingCostPerHp).toBe(5000);
+  });
+
   it("preserves the backend country mapping and defaults the public population source", () => {
     const result = normalizeSceneState(scene({
       states: [{ id: "russia", name: "Россия", rulingFactionId: null, active: true, backendCountry: "russian_empire" }]
