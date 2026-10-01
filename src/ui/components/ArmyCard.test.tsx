@@ -121,11 +121,17 @@ it("shows irreversible disband state and disables a second request", () => {
 it("requests the maximum available recovery immediately", () => {
   const onAction = vi.fn();
   render(<ArmyCard army={{ ...redArmy, supplied: true }} isGM={false} canEditRoute canRequestDisband onAction={onAction} />);
-  fireEvent.click(screen.getByRole("button", { name: "Восстановить максимум доступных HP" }));
+  fireEvent.click(screen.getByRole("button", { name: "Лечиться" }));
   expect(onAction).toHaveBeenCalledWith({ type: "HEAL_ARMY", armyId: "army-red", amount: 1 });
+});
+
+it("does not expose manual formation while an army is forming", () => {
+  const onAction = vi.fn();
+  render(<ArmyCard army={{ ...redArmy, formationActive: true, healthHp: 0 }} isGM={false} canEditRoute canRequestDisband onAction={onAction} />);
+  expect(screen.queryByRole("button", { name: /Комплектовать армию/ })).not.toBeInTheDocument();
 });
 
 it("does not offer recovery to an unsupplied army", () => {
   render(<ArmyCard army={{ ...redArmy, supplied: false }} isGM={false} canEditRoute canRequestDisband onAction={vi.fn()} />);
-  expect(screen.queryByRole("button", { name: "Восстановить максимум доступных HP" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Лечиться" })).not.toBeInTheDocument();
 });

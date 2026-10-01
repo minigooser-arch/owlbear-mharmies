@@ -1,7 +1,7 @@
 import { joinReinforcements, releaseBattleGroup } from "../battles/battleGroupService";
 import { destroyArmy } from "../armies/armyLifecycle";
 import { canHealArmy, healArmyForTurn } from "../health/armyHealth";
-import { applyFormationHp, createFormationArmy, interruptFormation } from "../armies/armyFormation";
+import { createFormationArmy, interruptFormation } from "../armies/armyFormation";
 import { appendLRTransaction } from "../finance/lrLedger";
 import { markLRTransactionRecorded } from "../finance/lrLedger";
 import { applyDemographyCorrection, debitHumanResource as debitHumanResourceFromState } from "../finance/humanResourceLedger";
@@ -464,42 +464,7 @@ export class CommandProcessor {
         return undefined;
       }
       case "FORM_ARMY": {
-        const army = state.armies[command.armyId];
-        if (!army) return "ARMY_NOT_FOUND";
-        const formationRate = humanResourceRateInSceneUnits(state, army.sideId, state.scene.settings.armyFormationCostPerHp ?? 10000);
-        const result = applyFormationHp(
-          army,
-          command.hp,
-          state.scene.turn.turnNumber,
-          formationRate,
-          Boolean(army.formation?.cityId && hasActiveCityBuilding(state.scene, army.formation.cityId, "TRAINING_GROUND"))
-        );
-        if (!result.ok) return result.reason;
-        const formationKind = result.army.health.hp >= result.army.health.maxHp ? "COMPLETION" : "FORMATION";
-        const cityId = army.formation?.cityId ?? null;
-        const cityName = (state.scene.strategicCities ?? []).find((city) => city.id === cityId)?.name ?? null;
-        const formationDebit = this.debitHumanResource(state, army.sideId, result.amount, {
-          requestId: command.requestId,
-          actorPlayerId: command.senderPlayerId,
-          kind: formationKind,
-          armyId: command.armyId,
-          armyName: command.armyId,
-          cityId,
-          cityName,
-          hp: command.hp,
-          ratePerHp: formationRate,
-          turnNumber: state.scene.turn.turnNumber,
-          createdAt: this.now().toISOString()
-        });
-        if (formationDebit) return formationDebit;
-        state.armies[command.armyId] = result.army;
-        if (state.scene.demographics === undefined) state.scene.lrTransactions = appendLRTransaction(state.scene.lrTransactions ?? [], {
-          id: `${command.requestId}:formation`, requestId: command.requestId, createdAt: this.now().toISOString(), turnNumber: state.scene.turn.turnNumber,
-          actorPlayerId: command.senderPlayerId, sideId: army.sideId, sideName: state.scene.sides.find((side) => side.id === army.sideId)?.name ?? army.sideId,
-          cityId, cityName, armyId: command.armyId, armyName: command.armyId, kind: formationKind, hp: command.hp,
-          ratePerHp: formationRate, amount: result.amount
-        });
-        return undefined;
+        return "FORMATION_AUTOMATIC_ONLY";
       }
       case "UNREGISTER_ARMY": {
         if (!state.armies[command.armyId]) return "ARMY_NOT_FOUND";
@@ -1701,7 +1666,6 @@ export class CommandProcessor {
       case "MOVE_ARMY": {
         const army = state.armies[command.armyId];
         if (!army) return "ARMY_NOT_FOUND";
-        if (army.formation?.active) return "ARMY_FORMING";
         if (this.cellForPosition) {
           const targetCell = this.cellForPosition(command.position);
           const position = commandPosition(state, command.armyId);
@@ -1737,7 +1701,6 @@ export class CommandProcessor {
         revalidateArmyRoute(state, command.armyId);
         const current = state.armies[command.armyId];
         if (!current) return "ARMY_NOT_FOUND";
-        if (current.formation?.active) return "ARMY_FORMING";
         if (current.stopReason === "BATTLE") return "MOVEMENT_CONSUMED_FOR_TURN";
         if (current.plannedRoute.executeOnTurn !== state.scene.turn.turnNumber) return "ROUTE_NOT_ACTIVE_TURN";
         if (current.plannedRoute.requiresReplan) return "ROUTE_REQUIRES_REPLAN";
@@ -1764,8 +1727,7 @@ export class CommandProcessor {
         for (const [armyId, army] of Object.entries(state.armies)) {
           let status: ArmyState["status"];
           if (command.type === "START_ALL" || command.type === "RESUME_ALL") {
-            status = !army.formation?.active &&
-              army.stopReason !== "BATTLE" &&
+            status = army.stopReason !== "BATTLE" &&
               army.plannedRoute.executeOnTurn === state.scene.turn.turnNumber &&
               !army.plannedRoute.requiresReplan && !army.plannedRoute.invalidReason && army.route.length > 0
               ? "MOVING"
@@ -2035,7 +1997,9 @@ export class CommandProcessor {
         const missingHp = Math.max(0, army.health.maxHp - army.health.hp);
         if (remainingTurnCap <= 0 || missingHp <= 0) return "HEALING_UNAVAILABLE";
 
-        const configuredRate = state.scene.settings.armyHealingCostPerHp ?? 5000;
+        const configuredRate = hasHospital
+          ? state.scene.settings.hospitalHealingCostPerHp ?? 2500
+          : state.scene.settings.armyHealingCostPerHp ?? 5000;
         const ratePerHp = humanResourceRateInSceneUnits(state, army.sideId, configuredRate);
         let affordableHp = Number.POSITIVE_INFINITY;
         if (state.scene.demographics !== undefined) {

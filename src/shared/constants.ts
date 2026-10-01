@@ -64,6 +64,7 @@ export const METADATA_KEYS = {
   demographyAuditPart: `${EXTENSION_ID}/demography-audit-part`,
   army: `${EXTENSION_ID}/army`,
   ship: `${EXTENSION_ID}/ship`,
+  cityMarker: `${EXTENSION_ID}/city-marker`,
   barrier: `${EXTENSION_ID}/barrier`,
   localClone: `${EXTENSION_ID}/local-clone`,
   routeOverlay: `${EXTENSION_ID}/route-overlay`,
@@ -99,7 +100,7 @@ export const DEFAULT_SETTINGS: SceneSettings = {
   interpolationEnabled: true,
   armyFormationCostPerHp: 10000,
   armyHealingCostPerHp: 5000,
-  hospitalHealingCostPerHp: 5000,
+  hospitalHealingCostPerHp: 2500,
   populationTimeZone: "Europe/Moscow",
   populationSheetCsvUrl: DEFAULT_POPULATION_SHEET_CSV_URL,
   conscriptionSheetCsvUrl: DEFAULT_CONSCRIPTION_SHEET_CSV_URL

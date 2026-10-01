@@ -21,7 +21,8 @@ function mutableServices(initial: RawExtensionSnapshot) {
     },
     send,
     sendStrategic,
-    runDiagnostic: vi.fn(async () => undefined)
+    runDiagnostic: vi.fn(async () => undefined),
+    clearFocusedEntity: vi.fn(async () => undefined),
   };
   return {
     services,

@@ -36,6 +36,43 @@ export function healArmy(army: ArmyState, amount: number): ArmyState | undefined
   };
 }
 
+/** Applies the free base recovery during the completed-turn checkpoint. */
+export function applyAutomaticTurnHealing(army: ArmyState, amount = 10): ArmyState {
+  if (army.health.hp >= army.health.maxHp) return army;
+  return healArmy(army, amount) ?? army;
+}
+
+export function requestArmyHealing(army: ArmyState, currentTurn: number, playerId: string): ArmyState | undefined {
+  if (!canHealArmy(army).allowed || army.health.hp >= army.health.maxHp || army.healing?.pending) return undefined;
+  return {
+    ...army,
+    healing: {
+      pending: true,
+      requestedOnTurn: currentTurn,
+      requestedByPlayerId: playerId,
+      hpHealedThisTurn: army.healing?.hpHealedThisTurn ?? 0,
+      checkedOnTurn: army.healing?.checkedOnTurn ?? currentTurn,
+      hospitalCityId: null
+    },
+    revision: army.revision + 1
+  };
+}
+
+export function applyPendingTurnHealing(army: ArmyState, amount = 10): ArmyState {
+  if (!army.healing?.pending) return army;
+  const clearedHealing = {
+    ...army.healing,
+    pending: false,
+    requestedOnTurn: null,
+    requestedByPlayerId: null
+  };
+  if (army.health.hp >= army.health.maxHp || !canHealArmy(army).allowed) {
+    return { ...army, healing: clearedHealing, revision: army.revision + 1 };
+  }
+  const healed = healArmy(army, amount);
+  return healed ? { ...healed, healing: clearedHealing } : { ...army, healing: clearedHealing, revision: army.revision + 1 };
+}
+
 export function healArmyForTurn(
   army: ArmyState,
   amount: number,

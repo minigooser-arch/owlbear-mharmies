@@ -230,7 +230,7 @@ export function createSdkImageClone(
     .layer((source.layer ?? "CHARACTER") as Layer)
     .zIndex(source.zIndex ?? 0)
     .visible(true)
-    .locked(true)
+    .locked(false)
     .disableHit(false)
     .disableAutoZIndex(true)
     .metadata(localCloneMetadata(source) as Metadata)

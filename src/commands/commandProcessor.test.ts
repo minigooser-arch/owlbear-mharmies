@@ -407,27 +407,13 @@ describe("CommandProcessor", () => {
     }
   });
 
-  it("rejects formation before changing HP when the state has insufficient LR", () => {
+  it("rejects manual army formation because formation is automatic", () => {
     const current = state();
-    current.scene.sides = current.scene.sides.map((side) => side.id === "red" ? { ...side, stateId: "red-state" } : side);
-    current.scene.states = [{ id: "red-state", name: "Красное государство", rulingFactionId: "red", active: true }];
-    current.scene.demographics = [{
-      stateId: "red-state", population: 1000, populationGrowthFactor: 1.003, humanResource: 10_000,
-      conscriptionLawId: "GENERAL_MOBILIZATION", conscriptionRate: 0.24, humanResourceCapacity: 240,
-      lastPopulationCalculationDate: "2026-09-28"
-    }];
-    const redArmy = current.armies["army-red"];
-    if (!redArmy) throw new Error("red army missing");
-    current.armies["army-red"] = {
-      ...redArmy,
-      health: { hp: 30, maxHp: 40 },
-      formation: { active: true, cityId: null, hpAddedThisTurn: 0, checkedOnTurn: 1 }
-    };
-
-    const result = processor.execute(context("PLAYER", "leader", current), command({ type: "FORM_ARMY", armyId: "army-red", hp: 5 }, "leader"));
-
-    expect(result).toEqual({ status: "REJECTED", reason: "INSUFFICIENT_HUMAN_RESOURCE" });
-    expect(current.armies["army-red"]?.health.hp).toBe(30);
+    const result = processor.execute(
+      context("PLAYER", "leader", current),
+      command({ type: "FORM_ARMY", armyId: "army-red", hp: 5 }, "leader")
+    );
+    expect(result).toEqual({ status: "REJECTED", reason: "FORMATION_AUTOMATIC_ONLY" });
   });
 
   it("lets the GM correct a state demographic record with an audit reason", () => {
@@ -555,90 +541,6 @@ describe("CommandProcessor", () => {
     }
   });
 
-  it.each([
-    ["plain", false, false, 5],
-    ["road", false, false, 10],
-    ["plain", true, false, 10],
-    ["plain", true, true, 15]
-  ] as const)(
-    "restores the correct base HP on %s terrain (city=%s, hospital=%s)",
-    (terrainId, inCity, withHospital, expectedHp) => {
-      const current = state();
-      current.scene.sides = current.scene.sides.map((side) =>
-        side.id === "red" ? { ...side, stateId: "red-state" } : side
-      );
-      current.scene.states = [{
-        id: "red-state",
-        name: "Красное государство",
-        rulingFactionId: "red",
-        active: true
-      }];
-      current.scene.demographics = [{
-        stateId: "red-state",
-        population: 50_000,
-        populationGrowthFactor: 1.003,
-        humanResource: 1_000,
-        conscriptionLawId: "GENERAL_MOBILIZATION",
-        conscriptionRate: 0.24,
-        humanResourceCapacity: 2_000,
-        lastPopulationCalculationDate: "2026-09-28"
-      }];
-      current.scene.gridMap.cells["0,0"] = {
-        terrainId,
-        impassable: false,
-        factionTerritoryIds: ["red"],
-        recognizedStateId: "red-state",
-        deFactoStateId: "red-state"
-      };
-      current.positions = { ...(current.positions ?? {}), "army-red": { x: 10, y: 10 } };
-      if (inCity) {
-        current.scene.strategicCities = [{
-          id: "city-red",
-          name: "Красный город",
-          cells: [{ x: 0, y: 0 }],
-          recognizedStateId: "red-state",
-          deFactoStateId: "red-state",
-          factionInfluenceId: "red",
-          mayorId: null,
-          isCapital: false,
-          historicalBuildTypeCount: 0,
-          buildings: withHospital
-            ? [{ id: "hospital", type: "MILITARY_HOSPITAL", cell: { x: 0, y: 0 } }]
-            : []
-        }];
-      }
-      const redArmy = current.armies["army-red"];
-      if (!redArmy) throw new Error("red army missing");
-      current.armies["army-red"] = {
-        ...redArmy,
-        health: { hp: 10, maxHp: 40 },
-        formation: { active: false, cityId: null, hpAddedThisTurn: 0, checkedOnTurn: 1 },
-        healing: { pending: false, requestedOnTurn: null, requestedByPlayerId: null, hpHealedThisTurn: 0, checkedOnTurn: 1, hospitalCityId: null }
-      };
-
-      const positioned = new CommandProcessor(
-        () => new Date("2026-10-01T08:00:00.000Z"),
-        (position) => ({ x: Math.floor(position.x / 100), y: Math.floor(position.y / 100) })
-      );
-      const result = positioned.execute(
-        context("PLAYER", "leader", current),
-        command({ type: "HEAL_ARMY", armyId: "army-red", amount: 1 }, "leader")
-      );
-
-      expect(result.status).toBe("ACCEPTED");
-      if (result.status !== "ACCEPTED") return;
-      expect(result.state.armies["army-red"]?.health.hp).toBe(10 + expectedHp);
-      expect(result.state.armies["army-red"]?.healing?.hpHealedThisTurn).toBe(expectedHp);
-      expect(result.state.scene.demographics?.[0]?.humanResource).toBe(1_000 - expectedHp * 5);
-      expect(result.state.scene.lrTransactions?.at(-1)).toMatchObject({
-        kind: "HEALING",
-        hp: expectedHp,
-        ratePerHp: 5,
-        amount: expectedHp * 5
-      });
-    }
-  );
-
   it("heals immediately up to the amount affordable from human resources", () => {
     const current = state();
     current.scene.sides = current.scene.sides.map((side) =>
@@ -692,6 +594,71 @@ describe("CommandProcessor", () => {
     });
   });
 
+  it("uses the hospital healing rate when an active military hospital is present", () => {
+    const current = state();
+    current.scene.sides = current.scene.sides.map((side) =>
+      side.id === "red" ? { ...side, stateId: "red-state" } : side
+    );
+    current.scene.states = [{
+      id: "red-state",
+      name: "Красное государство",
+      rulingFactionId: "red",
+      active: true
+    }];
+    current.scene.demographics = [{
+      stateId: "red-state",
+      population: 1_000,
+      populationGrowthFactor: 1.003,
+      humanResource: 15,
+      conscriptionLawId: "GENERAL_MOBILIZATION",
+      conscriptionRate: 0.24,
+      humanResourceCapacity: 240,
+      lastPopulationCalculationDate: "2026-09-28"
+    }];
+    current.scene.gridMap.cells["0,0"] = {
+      terrainId: "plain",
+      impassable: false,
+      factionTerritoryIds: ["red"],
+      recognizedStateId: "red-state",
+      deFactoStateId: "red-state"
+    };
+    current.scene.strategicCities = [{
+      id: "city-red",
+      name: "Красный город",
+      cells: [{ x: 0, y: 0 }],
+      recognizedStateId: "red-state",
+      deFactoStateId: "red-state",
+      factionInfluenceId: "red",
+      mayorId: null,
+      isCapital: false,
+      historicalBuildTypeCount: 0,
+      buildings: [{ id: "hospital", type: "MILITARY_HOSPITAL", cell: { x: 0, y: 0 } }]
+    }];
+    const redArmy = current.armies["army-red"];
+    if (!redArmy) throw new Error("red army missing");
+    current.armies["army-red"] = { ...redArmy, health: { hp: 30, maxHp: 50 } };
+
+    const positioned = new CommandProcessor(
+      () => new Date("2026-09-30T08:00:00.000Z"),
+      (position) => ({ x: Math.floor(position.x / 100), y: Math.floor(position.y / 100) })
+    );
+    const result = positioned.execute(
+      context("PLAYER", "leader", current),
+      command({ type: "HEAL_ARMY", armyId: "army-red", amount: 10 }, "leader")
+    );
+
+    expect(result.status).toBe("ACCEPTED");
+    if (result.status !== "ACCEPTED") return;
+    expect(result.state.armies["army-red"]?.health.hp).toBe(36);
+    expect(result.state.scene.demographics?.[0]?.humanResource).toBe(0);
+    expect(result.state.scene.lrTransactions?.at(-1)).toMatchObject({
+      kind: "HEALING",
+      hp: 6,
+      ratePerHp: 2.5,
+      amount: 15
+    });
+  });
+
   it("rejects a crafted player registration without mutating state", () => {
     const playerContext = context("PLAYER", "member");
     const before = structuredClone(playerContext.state);
@@ -721,47 +688,6 @@ describe("CommandProcessor", () => {
         command({ type: "START_ARMY", armyId: "army-red" }, "legacy-owner")
       )
     ).toEqual({ status: "REJECTED", reason: "GM_ONLY" });
-  });
-
-  it("hard-blocks movement commands while an army is still forming", () => {
-    const current = state();
-    const forming = current.armies["army-red"];
-    if (!forming) throw new Error("red army missing");
-    current.armies["army-red"] = {
-      ...forming,
-      formation: { active: true, cityId: null, hpAddedThisTurn: 0, checkedOnTurn: 1 },
-      movement: { maxUnits: 10, remainingUnits: 10, enteredRouteCellCount: 0 },
-      route: [{ x: 100, y: 0 }],
-      plannedRoute: {
-        startCell: { x: 0, y: 0 },
-        executeOnTurn: 1,
-        cells: [{ x: 1, y: 0 }],
-        totalCostUnits: 2,
-        validatedRevision: 2,
-        requiresReplan: false
-      }
-    };
-
-    expect(processor.execute(
-      context("GM", "gm", current),
-      command({ type: "START_ARMY", armyId: "army-red" })
-    )).toEqual({ status: "REJECTED", reason: "ARMY_FORMING" });
-
-    const directMoveState = structuredClone(current);
-    expect(processor.execute(
-      context("GM", "gm", directMoveState),
-      command({ type: "MOVE_ARMY", armyId: "army-red", position: { x: 100, y: 0 } })
-    )).toEqual({ status: "REJECTED", reason: "ARMY_FORMING" });
-
-    const startAllState = structuredClone(current);
-    const startAll = processor.execute(
-      context("GM", "gm", startAllState),
-      command({ type: "START_ALL" })
-    );
-    expect(startAll.status).toBe("ACCEPTED");
-    if (startAll.status === "ACCEPTED") {
-      expect(startAll.state.armies["army-red"]?.status).toBe("READY");
-    }
   });
 
   it.each([

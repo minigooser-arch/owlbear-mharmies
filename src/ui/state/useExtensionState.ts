@@ -26,6 +26,7 @@ import type {
   WarState
 } from "../../shared/types";
 import type { DiagnosticTestId } from "../../owlbear/diagnostics";
+import type { MapEntityFocus } from "../../owlbear/entityFocus";
 
 export interface ArmyView {
   id: string;
@@ -170,6 +171,7 @@ export interface RawExtensionSnapshot {
   terrain: TerrainRegistryState;
   wars: readonly WarState[];
   turn: TurnState;
+  focusedEntity?: MapEntityFocus;
 }
 
 export interface MapBrushUiSettings {
@@ -207,6 +209,7 @@ export interface ExtensionServices {
   send(command: UiCommand): Promise<unknown>;
   sendStrategic?(command: StrategicCityCommandPayload): Promise<unknown>;
   runDiagnostic(testId: DiagnosticTestId): Promise<unknown>;
+  clearFocusedEntity?: () => Promise<void>;
 }
 
 export interface ExtensionViewModel extends RawExtensionSnapshot {

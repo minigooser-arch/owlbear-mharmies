@@ -3,8 +3,8 @@ import { debitHumanResource } from "../finance/humanResourceLedger";
 import type { ArmyState, SceneState } from "../shared/types";
 import { hasActiveCityBuilding } from "../cities/cityEffects";
 
-const DEFAULT_FORMATION_HP_PER_TURN = 10;
-const TRAINING_GROUND_FORMATION_HP_PER_TURN = 15;
+const DEFAULT_FORMATION_HP_PER_TURN = 20;
+const BARRACKS_FORMATION_HP_PER_TURN = 35;
 
 function formationRateInSceneUnits(scene: SceneState, sideId: string, configuredRate: number): number {
   const side = scene.sides.find((candidate) => candidate.id === sideId);
@@ -17,6 +17,7 @@ function formationRateInSceneUnits(scene: SceneState, sideId: string, configured
   return configuredRate;
 }
 
+// Formation is resolved automatically once per completed global turn; there is no player action to advance it.
 export function applyAutomaticArmyFormation(
   scene: SceneState,
   armies: Readonly<Record<string, ArmyState>>,
@@ -31,11 +32,11 @@ export function applyAutomaticArmyFormation(
     const city = army.formation.cityId
       ? (scene.strategicCities ?? []).find((candidate) => candidate.id === army.formation?.cityId)
       : undefined;
-    const hasTrainingGround = city
-      ? hasActiveCityBuilding(scene, city.id, "TRAINING_GROUND")
+    const hasBarracks = city
+      ? hasActiveCityBuilding(scene, city.id, "BARRACKS")
       : false;
-    const turnCap = hasTrainingGround
-      ? TRAINING_GROUND_FORMATION_HP_PER_TURN
+    const turnCap = hasBarracks
+      ? BARRACKS_FORMATION_HP_PER_TURN
       : DEFAULT_FORMATION_HP_PER_TURN;
     const alreadyAdded = army.formation.checkedOnTurn === turnNumber ? army.formation.hpAddedThisTurn : 0;
     const allowed = Math.min(turnCap - alreadyAdded, army.health.maxHp - army.health.hp);

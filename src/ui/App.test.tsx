@@ -37,7 +37,8 @@ function services(overrides: Partial<RawExtensionSnapshot> = {}): ExtensionServi
     getSnapshot: () => snapshot,
     subscribe: () => () => undefined,
     send: async () => undefined,
-    runDiagnostic: async () => undefined
+    runDiagnostic: async () => undefined,
+    clearFocusedEntity: async () => undefined,
   };
 }
 

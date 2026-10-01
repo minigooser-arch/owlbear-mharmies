@@ -68,10 +68,46 @@ it("automatically completes one formation stage after a global turn", () => {
   });
   expect(result.changed).toBe(true);
   if (!result.changed) return;
-  expect(result.armies.a?.health.hp).toBe(10);
-  expect(result.armies.a?.formation).toMatchObject({ active: true, hpAddedThisTurn: 10, checkedOnTurn: 2 });
-  expect(result.scene.demographics?.[0]?.humanResource).toBe(484);
-  expect(result.scene.lrTransactions?.[0]).toMatchObject({ kind: "FORMATION", hp: 10, amount: 100, ratePerHp: 10 });
+  expect(result.armies.a?.health.hp).toBe(20);
+  expect(result.armies.a?.formation).toMatchObject({ active: true, hpAddedThisTurn: 20, checkedOnTurn: 2 });
+  expect(result.scene.demographics?.[0]?.humanResource).toBe(384);
+  expect(result.scene.lrTransactions?.[0]).toMatchObject({ kind: "FORMATION", hp: 20, amount: 200, ratePerHp: 10 });
+});
+
+it("automatically forms 35 HP per turn in a city with active barracks", () => {
+  const current = scene();
+  current.strategicCities = [{
+    id: "city-red",
+    name: "Red City",
+    cells: [{ x: 0, y: 0 }],
+    recognizedStateId: "red-state",
+    deFactoStateId: "red-state",
+    factionInfluenceId: "red",
+    mayorId: null,
+    isCapital: false,
+    historicalBuildTypeCount: 0,
+    buildings: [{ id: "b", type: "BARRACKS", cell: { x: 0, y: 0 } }]
+  }];
+  current.demographics = [{
+    stateId: "red-state", population: 46_084, populationGrowthFactor: 1.003,
+    humanResource: 584, conscriptionLawId: "URGENT_CONSCRIPTION", conscriptionRate: 0.04,
+    humanResourceCapacity: 1_843.36, lastPopulationCalculationDate: "2026-09-29"
+  }];
+  const forming: ArmyState = {
+    ...army(0),
+    health: { hp: 0, maxHp: 40 },
+    formation: { active: true, cityId: "city-red", hpAddedThisTurn: 0, checkedOnTurn: 1 }
+  };
+  const result = completeTurn(current, { a: forming }, {
+    source: "MANUAL",
+    completedAt: new Date("2026-09-30T10:00:00.000Z"),
+    armyCells: { a: { x: 0, y: 0 } }
+  });
+  expect(result.changed).toBe(true);
+  if (!result.changed) return;
+  expect(result.armies.a?.health.hp).toBe(35);
+  expect(result.armies.a?.formation).toMatchObject({ active: true, hpAddedThisTurn: 35, checkedOnTurn: 2 });
+  expect(result.scene.demographics?.[0]?.humanResource).toBe(234);
 });
 
 it("always starts the new turn in movement phase", () => {

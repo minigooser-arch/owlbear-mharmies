@@ -456,10 +456,12 @@ export class ProductionEngine {
       }
     }
     const shipSources = sceneItems.filter((item) => (scene.ships ?? {})[item.id] !== undefined);
+    const unitSources = [...armies.map((record) => record.item), ...shipSources];
+}
     const visibleSourceIds = new Set([...visible, ...visibleShips]);
     await this.cloneReconciler.reconcile(
       visibleSourceIds,
-      [...armies.map((record) => record.item), ...shipSources]
+      unitSources
     );
     await this.reconcileOverlays(
       scene,

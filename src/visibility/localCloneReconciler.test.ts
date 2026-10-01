@@ -78,7 +78,7 @@ describe("LocalCloneReconciler", () => {
     expect(port.localItems[0]?.position).toEqual({ x: 20, y: 10 });
   });
 
-  it("keeps visible unit clones locked, makes them hit-testable, and syncs whether a route exists", async () => {
+  it("keeps visible unit clones selectable, hit-testable, and syncs whether a route exists", async () => {
     const port = new MemoryClonePort();
     port.localItems.push(clone("clone-a"));
     const routedSource = {
@@ -92,7 +92,7 @@ describe("LocalCloneReconciler", () => {
       .reconcile(new Set(["source-a"]), [routedSource]);
 
     expect(port.localItems[0]).toMatchObject({
-      locked: true,
+      locked: false,
       disableHit: false,
       metadata: {
         [METADATA_KEYS.localClone]: { sourceItemId: "source-a", hasRoute: true }

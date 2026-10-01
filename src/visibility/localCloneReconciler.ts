@@ -99,7 +99,7 @@ function changedRenderFields(source: SceneItemRecord, clone: SceneItemRecord, vi
     }
   }
   if (clone.visible !== true) update.visible = true;
-  if (clone.locked !== true) update.locked = true;
+  if (clone.locked !== false) update.locked = false;
   if (clone.disableHit !== false) update.disableHit = false;
   const desiredCloneMetadata = localCloneMetadataForSource(source, viewer);
   if (JSON.stringify(clone.metadata[METADATA_KEYS.localClone]) !== JSON.stringify(desiredCloneMetadata)) {
