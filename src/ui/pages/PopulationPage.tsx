@@ -82,7 +82,7 @@ export function PopulationPage({ states, demographics, conscriptionLaws, onActio
         {demographics.length === 0 && <div className="empty-state">Демографических записей пока нет. Создайте их через корректировку государства.</div>}
         {states.filter((state) => !demographics.some((record) => record.stateId === state.id)).map((state) => {
           const law = conscriptionLaws.find((candidate) => candidate.active) ?? { id: "DEMILITARIZED", rate: 0 };
-          return <div className="registration-card" key={`create-${state.id}`}><div className="registration-copy"><strong>{state.name}</strong><small>Для государства ещё нет внутренней записи.</small></div><button className="button primary" type="button" onClick={() => onAction({ type: "UPDATE_STATE_DEMOGRAPHY", stateId: state.id, patch: { population: 0, populationGrowthFactor: 1, humanResource: 0, conscriptionLawId: law.id, conscriptionRate: law.rate }, reason: "Создание демографической записи" })}>Создать запись</button></div>;
+          return <div className="registration-card" key={`create-${state.id}`}><div className="registration-copy"><strong>{state.name}</strong><small>Для государства ещё нет внутренней записи.</small></div><button className="button primary" type="button" onClick={() => onAction({ type: "UPDATE_STATE_DEMOGRAPHY", stateId: state.id, patch: { population: 0, populationGrowthFactor: 1, conscriptionLawId: law.id, conscriptionRate: law.rate }, reason: "Создание демографической записи" })}>Создать запись</button></div>;
         })}
         {demographics.map((record) => {
           const draft = drafts[record.stateId] ?? draftFor(record);
