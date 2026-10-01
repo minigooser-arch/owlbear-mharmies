@@ -39,7 +39,7 @@ describe("city army buildings migration", () => {
         settings: {
           armyFormationCostPerHp: 10000,
           armyHealingCostPerHp: 5000,
-          hospitalHealingCostPerHp: 2500
+          hospitalHealingCostPerHp: 5000
         }
       }
     });

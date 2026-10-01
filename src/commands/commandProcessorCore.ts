@@ -1701,6 +1701,7 @@ export class CommandProcessor {
       case "MOVE_ARMY": {
         const army = state.armies[command.armyId];
         if (!army) return "ARMY_NOT_FOUND";
+        if (army.formation?.active) return "ARMY_FORMING";
         if (this.cellForPosition) {
           const targetCell = this.cellForPosition(command.position);
           const position = commandPosition(state, command.armyId);
@@ -1736,6 +1737,7 @@ export class CommandProcessor {
         revalidateArmyRoute(state, command.armyId);
         const current = state.armies[command.armyId];
         if (!current) return "ARMY_NOT_FOUND";
+        if (current.formation?.active) return "ARMY_FORMING";
         if (current.stopReason === "BATTLE") return "MOVEMENT_CONSUMED_FOR_TURN";
         if (current.plannedRoute.executeOnTurn !== state.scene.turn.turnNumber) return "ROUTE_NOT_ACTIVE_TURN";
         if (current.plannedRoute.requiresReplan) return "ROUTE_REQUIRES_REPLAN";
@@ -1762,7 +1764,8 @@ export class CommandProcessor {
         for (const [armyId, army] of Object.entries(state.armies)) {
           let status: ArmyState["status"];
           if (command.type === "START_ALL" || command.type === "RESUME_ALL") {
-            status = army.stopReason !== "BATTLE" &&
+            status = !army.formation?.active &&
+              army.stopReason !== "BATTLE" &&
               army.plannedRoute.executeOnTurn === state.scene.turn.turnNumber &&
               !army.plannedRoute.requiresReplan && !army.plannedRoute.invalidReason && army.route.length > 0
               ? "MOVING"

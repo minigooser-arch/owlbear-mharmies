@@ -125,9 +125,13 @@ function normalizeSettings(value: unknown): SceneSettings {
   const armyHealingCostPerHp = nonNegativeInteger(value.armyHealingCostPerHp)
     ? value.armyHealingCostPerHp
     : (DEFAULT_SETTINGS.armyHealingCostPerHp ?? 5000);
-  const hospitalHealingCostPerHp = nonNegativeInteger(value.hospitalHealingCostPerHp)
+  const rawHospitalHealingCostPerHp = nonNegativeInteger(value.hospitalHealingCostPerHp)
     ? value.hospitalHealingCostPerHp
-    : (DEFAULT_SETTINGS.hospitalHealingCostPerHp ?? 2500);
+    : (DEFAULT_SETTINGS.hospitalHealingCostPerHp ?? 5000);
+  // 2,500 was the previous hospital-specific rate. Recovery now always costs 5,000/HP.
+  const hospitalHealingCostPerHp = rawHospitalHealingCostPerHp === 2500
+    ? 5000
+    : rawHospitalHealingCostPerHp;
   const detectionMode: DetectionMode = enumValue(value.detectionMode, ["INDEPENDENT", "MUTUAL"])
     ? value.detectionMode
     : DEFAULT_SETTINGS.detectionMode;
