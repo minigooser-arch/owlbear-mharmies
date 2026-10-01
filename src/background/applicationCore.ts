@@ -1266,7 +1266,7 @@ export class ProductionEngine {
     }
     const command = validation.command;
     const frame = await this.repository.readFrame();
-    const scene = applyPopulationCalendarToScene(frame.scene, this.wallClock());
+    const scene = frame.scene;
     const armyRecords = frame.items.armies;
     const barrierRecords = frame.items.barriers;
     const sceneItems = frame.items.items;
