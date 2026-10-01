@@ -456,6 +456,8 @@ function findBatchRows_(batchRequestId, status) {
 
 function logRowToOperation_(row) {
   return {
+    requestId: String(row[0] || '') || undefined,
+    createdAt: String(row[1] || '') || undefined,
     country: String(row[2] || ''),
     stateId: String(row[3] || '') || undefined,
     stateName: String(row[4] || '') || undefined,
