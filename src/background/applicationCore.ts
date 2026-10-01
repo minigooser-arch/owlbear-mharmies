@@ -721,7 +721,19 @@ export class ProductionEngine {
         armyCells,
         shipCells
       });
-      if (!completion.changed) return;
+      if (!completion.changed) {
+        if (authoritativeScene === frame.scene || !canCommit()) return;
+        try {
+          await this.repository.writeScene(
+            { ...authoritativeScene, revision: frame.scene.revision + 1 },
+            frame.scene.revision,
+            (current) => canCommit() && current.revision === frame.scene.revision
+          );
+        } catch (error) {
+          this.reportOperationalError(error, "turn-population-persistence");
+        }
+        return;
+      }
 
       const previous: CommandState = {
         scene: authoritativeScene,
