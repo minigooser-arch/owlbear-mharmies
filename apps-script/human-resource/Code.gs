@@ -110,9 +110,14 @@ function spendLRBatch_(body) {
       return entry && nearlyEqual_(entry.population, operation.populationAfter);
     });
     if (!reconciled) throw new Error('REQUEST_INCOMPLETE');
+    pending.operations.forEach(function (operation) {
+      const entry = currentIndex[operation.country];
+      operation.humanResourceAfter = entry.humanResource;
+    });
     const appliedAt = pending.appliedAt || new Date().toISOString();
-    appendLogRows_(pending.logRows.map(function (row) {
-      row.status = 'SPENT';
+    appendLogRows_(pending.logRows.map(function (row, index) {
+      row[13] = pending.operations[index].humanResourceAfter;
+      row[21] = 'SPENT';
       return row;
     }));
     PropertiesService.getScriptProperties().deleteProperty(pendingKey);
@@ -241,6 +246,7 @@ function spendLRBatch_(body) {
 }
 
 function refundLRBatch_(body) {
+  ensureDailyPopulationGrowth_();
   const refundRequestId = requireString_(body.requestId, 'REQUEST_ID_REQUIRED');
   const originalRequestId = requireString_(body.originalRequestId, 'ORIGINAL_REQUEST_ID_REQUIRED');
   const existingRefund = findBatchRows_(originalRequestId, 'REFUNDED');
