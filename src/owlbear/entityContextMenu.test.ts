@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { Item } from "@owlbear-rodeo/sdk";
 import { METADATA_KEYS } from "../shared/constants";
 import { entityFocusFromItem, readEntityFocusFromPlayerMetadata, registerEntityContextMenu } from "./entityContextMenu";
 
@@ -33,10 +34,11 @@ describe("entity context menu", () => {
 
 describe("entity context menu registration", () => {
   it("accepts visible local clones and resolves their source token", async () => {
-    const entries: Array<any> = [];
+    type Entry = Parameters<Parameters<typeof registerEntityContextMenu>[0]["create"]>[0];
+    const entries: Entry[] = [];
     const focused: unknown[] = [];
     const port = {
-      create: async (entry: any) => { entries.push(entry); },
+      create: async (entry: Entry) => { entries.push(entry); },
       remove: async () => undefined,
       getSceneItem: async () => ({
         id: "army-source",
