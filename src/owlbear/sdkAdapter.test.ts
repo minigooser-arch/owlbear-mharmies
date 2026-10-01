@@ -129,7 +129,7 @@ it("builds local image clones as selectable and hit-testable", () => {
 
   expect(clone).toMatchObject({
     type: "IMAGE",
-    locked: true,
+    locked: false,
     disableHit: false,
     textItemType: "TEXT",
     metadata: { [METADATA_KEYS.localClone]: { sourceItemId: "source" } }
