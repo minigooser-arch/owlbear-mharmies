@@ -796,7 +796,7 @@ export class ProductionEngine {
           });
           next.scene = markHumanResourceTransactionsRecorded(
             next.scene,
-            newTransactions.map((transaction) => transaction.id),
+            sheetSpend.operations,
             "GOOGLE_SHEETS",
             sheetSpend.appliedAt
           );
@@ -1527,7 +1527,7 @@ export class ProductionEngine {
         });
         result.state.scene = markHumanResourceTransactionsRecorded(
           result.state.scene,
-          newTransactions.map((transaction) => transaction.id),
+          sheetSpend.operations,
           "GOOGLE_SHEETS",
           sheetSpend.appliedAt
         );
