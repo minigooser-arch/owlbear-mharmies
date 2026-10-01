@@ -56,7 +56,12 @@ export const MINECRAFT_GRID_TOP_RIGHT = { x: 0, z: -10000 } as const;
 export const METADATA_KEYS = {
   scene: `${EXTENSION_ID}/scene`,
   gridManifest: `${EXTENSION_ID}/grid-manifest`,
+  gridManifestPart: `${EXTENSION_ID}/grid-manifest-part`,
   gridChunk: `${EXTENSION_ID}/grid-chunk`,
+  lrLedgerManifest: `${EXTENSION_ID}/lr-ledger-manifest`,
+  lrLedgerPart: `${EXTENSION_ID}/lr-ledger-part`,
+  demographyAuditManifest: `${EXTENSION_ID}/demography-audit-manifest`,
+  demographyAuditPart: `${EXTENSION_ID}/demography-audit-part`,
   army: `${EXTENSION_ID}/army`,
   ship: `${EXTENSION_ID}/ship`,
   barrier: `${EXTENSION_ID}/barrier`,
@@ -136,3 +141,4 @@ export const DEFAULT_TURN_STATE: TurnState & { phase: "MOVEMENT" } = {
   lastCompletedBy: null,
   lastProcessedBoundaryId: null
 };
+

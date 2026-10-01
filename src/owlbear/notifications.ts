@@ -4,6 +4,7 @@ export type NotificationCode =
   | "GRID_CHUNK_MISSING"
   | "GRID_CHUNK_WRITE_FAILED"
   | "GRID_MANIFEST_WRITE_FAILED"
+  | "GRID_MANIFEST_PART_TOO_LARGE"
   | "GRID_METADATA_TOO_LARGE"
   | "GM_ONLY"
   | "NOT_DIRECT_OWNER"
@@ -92,6 +93,7 @@ const RUSSIAN_MESSAGES: Readonly<Record<NotificationCode, string>> = {
   GRID_CHUNK_INVALID: "Повреждены данные участка карты или используется неизвестная версия формата.",
   GRID_CHUNK_WRITE_FAILED: "Не удалось сохранить участок карты. Повторите мазок.",
   GRID_MANIFEST_WRITE_FAILED: "Не удалось завершить сохранение карты. Перезагрузите сцену и проверьте последний мазок.",
+  GRID_MANIFEST_PART_TOO_LARGE: "Слишком большая служебная часть карты. Сохранение отменено; повторите после обновления расширения.",
   GRID_METADATA_TOO_LARGE: "Данные сцены превышают допустимый размер запроса. Сохранение отменено.",
   GM_ONLY: "Это действие доступно только ведущему.",
   NOT_DIRECT_OWNER: "Эта армия принадлежит другому игроку.",

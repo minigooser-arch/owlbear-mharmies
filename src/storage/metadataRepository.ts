@@ -13,6 +13,8 @@ import { GridChunkRepository, readGridManifest } from "./gridChunkRepository";
 import { GridStorageError, utf8Size } from "./gridChunkCodec";
 import { compactDefaultTerrain } from "../terrain/gridMap";
 import { sendBatches } from "../owlbear/boundedBatches";
+import { LRLedgerRepository, readLRLedgerManifest } from "./lrLedgerRepository";
+import { DemographyAuditRepository, readDemographyAuditManifest } from "./demographyAuditRepository";
 
 export interface MetadataPort {
   getSceneMetadata(): Promise<Record<string, unknown>>;
@@ -103,8 +105,17 @@ export interface MetadataReadFrame {
 }
 
 function sameSceneAndManifest(left: Record<string, unknown>, right: Record<string, unknown>): boolean {
-  return JSON.stringify([left[METADATA_KEYS.scene], left[METADATA_KEYS.gridManifest]]) ===
-    JSON.stringify([right[METADATA_KEYS.scene], right[METADATA_KEYS.gridManifest]]);
+  return JSON.stringify([
+    left[METADATA_KEYS.scene],
+    left[METADATA_KEYS.gridManifest],
+    left[METADATA_KEYS.lrLedgerManifest],
+    left[METADATA_KEYS.demographyAuditManifest]
+  ]) === JSON.stringify([
+    right[METADATA_KEYS.scene],
+    right[METADATA_KEYS.gridManifest],
+    right[METADATA_KEYS.lrLedgerManifest],
+    right[METADATA_KEYS.demographyAuditManifest]
+  ]);
 }
 
 export class MetadataRepository {
@@ -125,19 +136,40 @@ export class MetadataRepository {
   private async readSnapshot(): Promise<{ state: SceneState; metadata: Record<string, unknown> }> {
     for (let attempt = 0; attempt < 3; attempt++) {
       const metadata = await this.port.getSceneMetadata();
-      const state = requireValid(
+      const baseState = requireValid(
         migrateSceneState(metadata[METADATA_KEYS.scene] ?? { version: 5 }),
         METADATA_KEYS.scene
       );
-      if (!readGridManifest(metadata)) return { state, metadata };
+      const ledgerManifest = readLRLedgerManifest(metadata);
+      const auditManifest = readDemographyAuditManifest(metadata);
+      const needsItems = readGridManifest(metadata) !== undefined || (ledgerManifest?.partCount ?? 0) > 0 ||
+        (auditManifest?.partCount ?? 0) > 0;
+      if (!needsItems) return { state: baseState, metadata };
+      const sceneItems = await this.port.getSceneItems();
       let grid: SceneState["gridMap"] | undefined;
       let failure: unknown;
-      try { grid = await new GridChunkRepository(this.port).read(metadata); } catch (error) { failure = error; }
+      let lrTransactions: SceneState["lrTransactions"] | undefined;
+      let demographyAudit: SceneState["demographyAudit"] | undefined;
+      try {
+        grid = await new GridChunkRepository(this.port).read(metadata, sceneItems);
+        lrTransactions = await new LRLedgerRepository(this.port).read(metadata, sceneItems);
+        demographyAudit = await new DemographyAuditRepository(this.port).read(metadata, sceneItems);
+      } catch (error) { failure = error; }
       const latest = await this.port.getSceneMetadata();
       if (!sameSceneAndManifest(metadata, latest)) continue;
       if (failure) throw failure;
-      if (!grid || grid.revision !== state.gridMap.revision) throw new GridStorageError("GRID_CHUNK_INVALID");
-      return { state: { ...state, gridMap: grid }, metadata };
+      if (readGridManifest(metadata) && (!grid || grid.revision !== baseState.gridMap.revision)) {
+        throw new GridStorageError("GRID_CHUNK_INVALID");
+      }
+      return {
+        state: {
+          ...baseState,
+          ...(grid ? { gridMap: grid } : {}),
+          ...(lrTransactions !== undefined ? { lrTransactions } : {}),
+          ...(demographyAudit !== undefined ? { demographyAudit } : {})
+        },
+        metadata
+      };
     }
     throw new GridStorageError("GRID_CHUNK_MISSING");
   }
@@ -173,13 +205,19 @@ export class MetadataRepository {
           if (result.ok) barriers.push({ item, state: result.value });
         }
       }
+      const lrTransactions = await new LRLedgerRepository(this.port).read(sceneMetadata, items);
+      const demographyAudit = await new DemographyAuditRepository(this.port).read(sceneMetadata, items);
       return {
         items,
         armies,
         ships,
         barriers,
         sceneMetadata,
-        baseScene
+        baseScene: {
+          ...baseScene,
+          ...(lrTransactions !== undefined ? { lrTransactions } : {}),
+          ...(demographyAudit !== undefined ? { demographyAudit } : {})
+        }
       };
     }
     throw new GridStorageError("GRID_CHUNK_MISSING");
@@ -206,9 +244,19 @@ export class MetadataRepository {
         (!grid || grid.revision !== items.baseScene.gridMap.revision)) {
         throw new GridStorageError("GRID_CHUNK_INVALID");
       }
+      const lrTransactions = await new LRLedgerRepository(this.port).read(
+        items.sceneMetadata as Record<string, unknown>, items.items
+      );
+      const demographyAudit = await new DemographyAuditRepository(this.port).read(
+        items.sceneMetadata as Record<string, unknown>, items.items
+      );
       return {
         items,
-        scene: grid ? { ...items.baseScene, gridMap: grid } : items.baseScene
+        scene: {
+          ...(grid ? { ...items.baseScene, gridMap: grid } : items.baseScene),
+          ...(lrTransactions !== undefined ? { lrTransactions } : {}),
+          ...(demographyAudit !== undefined ? { demographyAudit } : {})
+        }
       };
     }
     throw new GridStorageError("GRID_CHUNK_MISSING");
@@ -231,14 +279,48 @@ export class MetadataRepository {
       await this.port.patchSceneMetadata(update);
       return;
     }
+    const previousGridManifest = readGridManifest(metadata);
+    const previousLedgerManifest = readLRLedgerManifest(metadata);
+    const previousAuditManifest = readDemographyAuditManifest(metadata);
+    const sceneItems = previousGridManifest?.version === 2 || (previousLedgerManifest?.partCount ?? 0) > 0 ||
+      (previousAuditManifest?.partCount ?? 0) > 0
+      ? await this.port.getSceneItems()
+      : undefined;
     const chunks = new GridChunkRepository(this.port);
+    const ledger = new LRLedgerRepository(this.port);
+    const audit = new DemographyAuditRepository(this.port);
     const addSceneItems = this.port.addSceneItems.bind(this.port);
-    const staged = chunks.stage(current.gridMap, next.gridMap, readGridManifest(metadata));
-    const update = { [METADATA_KEYS.scene]: { ...next, gridMap: { ...next.gridMap, cells: {} } }, [METADATA_KEYS.gridManifest]: staged.manifest };
+    const staged = await chunks.stage(current.gridMap, next.gridMap, previousGridManifest, sceneItems);
+    const stagedLedger = await ledger.stage(
+      current.lrTransactions ?? [],
+      next.lrTransactions ?? [],
+      previousLedgerManifest,
+      sceneItems,
+      next.revision
+    );
+    const stagedAudit = await audit.stage(
+      current.demographyAudit ?? [],
+      next.demographyAudit ?? [],
+      previousAuditManifest,
+      sceneItems,
+      next.revision
+    );
+    const persistedScene = {
+      ...next,
+      lrTransactions: [],
+      demographyAudit: [],
+      gridMap: { ...next.gridMap, cells: {} }
+    };
+    const update = {
+      [METADATA_KEYS.scene]: persistedScene,
+      [METADATA_KEYS.gridManifest]: staged.manifest,
+      [METADATA_KEYS.lrLedgerManifest]: stagedLedger.manifest,
+      [METADATA_KEYS.demographyAuditManifest]: stagedAudit.manifest
+    };
     if (utf8Size(update) > 48 * 1024) throw new GridStorageError("GRID_METADATA_TOO_LARGE");
     try {
       try {
-        await sendBatches(staged.additions, addSceneItems);
+        await sendBatches([...staged.additions, ...stagedLedger.additions, ...stagedAudit.additions], addSceneItems);
       } catch (cause) { throw new GridStorageError("GRID_CHUNK_WRITE_FAILED", { cause }); }
       const latest = await this.readScene();
       assertRevision(latest.revision, expectedRevision);
@@ -246,10 +328,15 @@ export class MetadataRepository {
       try { await this.port.patchSceneMetadata(update); }
       catch (cause) { throw new GridStorageError("GRID_MANIFEST_WRITE_FAILED", { cause }); }
     } catch (error) {
-      await chunks.cleanup(staged.additions.map(item => item.id));
+      const stagedIds = [...staged.additions, ...stagedLedger.additions, ...stagedAudit.additions].map((item) => item.id);
+      await chunks.cleanup(stagedIds);
+      await ledger.cleanup(stagedIds);
+      await audit.cleanup(stagedIds);
       throw error;
     }
-    await chunks.cleanup(staged.superseded);
+    await chunks.cleanup([...staged.superseded, ...staged.supersededManifestParts]);
+    await ledger.cleanup(stagedLedger.superseded);
+    await audit.cleanup(stagedAudit.superseded);
   }
 
   async readArmies(): Promise<ArmyRecord[]> {
@@ -372,3 +459,4 @@ export class MetadataRepository {
     return item;
   }
 }
+

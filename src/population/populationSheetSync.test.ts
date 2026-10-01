@@ -19,6 +19,21 @@ describe("population sheet sync", () => {
     expect(result.unmatchedStates).toEqual(["state-2"]);
   });
 
+  it("matches backend countries case-insensitively and ignores surrounding whitespace", () => {
+    const result = buildPopulationSyncPlan(
+      [{ country: "BULGARIA", population: 6_447_000, growthRate: 1.001 }],
+      [{ id: "bulgaria", name: "Болгария", rulingFactionId: null, active: true, backendCountry: " Bulgaria " }]
+    );
+
+    expect(result.entries).toEqual([{
+      stateId: "bulgaria",
+      country: "Bulgaria",
+      population: 6_447_000,
+      populationGrowthFactor: 1.001
+    }]);
+    expect(result.unmatchedStates).toEqual([]);
+  });
+
   it("fetches the public csv and applies only population fields", async () => {
     const applyCorrection = vi.fn().mockResolvedValue(undefined);
     const result = await syncPopulationFromPublicSheet({
@@ -154,5 +169,24 @@ describe("population sheet sync", () => {
       conscriptionRate: 0.04
     });
     expect(result.humanResourceApplied).toBe(1);
+  });
+
+  it("can apply the complete sheet plan as one correction package", async () => {
+    const applyCorrections = vi.fn().mockResolvedValue(undefined);
+    const result = await syncPopulationFromPublicSheet({
+      csvUrl: "https://example.test/backend.csv",
+      states: [matchedState],
+      demographics: [],
+      fetcher: vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => "country,population,growth_rate\ncountry-a,3000000,1.02\n" }),
+      applyCorrection: vi.fn(),
+      applyCorrections
+    });
+
+    expect(result.applied).toBe(1);
+    expect(applyCorrections).toHaveBeenCalledTimes(1);
+    expect(applyCorrections.mock.calls[0]?.[0]).toEqual([{
+      stateId: "state-1",
+      patch: { population: 3_000_000, populationGrowthFactor: 1.02 }
+    }]);
   });
 });

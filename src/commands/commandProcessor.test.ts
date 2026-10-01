@@ -453,6 +453,32 @@ describe("CommandProcessor", () => {
     }
   });
 
+  it("applies a demographic sync package atomically", () => {
+    const current = state();
+    current.scene.states = [
+      { id: "red-state", name: "Красное государство", rulingFactionId: "red", active: true },
+      { id: "blue-state", name: "Синее государство", rulingFactionId: "blue", active: true }
+    ];
+    current.scene.demographics = [
+      { stateId: "red-state", population: 100, populationGrowthFactor: 1, humanResource: 20, conscriptionLawId: "GENERAL_MOBILIZATION", conscriptionRate: 0.24, humanResourceCapacity: 24, lastPopulationCalculationDate: null },
+      { stateId: "blue-state", population: 200, populationGrowthFactor: 1, humanResource: 30, conscriptionLawId: "GENERAL_MOBILIZATION", conscriptionRate: 0.24, humanResourceCapacity: 48, lastPopulationCalculationDate: null }
+    ];
+    const result = processor.execute(context("GM", "gm", current), command({
+      type: "UPDATE_STATES_DEMOGRAPHY",
+      updates: [
+        { stateId: "red-state", patch: { population: 110, humanResource: 22 } },
+        { stateId: "blue-state", patch: { population: 210, humanResource: 31 } }
+      ],
+      reason: "Импорт из Google Sheets"
+    }));
+
+    expect(result.status).toBe("ACCEPTED");
+    if (result.status === "ACCEPTED") {
+      expect(result.state.scene.demographics?.map((entry) => entry.population)).toEqual([110, 210]);
+      expect(result.state.scene.demographyAudit).toHaveLength(2);
+    }
+  });
+
   it("recalculates the LR limit when a conscription law changes", () => {
     const current = state();
     current.scene.states = [{ id: "red-state", name: "Красное государство", rulingFactionId: "red", active: true }];
@@ -959,3 +985,4 @@ it("keeps the fixed five-OP budget when a legacy route-distance override is edit
     enteredRouteCellCount: 0
   });
 });
+

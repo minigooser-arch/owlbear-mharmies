@@ -11,6 +11,14 @@ export interface PopulationSyncPlanEntry {
   conscriptionRate?: number;
 }
 
+export type PopulationCorrectionPatch = Pick<StateDemography, "population" | "populationGrowthFactor"> &
+  Partial<Pick<StateDemography, "humanResource" | "conscriptionLawId" | "conscriptionRate">>;
+
+export interface PopulationCorrection {
+  stateId: string;
+  patch: PopulationCorrectionPatch;
+}
+
 export interface PopulationSyncPlan {
   entries: PopulationSyncPlanEntry[];
   unmatchedStates: string[];
@@ -38,7 +46,9 @@ export interface PopulationSyncInput {
   demographics: readonly StateDemography[];
   conscriptionLaws?: readonly ConscriptionLaw[];
   fetcher?: (url: string) => Promise<PopulationFetchResponse>;
-  applyCorrection: (stateId: string, patch: Pick<StateDemography, "population" | "populationGrowthFactor"> & Partial<Pick<StateDemography, "humanResource" | "conscriptionLawId" | "conscriptionRate">>) => Promise<unknown>;
+  applyCorrection: (stateId: string, patch: PopulationCorrectionPatch) => Promise<unknown>;
+  /** Optional atomic path used by the Owlbear adapter to persist one sync package. */
+  applyCorrections?: (corrections: readonly PopulationCorrection[]) => Promise<unknown>;
 }
 
 function normalizeLabel(value: string): string {
@@ -53,6 +63,24 @@ function normalizeLabel(value: string): string {
     .replace(/[«»"']/g, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/**
+ * Country identifiers come from two independently maintained sheets/settings
+ * fields. They are identifiers, not display labels, so only normalize the
+ * transport noise that must not change identity (BOM, Unicode form, case and
+ * whitespace). In particular, do not strip punctuation or parenthesized text
+ * here: those may legitimately distinguish two backend keys.
+ */
+function normalizeBackendCountryKey(value: string): string {
+  // The sheet and the state editor frequently differ only by case/spacing.
+  return value
+    .replace(/^\uFEFF/, "")
+    .normalize("NFKC")
+    .replace(/[\u00A0\u2007\u202F]/g, " ")
+    .trim()
+    .toLocaleLowerCase("en-US")
+    .replace(/\s+/g, " ");
 }
 
 function hasRequiredHeaders(csv: string): boolean {
@@ -70,11 +98,16 @@ export function buildPopulationSyncPlan(
   const rowsByCountry = new Map<string, BackendPopulationRow>();
   const skippedRows: string[] = [];
   for (const row of rows) {
-    if (rowsByCountry.has(row.country)) {
+    const key = normalizeBackendCountryKey(row.country);
+    if (!key) {
+      skippedRows.push(`${row.country}:empty`);
+      continue;
+    }
+    if (rowsByCountry.has(key)) {
       skippedRows.push(`${row.country}:duplicate`);
       continue;
     }
-    rowsByCountry.set(row.country, row);
+    rowsByCountry.set(key, row);
   }
 
   const entries: PopulationSyncPlanEntry[] = [];
@@ -99,7 +132,7 @@ export function buildPopulationSyncPlan(
   const lawsByName = new Map(conscriptionLaws.map((law) => [normalizeLabel(law.name), law]));
   for (const state of states) {
     const country = state.backendCountry?.trim();
-    const row = country ? rowsByCountry.get(country) : undefined;
+    const row = country ? rowsByCountry.get(normalizeBackendCountryKey(country)) : undefined;
     if (!country || !row) {
       unmatchedStates.push(state.id);
       continue;
@@ -183,9 +216,8 @@ export async function syncPopulationFromPublicSheet(input: PopulationSyncInput):
   summary.unmatchedStates = plan.unmatchedStates;
   summary.unmatchedConscriptionStates = plan.unmatchedConscriptionStates;
   summary.skippedRows = plan.skippedRows;
-  for (const entry of plan.entries) {
-    try {
-      const patch: Pick<StateDemography, "population" | "populationGrowthFactor"> & Partial<Pick<StateDemography, "humanResource" | "conscriptionLawId" | "conscriptionRate">> = {
+  const corrections: PopulationCorrection[] = plan.entries.map((entry) => {
+      const patch: PopulationCorrectionPatch = {
         population: entry.population,
         populationGrowthFactor: entry.populationGrowthFactor
       };
@@ -194,13 +226,30 @@ export async function syncPopulationFromPublicSheet(input: PopulationSyncInput):
         patch.conscriptionLawId = entry.conscriptionLawId;
         patch.conscriptionRate = entry.conscriptionRate;
       }
-      await input.applyCorrection(entry.stateId, patch);
-      summary.applied += 1;
-      if (entry.humanResource !== undefined) summary.humanResourceApplied += 1;
-      if (entry.conscriptionLawId) summary.conscriptionApplied += 1;
+      return { stateId: entry.stateId, patch };
+    });
+  if (input.applyCorrections) {
+    try {
+      await input.applyCorrections(corrections);
+      summary.applied = corrections.length;
+      summary.humanResourceApplied = corrections.filter(({ patch }) => patch.humanResource !== undefined).length;
+      summary.conscriptionApplied = corrections.filter(({ patch }) => patch.conscriptionLawId !== undefined).length;
     } catch (error) {
-      summary.errors.push(`${entry.stateId}: ${error instanceof Error ? error.message : String(error)}`);
+      const message = error instanceof Error ? error.message : String(error);
+      summary.errors.push(...corrections.map(({ stateId }) => `${stateId}: ${message}`));
+    }
+  } else {
+    for (const correction of corrections) {
+      try {
+        await input.applyCorrection(correction.stateId, correction.patch);
+        summary.applied += 1;
+        if (correction.patch.humanResource !== undefined) summary.humanResourceApplied += 1;
+        if (correction.patch.conscriptionLawId) summary.conscriptionApplied += 1;
+      } catch (error) {
+        summary.errors.push(`${correction.stateId}: ${error instanceof Error ? error.message : String(error)}`);
+      }
     }
   }
   return summary;
 }
+

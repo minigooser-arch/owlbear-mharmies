@@ -39,5 +39,14 @@ export class GridStoragePort implements MetadataPort {
     if (this.failDelete) throw new Error("cleanup failed");
     this.items = this.items.filter(item => !ids.includes(item.id));
   }
-  manifest() { return this.metadata[METADATA_KEYS.gridManifest] as { version: number; revision: number; chunks: Record<string, string> }; }
+  manifest() {
+    const raw = this.metadata[METADATA_KEYS.gridManifest] as { version: number; revision: number; chunks?: Record<string, string>; partCount?: number };
+    if (raw.version === 1) return raw as { version: 1; revision: number; chunks: Record<string, string> };
+    const chunks: Record<string, string> = {};
+    for (const item of this.items) {
+      const part = item.metadata[METADATA_KEYS.gridManifestPart] as { chunks?: Record<string, string> } | undefined;
+      if (part?.chunks) Object.assign(chunks, part.chunks);
+    }
+    return { version: 1 as const, revision: raw.revision, chunks };
+  }
 }
