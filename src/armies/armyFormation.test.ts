@@ -15,15 +15,15 @@ describe("army formation", () => {
     expect(army.experience).toBe(1);
   });
 
-  it("applies 10/15 HP per-turn limits and the 10k-per-HP formation cost", () => {
-    expect(formationCapForTurn(false, 0)).toBe(10);
-    expect(formationCapForTurn(true, 0)).toBe(15);
-    expect(formationCapForTurn(false, 5)).toBe(5);
-    expect(formationCapForTurn(true, 5)).toBe(10);
-    const result = applyFormationHp(army, 10, 4, 10000);
+  it("applies 20/35 HP per-turn limits and the 10k-per-HP formation cost", () => {
+    expect(formationCapForTurn(false, 0)).toBe(20);
+    expect(formationCapForTurn(true, 0)).toBe(35);
+    expect(formationCapForTurn(false, 5)).toBe(15);
+    expect(formationCapForTurn(true, 5)).toBe(30);
+    const result = applyFormationHp(army, 20, 4, 10000);
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.army.health.hp).toBe(10);
+      expect(result.army.health.hp).toBe(20);
       expect(result.amount).toBe(100000);
       expect(result.army.movement.remainingUnits).toBe(0);
     }
@@ -31,7 +31,7 @@ describe("army formation", () => {
 
   it("unlocks movement when battle interrupts formation", () => {
     const inBattle: ArmyState = { ...army, status: "IN_BATTLE" };
-    const result = applyFormationHp(inBattle, 10, 4, 10000);
+    const result = applyFormationHp(inBattle, 20, 4, 10000);
     expect(result.ok).toBe(false);
     const interrupted = interruptFormation(inBattle);
     expect(interrupted.movement.remainingUnits).toBe(interrupted.movement.maxUnits);
