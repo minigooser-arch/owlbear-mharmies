@@ -66,10 +66,19 @@ describe("entity context menu registration", () => {
     await entry.onClick({
       items: [{
         id: "clone-army",
+        type: "IMAGE",
+        name: "Army clone",
+        visible: true,
+        locked: true,
+        disableHit: false,
+        disableAutoZIndex: false,
+        position: { x: 0, y: 0 },
+        rotation: 0,
+        scale: { x: 1, y: 1 },
         metadata: {
           [METADATA_KEYS.localClone]: { sourceItemId: "army-source" }
         }
-      }]
+      } as Item]
     });
 
     expect(focused).toEqual([{
