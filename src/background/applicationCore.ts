@@ -1523,8 +1523,9 @@ export class ProductionEngine {
           (expectedByState.get(operation.stateId) ?? 0) + operation.amount
         );
       }
-      for (const [stateId, amount] of spendByState) {
-        if (Math.abs((expectedByState.get(stateId) ?? 0) - amount) > 1e-9) {
+      const allStateIds = new Set([...expectedByState.keys(), ...spendByState.keys()]);
+      for (const stateId of allStateIds) {
+        if (Math.abs((expectedByState.get(stateId) ?? 0) - (spendByState.get(stateId) ?? 0)) > 1e-9) {
           throw new HumanResourceSheetError("HUMAN_RESOURCE_SPEND_LEDGER_MISMATCH");
         }
       }
