@@ -407,6 +407,63 @@ describe("CommandProcessor", () => {
     }
   });
 
+  it("uses barracks rather than training ground for the formation cap", () => {
+    const current = state();
+    current.scene.sides = current.scene.sides.map((side) =>
+      side.id === "red" ? { ...side, stateId: "red-state" } : side
+    );
+    current.scene.states = [{
+      id: "red-state",
+      name: "Красное государство",
+      rulingFactionId: "red",
+      active: true
+    }];
+    current.scene.gridMap.cells["0,0"] = {
+      terrainId: "plain",
+      impassable: false,
+      factionTerritoryIds: ["red"],
+      recognizedStateId: "red-state",
+      deFactoStateId: "red-state"
+    };
+    current.scene.demographics = [{
+      stateId: "red-state",
+      population: 1_000,
+      populationGrowthFactor: 1.003,
+      humanResource: 1_000,
+      conscriptionLawId: "GENERAL_MOBILIZATION",
+      conscriptionRate: 0.24,
+      humanResourceCapacity: 2_000,
+      lastPopulationCalculationDate: "2026-09-28"
+    }];
+    current.scene.strategicCities = [{
+      id: "city-red",
+      name: "Красный город",
+      cells: [{ x: 0, y: 0 }],
+      recognizedStateId: "red-state",
+      deFactoStateId: "red-state",
+      factionInfluenceId: "red",
+      mayorId: null,
+      isCapital: false,
+      historicalBuildTypeCount: 0,
+      buildings: [{ id: "training-ground", type: "TRAINING_GROUND", cell: { x: 0, y: 0 } }]
+    }];
+    const redArmy = current.armies["army-red"];
+    if (!redArmy) throw new Error("red army missing");
+    current.armies["army-red"] = {
+      ...redArmy,
+      health: { hp: 0, maxHp: 40 },
+      formation: { active: true, cityId: "city-red", hpAddedThisTurn: 0, checkedOnTurn: 1 }
+    };
+
+    const result = processor.execute(
+      context("PLAYER", "leader", current),
+      command({ type: "FORM_ARMY", armyId: "army-red", hp: 11 }, "leader")
+    );
+
+    expect(result).toEqual({ status: "REJECTED", reason: "FORMATION_CAP" });
+    expect(current.armies["army-red"]?.health.hp).toBe(0);
+  });
+
   it("rejects formation before changing HP when the state has insufficient LR", () => {
     const current = state();
     current.scene.sides = current.scene.sides.map((side) => side.id === "red" ? { ...side, stateId: "red-state" } : side);
