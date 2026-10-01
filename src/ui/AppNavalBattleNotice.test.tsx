@@ -43,7 +43,7 @@ function services(): ExtensionServices {
     subscribe: () => () => undefined,
     send: async () => undefined,
     runDiagnostic: async () => undefined,
-    clearFocusedEntity: vi.fn(async () => undefined),
+    clearFocusedEntity: async () => undefined,
   };
 }
 
