@@ -758,6 +758,7 @@ export class ProductionEngine {
             country,
             requestId: transaction.requestId,
             amount: transaction.amount,
+            ...(typeof transaction.balanceBefore === "number" ? { expectedHumanResourceBefore: transaction.balanceBefore } : {}),
             kind: transaction.kind,
             hp: transaction.hp,
             ...(typeof transaction.stateId === "string" ? { stateId: transaction.stateId } : {}),
