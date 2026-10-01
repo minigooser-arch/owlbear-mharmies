@@ -71,16 +71,18 @@ function initializeGateway() {
 }
 
 function confirmCurrentGrowthBaseline() {
-  const props = PropertiesService.getScriptProperties();
-  const ss = spreadsheet_();
-  const timezone = ss.getSpreadsheetTimeZone() || 'Europe/Moscow';
-  const local = localParts_(new Date(), timezone);
-  props.setProperty(
-    'LAST_GROWTH_DATE',
-    local.hour === 0 && local.minute < 6 ? previousDate_(local.date) : local.date
-  );
-  props.deleteProperty('GROWTH_MIGRATION_PENDING');
-  return 'Growth baseline confirmed for ' + props.getProperty('LAST_GROWTH_DATE') + '.';
+  return withLock_(function () {
+    const props = PropertiesService.getScriptProperties();
+    const ss = spreadsheet_();
+    const timezone = ss.getSpreadsheetTimeZone() || 'Europe/Moscow';
+    const local = localParts_(new Date(), timezone);
+    props.setProperty(
+      'LAST_GROWTH_DATE',
+      local.hour === 0 && local.minute < 6 ? previousDate_(local.date) : local.date
+    );
+    props.deleteProperty('GROWTH_MIGRATION_PENDING');
+    return 'Growth baseline confirmed for ' + props.getProperty('LAST_GROWTH_DATE') + '.';
+  });
 }
 
 function runDailyPopulationGrowth() {
