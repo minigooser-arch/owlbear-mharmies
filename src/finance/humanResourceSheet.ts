@@ -10,6 +10,7 @@ export interface HumanResourceSheetOperation {
   country: string;
   requestId?: string;
   amount: number;
+  expectedHumanResourceBefore?: number;
   kind?: string;
   hp?: number;
   stateId?: string;
