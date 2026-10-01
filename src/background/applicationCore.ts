@@ -635,7 +635,7 @@ export class ProductionEngine {
     const canCommit = this.captureCoordinatorGuard(expectedCoordinatorConnectionId);
     const now = this.wallClock();
     const frame = await this.repository.readFrame();
-    const sourceScene = frame.scene;
+    const sourceScene = applyPopulationCalendarToScene(frame.scene, now);
     const boundary = getDueTurnBoundary(now, sourceScene.turn);
 
     const sheetGateway = new HumanResourceSheetGateway({
@@ -644,7 +644,15 @@ export class ProductionEngine {
     });
 
     if (!boundary) {
-      if (!sheetGateway.configured) return;
+      if (!sheetGateway.configured) {
+        if (sourceScene === frame.scene) return;
+        await this.repository.writeScene(
+          { ...sourceScene, revision: frame.scene.revision + 1 },
+          frame.scene.revision,
+          (current) => canCommit() && current.revision === frame.scene.revision
+        );
+        return;
+      }
       try {
         const snapshot = await sheetGateway.snapshot();
         const syncedScene = applyHumanResourceSheetSnapshot(sourceScene, snapshot);
