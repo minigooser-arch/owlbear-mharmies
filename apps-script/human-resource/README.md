@@ -22,11 +22,13 @@ The audit sheet is `ЛР_ОПЕРАЦИИ`. It keeps one row per game LR transac
 2. In **Project Settings → Script properties**, add:
    - `SPREADSHEET_ID` = the spreadsheet ID (the code already contains the current table ID as a fallback).
    - `API_TOKEN` = a long random secret shared with the Owlbear scene settings.
-3. Run `initializeGateway()` once and grant the requested permissions.
-4. Deploy **Deploy → New deployment → Web app**.
-5. Execute the web app as the script owner and allow the web app to be accessed by anyone who has the URL. The API itself additionally requires `API_TOKEN`.
-6. Put the deployed `/exec` URL and the same token into the Owlbear settings under the human-resource Apps Script API fields.
-7. Disable the old standalone 00:06 population-growth trigger/script. The new project is the sole owner of daily population growth.
+3. Run `initializeGateway()` once and grant the requested permissions. It intentionally leaves growth in a migration-pending state.
+4. Verify that the old 00:06 growth script has already applied today's growth (if today is after 00:06), or that today's growth has not happened yet (if before 00:06).
+5. Run `confirmCurrentGrowthBaseline()` once. This is the explicit migration marker that prevents the new project from ever guessing whether the old script already ran.
+6. Deploy **Deploy → New deployment → Web app**.
+7. Execute the web app as the script owner and allow the web app to be accessed by anyone who has the URL. The API itself additionally requires `API_TOKEN`.
+8. Put the deployed `/exec` URL and the same token into the Owlbear settings under the human-resource Apps Script API fields.
+9. Disable the old standalone 00:06 population-growth trigger/script. The new project is the sole owner of daily population growth.
 
 ## Daily growth
 
