@@ -71,7 +71,7 @@ describe("metadata validation", () => {
       }
     }));
 
-    expect(result.status ?? result.ok).toBeTruthy();
+    expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.settings.armyFormationCostPerHp).toBe(10000);
     expect(result.value.settings.armyHealingCostPerHp).toBe(5000);
