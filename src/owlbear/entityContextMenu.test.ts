@@ -82,7 +82,7 @@ describe("entity context menu registration", () => {
           [METADATA_KEYS.localClone]: { sourceItemId: "army-source" }
         }
       } as unknown as Item],
-      selectionBounds: { min: { x: 0, y: 0 }, max: { x: 1, y: 1 } }
+      selectionBounds: { min: { x: 0, y: 0 }, max: { x: 1, y: 1 }, width: 1, height: 1, center: { x: 0.5, y: 0.5 } }
     }, "entity-access");
 
     expect(focused).toEqual([{
