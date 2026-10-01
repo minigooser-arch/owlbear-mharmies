@@ -40,6 +40,9 @@ export function registerEntityContextMenu(
       filter: {
         min: 1,
         max: 1,
+        every: [
+          { key: ["metadata", METADATA_KEYS.localClone], value: undefined }
+        ],
         some: [
           { key: ["metadata", METADATA_KEYS.army], operator: "!=", value: undefined },
           { key: ["metadata", METADATA_KEYS.ship], operator: "!=", value: undefined },
