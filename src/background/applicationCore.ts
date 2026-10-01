@@ -756,6 +756,7 @@ export class ProductionEngine {
           );
           return {
             country,
+            requestId: transaction.requestId,
             amount: transaction.amount,
             kind: transaction.kind,
             hp: transaction.hp,
