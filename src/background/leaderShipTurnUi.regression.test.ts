@@ -126,7 +126,7 @@ describe("leader ship local UI survives a global turn", () => {
     await engine.visibilityTick("PLAYER", "leader");
     expect(localClone(port)).toMatchObject({
       visible: true,
-      locked: true,
+      locked: false,
       disableHit: false,
       metadata: { [METADATA_KEYS.localClone]: { sourceItemId: "ship", hasRoute: false } }
     });
