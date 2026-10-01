@@ -26,8 +26,10 @@ describe("entity interaction proxy", () => {
     expect(proxy.id).toBe("proxy-1");
     expect(proxy.type).toBe("SHAPE");
     expect(proxy.visible).toBe(true);
-    expect(proxy.locked).toBe(true);
+    expect(proxy.locked).toBe(false);
     expect(proxy.disableHit).toBe(false);
+    expect(proxy.attachedTo).toBe("army-1");
+    expect(proxy.disableAttachmentBehavior).toEqual(["VISIBLE", "SCALE", "ROTATION", "LOCKED"]);
     expect(proxy.style).toMatchObject({ fillOpacity: 0, strokeOpacity: 0 });
     expect(entityInteractionProxySourceId(proxy)).toBe("army-1");
   });
