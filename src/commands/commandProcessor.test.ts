@@ -485,12 +485,10 @@ describe("CommandProcessor", () => {
     if (result.status === "ACCEPTED") {
       expect(result.state.scene.demographics?.[0]).toMatchObject({
         conscriptionRate: 0.08,
-        humanResourceCapacity: 80,
-        humanResource: 80
+        humanResourceCapacity: 80
       });
       expect(result.state.scene.demographyAudit?.at(-1)?.changes).toMatchObject({
         conscriptionRate: { before: 0.04, after: 0.08 },
-        humanResourceCapacity: { before: 200, after: 80 },
         humanResourceCapacity: { before: 200, after: 80 }
       });
     }
