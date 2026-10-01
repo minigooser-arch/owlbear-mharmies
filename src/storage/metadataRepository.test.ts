@@ -10,6 +10,7 @@ import {
 } from "./metadataRepository";
 import { GridStoragePort } from "../tests/helpers/gridStoragePort";
 import { DEFAULT_CELL_STATE } from "../terrain/gridMap";
+import { readSheetWritebackQueue } from "../sheets/writeback";
 
 const LR_LEDGER_MANIFEST_KEY = `${EXTENSION_ID}/lr-ledger-manifest`;
 
@@ -190,6 +191,37 @@ describe("MetadataRepository", () => {
 
     expect((port.metadata[METADATA_KEYS.scene] as Record<string, unknown>).lrTransactions).toEqual([]);
     expect(await new MetadataRepository(port).readScene()).toMatchObject({ lrTransactions: [transaction] });
+  });
+
+  it("persists and coalesces the durable sheet writeback snapshot", async () => {
+    const port = new MemoryPort();
+    const repository = new MetadataRepository(port);
+    const initial = await repository.readScene();
+    const first = {
+      version: 1 as const,
+      eventId: "sheet-1",
+      createdAt: "2026-10-01T00:00:00Z",
+      armies: [{ armyId: "army-1", stateId: "state-1", country: "country-a", hp: 20, maxHp: 40 }],
+      removedArmyIds: [],
+      states: [{ country: "country-a", ships: 2 }]
+    };
+    await repository.writeScene({ ...initial, revision: 1 }, 0, () => true, first);
+    const queueAfterFirst = readSheetWritebackQueue(port.sceneMetadata, METADATA_KEYS.sheetWritebackQueue);
+    expect(queueAfterFirst?.pending.eventId).toBe("sheet-1");
+
+    const second = {
+      version: 1 as const,
+      eventId: "sheet-2",
+      createdAt: "2026-10-01T00:01:00Z",
+      armies: [{ armyId: "army-1", stateId: "state-1", country: "country-a", hp: 18, maxHp: 40 }],
+      removedArmyIds: [],
+      states: [{ country: "country-a", ships: 1 }]
+    };
+    await repository.writeScene({ ...initial, revision: 2 }, 1, () => true, second);
+    const queueAfterSecond = readSheetWritebackQueue(port.sceneMetadata, METADATA_KEYS.sheetWritebackQueue);
+    expect(queueAfterSecond?.pending.eventId).toBe("sheet-1");
+    expect(queueAfterSecond?.pending.armies).toEqual([{ armyId: "army-1", stateId: "state-1", country: "country-a", hp: 18, maxHp: 40 }]);
+    expect(queueAfterSecond?.pending.states).toEqual([{ country: "country-a", ships: 1 }]);
   });
 
   it("reads one stable item frame and hydrates a grid from the same scene item list", async () => {

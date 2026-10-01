@@ -59,6 +59,7 @@ export const METADATA_KEYS = {
   gridManifestPart: `${EXTENSION_ID}/grid-manifest-part`,
   gridChunk: `${EXTENSION_ID}/grid-chunk`,
   lrLedgerManifest: `${EXTENSION_ID}/lr-ledger-manifest`,
+  sheetWritebackQueue: `${EXTENSION_ID}/sheet-writeback-queue`,
   lrLedgerPart: `${EXTENSION_ID}/lr-ledger-part`,
   demographyAuditManifest: `${EXTENSION_ID}/demography-audit-manifest`,
   demographyAuditPart: `${EXTENSION_ID}/demography-audit-part`,
@@ -104,7 +105,8 @@ export const DEFAULT_SETTINGS: SceneSettings = {
   hospitalHealingCostPerHp: 2500,
   populationTimeZone: "Europe/Moscow",
   populationSheetCsvUrl: DEFAULT_POPULATION_SHEET_CSV_URL,
-  conscriptionSheetCsvUrl: DEFAULT_CONSCRIPTION_SHEET_CSV_URL
+  conscriptionSheetCsvUrl: DEFAULT_CONSCRIPTION_SHEET_CSV_URL,
+  sheetWritebackUrl: ""
 };
 
 export const DEFAULT_CONSCRIPTION_LAWS: ConscriptionLaw[] = [

@@ -1975,6 +1975,9 @@ export class CommandProcessor {
       case "HEAL_ARMY": {
         const army = state.armies[command.armyId];
         if (!army) return "ARMY_NOT_FOUND";
+        // The command request is idempotent. If its LR transaction is already present,
+        // the healing effect has already been applied by the authoritative command path.
+        if ((state.scene.lrTransactions ?? []).some((transaction) => transaction.requestId === command.requestId)) return undefined;
         if (army.healing?.pending) return "HEALING_ALREADY_REQUESTED";
         const permission = canHealArmy(army);
         if (!permission.allowed) return permission.reason;

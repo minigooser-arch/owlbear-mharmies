@@ -29,6 +29,8 @@ export function applyAutomaticArmyFormation(
 
   for (const [armyId, army] of Object.entries(nextArmies)) {
     if (!army.formation?.active || army.status === "IN_BATTLE") continue;
+    const requestId = `auto-formation-${turnNumber}-${armyId}`;
+    if ((scene.lrTransactions ?? []).some((transaction) => transaction.requestId === requestId)) continue;
     const city = army.formation.cityId
       ? (scene.strategicCities ?? []).find((candidate) => candidate.id === army.formation?.cityId)
       : undefined;
@@ -59,7 +61,7 @@ export function applyAutomaticArmyFormation(
 
     if (demography) {
       const debit = debitHumanResource(scene, army.sideId, hp * rate, {
-        requestId: `auto-formation-${turnNumber}-${armyId}`,
+        requestId,
         actorPlayerId: "SYSTEM",
         kind: army.health.hp + hp >= army.health.maxHp ? "COMPLETION" : "FORMATION",
         armyId,

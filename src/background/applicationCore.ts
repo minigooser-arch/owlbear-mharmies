@@ -83,6 +83,20 @@ import {
 } from "../shared/types";
 import { MetadataRepository, RevisionConflict, type ArmyRecord, type BarrierRecord, type MetadataItemFrame } from "../storage/metadataRepository";
 import { GridStorageError } from "../storage/gridChunkCodec";
+import { markLRTransactionRecorded } from "../finance/lrLedger";
+import {
+  applySheetStateSnapshots,
+  buildSheetWritebackEvent,
+  mergeSheetWritebackQueue,
+  pendingLRTransactions,
+  type SheetWritebackEvent
+} from "../sheets/writeback";
+import {
+  readSheetWritebackToken,
+  SheetWritebackClient,
+  SheetWritebackError,
+  sheetWritebackConfigured
+} from "../sheets/writebackClient";
 import { buildDetectionGraph } from "../visibility/detectionGraph";
 import { buildSceneDetectionGraph, detectedShipIdsForSide } from "../visibility/sceneDetectionGraph";
 import { LocalCloneReconciler, UpdateOriginGuard } from "../visibility/localCloneReconciler";
@@ -337,6 +351,10 @@ export class ProductionEngine {
   private lastMapOverlaySignature: string | undefined;
   private clearedLegacyMapOverlays = false;
   private clearedSharedMapOverlays = false;
+  private sheetWritebackFallback: SheetWritebackEvent | undefined;
+  private sheetWritebackRetryAt = 0;
+  private sheetWritebackBackoffMs = 0;
+  private sheetWritebackRetryTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(
     private readonly port: OwlbearPort,
@@ -352,7 +370,14 @@ export class ProductionEngine {
     this.coordinatorGeneration += 1;
     this.coordinator = active;
     this.activeCoordinatorConnectionId = active ? connectionId : undefined;
-    if (active) this.lastMovementAt = performance.now();
+    if (!active && this.sheetWritebackRetryTimer !== undefined) {
+      clearTimeout(this.sheetWritebackRetryTimer);
+      this.sheetWritebackRetryTimer = undefined;
+    }
+    if (active) {
+      this.lastMovementAt = performance.now();
+      void this.enqueueMutation(() => this.flushSheetWriteback());
+    }
   }
 
   async normalizeCityBuildingLocations(): Promise<void> {
@@ -629,7 +654,9 @@ export class ProductionEngine {
     const now = this.wallClock();
     const frame = await this.repository.readFrame();
     const sourceScene = frame.scene;
-    const scene = applyPopulationCalendarToScene(sourceScene, now);
+    const scene = sheetWritebackConfigured(sourceScene.settings)
+      ? sourceScene
+      : applyPopulationCalendarToScene(sourceScene, now);
     const armyRecords = frame.items.armies;
     const barrierRecords = frame.items.barriers;
     const sceneItems = frame.items.items;
@@ -644,6 +671,18 @@ export class ProductionEngine {
         );
       }
       return;
+    }
+    let authoritativeScene = scene;
+    if (sheetWritebackConfigured(scene.settings)) {
+      try {
+        const countries = scene.states
+          .map((state) => state.backendCountry?.trim())
+          .filter((country): country is string => Boolean(country));
+        authoritativeScene = await this.refreshDemographyForCountries(scene, countries);
+      } catch (error) {
+        this.reportOperationalError(error, "turn-sheet-demography");
+        return;
+      }
     }
     const armies = Object.fromEntries(armyRecords.map((record) => [record.item.id, record.state]));
     let strategicGrid: StrategicGridAdapter;
@@ -664,7 +703,7 @@ export class ProductionEngine {
       record.item.id,
       strategicGrid.sceneToCell(record.item.position)
     ]));
-    const completion = completeTurn(scene, armies, {
+    const completion = completeTurn(authoritativeScene, armies, {
       source: "SCHEDULE",
       completedAt: now,
       boundaryId: boundary.id,
@@ -684,7 +723,7 @@ export class ProductionEngine {
     }
 
     const previous: CommandState = {
-      scene,
+      scene: authoritativeScene,
       armies,
       barriers: Object.fromEntries(barrierRecords.map((record) => [record.item.id, record.state])),
       items: Object.fromEntries(sceneItems.map((item) => [item.id, item])),
@@ -692,7 +731,7 @@ export class ProductionEngine {
     };
     const next: CommandState = {
       ...structuredClone(previous),
-      scene: { ...completion.scene, revision: scene.revision + 1 },
+      scene: { ...completion.scene, revision: authoritativeScene.revision + 1 },
       armies: completion.armies
     };
     if (!canCommit()) return;
@@ -1104,10 +1143,35 @@ export class ProductionEngine {
     }
     const command = validation.command;
     const frame = await this.repository.readFrame();
-    const scene = applyPopulationCalendarToScene(frame.scene, this.wallClock());
+    let scene = sheetWritebackConfigured(frame.scene.settings)
+      ? frame.scene
+      : applyPopulationCalendarToScene(frame.scene, this.wallClock());
     const armyRecords = frame.items.armies;
     const barrierRecords = frame.items.barriers;
     const sceneItems = frame.items.items;
+    if (sheetWritebackConfigured(scene.settings) &&
+      (command.type === "HEAL_ARMY" || command.type === "COMPLETE_TURN_NOW")) {
+      try {
+        const targetCountries = this.countriesNeedingAuthoritativeDemography(
+          scene,
+          armyRecords,
+          command.type,
+          command.type === "HEAL_ARMY" ? command.armyId : undefined
+        );
+        if (targetCountries.length > 0) {
+          scene = await this.refreshDemographyForCountries(scene, targetCountries);
+        }
+      } catch (error) {
+        await sendCommandAck(this.port, {
+          requestId: command.requestId,
+          status: "REJECTED",
+          reason: error instanceof SheetWritebackError ? error.code : "SHEET_DEMOGRAPHY_UNAVAILABLE",
+          coordinatorConnectionId: await this.currentConnectionId(),
+          recipientConnectionId: sender.connectionId
+        });
+        return;
+      }
+    }
     const commandState: CommandState = {
       scene,
       armies: Object.fromEntries(armyRecords.map((record) => [record.item.id, record.state])),
@@ -1394,6 +1458,167 @@ export class ProductionEngine {
     }
   }
 
+  private countriesNeedingAuthoritativeDemography(
+    scene: SceneState,
+    armyRecords: readonly ArmyRecord[],
+    commandType: "HEAL_ARMY" | "COMPLETE_TURN_NOW",
+    armyId?: string
+  ): string[] {
+    const countries = new Set<string>();
+    if (commandType === "COMPLETE_TURN_NOW") {
+      for (const state of scene.states) {
+        const country = state.backendCountry?.trim();
+        if (country) countries.add(country);
+      }
+      return [...countries];
+    }
+    const sourceArmies = armyRecords.filter((record) => record.item.id === armyId);
+    for (const record of sourceArmies) {
+      const side = scene.sides.find((candidate) => candidate.id === record.state.sideId);
+      const state = side?.stateId ? scene.states.find((candidate) => candidate.id === side.stateId) : undefined;
+      const country = state?.backendCountry?.trim();
+      if (country) countries.add(country);
+    }
+    return [...countries];
+  }
+
+  private async refreshDemographyForCountries(
+    scene: SceneState,
+    countries: readonly string[]
+  ): Promise<SceneState> {
+    if (!sheetWritebackConfigured(scene.settings)) return scene;
+    const token = readSheetWritebackToken();
+    if (!token) throw new SheetWritebackError("SHEET_WRITEBACK_TOKEN_MISSING");
+    const url = scene.settings.sheetWritebackUrl?.trim();
+    if (!url) throw new SheetWritebackError("SHEET_WRITEBACK_URL_MISSING");
+    const client = new SheetWritebackClient(url, token);
+    const snapshots = await client.getStates(countries);
+    return applySheetStateSnapshots(scene, snapshots);
+  }
+
+  private async commitExternalLRSpends(previous: CommandState, next: CommandState): Promise<void> {
+    const operations = pendingLRTransactions(previous, next);
+    if (operations.length === 0) return;
+    const token = readSheetWritebackToken();
+    if (!token) throw new SheetWritebackError("SHEET_WRITEBACK_TOKEN_MISSING");
+    const url = next.scene.settings.sheetWritebackUrl?.trim();
+    if (!url) throw new SheetWritebackError("SHEET_WRITEBACK_URL_MISSING");
+    const client = new SheetWritebackClient(url, token);
+    const response = await client.spendLR(operations);
+    const expected = new Set(operations.map((operation) => operation.requestId));
+    const actual = new Set(response.operations.map((operation) => operation.requestId));
+    if (actual.size !== expected.size || [...expected].some((requestId) => !actual.has(requestId))) {
+      throw new SheetWritebackError("SHEET_SPEND_RESPONSE_INCOMPLETE");
+    }
+    const expectedCountries = new Set(operations.map((operation) => operation.country));
+    const actualCountries = new Set(response.states.map((state) => state.country));
+    if (actualCountries.size !== expectedCountries.size || [...expectedCountries].some((country) => !actualCountries.has(country))) {
+      throw new SheetWritebackError("SHEET_SPEND_STATE_RESPONSE_INCOMPLETE");
+    }
+    next.scene = applySheetStateSnapshots(next.scene, response.states);
+    const recordedAt = this.wallClock().toISOString();
+    for (const operation of operations) {
+      const transaction = next.scene.lrTransactions?.find((candidate) => candidate.requestId === operation.requestId);
+      const responseOperation = response.operations.find((candidate) => candidate.requestId === operation.requestId);
+      if (!transaction || !responseOperation) {
+        throw new SheetWritebackError(`SHEET_TRANSACTION_MISSING:${operation.requestId}`);
+      }
+      next.scene.lrTransactions = (next.scene.lrTransactions ?? []).map((candidate) =>
+        candidate.id === transaction.id
+          ? {
+              ...structuredClone(candidate),
+              balanceBefore: responseOperation.humanResourceBefore,
+              balanceAfter: responseOperation.humanResourceAfter
+            }
+          : structuredClone(candidate)
+      );
+      next.scene.lrTransactions = markLRTransactionRecorded(
+        next.scene.lrTransactions,
+        transaction.id,
+        operation.actorPlayerId,
+        recordedAt
+      );
+    }
+  }
+
+  private async flushSheetWriteback(): Promise<void> {
+    if (Date.now() < this.sheetWritebackRetryAt) return;
+    let scene: SceneState;
+    try {
+      scene = await this.repository.readScene();
+    } catch (error) {
+      this.scheduleSheetWritebackRetry(5_000);
+      this.reportOperationalError(error, "sheet-writeback-read-scene");
+      return;
+    }
+    if (!sheetWritebackConfigured(scene.settings)) return;
+    const token = readSheetWritebackToken();
+    if (!token) {
+      this.scheduleSheetWritebackRetry(30_000);
+      return;
+    }
+    let metadata: Record<string, unknown>;
+    try {
+      metadata = await this.port.getSceneMetadata();
+    } catch (error) {
+      this.scheduleSheetWritebackRetry(5_000);
+      this.reportOperationalError(error, "sheet-writeback-read-metadata");
+      return;
+    }
+    const durable = SheetWritebackClient.readQueue(metadata);
+    const merged = durable
+      ? mergeSheetWritebackQueue(durable, this.sheetWritebackFallback ?? {
+          version: 1,
+          eventId: `sheet-sync-empty-${Date.now()}`,
+          createdAt: this.wallClock().toISOString(),
+          armies: [],
+          removedArmyIds: [],
+          states: []
+        })
+      : this.sheetWritebackFallback
+        ? { version: 1 as const, pending: this.sheetWritebackFallback }
+        : undefined;
+    if (!merged) return;
+    const event = merged.pending;
+    if (event.armies.length === 0 && event.removedArmyIds.length === 0 && event.states.length === 0) {
+      this.sheetWritebackFallback = undefined;
+      return;
+    }
+    const url = scene.settings.sheetWritebackUrl?.trim();
+    if (!url) return;
+    const client = new SheetWritebackClient(url, token);
+    try {
+      await client.syncState(event);
+      const latestMetadata = await this.port.getSceneMetadata();
+      const latestQueue = SheetWritebackClient.readQueue(latestMetadata);
+      if (latestQueue?.pending.eventId === event.eventId) {
+        await this.port.patchSceneMetadata({ [METADATA_KEYS.sheetWritebackQueue]: undefined });
+      }
+      this.sheetWritebackFallback = undefined;
+      this.sheetWritebackRetryAt = 0;
+      this.sheetWritebackBackoffMs = 0;
+      if (this.sheetWritebackRetryTimer !== undefined) {
+        clearTimeout(this.sheetWritebackRetryTimer);
+        this.sheetWritebackRetryTimer = undefined;
+      }
+    } catch (error) {
+      this.sheetWritebackBackoffMs = this.sheetWritebackBackoffMs === 0
+        ? 5_000
+        : Math.min(60_000, this.sheetWritebackBackoffMs * 2);
+      this.scheduleSheetWritebackRetry(this.sheetWritebackBackoffMs);
+      this.reportOperationalError(error, "sheet-writeback-sync");
+    }
+  }
+
+  private scheduleSheetWritebackRetry(delayMs: number): void {
+    this.sheetWritebackRetryAt = Date.now() + delayMs;
+    if (this.sheetWritebackRetryTimer !== undefined) clearTimeout(this.sheetWritebackRetryTimer);
+    this.sheetWritebackRetryTimer = setTimeout(() => {
+      this.sheetWritebackRetryTimer = undefined;
+      if (this.coordinator) void this.enqueueMutation(() => this.flushSheetWriteback());
+    }, delayMs);
+  }
+
   private async currentConnectionId(): Promise<string> {
     if (this.activeCoordinatorConnectionId) return this.activeCoordinatorConnectionId;
     const raw = (await this.repository.readScene()).coordinatorLease?.connectionId;
@@ -1405,6 +1630,9 @@ export class ProductionEngine {
     previous: CommandState,
     items: readonly SceneItemRecord[]
   ): Promise<void> {
+    const writebackEvent = sheetWritebackConfigured(next.scene.settings)
+      ? buildSheetWritebackEvent(previous, next, this.wallClock().toISOString())
+      : undefined;
     const itemById = new Map(items.map((item) => [item.id, item]));
     const createdItemIds: string[] = [];
     const applied: AppliedMetadataWrite[] = [];
@@ -1531,19 +1759,48 @@ export class ProductionEngine {
       ) {
         throw new Error("Coordinator lease changed during command persistence");
       }
+      let externalSpendCommitted = false;
+      if (sheetWritebackConfigured(next.scene.settings)) {
+        const spendOperations = pendingLRTransactions(previous, next);
+        if (spendOperations.length > 0) {
+          await this.commitExternalLRSpends(previous, next);
+          externalSpendCommitted = true;
+        }
+      }
       const nextSceneWithoutLease = { ...next.scene };
       delete nextSceneWithoutLease.coordinatorLease;
       const sceneToWrite = latestScene.coordinatorLease
         ? { ...nextSceneWithoutLease, coordinatorLease: latestScene.coordinatorLease }
         : nextSceneWithoutLease;
-      await this.repository.writeScene(
-        sceneToWrite,
-        previous.scene.revision,
-        (current) =>
-          canCommit() &&
-          (expectedCoordinatorConnectionId === undefined ||
-            current.coordinatorLease?.connectionId === expectedCoordinatorConnectionId)
-      );
+      const writeScene = async (includeWriteback: boolean): Promise<void> => {
+        await this.repository.writeScene(
+          sceneToWrite,
+          previous.scene.revision,
+          (current) =>
+            canCommit() &&
+            (expectedCoordinatorConnectionId === undefined ||
+              current.coordinatorLease?.connectionId === expectedCoordinatorConnectionId),
+          includeWriteback ? writebackEvent : undefined
+        );
+      };
+      try {
+        await writeScene(true);
+      } catch (error) {
+        if (writebackEvent && error instanceof GridStorageError && error.code === "GRID_METADATA_TOO_LARGE") {
+          this.sheetWritebackFallback = mergeSheetWritebackQueue(
+            this.sheetWritebackFallback ? { version: 1, pending: this.sheetWritebackFallback } : undefined,
+            writebackEvent
+          ).pending;
+          await writeScene(false);
+        } else if (externalSpendCommitted) {
+          // Sheets spend is idempotent by transaction requestId. Retry the
+          // Owlbear commit once before item metadata rollback.
+          await writeScene(false);
+        } else {
+          throw error;
+        }
+      }
+      void this.enqueueMutation(() => this.flushSheetWriteback());
     } catch (error) {
       for (const write of applied.reverse()) {
         try {

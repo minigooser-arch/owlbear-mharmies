@@ -15,6 +15,7 @@ import { compactDefaultTerrain } from "../terrain/gridMap";
 import { sendBatches } from "../owlbear/boundedBatches";
 import { LRLedgerRepository, readLRLedgerManifest } from "./lrLedgerRepository";
 import { DemographyAuditRepository, readDemographyAuditManifest } from "./demographyAuditRepository";
+import { mergeSheetWritebackQueue, readSheetWritebackQueue, type SheetWritebackEvent } from "../sheets/writeback";
 
 export interface MetadataPort {
   getSceneMetadata(): Promise<Record<string, unknown>>;
@@ -274,7 +275,14 @@ export class MetadataRepository {
     if (!this.port.addSceneItems || !this.port.deleteSceneItems) {
       // Legacy embedding ports may still write small scenes, but never destroy an existing manifest.
       if (readGridManifest(metadata)) throw new GridStorageError("GRID_CHUNK_WRITE_FAILED");
-      const update = { [METADATA_KEYS.scene]: next };
+      const existingQueue = readSheetWritebackQueue(metadata, METADATA_KEYS.sheetWritebackQueue);
+      const writebackQueue = sheetWritebackEvent
+        ? mergeSheetWritebackQueue(existingQueue, sheetWritebackEvent)
+        : existingQueue;
+      const update = {
+        [METADATA_KEYS.scene]: next,
+        ...(writebackQueue ? { [METADATA_KEYS.sheetWritebackQueue]: writebackQueue } : {})
+      };
       if (utf8Size(update) > 48 * 1024) throw new GridStorageError("GRID_METADATA_TOO_LARGE");
       await this.port.patchSceneMetadata(update);
       return;
@@ -311,11 +319,16 @@ export class MetadataRepository {
       demographyAudit: [],
       gridMap: { ...next.gridMap, cells: {} }
     };
+    const existingWritebackQueue = readSheetWritebackQueue(metadata, METADATA_KEYS.sheetWritebackQueue);
+    const writebackQueue = sheetWritebackEvent
+      ? mergeSheetWritebackQueue(existingWritebackQueue, sheetWritebackEvent)
+      : existingWritebackQueue;
     const update = {
       [METADATA_KEYS.scene]: persistedScene,
       [METADATA_KEYS.gridManifest]: staged.manifest,
       [METADATA_KEYS.lrLedgerManifest]: stagedLedger.manifest,
-      [METADATA_KEYS.demographyAuditManifest]: stagedAudit.manifest
+      [METADATA_KEYS.demographyAuditManifest]: stagedAudit.manifest,
+      ...(writebackQueue ? { [METADATA_KEYS.sheetWritebackQueue]: writebackQueue } : {})
     };
     if (utf8Size(update) > 48 * 1024) throw new GridStorageError("GRID_METADATA_TOO_LARGE");
     try {

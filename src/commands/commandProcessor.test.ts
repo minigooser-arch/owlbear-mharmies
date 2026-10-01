@@ -594,6 +594,52 @@ describe("CommandProcessor", () => {
     });
   });
 
+  it("does not apply HEAL_ARMY twice for the same requestId", () => {
+    const current = state();
+    current.scene.sides = current.scene.sides.map((side) =>
+      side.id === "red" ? { ...side, stateId: "red-state" } : side
+    );
+    current.scene.states = [{
+      id: "red-state",
+      name: "Красное государство",
+      rulingFactionId: "red",
+      active: true
+    }];
+    current.scene.demographics = [{
+      stateId: "red-state",
+      population: 1_000,
+      populationGrowthFactor: 1.003,
+      humanResource: 20,
+      conscriptionLawId: "GENERAL_MOBILIZATION",
+      conscriptionRate: 0.24,
+      humanResourceCapacity: 240,
+      lastPopulationCalculationDate: "2026-09-28"
+    }];
+    current.scene.gridMap.cells["0,0"] = {
+      terrainId: "plain",
+      impassable: false,
+      factionTerritoryIds: ["red"],
+      recognizedStateId: "red-state",
+      deFactoStateId: "red-state"
+    };
+    current.armies["army-red"] = { ...current.armies["army-red"], health: { hp: 30, maxHp: 50 } };
+
+    const positioned = new CommandProcessor(
+      () => new Date("2026-09-30T08:00:00.000Z"),
+      (position) => ({ x: Math.floor(position.x / 100), y: Math.floor(position.y / 100) })
+    );
+    const request = command({ type: "HEAL_ARMY", armyId: "army-red", amount: 10 }, "leader");
+    const first = positioned.execute(context("PLAYER", "leader", current), request);
+    expect(first.status).toBe("ACCEPTED");
+    if (first.status !== "ACCEPTED") return;
+
+    const second = positioned.execute(context("PLAYER", "leader", first.state), request);
+    expect(second.status).toBe("ACCEPTED");
+    if (second.status !== "ACCEPTED") return;
+    expect(second.state.armies["army-red"]?.health.hp).toBe(32);
+    expect(second.state.scene.lrTransactions?.filter((transaction) => transaction.requestId === request.requestId)).toHaveLength(1);
+  });
+
   it("uses the hospital healing rate when an active military hospital is present", () => {
     const current = state();
     current.scene.sides = current.scene.sides.map((side) =>

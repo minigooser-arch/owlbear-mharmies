@@ -55,6 +55,8 @@ export interface SceneSettings {
   populationSheetCsvUrl?: string;
   /** Public Google Sheets CSV endpoint for the state/conscription category sheet. */
   conscriptionSheetCsvUrl?: string;
+  /** Apps Script writeback endpoint. The secret is stored only in GM localStorage. */
+  sheetWritebackUrl?: string;
 }
 
 export interface ArmyTokenAsset {

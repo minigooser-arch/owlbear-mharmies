@@ -250,6 +250,10 @@ function parseSettings(value: unknown): Partial<SceneSettings> | undefined {
     if (!boundedString(value.conscriptionSheetCsvUrl, 1024)) return undefined;
     result.conscriptionSheetCsvUrl = value.conscriptionSheetCsvUrl.trim();
   }
+  if ("sheetWritebackUrl" in value) {
+    if (typeof value.sheetWritebackUrl !== "string" || value.sheetWritebackUrl.length > 2048) return undefined;
+    result.sheetWritebackUrl = value.sheetWritebackUrl.trim();
+  }
   return result;
 }
 

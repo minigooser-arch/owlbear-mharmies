@@ -35,13 +35,13 @@ describe("Google Sheets population CSV", () => {
 
   it("reads conscription category from paired state and faction rows", () => {
     const row = (values: Record<number, string>) => {
-      const cells = Array.from({ length: 41 }, () => "");
+      const cells = Array.from({ length: 44 }, () => "");
       for (const [index, value] of Object.entries(values)) cells[Number(index)] = value;
       return cells.map((value) => value.includes(",") ? `"${value.replaceAll('"', '""')}"` : value).join(",");
     };
     const csv = [
       "fff",
-      row({ 10: "ВЕЛИКОБРИТАНИЯ", 15: "46М. 084Т.", 40: "0М. 584Т." }),
+      row({ 10: "ВЕЛИКОБРИТАНИЯ", 15: "46М. 084Т.", 43: "0М. 584Т." }),
       row({ 10: "🏳️", 40: "СРОЧНЫЙ ПРИЗЫВ" })
     ].join("\n");
 
