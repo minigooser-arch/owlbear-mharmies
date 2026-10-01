@@ -16,4 +16,12 @@ describe("city effects", () => {
     expect(portTransportMovementCost(scene, "c", { x: 1, y: 1 })).toBe(3);
     expect(shipBunkeringBonus(scene, "c", { x: 0, y: 0 })).toBe(2);
   });
+
+  it("does not use the training ground as the formation cap building", () => {
+    const withoutBarracks = structuredClone(scene);
+    const city = withoutBarracks.strategicCities?.[0];
+    if (!city) throw new Error("city missing");
+    city.buildings = (city.buildings ?? []).filter((building) => building.type !== "BARRACKS");
+    expect(armyFormationCap(withoutBarracks, "c")).toBe(10);
+  });
 });
