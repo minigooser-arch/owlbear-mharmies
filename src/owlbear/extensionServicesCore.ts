@@ -83,6 +83,7 @@ import {
 import { semanticSnapshotEqual, semanticValueEqual } from "./snapshotEquality";
 import { CityCellPickerSession, type CityCellPickSnapshot } from "./cityCellPickerSession";
 import { armyTokenPickerOptions } from "./armyTokenPicker";
+import { ENTITY_FOCUS_METADATA_KEY, readEntityFocusFromPlayerMetadata } from "./entityContextMenu";
 import {
   hospitalSupportDice,
   hospitalSupportRange,
@@ -642,13 +643,14 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
 
   let observedLocalCloneSourceIds = new Set<string>();
   const loadSnapshot = async (): Promise<RawExtensionSnapshot> => {
-    const [sceneReady, role, playerId, playerName, playerColor, party] = await Promise.all([
+    const [sceneReady, role, playerId, playerName, playerColor, party, playerMetadata] = await Promise.all([
       OBR.scene.isReady(),
       OBR.player.getRole(),
       OBR.player.getId(),
       OBR.player.getName(),
       OBR.player.getColor(),
-      OBR.party.getPlayers()
+      OBR.party.getPlayers(),
+      OBR.player.getMetadata()
     ]);
     const players: PartyPlayerView[] = [
       ...party
@@ -695,8 +697,15 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
     const currentDraft = snapshot.navalBattleAreaDraft;
     const keepDraft = role === "GM" && currentDraft !== undefined &&
       nextSnapshot.pendingNavalBattleRequests?.some((request) => request.id === currentDraft.requestId) === true;
+    const focusedEntity = readEntityFocusFromPlayerMetadata(playerMetadata);
+    const focusedEntityVisible = focusedEntity !== undefined && (
+      (focusedEntity.type === "ARMY" && nextSnapshot.armies.some((army) => army.id === focusedEntity.id)) ||
+      (focusedEntity.type === "SHIP" && (nextSnapshot.ships ?? []).some((ship) => ship.id === focusedEntity.id)) ||
+      (focusedEntity.type === "CITY" && (nextSnapshot.strategicCities ?? []).some((city) => city.id === focusedEntity.id))
+    );
     return {
       ...nextSnapshot,
+      ...(focusedEntityVisible && focusedEntity ? { focusedEntity } : {}),
       ...(keepDraft ? {
         navalBattleAreaDraft: {
           requestId: currentDraft.requestId,
@@ -1037,6 +1046,9 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
       return () => listeners.delete(listener);
     },
     send,
+    clearFocusedEntity: async () => {
+      await OBR.player.setMetadata({ [ENTITY_FOCUS_METADATA_KEY]: undefined });
+    },
     runDiagnostic: (testId) => diagnostics.run(testId),
     stop: () => {
       refreshCoordinator.stop();

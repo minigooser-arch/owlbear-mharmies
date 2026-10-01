@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ConfirmDialog } from "./components/ConfirmDialog";
+import { EntityInspector } from "./components/EntityInspector";
 import { StrategicCityEditor } from "./components/StrategicCityEditor";
 import { BattlesPage } from "./pages/BattlesPage";
 import { ForcesPage } from "./pages/ForcesPage";
@@ -58,6 +59,22 @@ export function App({ services }: { services: ExtensionServices }) {
         {tabs.map((item) => <button type="button" key={item} aria-label={LABELS[item]} className={tab === item ? "active" : ""} onClick={() => selectTab(item)}>{LABELS[item]}{isGM && item === "BATTLES" && navalRequestCount > 0 && <span className="count-pill" aria-hidden="true">{navalRequestCount}</span>}</button>)}
       </nav>
       <div className="content wiki-content">
+        {state.focusedEntity && (
+          <EntityInspector
+            focus={state.focusedEntity}
+            armies={state.armies}
+            ships={state.ships}
+            strategicCities={state.strategicCities}
+            sides={state.sides}
+            states={state.states}
+            role={state.role}
+            leaderSideIds={state.leaderSideIds}
+            relations={state.relations}
+            turnPhase={state.turn.phase}
+            onAction={send}
+            onClose={() => void services.clearFocusedEntity?.()}
+          />
+        )}
         {isGM && navalRequestCount > 0 && tab !== "BATTLES" && <aside className="registration-card naval-request-notice" role="status" aria-label="Заявки на морской бой"><div className="registration-copy"><strong>Заявки на морской бой: {navalRequestCount}</strong><small>Есть ожидающие решения ведущего заявки. Все они собраны в одном списке.</small></div><button className="button primary" type="button" onClick={() => setGmTab("BATTLES")}>Открыть заявки</button></aside>}
         {tab === "OVERVIEW" && isGM && <OverviewPage armies={state.armies} states={state.states} stateRelations={state.stateRelations ?? {}} turn={state.turn} onAction={send} />}
         {tab === "ARMIES" && <><ForcesPage armies={state.armies} ships={state.ships} sides={state.sides} role={state.role} playerId={state.playerId} strategicCities={state.strategicCities} leaderSideIds={state.leaderSideIds} relations={state.relations} navalRequestTargets={state.navalRequestTargets} pendingNavalBattleRequests={state.pendingNavalBattleRequests} transportEmbarkTargets={state.transportEmbarkTargets} pendingTransportEmbarkRequests={state.pendingTransportEmbarkRequests} turnPhase={state.turn.phase} onAction={send} />{!isGM && state.leaderSideIds.size > 0 && <details className="leader-management"><summary>Управление фракцией</summary><SidesPage role="PLAYER" playerId={state.playerId} sides={state.sides.filter((side) => state.leaderSideIds.has(side.id))} players={state.players} leaderSideIds={state.leaderSideIds} onAction={send} /></details>}</>}

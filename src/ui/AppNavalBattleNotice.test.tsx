@@ -42,7 +42,8 @@ function services(): ExtensionServices {
     getSnapshot: () => snapshot,
     subscribe: () => () => undefined,
     send: async () => undefined,
-    runDiagnostic: async () => undefined
+    runDiagnostic: async () => undefined,
+    clearFocusedEntity: async () => undefined,
   };
 }
 
