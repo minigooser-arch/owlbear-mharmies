@@ -464,42 +464,7 @@ export class CommandProcessor {
         return undefined;
       }
       case "FORM_ARMY": {
-        const army = state.armies[command.armyId];
-        if (!army) return "ARMY_NOT_FOUND";
-        const formationRate = humanResourceRateInSceneUnits(state, army.sideId, state.scene.settings.armyFormationCostPerHp ?? 10000);
-        const result = applyFormationHp(
-          army,
-          command.hp,
-          state.scene.turn.turnNumber,
-          formationRate,
-          Boolean(army.formation?.cityId && hasActiveCityBuilding(state.scene, army.formation.cityId, "BARRACKS"))
-        );
-        if (!result.ok) return result.reason;
-        const formationKind = result.army.health.hp >= result.army.health.maxHp ? "COMPLETION" : "FORMATION";
-        const cityId = army.formation?.cityId ?? null;
-        const cityName = (state.scene.strategicCities ?? []).find((city) => city.id === cityId)?.name ?? null;
-        const formationDebit = this.debitHumanResource(state, army.sideId, result.amount, {
-          requestId: command.requestId,
-          actorPlayerId: command.senderPlayerId,
-          kind: formationKind,
-          armyId: command.armyId,
-          armyName: command.armyId,
-          cityId,
-          cityName,
-          hp: command.hp,
-          ratePerHp: formationRate,
-          turnNumber: state.scene.turn.turnNumber,
-          createdAt: this.now().toISOString()
-        });
-        if (formationDebit) return formationDebit;
-        state.armies[command.armyId] = result.army;
-        if (state.scene.demographics === undefined) state.scene.lrTransactions = appendLRTransaction(state.scene.lrTransactions ?? [], {
-          id: `${command.requestId}:formation`, requestId: command.requestId, createdAt: this.now().toISOString(), turnNumber: state.scene.turn.turnNumber,
-          actorPlayerId: command.senderPlayerId, sideId: army.sideId, sideName: state.scene.sides.find((side) => side.id === army.sideId)?.name ?? army.sideId,
-          cityId, cityName, armyId: command.armyId, armyName: command.armyId, kind: formationKind, hp: command.hp,
-          ratePerHp: formationRate, amount: result.amount
-        });
-        return undefined;
+        return "FORMATION_AUTOMATIC_ONLY";
       }
       case "UNREGISTER_ARMY": {
         if (!state.armies[command.armyId]) return "ARMY_NOT_FOUND";
