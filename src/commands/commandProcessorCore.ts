@@ -472,7 +472,7 @@ export class CommandProcessor {
           command.hp,
           state.scene.turn.turnNumber,
           formationRate,
-          Boolean(army.formation?.cityId && hasActiveCityBuilding(state.scene, army.formation.cityId, "TRAINING_GROUND"))
+          Boolean(army.formation?.cityId && hasActiveCityBuilding(state.scene, army.formation.cityId, "BARRACKS"))
         );
         if (!result.ok) return result.reason;
         const formationKind = result.army.health.hp >= result.army.health.maxHp ? "COMPLETION" : "FORMATION";
@@ -2032,7 +2032,9 @@ export class CommandProcessor {
         const missingHp = Math.max(0, army.health.maxHp - army.health.hp);
         if (remainingTurnCap <= 0 || missingHp <= 0) return "HEALING_UNAVAILABLE";
 
-        const configuredRate = state.scene.settings.armyHealingCostPerHp ?? 5000;
+        const configuredRate = hasHospital
+          ? state.scene.settings.hospitalHealingCostPerHp ?? 2500
+          : state.scene.settings.armyHealingCostPerHp ?? 5000;
         const ratePerHp = humanResourceRateInSceneUnits(state, army.sideId, configuredRate);
         let affordableHp = Number.POSITIVE_INFINITY;
         if (state.scene.demographics !== undefined) {
