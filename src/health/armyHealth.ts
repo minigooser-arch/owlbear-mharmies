@@ -89,9 +89,9 @@ export function healArmyForTurn(
   return {
     ...healed,
     healing: {
-      pending: false,
-      requestedOnTurn: null,
-      requestedByPlayerId: null,
+      pending: true,
+      requestedOnTurn: turnNumber,
+      requestedByPlayerId: army.healing?.requestedByPlayerId ?? null,
       hpHealedThisTurn: used + Math.min(normalized, healed.health.hp - army.health.hp),
       checkedOnTurn: turnNumber,
       hospitalCityId
