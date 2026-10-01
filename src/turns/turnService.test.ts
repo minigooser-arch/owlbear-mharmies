@@ -37,8 +37,12 @@ it("starts a new turn with exactly five OP and starts only routes due on that tu
   expect(result.armies.a?.status).toBe("MOVING");
 });
 
-it("does not defer army recovery to the global-turn boundary", () => {
-  const damaged = { ...army(17), health: { hp: 30, maxHp: 50 }, healing: { pending: true, requestedOnTurn: 1, requestedByPlayerId: "leader", hpHealedThisTurn: 0, checkedOnTurn: 1, hospitalCityId: null } };
+it("applies a treatment request at the start of the next global turn", () => {
+  const damaged = {
+    ...army(17),
+    health: { hp: 30, maxHp: 50 },
+    healing: { pending: true, requestedOnTurn: 1, requestedByPlayerId: "leader", hpHealedThisTurn: 0, checkedOnTurn: 1, hospitalCityId: null }
+  };
   const result = completeTurn(scene(), { a: damaged }, {
     source: "MANUAL",
     completedAt: new Date("2026-09-06T12:00:00.000Z"),
@@ -46,7 +50,9 @@ it("does not defer army recovery to the global-turn boundary", () => {
   });
   expect(result.changed).toBe(true);
   if (!result.changed) return;
-  expect(result.armies.a?.health.hp).toBe(30);
+  expect(result.scene.turn.turnNumber).toBe(2);
+  expect(result.armies.a?.health.hp).toBe(40);
+  expect(result.armies.a?.healing?.pending).toBe(false);
 });
 
 it("automatically completes one formation stage after a global turn", () => {
