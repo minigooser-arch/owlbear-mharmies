@@ -490,7 +490,7 @@ function logRowToOperation_(row) {
     kind: String(row[5] || '') || undefined,
     hp: row[6] === '' ? undefined : Number(row[6]),
     ratePerHp: row[7] === '' ? undefined : Number(row[7]),
-    amount: Number(row[8] || 0),
+    amount: Math.abs(Number(row[8] || 0)),
     populationBefore: Number(row[10] || 0),
     populationAfter: Number(row[11] || 0),
     humanResourceBefore: Number(row[12] || 0),
