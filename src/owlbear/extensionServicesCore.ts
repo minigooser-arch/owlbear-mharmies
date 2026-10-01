@@ -52,7 +52,7 @@ import {
 } from "../shared/types";
 import { migrateSceneState } from "../storage/migrations";
 import { getRebellionCapitalController, getRebellionFactionStrength } from "../rebellions/rebellionService";
-import { armyFormationCap, lighthouseDetectionBonusAtCell } from "../cities/cityEffects";
+import { armyFormationCap, cityForCell, hasActiveCityBuilding, lighthouseDetectionBonusAtCell } from "../cities/cityEffects";
 import { shipEmbarkedArmyIds } from "../naval/transport/transportRules";
 import { territorialCityContributions } from "../wars/territorialScore";
 import { isFactionStateAtWar } from "../states/stateRules";
@@ -85,6 +85,7 @@ import { CityCellPickerSession, type CityCellPickSnapshot } from "./cityCellPick
 import { armyTokenPickerOptions } from "./armyTokenPicker";
 import { ENTITY_FOCUS_METADATA_KEY, readEntityFocusFromPlayerMetadata } from "./entityContextMenu";
 import {
+  armyRecoveryHpCap,
   hospitalSupportDice,
   hospitalSupportRange,
   shipDetectionBonus,
@@ -266,6 +267,29 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
     });
   const armies: ArmyView[] = authorizedRecords.map(({ item, state }) => {
     const forcedExit = input.scene.forcedExitStates?.find((entry) => entry.armyId === item.id);
+    const strategicCell = input.gridDpi
+      ? new StrategicGridAdapter({ dpi: input.gridDpi, offset: { x: 0, y: 0 } }).sceneToCell(item.position)
+      : undefined;
+    const recoveryCity = strategicCell ? cityForCell(input.scene, strategicCell) : undefined;
+    const hasHospital = recoveryCity
+      ? hasActiveCityBuilding(input.scene, recoveryCity.id, "MILITARY_HOSPITAL")
+      : false;
+    const terrainId = strategicCell
+      ? readCell(input.scene.gridMap, strategicCell).terrainId ?? input.scene.terrain.defaultTerrainId
+      : undefined;
+    const recoveryLocation = hasHospital
+      ? "HOSPITAL" as const
+      : recoveryCity || terrainId === "road"
+        ? "CITY_OR_ROAD" as const
+        : "FIELD" as const;
+    const recoveryCap = armyRecoveryHpCap(state, recoveryLocation);
+    const healingUsed = state.healing?.checkedOnTurn === input.scene.turn.turnNumber
+      ? state.healing.hpHealedThisTurn
+      : 0;
+    const healingRemainingThisTurn = Math.max(
+      0,
+      Math.min(recoveryCap - healingUsed, state.health.maxHp - state.health.hp)
+    );
     return {
       id: item.id,
       name: item.name ?? "Безымянная армия",
@@ -291,6 +315,7 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
       formationHpAddedThisTurn: state.formation?.hpAddedThisTurn ?? 0,
       formationTurnCap: armyFormationCap(input.scene, state.formation?.cityId ?? null),
       healingHpHealedThisTurn: state.healing?.hpHealedThisTurn ?? 0,
+      ...(input.gridDpi ? { healingRemainingThisTurn } : {}),
       healingPending: state.healing?.pending ?? false,
       supplied: state.supply.supplied,
       supplyCheckedOnTurn: state.supply.checkedOnTurn,
