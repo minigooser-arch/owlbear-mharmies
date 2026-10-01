@@ -70,8 +70,8 @@ it("automatically completes one formation stage after a global turn", () => {
   if (!result.changed) return;
   expect(result.armies.a?.health.hp).toBe(20);
   expect(result.armies.a?.formation).toMatchObject({ active: true, hpAddedThisTurn: 20, checkedOnTurn: 2 });
-  expect(result.scene.demographics?.[0]?.humanResource).toBe(484);
-  expect(result.scene.lrTransactions?.[0]).toMatchObject({ kind: "FORMATION", hp: 10, amount: 100, ratePerHp: 10 });
+  expect(result.scene.demographics?.[0]?.humanResource).toBe(384);
+  expect(result.scene.lrTransactions?.[0]).toMatchObject({ kind: "FORMATION", hp: 20, amount: 200, ratePerHp: 10 });
 });
 
 it("automatically forms 35 HP per turn in a city with active barracks", () => {
