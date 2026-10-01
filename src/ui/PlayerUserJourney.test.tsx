@@ -75,7 +75,7 @@ function services(snapshot: RawExtensionSnapshot) {
     subscribe: () => () => undefined,
     send,
     runDiagnostic: vi.fn(async () => undefined),
-    clearFocusedEntity: async () => undefined,
+    clearFocusedEntity: vi.fn(async () => undefined),
   };
   return { api, send };
 }
