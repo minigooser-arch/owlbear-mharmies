@@ -109,6 +109,7 @@ function parseAppliedOperation(value: unknown): HumanResourceSheetAppliedOperati
       !finiteNonNegative(raw.humanResourceAfter)) return undefined;
   return {
     country: raw.country.trim(),
+    ...(typeof raw.requestId === "string" ? { requestId: raw.requestId } : {}),
     amount: raw.amount,
     ...(typeof raw.kind === "string" ? { kind: raw.kind } : {}),
     ...(finiteNonNegative(raw.hp) ? { hp: raw.hp } : {}),
