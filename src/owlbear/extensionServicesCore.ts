@@ -649,7 +649,8 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
       OBR.player.getId(),
       OBR.player.getName(),
       OBR.player.getColor(),
-      OBR.party.getPlayers()
+      OBR.party.getPlayers(),
+      OBR.player.getMetadata()
     ]);
     const players: PartyPlayerView[] = [
       ...party
@@ -704,6 +705,7 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
     );
     return {
       ...nextSnapshot,
+      ...(focusedEntityVisible && focusedEntity ? { focusedEntity } : {}),
       ...(keepDraft ? {
         navalBattleAreaDraft: {
           requestId: currentDraft.requestId,
