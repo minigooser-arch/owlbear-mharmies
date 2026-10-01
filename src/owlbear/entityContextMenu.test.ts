@@ -55,7 +55,9 @@ describe("entity context menu registration", () => {
     expect(entries).toHaveLength(1);
 
     const entry = entries[0];
+    if (!entry) throw new Error("Context menu entry was not registered");
     const cloneIcon = entry.icons[0];
+    if (!cloneIcon) throw new Error("Local clone icon was not registered");
     expect(cloneIcon.label).toBe("Открыть объект");
     expect(cloneIcon.filter.every).toContainEqual({
       key: ["metadata", METADATA_KEYS.localClone, "sourceItemId"],
