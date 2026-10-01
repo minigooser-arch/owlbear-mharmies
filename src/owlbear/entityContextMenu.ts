@@ -6,6 +6,7 @@ import { parseMapEntityFocus } from "./entityFocus";
 export interface EntityContextMenuPort {
   create(entry: Parameters<typeof OBR.contextMenu.create>[0]): Promise<void> | void;
   remove(id: string): Promise<void> | void;
+  getSceneItem(itemId: string): Promise<Pick<Item, "id" | "metadata"> | undefined>;
   setPlayerMetadata(update: Record<string, unknown>): Promise<void>;
   openAction(): Promise<void>;
   show(message: string, variant: "ERROR" | "WARNING" | "SUCCESS"): Promise<void>;
@@ -28,6 +29,13 @@ export function entityFocusFromItem(item: Pick<Item, "id" | "metadata">): MapEnt
   return undefined;
 }
 
+function localCloneSourceItemId(item: Pick<Item, "metadata">): string | undefined {
+  const localClone = item.metadata[METADATA_KEYS.localClone];
+  if (typeof localClone !== "object" || localClone === null || Array.isArray(localClone)) return undefined;
+  const sourceItemId = (localClone as Record<string, unknown>).sourceItemId;
+  return typeof sourceItemId === "string" && sourceItemId.length > 0 ? sourceItemId : undefined;
+}
+
 export function registerEntityContextMenu(
   port: EntityContextMenuPort,
   iconUrl: string
@@ -37,12 +45,22 @@ export function registerEntityContextMenu(
     icons: [
       {
         icon: iconUrl,
+        label: "Открыть объект",
+        filter: {
+          min: 1,
+          max: 1,
+          every: [
+            { key: ["metadata", METADATA_KEYS.localClone, "sourceItemId"], operator: "!=", value: undefined }
+          ]
+        }
+      },
+      {
+        icon: iconUrl,
         label: "Открыть армию",
         filter: {
           min: 1,
           max: 1,
           every: [
-            { key: ["metadata", METADATA_KEYS.localClone], value: undefined },
             { key: ["metadata", METADATA_KEYS.army], operator: "!=", value: undefined }
           ]
         }
@@ -54,7 +72,6 @@ export function registerEntityContextMenu(
           min: 1,
           max: 1,
           every: [
-            { key: ["metadata", METADATA_KEYS.localClone], value: undefined },
             { key: ["metadata", METADATA_KEYS.ship], operator: "!=", value: undefined }
           ]
         }
@@ -66,7 +83,6 @@ export function registerEntityContextMenu(
           min: 1,
           max: 1,
           every: [
-            { key: ["metadata", METADATA_KEYS.localClone], value: undefined },
             { key: ["metadata", METADATA_KEYS.cityMarker], operator: "!=", value: undefined }
           ]
         }
@@ -75,7 +91,14 @@ export function registerEntityContextMenu(
     onClick: async (context) => {
       const item = context.items[0];
       if (!item) return;
-      const focus = entityFocusFromItem(item);
+      let focus = entityFocusFromItem(item);
+      if (!focus) {
+        const sourceItemId = localCloneSourceItemId(item);
+        if (sourceItemId) {
+          const sourceItem = await port.getSceneItem(sourceItemId);
+          if (sourceItem) focus = entityFocusFromItem(sourceItem);
+        }
+      }
       if (!focus) {
         await port.show("Объект больше не зарегистрирован в военной системе.", "WARNING");
         return;

@@ -40,7 +40,11 @@ OBR.onReady(() => {
     try {
       const contextMenuPort = {
         create: (entry: Parameters<typeof OBR.contextMenu.create>[0]) => OBR.contextMenu.create(entry),
-        remove: (id: string) => OBR.contextMenu.remove(id)
+        remove: (id: string) => OBR.contextMenu.remove(id),
+        getSceneItem: async (itemId: string) => {
+          const items = await OBR.scene.items.getItems([itemId]);
+          return items[0];
+        }
       };
       const routeContextMenuService = new RouteContextMenuService({
         getLocalItems: async () => await OBR.scene.local.getItems() as unknown as SceneItemRecord[],
