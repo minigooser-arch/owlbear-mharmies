@@ -81,6 +81,7 @@ export function healArmyForTurn(
   hospitalCityId: string | null = null
 ): ArmyState | undefined {
   if (!canHealArmy(army).allowed) return undefined;
+  if (army.healing?.pending) return undefined;
   const used = army.healing?.checkedOnTurn === turnNumber ? army.healing.hpHealedThisTurn : 0;
   const normalized = Number.isFinite(amount) ? Math.max(0, Math.floor(amount)) : 0;
   if (normalized <= 0 || normalized > Math.max(0, turnCap - used)) return undefined;
