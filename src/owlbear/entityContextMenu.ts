@@ -36,6 +36,13 @@ function localCloneSourceItemId(item: Pick<Item, "metadata">): string | undefine
   return typeof sourceItemId === "string" && sourceItemId.length > 0 ? sourceItemId : undefined;
 }
 
+function interactionProxySourceItemId(item: Pick<Item, "metadata">): string | undefined {
+  const proxy = item.metadata[METADATA_KEYS.entityInteractionProxy];
+  if (typeof proxy !== "object" || proxy === null || Array.isArray(proxy)) return undefined;
+  const sourceItemId = (proxy as Record<string, unknown>).sourceItemId;
+  return typeof sourceItemId === "string" && sourceItemId.length > 0 ? sourceItemId : undefined;
+}
+
 export function registerEntityContextMenu(
   port: EntityContextMenuPort,
   iconUrl: string
@@ -50,7 +57,7 @@ export function registerEntityContextMenu(
           min: 1,
           max: 1,
           every: [
-            { key: ["metadata", METADATA_KEYS.localClone, "sourceItemId"], operator: "!=", value: undefined }
+            { key: ["metadata", METADATA_KEYS.entityInteractionProxy, "sourceItemId"], operator: "!=", value: undefined }
           ]
         }
       },
@@ -93,7 +100,7 @@ export function registerEntityContextMenu(
       if (!item) return;
       let focus = entityFocusFromItem(item);
       if (!focus) {
-        const sourceItemId = localCloneSourceItemId(item);
+        const sourceItemId = interactionProxySourceItemId(item) ?? localCloneSourceItemId(item);
         if (sourceItemId) {
           const sourceItem = await port.getSceneItem(sourceItemId);
           if (sourceItem) focus = entityFocusFromItem(sourceItem);
