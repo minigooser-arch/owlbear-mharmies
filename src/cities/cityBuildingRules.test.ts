@@ -5,6 +5,7 @@ import {
   addCityBuilding,
   canUseCityBuilding,
   isCityBuildingActive,
+  normalizeCityBuildingLocations,
   removeCityBuilding
 } from "./cityBuildingRules";
 
