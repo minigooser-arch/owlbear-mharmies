@@ -67,7 +67,6 @@ export const METADATA_KEYS = {
   cityMarker: `${EXTENSION_ID}/city-marker`,
   barrier: `${EXTENSION_ID}/barrier`,
   localClone: `${EXTENSION_ID}/local-clone`,
-  entityInteractionProxy: `${EXTENSION_ID}/entity-interaction-proxy`,
   routeOverlay: `${EXTENSION_ID}/route-overlay`,
   supplyOverlay: `${EXTENSION_ID}/supply-overlay`,
   routePreview: `${EXTENSION_ID}/route-preview`,
