@@ -667,6 +667,8 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
       }
     );
     if (!focus) return;
+    const currentSelection = await OBR.player.getSelection();
+    if (currentSelection?.length !== 1 || currentSelection[0] !== selectedId) return;
 
     // Local army/ship clones are not supported by Owlbear's context-menu API.
     // The normal Move tool can still select a locked image with a double click,
