@@ -472,7 +472,7 @@ export class CommandProcessor {
           command.hp,
           state.scene.turn.turnNumber,
           formationRate,
-          Boolean(army.formation?.cityId && hasActiveCityBuilding(state.scene, army.formation.cityId, "TRAINING_GROUND"))
+          Boolean(army.formation?.cityId && hasActiveCityBuilding(state.scene, army.formation.cityId, "BARRACKS"))
         );
         if (!result.ok) return result.reason;
         const formationKind = result.army.health.hp >= result.army.health.maxHp ? "COMPLETION" : "FORMATION";
