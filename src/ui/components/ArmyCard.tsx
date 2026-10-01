@@ -208,11 +208,17 @@ export function ArmyCard({ army, sideColor = "#687F91", isGM, canEditRoute, canR
           <button
             className="button subtle"
             type="button"
-            disabled={army.healingRemainingThisTurn === 0}
-            title={army.healingRemainingThisTurn === 0 ? "Лимит лечения на этот ход исчерпан" : undefined}
+            disabled={army.healingPending || army.healingRemainingThisTurn === 0}
+            title={
+              army.healingPending
+                ? "Лечение уже запущено"
+                : army.healingRemainingThisTurn === 0
+                  ? "Лимит лечения на этот ход исчерпан"
+                  : undefined
+            }
             onClick={() => onAction({ type: "HEAL_ARMY", armyId: army.id, amount: 1 })}
           >
-            Лечиться
+            {army.healingPending ? "В процессе лечения" : "Лечиться"}
           </button>
         </div>
       )}
