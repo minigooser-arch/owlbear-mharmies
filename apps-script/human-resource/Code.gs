@@ -229,6 +229,10 @@ function refundLRBatch_(body) {
 
   const stateSheet = spreadsheet_().getSheetByName(STATES_SHEET);
   const changed = [];
+  const beforeByCountry = {};
+  Object.keys(refundTotals).forEach(function (country) {
+    beforeByCountry[country] = index[country].humanResource;
+  });
   const appliedAt = new Date().toISOString();
 
   try {
@@ -259,7 +263,7 @@ function refundLRBatch_(body) {
         amount: -Number(operation.amount),
         populationBefore: operation.populationAfter,
         populationAfter: entry.population,
-        humanResourceBefore: operation.humanResourceAfter,
+        humanResourceBefore: beforeByCountry[operation.country],
         humanResourceAfter: entry.humanResource,
         armyId: operation.armyId,
         armyName: operation.armyName,
