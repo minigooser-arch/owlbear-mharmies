@@ -1044,6 +1044,9 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
       return () => listeners.delete(listener);
     },
     send,
+    clearFocusedEntity: async () => {
+      await OBR.player.setMetadata({ [ENTITY_FOCUS_METADATA_KEY]: undefined });
+    },
     runDiagnostic: (testId) => diagnostics.run(testId),
     stop: () => {
       refreshCoordinator.stop();
