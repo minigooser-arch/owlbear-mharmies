@@ -29,6 +29,13 @@ export function entityFocusFromItem(item: Pick<Item, "id" | "metadata">): MapEnt
   return undefined;
 }
 
+function interactionProxySourceItemId(item: Pick<Item, "metadata">): string | undefined {
+  const proxy = item.metadata[METADATA_KEYS.entityInteractionProxy];
+  if (typeof proxy !== "object" || proxy === null || Array.isArray(proxy)) return undefined;
+  const sourceItemId = (proxy as Record<string, unknown>).sourceItemId;
+  return typeof sourceItemId === "string" && sourceItemId.length > 0 ? sourceItemId : undefined;
+}
+
 function localCloneSourceItemId(item: Pick<Item, "metadata">): string | undefined {
   const localClone = item.metadata[METADATA_KEYS.localClone];
   if (typeof localClone !== "object" || localClone === null || Array.isArray(localClone)) return undefined;
@@ -49,40 +56,11 @@ export function registerEntityContextMenu(
         filter: {
           min: 1,
           max: 1,
-          every: [
-            { key: ["metadata", METADATA_KEYS.localClone, "sourceItemId"], operator: "!=", value: undefined }
-          ]
-        }
-      },
-      {
-        icon: iconUrl,
-        label: "Открыть армию",
-        filter: {
-          min: 1,
-          max: 1,
-          every: [
-            { key: ["metadata", METADATA_KEYS.army], operator: "!=", value: undefined }
-          ]
-        }
-      },
-      {
-        icon: iconUrl,
-        label: "Открыть корабль",
-        filter: {
-          min: 1,
-          max: 1,
-          every: [
-            { key: ["metadata", METADATA_KEYS.ship], operator: "!=", value: undefined }
-          ]
-        }
-      },
-      {
-        icon: iconUrl,
-        label: "Открыть город",
-        filter: {
-          min: 1,
-          max: 1,
-          every: [
+          some: [
+            { key: ["metadata", METADATA_KEYS.entityInteractionProxy, "sourceItemId"], operator: "!=", value: undefined },
+            { key: ["metadata", METADATA_KEYS.localClone, "sourceItemId"], operator: "!=", value: undefined },
+            { key: ["metadata", METADATA_KEYS.army], operator: "!=", value: undefined },
+            { key: ["metadata", METADATA_KEYS.ship], operator: "!=", value: undefined },
             { key: ["metadata", METADATA_KEYS.cityMarker], operator: "!=", value: undefined }
           ]
         }
@@ -93,7 +71,7 @@ export function registerEntityContextMenu(
       if (!item) return;
       let focus = entityFocusFromItem(item);
       if (!focus) {
-        const sourceItemId = localCloneSourceItemId(item);
+        const sourceItemId = interactionProxySourceItemId(item) ?? localCloneSourceItemId(item);
         if (sourceItemId) {
           const sourceItem = await port.getSceneItem(sourceItemId);
           if (sourceItem) focus = entityFocusFromItem(sourceItem);
