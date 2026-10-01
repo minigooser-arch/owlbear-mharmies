@@ -1464,12 +1464,13 @@ export class ProductionEngine {
       }
     }
 
-    const activeSheetGateway = activeSheetGateway;
+    const activeSheetGateway = sheetGateway;
     for (let attempt = 0; attempt < 2; attempt += 1) {
       commandState.scene = authoritativeScene;
       const attemptResult = executeCommand(commandState);
       result = attemptResult;
       if (attemptResult.status !== "ACCEPTED" || !needsAuthoritativeHumanResource) break;
+      if (!activeSheetGateway) throw new HumanResourceSheetError("HUMAN_RESOURCE_SHEET_NOT_CONFIGURED");
 
       const newTransactions = (attemptResult.state.scene.lrTransactions ?? [])
         .filter((transaction) =>
