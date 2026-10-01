@@ -69,7 +69,7 @@ describe("human resource sheet gateway", () => {
     const fetcher = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({
         ok: true,
-        states: [{ country: "country-a", population: 1001, humanResource: 100.1 }],
+        states: [{ country: "country-a", population: 1001, humanResource: 100.1, humanResourceCapacity: 120, conscriptionRate: 0.04 }],
         appliedAt: "2026-10-01T00:06:00.000Z"
       }), { status: 200 })
     );
@@ -97,7 +97,7 @@ describe("human resource sheet gateway", () => {
       new Response(JSON.stringify({
         ok: false,
         code: "INSUFFICIENT_HUMAN_RESOURCE",
-        states: [{ country: "country-a", population: 900, humanResource: 3 }]
+        states: [{ country: "country-a", population: 900, humanResource: 3, humanResourceCapacity: 108, conscriptionRate: 0.04 }]
       }), { status: 200 })
     );
     const gateway = new HumanResourceSheetGateway({
@@ -117,7 +117,7 @@ describe("human resource sheet gateway", () => {
 
   it("applies the sheet snapshot without touching the derived LR formula", () => {
     const updated = applyHumanResourceSheetSnapshot(scene(), {
-      states: [{ country: "country-a", population: 1100, humanResource: 105 }]
+      states: [{ country: "country-a", population: 1100, humanResource: 105, humanResourceCapacity: 120, conscriptionRate: 0.04 }]
     });
 
     expect(updated.demographics?.[0]).toMatchObject({
