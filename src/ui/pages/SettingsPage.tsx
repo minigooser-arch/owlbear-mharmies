@@ -27,7 +27,7 @@ export function SettingsPage({ settings, onAction }: { settings: SceneSettings; 
         <label>CSV таблицы государств и призыва<input type="url" value={conscriptionSheetCsvUrl} onChange={(event) => setConscriptionSheetCsvUrl(event.target.value)} placeholder="https://docs.google.com/..." /></label>
         <label>Apps Script writeback URL<input type="url" value={sheetWritebackUrl} onChange={(event) => setSheetWritebackUrl(event.target.value)} placeholder="https://script.google.com/macros/s/..." /></label>
         <label>Writeback-токен GM<input type="password" value={sheetWritebackToken} onChange={(event) => setSheetWritebackToken(event.target.value)} placeholder="Хранится только локально у GM" autoComplete="off" /></label>
-        <small>Токен не записывается в SceneSettings и не передаётся игрокам.</small>
+        <small>В таблицу отправляются только операции военного влияния. Жизни армий и корабли остаются внутри Owlbear. Токен не записывается в SceneSettings и не передаётся игрокам.</small>
       </div>
       <div className="button-row">
         <button className="button" type="button" disabled={!populationSheetCsvUrl.trim() || populationSheetCsvUrl.trim() === (settings.populationSheetCsvUrl ?? "")} onClick={() => onAction({ type: "UPDATE_SETTINGS", settings: { populationSheetCsvUrl: populationSheetCsvUrl.trim() } })}>Сохранить CSV населения</button>
@@ -40,3 +40,4 @@ export function SettingsPage({ settings, onAction }: { settings: SceneSettings; 
     </section>
   );
 }
+
