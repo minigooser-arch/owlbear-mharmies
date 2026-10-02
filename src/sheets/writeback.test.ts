@@ -98,7 +98,7 @@ const ship = {
 } as never;
 
 describe("sheet writeback projection", () => {
-  it("does not export army HP while preserving ship count writeback", () => {
+  it("does not export army HP or ship counts", () => {
     const previous = makeState({
       armies: { "army-1": army(20) },
       scene: { ships: { "ship-1": ship } } as never
@@ -115,7 +115,7 @@ describe("sheet writeback projection", () => {
       scene: { ships: {} } as never
     });
     const shipEvent = buildSheetWritebackEvent(previous, destroyedShip, "2026-10-01T00:00:00Z");
-    expect(shipEvent?.states).toEqual([{ country: "STATE_A", ships: 0 }]);
+    expect(shipEvent).toBeUndefined();
   });
 
   it("queues new military influence operations for the LR sheet", () => {
@@ -143,7 +143,7 @@ describe("sheet writeback projection", () => {
     expect(event?.militaryInfluenceOperations).toEqual(next.scene.militaryInfluenceAudit);
   });
 
-  it("coalesces pending state by army and country", () => {
+  it("drops legacy unit projections while preserving military influence operations", () => {
     const first: SheetWritebackEvent = {
       version: 1, eventId: "e1", createdAt: "a",
       armies: [{ armyId: "a", stateId: "s", country: "C", hp: 20, maxHp: 40 }],
@@ -159,9 +159,9 @@ describe("sheet writeback projection", () => {
     const merged = mergeSheetWritebackQueue(undefined, first);
     const next = mergeSheetWritebackQueue(merged, second);
     expect(next.pending.eventId).toBe("e2");
-    expect(next.pending.armies).toEqual([{ armyId: "a", stateId: "s", country: "C", hp: 18, maxHp: 40 }]);
-    expect(next.pending.states).toEqual([{ country: "C", ships: 2 }]);
-    expect(next.pending.removedArmyIds).toEqual(["b"]);
+    expect(next.pending.armies).toEqual([]);
+    expect(next.pending.states).toEqual([]);
+    expect(next.pending.removedArmyIds).toEqual([]);
   });
 
   it("applies authoritative population/LR snapshots and rejects unmappable states", () => {
@@ -238,3 +238,4 @@ describe("sheet writeback projection", () => {
     expect(pending[0]?.country).toBe("STATE_A");
   });
 });
+
