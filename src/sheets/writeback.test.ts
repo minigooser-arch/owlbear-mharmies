@@ -160,6 +160,34 @@ describe("sheet writeback projection", () => {
     }])).toThrow("SHEET_DEMOGRAPHY_NOT_FOUND:UNKNOWN");
   });
 
+
+
+  it("aggregates changed faction and state HP by stable IDs", () => {
+    const previous = makeState({
+      armies: { "army-a": army(20), "army-b": army(10, 40, "side-b") },
+      scene: {
+        sides: [
+          { id: "side-a", name: "A", color: "#fff", playerIds: [], leaderPlayerIds: [], stateId: "state-a" },
+          { id: "side-b", name: "B", color: "#000", playerIds: [], leaderPlayerIds: [], stateId: "state-a" }
+        ]
+      } as never
+    });
+    const next = makeState({
+      armies: { "army-a": army(18), "army-b": army(10, 40, "side-b") },
+      scene: {
+        sides: [
+          { id: "side-a", name: "A", color: "#fff", playerIds: [], leaderPlayerIds: [], stateId: "state-a" },
+          { id: "side-b", name: "B", color: "#000", playerIds: [], leaderPlayerIds: [], stateId: "state-a" }
+        ]
+      } as never
+    });
+    const event = buildSheetWritebackEvent(previous, next, "2026-10-01T00:00:00Z");
+    expect(event?.factions).toEqual([
+      { factionId: "side-a", factionName: "A", country: "STATE_A", hp: 18, maxHp: 40 }
+    ]);
+    expect(event?.stateArmies).toEqual([{ country: "STATE_A", hp: 28, maxHp: 80 }]);
+  });
+
   it("extracts only new pending LR transactions", () => {
     const previous = makeState({
       scene: {
