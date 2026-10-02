@@ -20,7 +20,7 @@ export interface MilitaryInfluenceOperationInput {
   factionName: string;
   country: string;
   reasonCode: MilitaryInfluenceReasonCode;
-  delta: number;
+  delta?: number;
   balanceBefore?: number;
   actorPlayerId?: string;
   turnNumber?: number;
@@ -29,6 +29,7 @@ export interface MilitaryInfluenceOperationInput {
 }
 
 export interface ValidatedMilitaryInfluenceOperation extends MilitaryInfluenceOperationInput {
+  delta: number;
   balanceAfter: number;
 }
 

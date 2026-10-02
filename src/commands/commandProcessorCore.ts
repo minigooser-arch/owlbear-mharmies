@@ -5,6 +5,7 @@ import { createFormationArmy, interruptFormation } from "../armies/armyFormation
 import { appendLRTransaction } from "../finance/lrLedger";
 import { markLRTransactionRecorded } from "../finance/lrLedger";
 import { applyDemographyCorrection, debitHumanResource as debitHumanResourceFromState } from "../finance/humanResourceLedger";
+import { validateMilitaryInfluenceOperation } from "../sheets/militaryInfluence";
 import { recalculateHumanResourceCapacity } from "../population/populationRules";
 import { isCityBuildingActive } from "../cities/cityBuildingRules";
 import { activeShipyardAtCell, cityForCell, coastalBatteryRetaliationDamage, hasActiveCityBuilding, marineStationAllowsCrossing, repairShipAtShipyard, seaFortBlocksDisembark, transportArmyMovementCostAtCell } from "../cities/cityEffects";
@@ -1558,6 +1559,48 @@ export class CommandProcessor {
         const side = state.scene.sides.find((candidate) => candidate.id === command.sideId);
         if (!side) return "SIDE_NOT_FOUND";
         side.armyTokenAsset = structuredClone(command.asset);
+        return undefined;
+      }
+      case "ADJUST_MILITARY_INFLUENCE": {
+        const side = state.scene.sides.find((candidate) => candidate.id === command.factionId);
+        if (!side) return "SIDE_NOT_FOUND";
+        if (!side.stateId) return "STATE_NOT_FOUND";
+        const country = state.scene.states.find((candidate) => candidate.id === side.stateId)?.backendCountry?.trim();
+        if (!country) return "STATE_COUNTRY_MISSING";
+        const balanceBefore = Math.max(0, Math.trunc(side.militaryInfluence ?? 0));
+        let operation;
+        try {
+          operation = validateMilitaryInfluenceOperation({
+            requestId: command.requestId,
+            factionId: side.id,
+            factionName: side.name,
+            country,
+            reasonCode: command.reasonCode,
+            balanceBefore,
+            actorPlayerId: command.senderPlayerId,
+            turnNumber: state.scene.turn.turnNumber
+          });
+        } catch (error) {
+          return error instanceof Error ? error.message : "INVALID_MILITARY_INFLUENCE_OPERATION";
+        }
+        side.militaryInfluence = operation.balanceAfter;
+        state.scene.militaryInfluenceAudit = [
+          ...(state.scene.militaryInfluenceAudit ?? []),
+          {
+            requestId: command.requestId,
+            createdAt: this.now().toISOString(),
+            factionId: side.id,
+            factionName: side.name,
+            country,
+            reasonCode: command.reasonCode,
+            delta: operation.delta,
+            balanceBefore,
+            balanceAfter: operation.balanceAfter,
+            reason: command.reason,
+            actorPlayerId: command.senderPlayerId,
+            turnNumber: state.scene.turn.turnNumber
+          }
+        ];
         return undefined;
       }
       case "MARK_LR_TRANSACTION_RECORDED": {

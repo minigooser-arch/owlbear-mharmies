@@ -13,6 +13,7 @@ import type {
 } from "../shared/types";
 import { COMMAND_PROTOCOL_VERSION } from "../shared/types";
 import { parseArmyTokenAsset } from "../shared/armyTokenAsset";
+import { MILITARY_INFLUENCE_DELTAS, type MilitaryInfluenceReasonCode } from "../sheets/militaryInfluence";
 
 type UnknownRecord = Record<string, unknown>;
 type CommandType = ArmyCommandPayload["type"];
@@ -50,6 +51,10 @@ const RESERVED_RECORD_KEYS = new Set([
 
 function sideId(value: unknown): value is string {
   return boundedString(value) && !RESERVED_RECORD_KEYS.has(value);
+}
+
+function militaryInfluenceReasonCode(value: unknown): value is MilitaryInfluenceReasonCode {
+  return typeof value === "string" && Object.hasOwn(MILITARY_INFLUENCE_DELTAS, value);
 }
 
 function nonNegativeInteger(value: unknown): value is number {
@@ -493,6 +498,10 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
     const asset = parseArmyTokenAsset(value.asset);
     return sideId(value.sideId) && asset ? { type: "SET_SIDE_ARMY_TOKEN", sideId: value.sideId, asset } : undefined;
   },
+  ADJUST_MILITARY_INFLUENCE: (value) =>
+    sideId(value.factionId) && militaryInfluenceReasonCode(value.reasonCode) && boundedString(value.reason, 512)
+      ? { type: "ADJUST_MILITARY_INFLUENCE", factionId: value.factionId, reasonCode: value.reasonCode, reason: value.reason.trim() }
+      : undefined,
   DELETE_SIDE: (value) => {
     if (!sideId(value.sideId)) return undefined;
     if (value.strategy === "UNREGISTER_ARMIES") return { type: "DELETE_SIDE", sideId: value.sideId, strategy: value.strategy };

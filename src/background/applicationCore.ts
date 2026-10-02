@@ -1587,9 +1587,18 @@ export class ProductionEngine {
         ? { version: 1 as const, pending: this.sheetWritebackFallback }
         : undefined;
     if (!merged) return;
-    const event = merged.pending;
+    const event = {
+      ...merged.pending,
+      // Army HP and per-faction/state army projections are private to Owlbear.
+      // Strip legacy queued values before any request reaches Google Sheets.
+      armies: [],
+      removedArmyIds: [],
+      factions: [],
+      stateArmies: []
+    };
     if (event.armies.length === 0 && event.removedArmyIds.length === 0 && event.states.length === 0 &&
-      (event.factions?.length ?? 0) === 0 && (event.stateArmies?.length ?? 0) === 0) {
+      (event.factions?.length ?? 0) === 0 && (event.stateArmies?.length ?? 0) === 0 &&
+      (event.militaryInfluenceOperations?.length ?? 0) === 0) {
       this.sheetWritebackFallback = undefined;
       return;
     }

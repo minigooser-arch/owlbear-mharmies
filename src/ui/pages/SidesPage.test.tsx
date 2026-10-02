@@ -14,6 +14,12 @@ const red: Side = {
   stateId: null
 };
 
+const frenchRed: Side = {
+  ...red,
+  stateId: "france",
+  militaryInfluence: 8
+};
+
 const players = [
   { id: "leader", name: "Алекс", color: "#111", role: "PLAYER" as const, connected: true },
   { id: "member", name: "Алекс", color: "#222", role: "PLAYER" as const, connected: true }
@@ -129,5 +135,34 @@ describe("SidesPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Задать токен армии для Красные" }));
     expect(onAction).toHaveBeenCalledWith({ type: "SET_SIDE_ARMY_TOKEN", sideId: "red" });
+  });
+
+  it("submits a military influence operation for a faction", () => {
+    const onAction = vi.fn();
+    render(
+      <SidesPage
+        role="GM"
+        playerId="gm"
+        sides={[frenchRed]}
+        players={players}
+        leaderSideIds={new Set()}
+        onAction={onAction}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText("Результат военного влияния для Красные"), {
+      target: { value: "LAND_BATTLE_VICTORY" }
+    });
+    fireEvent.change(screen.getByLabelText("Причина операции военного влияния для Красные"), {
+      target: { value: "Победа в бою" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Провести операцию военного влияния для Красные" }));
+
+    expect(onAction).toHaveBeenCalledWith({
+      type: "ADJUST_MILITARY_INFLUENCE",
+      factionId: "red",
+      reasonCode: "LAND_BATTLE_VICTORY",
+      reason: "Победа в бою"
+    });
   });
 });
