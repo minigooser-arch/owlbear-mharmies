@@ -4,6 +4,12 @@ export type HealPermission =
   | { allowed: true }
   | { allowed: false; reason: "ARMY_ENCIRCLED" | "ARMY_DESTROYED" };
 
+function clearPendingHp(healing: NonNullable<ArmyState["healing"]>): NonNullable<ArmyState["healing"]> {
+  const next = { ...healing };
+  delete next.pendingHp;
+  return next;
+}
+
 export function canHealArmy(army: ArmyState): HealPermission {
   if (army.health.hp <= 0) return { allowed: false, reason: "ARMY_DESTROYED" };
   if (!army.supply.supplied) return { allowed: false, reason: "ARMY_ENCIRCLED" };
@@ -42,17 +48,26 @@ export function applyAutomaticTurnHealing(army: ArmyState, amount = 10): ArmySta
   return healArmy(army, amount) ?? army;
 }
 
-export function requestArmyHealing(army: ArmyState, currentTurn: number, playerId: string): ArmyState | undefined {
+export function requestArmyHealing(
+  army: ArmyState,
+  currentTurn: number,
+  playerId: string,
+  amount = 10,
+  hospitalCityId: string | null = null
+): ArmyState | undefined {
   if (!canHealArmy(army).allowed || army.health.hp >= army.health.maxHp || army.healing?.pending) return undefined;
+  const normalized = Number.isFinite(amount) ? Math.max(0, Math.floor(amount)) : 0;
+  if (normalized <= 0) return undefined;
   return {
     ...army,
     healing: {
       pending: true,
+      pendingHp: normalized,
       requestedOnTurn: currentTurn,
       requestedByPlayerId: playerId,
       hpHealedThisTurn: army.healing?.hpHealedThisTurn ?? 0,
       checkedOnTurn: army.healing?.checkedOnTurn ?? currentTurn,
-      hospitalCityId: null
+      hospitalCityId
     },
     revision: army.revision + 1
   };
@@ -60,8 +75,11 @@ export function requestArmyHealing(army: ArmyState, currentTurn: number, playerI
 
 export function applyPendingTurnHealing(army: ArmyState, amount = 10): ArmyState {
   if (!army.healing?.pending) return army;
+  const pendingAmount = Number.isInteger(army.healing.pendingHp) && (army.healing.pendingHp ?? 0) > 0
+    ? army.healing.pendingHp ?? amount
+    : amount;
   const clearedHealing = {
-    ...army.healing,
+    ...clearPendingHp(army.healing),
     pending: false,
     requestedOnTurn: null,
     requestedByPlayerId: null
@@ -69,7 +87,7 @@ export function applyPendingTurnHealing(army: ArmyState, amount = 10): ArmyState
   if (army.health.hp >= army.health.maxHp || !canHealArmy(army).allowed) {
     return { ...army, healing: clearedHealing, revision: army.revision + 1 };
   }
-  const healed = healArmy(army, amount);
+  const healed = healArmy(army, pendingAmount);
   return healed ? { ...healed, healing: clearedHealing } : { ...army, healing: clearedHealing, revision: army.revision + 1 };
 }
 

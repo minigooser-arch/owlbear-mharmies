@@ -1,6 +1,6 @@
 import { joinReinforcements, releaseBattleGroup } from "../battles/battleGroupService";
 import { destroyArmy } from "../armies/armyLifecycle";
-import { canHealArmy, healArmyForTurn } from "../health/armyHealth";
+import { canHealArmy, requestArmyHealing } from "../health/armyHealth";
 import { createFormationArmy, interruptFormation } from "../armies/armyFormation";
 import { appendLRTransaction } from "../finance/lrLedger";
 import { markLRTransactionRecorded } from "../finance/lrLedger";
@@ -2036,7 +2036,7 @@ export class CommandProcessor {
         const army = state.armies[command.armyId];
         if (!army) return "ARMY_NOT_FOUND";
         // The command request is idempotent. If its LR transaction is already present,
-        // the healing effect has already been applied by the authoritative command path.
+        // the request and its reserved HP have already been accepted.
         if ((state.scene.lrTransactions ?? []).some((transaction) => transaction.requestId === command.requestId)) return undefined;
         if (army.healing?.pending) return "HEALING_ALREADY_REQUESTED";
         const permission = canHealArmy(army);
@@ -2078,14 +2078,14 @@ export class CommandProcessor {
         const healedHp = Number.isFinite(hp) ? hp : Math.min(remainingTurnCap, missingHp);
         if (healedHp <= 0) return "HEALING_UNAVAILABLE";
 
-        const healed = healArmyForTurn(
+        const requested = requestArmyHealing(
           army,
-          healedHp,
           state.scene.turn.turnNumber,
-          turnCap,
+          command.senderPlayerId,
+          healedHp,
           hasHospital ? city?.id ?? null : null
         );
-        if (!healed) return "HEALING_UNAVAILABLE";
+        if (!requested) return "HEALING_UNAVAILABLE";
         const amount = healedHp * ratePerHp;
         const debit = this.debitHumanResource(state, army.sideId, amount, {
           requestId: command.requestId,
@@ -2101,7 +2101,7 @@ export class CommandProcessor {
           createdAt: this.now().toISOString()
         });
         if (debit) return debit;
-        state.armies[command.armyId] = healed;
+        state.armies[command.armyId] = requested;
         if (state.scene.demographics === undefined) {
           state.scene.lrTransactions = appendLRTransaction(state.scene.lrTransactions ?? [], {
             id: `${command.requestId}:healing`,

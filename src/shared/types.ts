@@ -197,6 +197,8 @@ export interface ArmyFormationState {
 
 export interface ArmyHealingState {
   pending?: boolean;
+  /** HP reserved by the treatment request and applied at the next turn start. */
+  pendingHp?: number;
   requestedOnTurn?: number | null;
   requestedByPlayerId?: string | null;
   hpHealedThisTurn: number;
