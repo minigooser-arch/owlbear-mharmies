@@ -75,6 +75,26 @@ describe("metadata validation", () => {
     });
   });
 
+  it("preserves a faction's military influence when normalizing the scene", () => {
+    const result = normalizeSceneState(scene({
+      sides: [{
+        id: "faction-1",
+        name: "Фракция",
+        color: "#f00",
+        playerIds: [],
+        leaderPlayerIds: [],
+        stateId: "state-1",
+        militaryInfluence: 7
+      }],
+      states: [{ id: "state-1", name: "Государство", rulingFactionId: "faction-1", active: true }]
+    }));
+
+    expect(result).toMatchObject({
+      ok: true,
+      value: { sides: [{ id: "faction-1", militaryInfluence: 7 }] }
+    });
+  });
+
   it("normalizes leaders as unique members without crossing side boundaries", () => {
     const result = normalizeSceneState(scene({
       sides: [
