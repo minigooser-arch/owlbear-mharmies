@@ -1568,7 +1568,6 @@ export class ProductionEngine {
       this.scheduleSheetWritebackRetry(30_000);
       return;
     }
-    const durable = SheetWritebackClient.readQueue(metadata);
     const merged = durable
       ? this.sheetWritebackFallback
         ? mergeSheetWritebackQueue(durable, this.sheetWritebackFallback)
