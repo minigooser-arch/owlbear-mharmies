@@ -266,7 +266,8 @@ export class MetadataRepository {
   async writeScene(
     state: SceneState,
     expectedRevision: number,
-    canCommit: (current: SceneState) => boolean = () => true
+    canCommit: (current: SceneState) => boolean = () => true,
+    sheetWritebackEvent?: SheetWritebackEvent
   ): Promise<void> {
     const { state: current, metadata } = await this.readSnapshot();
     assertRevision(current.revision, expectedRevision);

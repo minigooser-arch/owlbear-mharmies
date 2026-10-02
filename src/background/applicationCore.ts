@@ -376,7 +376,18 @@ export class ProductionEngine {
     }
     if (active) {
       this.lastMovementAt = performance.now();
-      void this.enqueueMutation(() => this.flushSheetWriteback());
+      const generation = this.coordinatorGeneration;
+      // Let work already requested in the current turn enter the serialized queue
+      // before the startup writeback probe. A scene with no pending queue then
+      // remains a no-op without delaying movement processing.
+      queueMicrotask(() => {
+        if (
+          this.coordinator &&
+          this.coordinatorGeneration === generation
+        ) {
+          void this.enqueueMutation(() => this.flushSheetWriteback());
+        }
+      });
     }
   }
 
@@ -1543,6 +1554,17 @@ export class ProductionEngine {
 
   private async flushSheetWriteback(): Promise<void> {
     if (Date.now() < this.sheetWritebackRetryAt) return;
+    let metadata: Record<string, unknown>;
+    try {
+      metadata = await this.port.getSceneMetadata();
+    } catch (error) {
+      this.scheduleSheetWritebackRetry(5_000);
+      this.reportOperationalError(error, "sheet-writeback-read-metadata");
+      return;
+    }
+    const durable = SheetWritebackClient.readQueue(metadata);
+    if (!durable && !this.sheetWritebackFallback) return;
+
     let scene: SceneState;
     try {
       scene = await this.repository.readScene();
@@ -1557,30 +1579,17 @@ export class ProductionEngine {
       this.scheduleSheetWritebackRetry(30_000);
       return;
     }
-    let metadata: Record<string, unknown>;
-    try {
-      metadata = await this.port.getSceneMetadata();
-    } catch (error) {
-      this.scheduleSheetWritebackRetry(5_000);
-      this.reportOperationalError(error, "sheet-writeback-read-metadata");
-      return;
-    }
-    const durable = SheetWritebackClient.readQueue(metadata);
     const merged = durable
-      ? mergeSheetWritebackQueue(durable, this.sheetWritebackFallback ?? {
-          version: 1,
-          eventId: `sheet-sync-empty-${Date.now()}`,
-          createdAt: this.wallClock().toISOString(),
-          armies: [],
-          removedArmyIds: [],
-          states: []
-        })
+      ? this.sheetWritebackFallback
+        ? mergeSheetWritebackQueue(durable, this.sheetWritebackFallback)
+        : durable
       : this.sheetWritebackFallback
         ? { version: 1 as const, pending: this.sheetWritebackFallback }
         : undefined;
     if (!merged) return;
     const event = merged.pending;
-    if (event.armies.length === 0 && event.removedArmyIds.length === 0 && event.states.length === 0) {
+    if (event.armies.length === 0 && event.removedArmyIds.length === 0 && event.states.length === 0 &&
+      (event.factions?.length ?? 0) === 0 && (event.stateArmies?.length ?? 0) === 0) {
       this.sheetWritebackFallback = undefined;
       return;
     }
@@ -1591,7 +1600,11 @@ export class ProductionEngine {
       await client.syncState(event);
       const latestMetadata = await this.port.getSceneMetadata();
       const latestQueue = SheetWritebackClient.readQueue(latestMetadata);
-      if (latestQueue?.pending.eventId === event.eventId) {
+      const queueIdsSafeToClear = new Set([
+        event.eventId,
+        durable?.pending.eventId
+      ].filter((value): value is string => Boolean(value)));
+      if (latestQueue && queueIdsSafeToClear.has(latestQueue.pending.eventId)) {
         await this.port.patchSceneMetadata({ [METADATA_KEYS.sheetWritebackQueue]: undefined });
       }
       this.sheetWritebackFallback = undefined;
@@ -1829,8 +1842,8 @@ export class ProductionEngine {
   writeCoordinatorHeartbeat(
     heartbeat: NonNullable<SceneState["coordinatorLease"]>
   ): Promise<void> {
+    const generation = this.coordinatorGeneration;
     return this.enqueueMutation(async () => {
-      const generation = this.coordinatorGeneration;
       const claimIsCurrent = () =>
         this.coordinatorGeneration === generation &&
         (!this.coordinator || this.activeCoordinatorConnectionId === heartbeat.connectionId);

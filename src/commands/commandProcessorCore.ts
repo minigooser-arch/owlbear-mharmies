@@ -315,6 +315,23 @@ export class CommandProcessor {
     ) {
       return { status: "REJECTED", reason: "FORGED_CONNECTION" };
     }
+    if (command.type === "HEAL_ARMY") {
+      const duplicateHealingTransaction = (context.state.scene.lrTransactions ?? []).find(
+        (transaction) => transaction.requestId === command.requestId
+      );
+      if (duplicateHealingTransaction) {
+        if (
+          duplicateHealingTransaction.kind !== "HEALING" ||
+          duplicateHealingTransaction.actorPlayerId !== command.senderPlayerId ||
+          duplicateHealingTransaction.armyId !== command.armyId
+        ) {
+          return { status: "REJECTED", reason: "REQUEST_ID_CONFLICT" };
+        }
+        // A retried LR-backed command is already committed. Return the
+        // authoritative snapshot without depending on mutable army authorization.
+        return { status: "ACCEPTED", state: structuredClone(context.state) };
+      }
+    }
     if (command.expectedRevision !== context.state.scene.revision) {
       return { status: "CONFLICT", actualRevision: context.state.scene.revision };
     }

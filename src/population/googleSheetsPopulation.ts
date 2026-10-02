@@ -127,7 +127,8 @@ export function parseConscriptionCategoryCsv(csv: string): StateConscriptionRow[
       pendingStateName = stateName;
       pendingPopulation = parseHumanResource(record[15]);
       // AR (zero-based column 43) is the formula-derived LR. AO (40) remains the law/category cell on the following row.
-      pendingHumanResource = parseHumanResource(record[43]);
+      const currentHumanResource = parseHumanResource(record[43]);
+      pendingHumanResource = currentHumanResource ?? parseHumanResource(record[40]);
     }
     const category = record[40]?.trim();
     if (pendingStateName && isUsableCategory(category) && parseNumber(category) === undefined && parseHumanResource(category) === undefined) {

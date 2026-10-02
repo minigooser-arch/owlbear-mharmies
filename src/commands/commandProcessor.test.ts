@@ -622,7 +622,9 @@ describe("CommandProcessor", () => {
       recognizedStateId: "red-state",
       deFactoStateId: "red-state"
     };
-    current.armies["army-red"] = { ...current.armies["army-red"], health: { hp: 30, maxHp: 50 } };
+    const redArmy = current.armies["army-red"];
+    if (!redArmy) throw new Error("test fixture missing army-red");
+    current.armies["army-red"] = { ...redArmy, health: { hp: 30, maxHp: 50 } };
 
     const positioned = new CommandProcessor(
       () => new Date("2026-09-30T08:00:00.000Z"),
@@ -636,7 +638,7 @@ describe("CommandProcessor", () => {
     const second = positioned.execute(context("PLAYER", "leader", first.state), request);
     expect(second.status).toBe("ACCEPTED");
     if (second.status !== "ACCEPTED") return;
-    expect(second.state.armies["army-red"]?.health.hp).toBe(32);
+    expect(second.state.armies["army-red"]?.health.hp).toBe(34);
     expect(second.state.scene.lrTransactions?.filter((transaction) => transaction.requestId === request.requestId)).toHaveLength(1);
   });
 

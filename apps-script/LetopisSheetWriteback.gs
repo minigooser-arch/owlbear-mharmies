@@ -13,17 +13,23 @@ const WRITEBACK_CONFIG = Object.freeze({
   SPREADSHEET_ID: "1wlTrvSxeoQDPKO0s9C0ooKF3xMqmTfcCDB70y-1X2QA",
   BACKEND_SHEET: "backend",
   STATE_SHEET: "ГОСУДАРСТВА [1910]",
+  FACTION_SHEET: "ФРАКЦИИ(РАЗРАБОТКА) [1910]",
   LR_LOG_SHEET: "ЛР_ОПЕРАЦИИ",
   ARMIES_SHEET: "АРМИИ",
   TOKEN_PROPERTY: "API_TOKEN"
 });
 
 const LR_LOG_HEADERS = [
-  "requestId", "batchRequestId", "kind", "country", "stateName",
-  "armyId", "armyName", "cityId", "cityName", "hp", "ratePerHp",
-  "amount", "amountPeople", "populationBefore", "populationAfter",
-  "humanResourceBefore", "humanResourceAfter", "actorPlayerId",
-  "turnNumber", "createdAt", "status"
+  "requestId", "createdAt", "country", "stateId", "stateName", "kind",
+  "hp", "ratePerHp", "amount", "amountPeople", "populationBefore",
+  "populationAfter", "humanResourceBefore", "humanResourceAfter",
+  "armyId", "armyName", "cityId", "cityName", "actorPlayerId",
+  "turnNumber", "batchRequestId", "status"
+];
+
+const LR_EXTRA_HEADERS = [
+  "operationType", "factionId", "factionName", "influenceDelta",
+  "influenceBefore", "influenceAfter", "reasonCode"
 ];
 
 const ARMY_HEADERS = ["armyId", "stateId", "country", "hp", "maxHp"];
@@ -49,6 +55,10 @@ function doPost(e) {
         return json_({ ok: true, result: withScriptLock_(function() {
           syncState_(body.event);
           return null;
+        }) });
+      case "ADJUST_MILITARY_INFLUENCE_BATCH":
+        return json_({ ok: true, result: withScriptLock_(function() {
+          return adjustMilitaryInfluenceBatch_(body.operations);
         }) });
       default:
         throw new Error("UNKNOWN_ACTION");
@@ -99,7 +109,29 @@ function stateSheet_() {
 function lrLogSheet_() {
   const sheet = openSpreadsheet_().getSheetByName(WRITEBACK_CONFIG.LR_LOG_SHEET);
   if (!sheet) throw new Error("LR_LOG_SHEET_MISSING");
-  return sheet;
+  const required = LR_LOG_HEADERS.concat(LR_EXTRA_HEADERS);
+  const lastColumn = Math.max(sheet.getLastColumn(), 1);
+  const header = sheet.getRange(1, 1, 1, lastColumn).getValues()[0].map(function(value) {
+    return String(value || "").trim();
+  });
+  for (const name of required) {
+    if (header.indexOf(name) < 0) {
+      sheet.getRange(1, header.length + 1).setValue(name);
+      header.push(name);
+    }
+  }
+  return { sheet: sheet, headers: header };
+}
+
+function headerIndex_(headers) {
+  const result = {};
+  headers.forEach(function(name, index) { result[name] = index; });
+  return result;
+}
+
+function cell_(row, indexes, name) {
+  const index = indexes[name];
+  return index === undefined ? "" : row[index];
 }
 
 function armiesSheet_() {
@@ -198,27 +230,36 @@ function getStateSnapshots_(countries) {
   });
 }
 
-function existingLRRequests_(sheet) {
+function existingLRRequests_(schema) {
   const result = new Map();
-  const lastRow = sheet.getLastRow();
+  const indexes = headerIndex_(schema.headers);
+  const lastRow = schema.sheet.getLastRow();
   if (lastRow < 2) return result;
-  const values = sheet.getRange(2, 1, lastRow - 1, LR_LOG_HEADERS.length).getValues();
-  for (let i = 0; i < values.length; i++) {
-    const requestId = String(values[i][0] || "").trim();
+  const values = schema.sheet.getRange(2, 1, lastRow - 1, schema.headers.length).getValues();
+  for (const row of values) {
+    const operationType = String(cell_(row, indexes, "operationType") || "LR").trim();
+    if (operationType && operationType !== "LR") continue;
+    const requestId = String(cell_(row, indexes, "requestId") || "").trim();
     if (!requestId) continue;
     result.set(requestId, {
       requestId,
-      batchRequestId: String(values[i][1] || ""),
-      kind: String(values[i][2] || ""),
-      country: String(values[i][3] || ""),
-      stateName: String(values[i][4] || ""),
-      armyId: String(values[i][5] || ""),
-      hp: Number(values[i][9]),
-      ratePerHp: Number(values[i][10]),
-      populationBefore: Number(values[i][13]),
-      populationAfter: Number(values[i][14]),
-      humanResourceBefore: Number(values[i][15]),
-      humanResourceAfter: Number(values[i][16])
+      batchRequestId: String(cell_(row, indexes, "batchRequestId") || ""),
+      kind: String(cell_(row, indexes, "kind") || ""),
+      country: String(cell_(row, indexes, "country") || ""),
+      stateName: String(cell_(row, indexes, "stateName") || ""),
+      armyId: String(cell_(row, indexes, "armyId") || ""),
+      armyName: String(cell_(row, indexes, "armyName") || ""),
+      cityId: String(cell_(row, indexes, "cityId") || ""),
+      cityName: String(cell_(row, indexes, "cityName") || ""),
+      hp: Number(cell_(row, indexes, "hp")),
+      ratePerHp: Number(cell_(row, indexes, "ratePerHp")),
+      amount: Number(cell_(row, indexes, "amount")),
+      actorPlayerId: String(cell_(row, indexes, "actorPlayerId") || ""),
+      turnNumber: Number(cell_(row, indexes, "turnNumber")),
+      populationBefore: Number(cell_(row, indexes, "populationBefore")),
+      populationAfter: Number(cell_(row, indexes, "populationAfter")),
+      humanResourceBefore: Number(cell_(row, indexes, "humanResourceBefore")),
+      humanResourceAfter: Number(cell_(row, indexes, "humanResourceAfter"))
     });
   }
   return result;
@@ -263,6 +304,11 @@ function sameDuplicateRequest_(existing, operation) {
   return existing.country === operation.country &&
     existing.kind === operation.kind &&
     existing.armyId === operation.armyId &&
+    existing.armyName === operation.armyName &&
+    existing.cityId === operation.cityId &&
+    existing.cityName === operation.cityName &&
+    existing.actorPlayerId === operation.actorPlayerId &&
+    existing.turnNumber === operation.turnNumber &&
     existing.hp === operation.hp &&
     Math.abs(existing.ratePerHp - operation.ratePerHp) <= 1e-9 &&
     Math.abs(existing.amount - operation.amount) <= 1e-9;
@@ -273,111 +319,286 @@ function halfUp_(value) {
 }
 
 function spendLRBatch_(operations, batchRequestId) {
-  if (!Array.isArray(operations) || operations.length === 0 || operations.length > 64) {
-    throw new Error("INVALID_SPEND_BATCH");
-  }
-
+  if (!Array.isArray(operations) || operations.length === 0 || operations.length > 64) throw new Error("INVALID_SPEND_BATCH");
   const backend = backendSheet_();
-  const log = lrLogSheet_();
+  const schema = lrLogSheet_();
   const index = backendIndex_();
-  const existing = existingLRRequests_(log);
+  const existing = existingLRRequests_(schema);
   const normalized = [];
   const seen = new Set();
 
-  for (let i = 0; i < operations.length; i++) {
-    const op = validateSpendOperation_(operations[i], index);
+  for (const raw of operations) {
+    const op = validateSpendOperation_(raw, index);
     if (seen.has(op.requestId)) throw new Error("DUPLICATE_BATCH_REQUEST_ID:" + op.requestId);
     seen.add(op.requestId);
     const old = existing.get(op.requestId);
     if (old) {
       if (!sameDuplicateRequest_(old, op)) throw new Error("REQUEST_ID_CONFLICT:" + op.requestId);
       normalized.push({ op, duplicate: old });
-    } else {
-      normalized.push({ op, duplicate: null });
-    }
+    } else normalized.push({ op, duplicate: null });
   }
 
   const newOperations = normalized.filter(function(entry) { return entry.duplicate === null; });
   const touched = new Map();
-  const results = normalized.filter(function(entry) { return entry.duplicate !== null; }).map(function(entry) {
-    return entry.duplicate;
-  });
-  const logRows = [];
+  const results = normalized.filter(function(entry) { return entry.duplicate !== null; }).map(function(entry) { return entry.duplicate; });
+  const records = [];
+  let appendedLogStartRow = 0;
 
   try {
-    for (let i = 0; i < newOperations.length; i++) {
-      const op = newOperations[i].op;
+    for (const entry of newOperations) {
+      const op = entry.op;
       const rowInfo = index.get(op.country);
-      if (!touched.has(rowInfo.row)) {
-        touched.set(rowInfo.row, Number(backend.getRange(rowInfo.row, 3).getValue()));
-      }
-
+      if (!touched.has(rowInfo.row)) touched.set(rowInfo.row, Number(backend.getRange(rowInfo.row, 3).getValue()));
       const populationBefore = Number(backend.getRange(rowInfo.row, 3).getValue());
       const contextBefore = stateContext_(op.country, rowInfo);
-      if (!Number.isFinite(populationBefore) || populationBefore < 0) {
-        throw new Error("POPULATION_INVALID:" + op.country);
-      }
-      if (contextBefore.humanResource + 1e-9 < op.amount) {
-        throw new Error("INSUFFICIENT_LR:" + op.requestId);
-      }
-      if (populationBefore + 1e-9 < op.amount) {
-        throw new Error("INSUFFICIENT_POPULATION:" + op.requestId);
-      }
-
+      if (!Number.isFinite(populationBefore) || populationBefore < 0) throw new Error("POPULATION_INVALID:" + op.country);
+      if (contextBefore.humanResource + 1e-9 < op.amount) throw new Error("INSUFFICIENT_LR:" + op.requestId);
+      if (populationBefore + 1e-9 < op.amount) throw new Error("INSUFFICIENT_POPULATION:" + op.requestId);
       const populationAfter = halfUp_(populationBefore - op.amount);
       if (populationAfter < 0) throw new Error("POPULATION_NEGATIVE:" + op.requestId);
       backend.getRange(rowInfo.row, 3).setValue(populationAfter);
       SpreadsheetApp.flush();
-
       const contextAfter = stateContext_(op.country, rowInfo);
-      const result = {
-        requestId: op.requestId,
-        populationBefore,
-        populationAfter,
-        humanResourceBefore: contextBefore.humanResource,
-        humanResourceAfter: contextAfter.humanResource,
-        stateName: contextAfter.stateName
-      };
-      results.push(result);
-      logRows.push([
-        op.requestId,
-        String(operations[0].requestId || ""),
-        op.kind,
-        op.country,
-        contextAfter.stateName,
-        op.armyId,
-        op.armyName,
-        op.cityId,
-        op.cityName,
-        op.hp,
-        op.ratePerHp,
-        op.amount,
-        Math.round(op.amount * 1000),
-        populationBefore,
-        populationAfter,
-        contextBefore.humanResource,
-        contextAfter.humanResource,
-        op.actorPlayerId,
-        op.turnNumber,
-        new Date().toISOString(),
-        "APPLIED"
-      ]);
+      results.push({ requestId: op.requestId, populationBefore, populationAfter,
+        humanResourceBefore: contextBefore.humanResource, humanResourceAfter: contextAfter.humanResource,
+        stateName: contextAfter.stateName });
+      records.push({
+        operationType: "LR", requestId: op.requestId, createdAt: new Date().toISOString(),
+        country: op.country, stateId: "", stateName: contextAfter.stateName, kind: op.kind,
+        hp: op.hp, ratePerHp: op.ratePerHp, amount: op.amount, amountPeople: Math.round(op.amount * 1000),
+        populationBefore, populationAfter, humanResourceBefore: contextBefore.humanResource,
+        humanResourceAfter: contextAfter.humanResource, armyId: op.armyId, armyName: op.armyName,
+        cityId: op.cityId, cityName: op.cityName, actorPlayerId: op.actorPlayerId, turnNumber: op.turnNumber,
+        batchRequestId: String(batchRequestId || ""), status: "APPLIED"
+      });
     }
-
-    if (logRows.length > 0) {
-      const startRow = log.getLastRow() + 1;
-      log.getRange(startRow, 1, logRows.length, LR_LOG_HEADERS.length).setValues(logRows);
+    if (records.length > 0) {
+      const rows = records.map(function(record) {
+        return schema.headers.map(function(name) { return record[name] === undefined || record[name] === null ? "" : record[name]; });
+      });
+      appendedLogStartRow = schema.sheet.getLastRow() + 1;
+      schema.sheet.getRange(appendedLogStartRow, 1, rows.length, schema.headers.length).setValues(rows);
     }
-
     SpreadsheetApp.flush();
     const states = [...new Set(normalized.map(function(entry) { return entry.op.country; }))].map(function(country) {
       return snapshotForCountry_(country, index);
     });
     return { operations: results, states };
   } catch (error) {
-    for (const [row, oldPopulation] of touched.entries()) {
-      backend.getRange(row, 3).setValue(oldPopulation);
+    if (appendedLogStartRow > 0) {
+      try { schema.sheet.deleteRows(appendedLogStartRow, records.length); } catch (rollbackError) { console.error(rollbackError); }
     }
+    for (const [row, oldPopulation] of touched.entries()) backend.getRange(row, 3).setValue(oldPopulation);
+    SpreadsheetApp.flush();
+    throw error;
+  }
+}
+
+function normalizeKey_(value) {
+  return String(value == null ? "" : value).normalize("NFKC").replace(/[\\u00A0\\u2007\\u202F]/g, " ")
+    .trim().toLocaleLowerCase("ru-RU").replace(/\\s+/g, " ");
+}
+
+function factionSheet_() {
+  const sheet = openSpreadsheet_().getSheetByName(WRITEBACK_CONFIG.FACTION_SHEET);
+  if (!sheet) throw new Error("FACTION_SHEET_MISSING");
+  return sheet;
+}
+
+function factionRows_() {
+  const sheet = factionSheet_();
+  if (!String(sheet.getRange(4, 53).getValue() || "").trim()) sheet.getRange(4, 53).setValue("factionId");
+  if (!String(sheet.getRange(4, 54).getValue() || "").trim()) sheet.getRange(4, 54).setValue("country");
+  const count = Math.max(sheet.getLastRow() - 6, 1);
+  const names = sheet.getRange(7, 11, count, 1).getDisplayValues();
+  const ids = sheet.getRange(7, 53, count, 1).getValues();
+  const countries = sheet.getRange(7, 54, count, 1).getValues();
+  const rows = [];
+  for (let i = 0; i < count; i++) {
+    const name = String(names[i][0] || "").trim();
+    if (name) rows.push({ row: i + 7, name, id: String(ids[i][0] || "").trim(), country: String(countries[i][0] || "").trim() });
+  }
+  return rows;
+}
+
+function resolveFactionTarget_(input, rows) {
+  const factionId = String(input.factionId || "").trim();
+  const factionName = String(input.factionName || "").trim();
+  const country = String(input.country || "").trim();
+  if (!factionId || !factionName || !country) throw new Error("INVALID_FACTION_IDENTITY");
+  let matches = rows.filter(function(row) { return row.id === factionId; });
+  if (matches.length === 0) {
+    matches = rows.filter(function(row) {
+      return normalizeKey_(row.name) === normalizeKey_(factionName) &&
+        (!row.country || normalizeKey_(row.country) === normalizeKey_(country));
+    });
+  }
+  if (matches.length !== 1) throw new Error(matches.length === 0 ? "FACTION_NOT_FOUND:" + factionName : "FACTION_AMBIGUOUS:" + factionName);
+  return matches[0];
+}
+
+function applyFactionAndStateArmy_(event, index) {
+  const factions = Array.isArray(event.factions) ? event.factions : [];
+  const stateArmies = Array.isArray(event.stateArmies) ? event.stateArmies : [];
+  if (factions.length === 0 && stateArmies.length === 0) return;
+  const sheet = factionSheet_();
+  const rows = factionRows_();
+  const targets = [];
+  const seenFactions = new Set();
+  for (const faction of factions) {
+    const factionId = String(faction.factionId || "").trim();
+    const factionName = String(faction.factionName || "").trim();
+    const country = String(faction.country || "").trim();
+    const hp = Number(faction.hp);
+    const maxHp = Number(faction.maxHp);
+    if (!factionId || !factionName || !country || !Number.isInteger(hp) || hp < 0 ||
+        !Number.isInteger(maxHp) || maxHp < 0 || hp > maxHp || seenFactions.has(factionId)) {
+      throw new Error("INVALID_FACTION_SYNC");
+    }
+    if (!index.has(country)) throw new Error("COUNTRY_NOT_FOUND:" + country);
+    const target = resolveFactionTarget_({ factionId, factionName, country }, rows);
+    targets.push({ target, factionId, country, hp });
+    seenFactions.add(factionId);
+  }
+  const stateTargets = [];
+  const seenCountries = new Set();
+  for (const state of stateArmies) {
+    const country = String(state.country || "").trim();
+    const hp = Number(state.hp);
+    const maxHp = Number(state.maxHp);
+    if (!country || !index.has(country) || !Number.isInteger(hp) || hp < 0 ||
+        !Number.isInteger(maxHp) || maxHp < 0 || hp > maxHp || seenCountries.has(country)) {
+      throw new Error("INVALID_STATE_ARMY_SYNC");
+    }
+    stateTargets.push({ country, hp, row: index.get(country).stateRow });
+    seenCountries.add(country);
+  }
+  const oldFaction = targets.map(function(entry) {
+    return { row: entry.target.row, id: sheet.getRange(entry.target.row, 53).getValue(),
+      country: sheet.getRange(entry.target.row, 54).getValue(), hp: sheet.getRange(entry.target.row, 45).getValue() };
+  });
+  const stateSheet = stateSheet_();
+  const oldState = stateTargets.map(function(entry) {
+    const cell = stateSheet.getRange(entry.row, 40);
+    return { row: entry.row, formula: cell.getFormula(), value: cell.getValue() };
+  });
+  try {
+    for (const entry of targets) {
+      sheet.getRange(entry.target.row, 53, 1, 2).setValues([[entry.factionId, entry.country]]);
+      sheet.getRange(entry.target.row, 45).setValue(entry.hp);
+    }
+    for (const entry of stateTargets) stateSheet.getRange(entry.row, 40).setValue(entry.hp);
+    SpreadsheetApp.flush();
+  } catch (error) {
+    for (const entry of oldFaction) {
+      sheet.getRange(entry.row, 53, 1, 2).setValues([[entry.id, entry.country]]);
+      sheet.getRange(entry.row, 45).setValue(entry.hp);
+    }
+    for (const entry of oldState) {
+      const cell = stateSheet.getRange(entry.row, 40);
+      if (entry.formula) cell.setFormula(entry.formula); else cell.setValue(entry.value);
+    }
+    SpreadsheetApp.flush();
+    throw error;
+  }
+}
+
+const MILITARY_INFLUENCE_DELTAS = {
+  LAND_BATTLE_VICTORY: 4, NAVAL_BATTLE_VICTORY: 4, DESTROY_ENEMY_ARMY: 3,
+  DESTROY_ENEMY_SHIP: 3, SUCCESSFUL_CITY_DEFENSE: 3, SUCCESSFUL_CITY_OCCUPATION: 3,
+  SHIP_TRANSFER: -15, MILITARY_UPGRADE_I: -20, APPOINT_COMMANDER_IN_CHIEF: -30,
+  MILITARY_UPGRADE_II: -30, MILITARY_UPGRADE_III: -50
+};
+
+function existingMilitaryRequests_(schema) {
+  const result = new Map();
+  const indexes = headerIndex_(schema.headers);
+  const lastRow = schema.sheet.getLastRow();
+  if (lastRow < 2) return result;
+  const values = schema.sheet.getRange(2, 1, lastRow - 1, schema.headers.length).getValues();
+  for (const row of values) {
+    if (String(cell_(row, indexes, "operationType") || "").trim() !== "MILITARY_INFLUENCE") continue;
+    const requestId = String(cell_(row, indexes, "requestId") || "").trim();
+    if (!requestId) continue;
+    result.set(requestId, { requestId, factionId: String(cell_(row, indexes, "factionId") || ""),
+      factionName: String(cell_(row, indexes, "factionName") || ""),
+      country: String(cell_(row, indexes, "country") || ""),
+      reasonCode: String(cell_(row, indexes, "reasonCode") || ""),
+      delta: Number(cell_(row, indexes, "influenceDelta")),
+      balanceBefore: Number(cell_(row, indexes, "influenceBefore")),
+      balanceAfter: Number(cell_(row, indexes, "influenceAfter")) });
+  }
+  return result;
+}
+
+function sameMilitaryRequest_(old, op) {
+  return old.factionId === op.factionId && old.factionName === op.factionName &&
+    old.country === op.country && old.reasonCode === op.reasonCode && old.delta === op.delta;
+}
+
+function adjustMilitaryInfluenceBatch_(operations) {
+  if (!Array.isArray(operations) || operations.length === 0 || operations.length > 64) throw new Error("INVALID_MILITARY_INFLUENCE_BATCH");
+  const schema = lrLogSheet_();
+  const index = backendIndex_();
+  const rows = factionRows_();
+  const existing = existingMilitaryRequests_(schema);
+  const normalized = [];
+  const seen = new Set();
+  for (const raw of operations) {
+    const requestId = String(raw && raw.requestId || "").trim();
+    const reasonCode = String(raw && raw.reasonCode || "").trim();
+    const delta = Number(raw && raw.delta);
+    const expected = MILITARY_INFLUENCE_DELTAS[reasonCode];
+    if (!requestId || expected === undefined || delta !== expected) throw new Error("INVALID_MILITARY_INFLUENCE_OPERATION");
+    const op = { requestId, factionId: String(raw.factionId || "").trim(), factionName: String(raw.factionName || "").trim(),
+      country: String(raw.country || "").trim(), reasonCode, delta,
+      actorPlayerId: String(raw.actorPlayerId || ""), turnNumber: Number(raw.turnNumber || 0),
+      cityId: raw.cityId == null ? "" : String(raw.cityId), cityName: raw.cityName == null ? "" : String(raw.cityName) };
+    if (!op.factionId || !op.factionName || !op.country || !index.has(op.country) || seen.has(requestId)) throw new Error("INVALID_MILITARY_INFLUENCE_OPERATION");
+    seen.add(requestId);
+    const old = existing.get(requestId);
+    if (old) {
+      if (!sameMilitaryRequest_(old, op)) throw new Error("REQUEST_ID_CONFLICT:" + requestId);
+      normalized.push({ op, duplicate: old });
+    } else normalized.push({ op, duplicate: null });
+  }
+  const sheet = factionSheet_();
+  const targets = normalized.map(function(entry) { return { entry, target: resolveFactionTarget_(entry.op, rows) }; });
+  const touched = new Map();
+  const records = [];
+  const results = normalized.filter(function(entry) { return entry.duplicate !== null; }).map(function(entry) { return entry.duplicate; });
+  let startRow = 0;
+  try {
+    for (const item of targets) {
+      if (item.entry.duplicate) continue;
+      const op = item.entry.op;
+      const row = item.target.row;
+      const before = Number(sheet.getRange(row, 35).getValue());
+      if (!Number.isInteger(before) || before < 0) throw new Error("MILITARY_INFLUENCE_BALANCE_INVALID:" + op.factionId);
+      const after = before + op.delta;
+      if (after < 0) throw new Error("INSUFFICIENT_MILITARY_INFLUENCE:" + op.requestId);
+      if (!touched.has(row)) touched.set(row, before);
+      sheet.getRange(row, 35).setValue(after);
+      results.push({ requestId: op.requestId, factionId: op.factionId, balanceBefore: before, balanceAfter: after, delta: op.delta });
+      records.push({ operationType: "MILITARY_INFLUENCE", requestId: op.requestId, createdAt: new Date().toISOString(),
+        country: op.country, stateId: "", stateName: stateContext_(op.country, index.get(op.country)).stateName,
+        kind: "MILITARY_INFLUENCE", cityId: op.cityId, cityName: op.cityName,
+        actorPlayerId: op.actorPlayerId, turnNumber: op.turnNumber, status: "APPLIED",
+        factionId: op.factionId, factionName: op.factionName, influenceDelta: op.delta,
+        influenceBefore: before, influenceAfter: after, reasonCode: op.reasonCode });
+    }
+    if (records.length > 0) {
+      const rowsToWrite = records.map(function(record) {
+        return schema.headers.map(function(name) { return record[name] === undefined || record[name] === null ? "" : record[name]; });
+      });
+      startRow = schema.sheet.getLastRow() + 1;
+      schema.sheet.getRange(startRow, 1, rowsToWrite.length, schema.headers.length).setValues(rowsToWrite);
+    }
+    SpreadsheetApp.flush();
+    return { operations: results };
+  } catch (error) {
+    for (const [row, before] of touched.entries()) sheet.getRange(row, 35).setValue(before);
+    if (startRow > 0) try { schema.sheet.deleteRows(startRow, records.length); } catch (rollbackError) { console.error(rollbackError); }
     SpreadsheetApp.flush();
     throw error;
   }
@@ -486,6 +707,7 @@ function syncState_(event) {
     rowsToDelete.sort(function(a, b) { return b - a; });
     for (const row of rowsToDelete) sheet.deleteRow(row);
 
+    applyFactionAndStateArmy_(event, index);
     SpreadsheetApp.flush();
   } catch (error) {
     for (const [row, oldValue] of oldShipValues.entries()) {
