@@ -315,10 +315,15 @@ export class CommandProcessor {
     ) {
       return { status: "REJECTED", reason: "FORGED_CONNECTION" };
     }
-    const duplicateHealingRequest = command.type === "HEAL_ARMY" &&
+    const duplicateHealingRequest = command.type === "HEAL_ARMY" && (
       (context.state.scene.lrTransactions ?? []).some(
         (transaction) => transaction.requestId === command.requestId
-      );
+      ) ||
+      (
+        command.expectedRevision !== context.state.scene.revision &&
+        context.state.armies[command.armyId]?.healing?.pending === true
+      )
+    );
     if (!duplicateHealingRequest && command.expectedRevision !== context.state.scene.revision) {
       return { status: "CONFLICT", actualRevision: context.state.scene.revision };
     }
