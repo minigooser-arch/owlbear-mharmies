@@ -1567,14 +1567,9 @@ export class ProductionEngine {
     }
     const durable = SheetWritebackClient.readQueue(metadata);
     const merged = durable
-      ? mergeSheetWritebackQueue(durable, this.sheetWritebackFallback ?? {
-          version: 1,
-          eventId: `sheet-sync-empty-${Date.now()}`,
-          createdAt: this.wallClock().toISOString(),
-          armies: [],
-          removedArmyIds: [],
-          states: []
-        })
+      ? this.sheetWritebackFallback
+        ? mergeSheetWritebackQueue(durable, this.sheetWritebackFallback)
+        : durable
       : this.sheetWritebackFallback
         ? { version: 1 as const, pending: this.sheetWritebackFallback }
         : undefined;
