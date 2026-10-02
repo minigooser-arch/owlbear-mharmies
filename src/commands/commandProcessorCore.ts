@@ -319,10 +319,9 @@ export class CommandProcessor {
       (context.state.scene.lrTransactions ?? []).some(
         (transaction) => transaction.requestId === command.requestId
       ) ||
-      (
-        command.expectedRevision !== context.state.scene.revision &&
-        context.state.armies[command.armyId]?.healing?.pending === true
-      )
+      // Legacy scenes can contain the healed army snapshot without the
+      // corresponding LR ledger row. A stale retry must still be a no-op.
+      command.expectedRevision !== context.state.scene.revision
     );
     if (!duplicateHealingRequest && command.expectedRevision !== context.state.scene.revision) {
       return { status: "CONFLICT", actualRevision: context.state.scene.revision };
