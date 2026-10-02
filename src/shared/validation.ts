@@ -145,7 +145,7 @@ function normalizeSettings(value: unknown): SceneSettings {
     : DEFAULT_SETTINGS.conscriptionSheetCsvUrl;
   const sheetWritebackUrl = typeof value.sheetWritebackUrl === "string"
     ? value.sheetWritebackUrl.trim()
-    : DEFAULT_SETTINGS.sheetWritebackUrl;
+    : undefined;
   return {
     defaultDetectionRangeCells: nonNegative(value.defaultDetectionRangeCells)
       ? value.defaultDetectionRangeCells

@@ -43,7 +43,7 @@ export function clearSheetWritebackToken(): void {
 }
 
 export function sheetWritebackConfigured(settings: SceneSettings): boolean {
-  return Boolean(settings.sheetWritebackUrl?.trim()) && Boolean(readSheetWritebackToken());
+  return Boolean(settings.sheetWritebackUrl?.trim());
 }
 
 export function sheetWritebackAuthorized(settings: SceneSettings): boolean {
