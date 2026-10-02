@@ -269,6 +269,11 @@ function sameDuplicateRequest_(existing, operation) {
   return existing.country === operation.country &&
     existing.kind === operation.kind &&
     existing.armyId === operation.armyId &&
+    existing.armyName === operation.armyName &&
+    existing.cityId === operation.cityId &&
+    existing.cityName === operation.cityName &&
+    existing.actorPlayerId === operation.actorPlayerId &&
+    existing.turnNumber === operation.turnNumber &&
     existing.hp === operation.hp &&
     Math.abs(existing.ratePerHp - operation.ratePerHp) <= 1e-9 &&
     Math.abs(existing.amount - operation.amount) <= 1e-9;
