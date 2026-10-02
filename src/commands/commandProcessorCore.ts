@@ -315,14 +315,10 @@ export class CommandProcessor {
     ) {
       return { status: "REJECTED", reason: "FORGED_CONNECTION" };
     }
-    const duplicateHealingRequest = command.type === "HEAL_ARMY" && (
+    const duplicateHealingRequest = command.type === "HEAL_ARMY" &&
       (context.state.scene.lrTransactions ?? []).some(
         (transaction) => transaction.requestId === command.requestId
-      ) ||
-      // Legacy scenes can contain the healed army snapshot without the
-      // corresponding LR ledger row. A stale retry must still be a no-op.
-      command.expectedRevision !== context.state.scene.revision
-    );
+      );
     if (!duplicateHealingRequest && command.expectedRevision !== context.state.scene.revision) {
       return { status: "CONFLICT", actualRevision: context.state.scene.revision };
     }
