@@ -163,7 +163,7 @@ export function buildSheetWritebackEvent(
   const affectedCountries = new Set<string>();
 
   const identityForArmy = (scene: SceneState, army: CommandState["armies"][string]) => {
-    const identity = factionIdentityForSide(scene, army.sideId);
+    const identity = factionIdentityForSide(next.scene, army.sideId);
     return {
       ...identity,
       hp: army.health.hp,
@@ -220,7 +220,7 @@ export function buildSheetWritebackEvent(
     }
   }
 
-  const aggregate = (scene: SceneState) => {
+  const aggregate = () => {
     const factions = new Map<string, SheetFactionSnapshot>();
     const states = new Map<string, SheetStateArmySnapshot>();
     for (const army of Object.values(next.armies)) {
@@ -243,7 +243,7 @@ export function buildSheetWritebackEvent(
     }
     return { factions, states };
   };
-  const nextAggregate = aggregate(next.scene);
+  const nextAggregate = aggregate();
   const factions = [...affectedFactions].flatMap((factionId) => {
     const snapshot = nextAggregate.factions.get(factionId);
     if (snapshot) return [snapshot];
