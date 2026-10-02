@@ -1,6 +1,6 @@
 {
   "name": "Летопись: Армии",
-  "version": "1.2.13",
+  "version": "1.2.14",
   "manifest_version": 1,
   "author": "Летопись",
   "description": "Скрытие, маршруты и одновременное движение армий на стратегической карте",
@@ -8,10 +8,10 @@
   "action": {
     "title": "Летопись: Армии",
     "icon": "https://minigooser-arch.github.io/owlbear-mharmies/cover.png",
-    "popover": "https://minigooser-arch.github.io/owlbear-mharmies/index.html?v=1.2.13",
+    "popover": "https://minigooser-arch.github.io/owlbear-mharmies/index.html?v=1.2.14",
     "width": 460,
     "height": 700
   },
-    "background_url": "https://minigooser-arch.github.io/owlbear-mharmies/background.html?v=1.2.13"
+    "background_url": "https://minigooser-arch.github.io/owlbear-mharmies/background.html?v=1.2.14"
 }
 
