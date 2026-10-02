@@ -315,11 +315,24 @@ export class CommandProcessor {
     ) {
       return { status: "REJECTED", reason: "FORGED_CONNECTION" };
     }
-    const duplicateHealingRequest = command.type === "HEAL_ARMY" &&
-      (context.state.scene.lrTransactions ?? []).some(
+    const duplicateHealingTransaction = command.type === "HEAL_ARMY"
+      ? (context.state.scene.lrTransactions ?? []).find(
         (transaction) => transaction.requestId === command.requestId
-      );
-    if (!duplicateHealingRequest && command.expectedRevision !== context.state.scene.revision) {
+      )
+      : undefined;
+    if (duplicateHealingTransaction) {
+      if (
+        duplicateHealingTransaction.kind !== "HEALING" ||
+        duplicateHealingTransaction.actorPlayerId !== command.senderPlayerId ||
+        duplicateHealingTransaction.armyId !== command.armyId
+      ) {
+        return { status: "REJECTED", reason: "REQUEST_ID_CONFLICT" };
+      }
+      // A retried LR-backed command is already committed. Return the
+      // authoritative snapshot without depending on mutable army authorization.
+      return { status: "ACCEPTED", state: structuredClone(context.state) };
+    }
+    if (command.expectedRevision !== context.state.scene.revision) {
       return { status: "CONFLICT", actualRevision: context.state.scene.revision };
     }
     const authorization = authorizeArmyCommand(
@@ -337,12 +350,6 @@ export class CommandProcessor {
     if (!authorization.allowed) return { status: "REJECTED", reason: authorization.reason };
 
     const state = structuredClone(context.state);
-    if (duplicateHealingRequest) {
-      // A retried LR-backed command is already committed. Return the
-      // authoritative snapshot without incrementing the scene revision or
-      // applying the healing effect again.
-      return { status: "ACCEPTED", state };
-    }
     const rejected = this.apply(state, command, context.connectedPlayerIds);
     if (rejected) return { status: "REJECTED", reason: rejected };
     state.scene.revision += 1;
