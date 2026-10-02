@@ -1589,14 +1589,13 @@ export class ProductionEngine {
     if (!merged) return;
     const event = {
         ...merged.pending,
-        // Army HP and per-faction/state army projections are private to Owlbear.
-        // Ship counts are private too. Strip all legacy unit projections before
-        // any request reaches Google Sheets.
+        // Individual army HP and ship counts are private to Owlbear. Keep only
+        // aggregate faction/state HP projections and military influence.
         armies: [],
         removedArmyIds: [],
         states: [],
-        factions: [],
-        stateArmies: []
+        factions: [...(merged.pending.factions ?? [])],
+        stateArmies: [...(merged.pending.stateArmies ?? [])]
       };
     if (event.armies.length === 0 && event.removedArmyIds.length === 0 && event.states.length === 0 &&
       (event.factions?.length ?? 0) === 0 && (event.stateArmies?.length ?? 0) === 0 &&
