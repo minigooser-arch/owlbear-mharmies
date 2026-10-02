@@ -307,6 +307,7 @@ function normalizeSide(value: unknown): Side | undefined {
     playerIds: [...new Set([...playerIds, ...leaderPlayerIds])],
     leaderPlayerIds,
     stateId: value.stateId === null || nonEmptyString(value.stateId) ? value.stateId as string | null : null,
+    ...(nonNegativeInteger(value.militaryInfluence) ? { militaryInfluence: value.militaryInfluence } : {}),
     ...(armyTokenAsset ? { armyTokenAsset } : {})
   };
 }
