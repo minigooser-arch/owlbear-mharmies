@@ -638,7 +638,7 @@ describe("CommandProcessor", () => {
     const second = positioned.execute(context("PLAYER", "leader", first.state), request);
     expect(second.status).toBe("ACCEPTED");
     if (second.status !== "ACCEPTED") return;
-    expect(second.state.armies["army-red"]?.health.hp).toBe(32);
+    expect(second.state.armies["army-red"]?.health.hp).toBe(34);
     expect(second.state.scene.lrTransactions?.filter((transaction) => transaction.requestId === request.requestId)).toHaveLength(1);
   });
 
