@@ -9,6 +9,10 @@ import {
   readSheetWritebackQueue
 } from "./writeback";
 import { EXTENSION_ID, METADATA_KEYS } from "../shared/constants";
+import type {
+  SheetMilitaryInfluenceOperation,
+  SheetMilitaryInfluenceOperationResult
+} from "./militaryInfluence";
 
 export const SHEET_WRITEBACK_TOKEN_STORAGE_KEY = `${EXTENSION_ID}/sheet-writeback-token`;
 
@@ -130,6 +134,15 @@ export class SheetWritebackClient {
       action: "SYNC_STATE",
       event
     }).then(() => undefined);
+  }
+
+  adjustMilitaryInfluence(
+    operations: readonly SheetMilitaryInfluenceOperation[]
+  ): Promise<SheetMilitaryInfluenceOperationResult[]> {
+    return this.request<{ operations: SheetMilitaryInfluenceOperationResult[] }>({
+      action: "ADJUST_MILITARY_INFLUENCE_BATCH",
+      operations
+    }).then((result) => result.operations);
   }
 
   static readQueue(metadata: Record<string, unknown>): SheetWritebackQueue | undefined {
