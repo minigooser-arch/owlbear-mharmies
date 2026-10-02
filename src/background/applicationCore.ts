@@ -1588,7 +1588,8 @@ export class ProductionEngine {
         : undefined;
     if (!merged) return;
     const event = merged.pending;
-    if (event.armies.length === 0 && event.removedArmyIds.length === 0 && event.states.length === 0) {
+    if (event.armies.length === 0 && event.removedArmyIds.length === 0 && event.states.length === 0 &&
+      (event.factions?.length ?? 0) === 0 && (event.stateArmies?.length ?? 0) === 0) {
       this.sheetWritebackFallback = undefined;
       return;
     }
