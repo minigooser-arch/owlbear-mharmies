@@ -16,6 +16,13 @@ import type {
 
 export const SHEET_WRITEBACK_TOKEN_STORAGE_KEY = `${EXTENSION_ID}/sheet-writeback-token`;
 
+export interface SheetFactionInfluenceSnapshot {
+  factionId: string;
+  factionName: string;
+  country: string;
+  militaryInfluence: number;
+}
+
 export function readSheetWritebackToken(): string {
   try {
     return globalThis.localStorage?.getItem(SHEET_WRITEBACK_TOKEN_STORAGE_KEY)?.trim() ?? "";
@@ -120,6 +127,15 @@ export class SheetWritebackClient {
     }).then((result) => result.states);
   }
 
+  getFactionMilitaryInfluence(
+    factions: readonly Pick<SheetFactionInfluenceSnapshot, "factionId" | "factionName" | "country">[]
+  ): Promise<SheetFactionInfluenceSnapshot[]> {
+    return this.request<{ factions: SheetFactionInfluenceSnapshot[] }>({
+      action: "GET_FACTIONS",
+      factions
+    }).then((result) => result.factions);
+  }
+
   spendLR(operations: readonly SheetSpendOperation[]): Promise<SheetSpendBatchResult> {
     const firstOperation = operations[0];
     return this.request<SheetSpendBatchResult>({
@@ -159,3 +175,4 @@ export class SheetWritebackClient {
     );
   }
 }
+
