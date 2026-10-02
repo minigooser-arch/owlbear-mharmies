@@ -376,7 +376,18 @@ export class ProductionEngine {
     }
     if (active) {
       this.lastMovementAt = performance.now();
-      void this.enqueueMutation(() => this.flushSheetWriteback());
+      const generation = this.coordinatorGeneration;
+      // Let work already requested in the current turn enter the serialized queue
+      // before the startup writeback probe. A scene with no pending queue then
+      // remains a no-op without delaying movement processing.
+      queueMicrotask(() => {
+        if (
+          this.coordinator &&
+          this.coordinatorGeneration === generation
+        ) {
+          void this.enqueueMutation(() => this.flushSheetWriteback());
+        }
+      });
     }
   }
 
@@ -1826,8 +1837,8 @@ export class ProductionEngine {
   writeCoordinatorHeartbeat(
     heartbeat: NonNullable<SceneState["coordinatorLease"]>
   ): Promise<void> {
+    const generation = this.coordinatorGeneration;
     return this.enqueueMutation(async () => {
-      const generation = this.coordinatorGeneration;
       const claimIsCurrent = () =>
         this.coordinatorGeneration === generation &&
         (!this.coordinator || this.activeCoordinatorConnectionId === heartbeat.connectionId);
