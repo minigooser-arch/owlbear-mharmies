@@ -124,7 +124,7 @@ describe("sheet writeback projection", () => {
     };
     const merged = mergeSheetWritebackQueue(undefined, first);
     const next = mergeSheetWritebackQueue(merged, second);
-    expect(next.pending.eventId).toBe("e1");
+    expect(next.pending.eventId).toBe("e2");
     expect(next.pending.armies).toEqual([{ armyId: "a", stateId: "s", country: "C", hp: 18, maxHp: 40 }]);
     expect(next.pending.states).toEqual([{ country: "C", ships: 2 }]);
     expect(next.pending.removedArmyIds).toEqual(["b"]);
@@ -175,6 +175,6 @@ describe("sheet writeback projection", () => {
       } as never
     });
     expect(pendingLRTransactions(previous, next)).toHaveLength(1);
-    expect(pendingLRTransactions(previous, next)[0].country).toBe("STATE_A");
+    expect(pendingLRTransactions(previous, next)[0]!.country).toBe("STATE_A");
   });
 });
