@@ -579,7 +579,7 @@ describe("CommandProcessor", () => {
     }
   });
 
-  it("heals immediately up to the amount affordable from human resources", () => {
+  it("schedules treatment up to the amount affordable from human resources", () => {
     const current = state();
     current.scene.sides = current.scene.sides.map((side) =>
       side.id === "red" ? { ...side, stateId: "red-state" } : side
@@ -622,7 +622,8 @@ describe("CommandProcessor", () => {
 
     expect(result.status).toBe("ACCEPTED");
     if (result.status !== "ACCEPTED") return;
-    expect(result.state.armies["army-red"]?.health.hp).toBe(32);
+    expect(result.state.armies["army-red"]?.health.hp).toBe(30);
+    expect(result.state.armies["army-red"]?.healing).toMatchObject({ pending: true, pendingHp: 2 });
     expect(result.state.scene.demographics?.[0]?.humanResource).toBe(2);
     expect(result.state.scene.lrTransactions?.at(-1)).toMatchObject({
       kind: "HEALING",
@@ -676,7 +677,7 @@ describe("CommandProcessor", () => {
     const second = positioned.execute(context("PLAYER", "leader", first.state), request);
     expect(second.status).toBe("ACCEPTED");
     if (second.status !== "ACCEPTED") return;
-    expect(second.state.armies["army-red"]?.health.hp).toBe(34);
+    expect(second.state.armies["army-red"]?.health.hp).toBe(30);
     expect(second.state.scene.lrTransactions?.filter((transaction) => transaction.requestId === request.requestId)).toHaveLength(1);
   });
 
@@ -735,7 +736,8 @@ describe("CommandProcessor", () => {
 
     expect(result.status).toBe("ACCEPTED");
     if (result.status !== "ACCEPTED") return;
-    expect(result.state.armies["army-red"]?.health.hp).toBe(36);
+    expect(result.state.armies["army-red"]?.health.hp).toBe(30);
+    expect(result.state.armies["army-red"]?.healing).toMatchObject({ pending: true, pendingHp: 6, hospitalCityId: "city-red" });
     expect(result.state.scene.demographics?.[0]?.humanResource).toBe(0);
     expect(result.state.scene.lrTransactions?.at(-1)).toMatchObject({
       kind: "HEALING",
