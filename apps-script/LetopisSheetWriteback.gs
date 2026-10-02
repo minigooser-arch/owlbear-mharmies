@@ -213,8 +213,14 @@ function existingLRRequests_(sheet) {
       country: String(values[i][3] || ""),
       stateName: String(values[i][4] || ""),
       armyId: String(values[i][5] || ""),
+      armyName: String(values[i][6] || ""),
+      cityId: String(values[i][7] || ""),
+      cityName: String(values[i][8] || ""),
       hp: Number(values[i][9]),
       ratePerHp: Number(values[i][10]),
+      amount: Number(values[i][11]),
+      actorPlayerId: String(values[i][17] || ""),
+      turnNumber: Number(values[i][18]),
       populationBefore: Number(values[i][13]),
       populationAfter: Number(values[i][14]),
       humanResourceBefore: Number(values[i][15]),
@@ -303,6 +309,7 @@ function spendLRBatch_(operations, batchRequestId) {
     return entry.duplicate;
   });
   const logRows = [];
+  let appendedLogStartRow = 0;
 
   try {
     for (let i = 0; i < newOperations.length; i++) {
@@ -341,7 +348,7 @@ function spendLRBatch_(operations, batchRequestId) {
       results.push(result);
       logRows.push([
         op.requestId,
-        String(operations[0].requestId || ""),
+        String(batchRequestId || ""),
         op.kind,
         op.country,
         contextAfter.stateName,
@@ -365,8 +372,8 @@ function spendLRBatch_(operations, batchRequestId) {
     }
 
     if (logRows.length > 0) {
-      const startRow = log.getLastRow() + 1;
-      log.getRange(startRow, 1, logRows.length, LR_LOG_HEADERS.length).setValues(logRows);
+      appendedLogStartRow = log.getLastRow() + 1;
+      log.getRange(appendedLogStartRow, 1, logRows.length, LR_LOG_HEADERS.length).setValues(logRows);
     }
 
     SpreadsheetApp.flush();
@@ -375,6 +382,14 @@ function spendLRBatch_(operations, batchRequestId) {
     });
     return { operations: results, states };
   } catch (error) {
+    if (appendedLogStartRow > 0) {
+      try {
+        log.deleteRows(appendedLogStartRow, logRows.length);
+      } catch (rollbackError) {
+        // Preserve the original failure while making the rollback attempt explicit.
+        console.error(rollbackError);
+      }
+    }
     for (const [row, oldPopulation] of touched.entries()) {
       backend.getRange(row, 3).setValue(oldPopulation);
     }
