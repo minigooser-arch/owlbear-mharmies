@@ -622,7 +622,9 @@ describe("CommandProcessor", () => {
       recognizedStateId: "red-state",
       deFactoStateId: "red-state"
     };
-    const redArmy = current.armies["army-red"];\n    if (!redArmy) throw new Error("test fixture missing army-red");\n    current.armies["army-red"] = { ...redArmy, health: { hp: 30, maxHp: 50 } };
+    const redArmy = current.armies["army-red"];
+    if (!redArmy) throw new Error("test fixture missing army-red");
+    current.armies["army-red"] = { ...redArmy, health: { hp: 30, maxHp: 50 } };
 
     const positioned = new CommandProcessor(
       () => new Date("2026-09-30T08:00:00.000Z"),
