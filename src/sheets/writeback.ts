@@ -86,7 +86,7 @@ function countryForSide(scene: SceneState, sideId: string): { stateId: string | 
 function shipCountsByCountry(scene: SceneState): Map<string, number> {
   const counts = new Map<string, number>();
   for (const ship of Object.values(scene.ships ?? {})) {
-    if (ship.registered === false) continue;
+    if ((ship as { registered?: boolean }).registered === false) continue;
     const { country } = countryForSide(scene, ship.sideId);
     if (!country) continue;
     counts.set(country, (counts.get(country) ?? 0) + 1);
@@ -221,8 +221,10 @@ export function mergeSheetWritebackQueue(
     version: 1,
     pending: compactEvent({
       version: 1,
-      eventId: pending?.eventId ?? incoming.eventId,
-      createdAt: pending?.createdAt ?? incoming.createdAt,
+      // A merged queue is a new snapshot. A fresh eventId lets an in-flight
+      // writeback distinguish the old payload from newer state.
+      eventId: incoming.eventId,
+      createdAt: incoming.createdAt,
       armies: [...armies.values()],
       removedArmyIds: [...removed],
       states: [...states.values()]
