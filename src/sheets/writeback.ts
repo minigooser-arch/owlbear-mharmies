@@ -128,16 +128,6 @@ function shipCountsByCountry(scene: SceneState): Map<string, number> {
   return counts;
 }
 
-function sameArmyProjection(
-  previous: SheetArmySnapshot | undefined,
-  next: SheetArmySnapshot
-): boolean {
-  return previous?.stateId === next.stateId &&
-    previous?.country === next.country &&
-    previous?.hp === next.hp &&
-    previous?.maxHp === next.maxHp;
-}
-
 function compactEvent(event: SheetWritebackEvent): SheetWritebackEvent {
   return {
     version: 1,
@@ -154,118 +144,16 @@ function compactEvent(event: SheetWritebackEvent): SheetWritebackEvent {
 
 /**
  * Builds only the public projection requested for Sheets:
- * current army HP/maxHP and active ship counts by backend country.
- * Movement, position, AP, supply, routes and statuses are deliberately excluded.
+ * active ship counts by backend country and military influence operations.
+ * Army HP/maxHP stays private to Owlbear.
  */
 export function buildSheetWritebackEvent(
   previous: CommandState,
   next: CommandState,
   createdAt = new Date().toISOString()
 ): SheetWritebackEvent | undefined {
-  const armies = new Map<string, SheetArmySnapshot>();
-  const removedArmyIds = new Set<string>();
-  const affectedFactions = new Set<string>();
-  const affectedCountries = new Set<string>();
   const previousInfluenceRequestIds = new Set((previous.scene.militaryInfluenceAudit ?? []).map((entry) => entry.requestId));
   const militaryInfluenceOperations = (next.scene.militaryInfluenceAudit ?? []).filter((entry) => !previousInfluenceRequestIds.has(entry.requestId));
-
-  const identityForArmy = (scene: SceneState, army: CommandState["armies"][string]) => {
-    const identity = factionIdentityForSide(next.scene, army.sideId);
-    return {
-      ...identity,
-      hp: army.health.hp,
-      maxHp: army.health.maxHp
-    };
-  };
-
-  const armyIds = new Set([...Object.keys(previous.armies), ...Object.keys(next.armies)]);
-  for (const armyId of armyIds) {
-    const previousArmy = previous.armies[armyId];
-    const nextArmy = next.armies[armyId];
-
-    if (!nextArmy) {
-      if (previousArmy) {
-        removedArmyIds.add(armyId);
-        const oldIdentity = identityForArmy(previous.scene, previousArmy);
-        if (oldIdentity.factionId) affectedFactions.add(oldIdentity.factionId);
-        if (oldIdentity.country) affectedCountries.add(oldIdentity.country);
-      }
-      continue;
-    }
-
-    const identity = identityForArmy(next.scene, nextArmy);
-    const projection: SheetArmySnapshot = {
-      armyId,
-      stateId: identity.stateId,
-      country: identity.country,
-      hp: identity.hp,
-      maxHp: identity.maxHp
-    };
-
-    if (!previousArmy) {
-      armies.set(armyId, projection);
-      if (identity.factionId) affectedFactions.add(identity.factionId);
-      if (identity.country) affectedCountries.add(identity.country);
-      continue;
-    }
-
-    const previousIdentity = identityForArmy(previous.scene, previousArmy);
-    const previousProjection: SheetArmySnapshot = {
-      armyId,
-      stateId: previousIdentity.stateId,
-      country: previousIdentity.country,
-      hp: previousIdentity.hp,
-      maxHp: previousIdentity.maxHp
-    };
-
-    if (!sameArmyProjection(previousProjection, projection)) {
-      armies.set(armyId, projection);
-      if (identity.factionId) affectedFactions.add(identity.factionId);
-      if (previousIdentity.factionId) affectedFactions.add(previousIdentity.factionId);
-      if (identity.country) affectedCountries.add(identity.country);
-      if (previousIdentity.country) affectedCountries.add(previousIdentity.country);
-    }
-  }
-
-  const aggregate = () => {
-    const factions = new Map<string, SheetFactionSnapshot>();
-    const states = new Map<string, SheetStateArmySnapshot>();
-    for (const army of Object.values(next.armies)) {
-      const identity = factionIdentityForSide(next.scene, army.sideId);
-      if (!identity.factionId || !identity.factionName || !identity.country) continue;
-      const faction = factions.get(identity.factionId) ?? {
-        factionId: identity.factionId,
-        factionName: identity.factionName,
-        country: identity.country,
-        hp: 0,
-        maxHp: 0
-      };
-      faction.hp += army.health.hp;
-      faction.maxHp += army.health.maxHp;
-      factions.set(identity.factionId, faction);
-      const state = states.get(identity.country) ?? { country: identity.country, hp: 0, maxHp: 0 };
-      state.hp += army.health.hp;
-      state.maxHp += army.health.maxHp;
-      states.set(identity.country, state);
-    }
-    return { factions, states };
-  };
-  const nextAggregate = aggregate();
-  const factions = [...affectedFactions].flatMap((factionId) => {
-    const snapshot = nextAggregate.factions.get(factionId);
-    if (snapshot) return [snapshot];
-    const side = next.scene.sides.find((candidate) => candidate.id === factionId)
-      ?? previous.scene.sides.find((candidate) => candidate.id === factionId);
-    const country = side?.stateId
-      ? (next.scene.states.find((candidate) => candidate.id === side.stateId)
-        ?? previous.scene.states.find((candidate) => candidate.id === side.stateId))?.backendCountry?.trim()
-      : undefined;
-    return side && country ? [{ factionId, factionName: side.name, country, hp: 0, maxHp: 0 }] : [];
-  });
-  const stateArmies = [...affectedCountries].flatMap((country) => {
-    const snapshot = nextAggregate.states.get(country);
-    return snapshot ? [snapshot] : [{ country, hp: 0, maxHp: 0 }];
-  });
 
   const previousShips = shipCountsByCountry(previous.scene);
   const nextShips = shipCountsByCountry(next.scene);
