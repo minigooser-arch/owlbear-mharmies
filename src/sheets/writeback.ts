@@ -224,7 +224,7 @@ export function buildSheetWritebackEvent(
     const factions = new Map<string, SheetFactionSnapshot>();
     const states = new Map<string, SheetStateArmySnapshot>();
     for (const army of Object.values(next.armies)) {
-      const identity = factionIdentityForSide(scene, army.sideId);
+      const identity = factionIdentityForSide(next.scene, army.sideId);
       if (!identity.factionId || !identity.factionName || !identity.country) continue;
       const faction = factions.get(identity.factionId) ?? {
         factionId: identity.factionId,
