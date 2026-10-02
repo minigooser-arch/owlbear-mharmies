@@ -70,7 +70,7 @@ export class SheetWritebackClient {
   constructor(
     private readonly url: string,
     private readonly token: string,
-    private readonly fetcher: typeof fetch = fetch,
+    private readonly fetcher: typeof fetch = globalThis.fetch.bind(globalThis),
     private readonly timeoutMs = 8_000
   ) {}
 
@@ -159,3 +159,4 @@ export class SheetWritebackClient {
     );
   }
 }
+
