@@ -635,8 +635,7 @@ describe("CommandProcessor", () => {
     expect(first.status).toBe("ACCEPTED");
     if (first.status !== "ACCEPTED") return;
 
-    const retry = { ...request, expectedRevision: first.state.scene.revision };
-    const second = positioned.execute(context("PLAYER", "leader", first.state), retry);
+    const second = positioned.execute(context("PLAYER", "leader", first.state), request);
     expect(second.status).toBe("ACCEPTED");
     if (second.status !== "ACCEPTED") return;
     expect(second.state.armies["army-red"]?.health.hp).toBe(32);
