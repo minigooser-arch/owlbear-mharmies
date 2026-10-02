@@ -54,7 +54,7 @@ export function validateMilitaryInfluenceOperation(
 }
 
 
-export interface SheetMilitaryInfluenceOperation extends MilitaryInfluenceOperationInput {}
+export type SheetMilitaryInfluenceOperation = MilitaryInfluenceOperationInput;
 
 export interface SheetMilitaryInfluenceOperationResult {
   requestId: string;
