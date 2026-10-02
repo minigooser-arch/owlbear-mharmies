@@ -342,6 +342,12 @@ export function FleetPage({
             <select aria-label="Класс корабля на верфи" value={registrationClassId} onChange={(event) => setRegistrationClassId(event.target.value as ShipClassId)}>
               {CLASS_IDS.map((classId) => <option key={classId} value={classId}>{SHIP_CLASSES[classId].name}</option>)}
             </select>
+            <div className="ship-construction-requirements" aria-label="Требования к постройке выбранного класса на верфи">
+              <small><strong>Размер:</strong> минимум {selectedRegistrationClass.minLengthChunks}×{selectedRegistrationClass.minWidthChunks} чанка.</small>
+              <ul>
+                {selectedRegistrationClass.constructionRequirements.map((requirement) => <li key={requirement}>{requirement}</li>)}
+              </ul>
+            </div>
             <select aria-label="Курс корабля на верфи" value={registrationFacing} onChange={(event) => setRegistrationFacing(event.target.value as ShipFacing)}>
               {FACING_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
