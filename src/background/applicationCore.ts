@@ -409,10 +409,49 @@ export class ProductionEngine {
       items,
       positions: Object.fromEntries(frame.items.map((item) => [item.id, item.position]))
     };
-    const event = buildSheetWritebackSnapshotEvent(state, this.wallClock().toISOString());
+    let hydratedState = state;
+    try {
+      hydratedState = await this.hydrateMilitaryInfluenceFromSheet(state);
+    } catch (error) {
+      this.reportOperationalError(error, "sheet-influence-bootstrap");
+    }
+    const event = buildSheetWritebackSnapshotEvent(hydratedState, this.wallClock().toISOString());
     if (!event) return;
     const writebackQueue = SheetWritebackClient.mergeQueue(metadata, event);
     await this.port.patchSceneMetadata({ [METADATA_KEYS.sheetWritebackQueue]: writebackQueue });
+  }
+
+  private async hydrateMilitaryInfluenceFromSheet(state: CommandState): Promise<CommandState> {
+    const token = readSheetWritebackToken();
+    const url = state.scene.settings.sheetWritebackUrl?.trim();
+    if (!token || !url) return state;
+    const inputs = state.scene.sides.flatMap((side) => {
+      const country = side.stateId
+        ? state.scene.states.find((candidate) => candidate.id === side.stateId)?.backendCountry?.trim()
+        : undefined;
+      return country
+        ? [{ factionId: side.id, factionName: side.name, country }]
+        : [];
+    });
+    if (inputs.length === 0) return state;
+    const snapshots = await new SheetWritebackClient(url, token).getFactionMilitaryInfluence(inputs);
+    const balances = new Map(snapshots.map((snapshot) => [snapshot.factionId, snapshot.militaryInfluence]));
+    const sides = state.scene.sides.map((side) => {
+      const balance = balances.get(side.id);
+      return balance === undefined || balance === side.militaryInfluence
+        ? side
+        : { ...side, militaryInfluence: balance };
+    });
+    if (sides.every((side, index) => side === state.scene.sides[index])) return state;
+    const expectedRevision = state.scene.revision;
+    const nextScene = { ...state.scene, sides, revision: expectedRevision + 1 };
+    const canCommit = this.captureCoordinatorGuard();
+    await this.repository.writeScene(
+      nextScene,
+      expectedRevision,
+      (current) => canCommit() && current.revision === expectedRevision
+    );
+    return { ...state, scene: nextScene };
   }
 
   async normalizeCityBuildingLocations(): Promise<void> {
