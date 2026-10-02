@@ -21,6 +21,20 @@ export interface SheetStateWriteback {
   ships: number;
 }
 
+export interface SheetFactionSnapshot {
+  factionId: string;
+  factionName: string;
+  country: string;
+  hp: number;
+  maxHp: number;
+}
+
+export interface SheetStateArmySnapshot {
+  country: string;
+  hp: number;
+  maxHp: number;
+}
+
 export interface SheetWritebackEvent {
   version: 1;
   eventId: string;
@@ -28,6 +42,8 @@ export interface SheetWritebackEvent {
   armies: SheetArmySnapshot[];
   removedArmyIds: string[];
   states: SheetStateWriteback[];
+  factions?: SheetFactionSnapshot[];
+  stateArmies?: SheetStateArmySnapshot[];
 }
 
 export interface SheetWritebackQueue {
@@ -75,12 +91,26 @@ function randomId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-function countryForSide(scene: SceneState, sideId: string): { stateId: string | null; country: string | null } {
+function factionIdentityForSide(scene: SceneState, sideId: string): {
+  stateId: string | null;
+  country: string | null;
+  factionId: string | null;
+  factionName: string | null;
+} {
   const side = scene.sides.find((candidate) => candidate.id === sideId);
   const stateId = side?.stateId ?? null;
-  if (!stateId) return { stateId: null, country: null };
-  const state = scene.states.find((candidate) => candidate.id === stateId);
-  return { stateId, country: state?.backendCountry?.trim() || null };
+  const state = stateId ? scene.states.find((candidate) => candidate.id === stateId) : undefined;
+  return {
+    stateId,
+    country: state?.backendCountry?.trim() || null,
+    factionId: side?.id ?? null,
+    factionName: side?.name?.trim() || null
+  };
+}
+
+function countryForSide(scene: SceneState, sideId: string): { stateId: string | null; country: string | null } {
+  const identity = factionIdentityForSide(scene, sideId);
+  return { stateId: identity.stateId, country: identity.country };
 }
 
 function shipCountsByCountry(scene: SceneState): Map<string, number> {
@@ -111,7 +141,9 @@ function compactEvent(event: SheetWritebackEvent): SheetWritebackEvent {
     createdAt: event.createdAt,
     armies: [...event.armies].sort((a, b) => a.armyId.localeCompare(b.armyId)),
     removedArmyIds: [...new Set(event.removedArmyIds)].sort(),
-    states: [...event.states].sort((a, b) => a.country.localeCompare(b.country))
+    states: [...event.states].sort((a, b) => a.country.localeCompare(b.country)),
+    factions: [...(event.factions ?? [])].sort((a, b) => a.factionId.localeCompare(b.factionId)),
+    stateArmies: [...(event.stateArmies ?? [])].sort((a, b) => a.country.localeCompare(b.country))
   };
 }
 
@@ -127,6 +159,17 @@ export function buildSheetWritebackEvent(
 ): SheetWritebackEvent | undefined {
   const armies = new Map<string, SheetArmySnapshot>();
   const removedArmyIds = new Set<string>();
+  const affectedFactions = new Set<string>();
+  const affectedCountries = new Set<string>();
+
+  const identityForArmy = (scene: SceneState, army: CommandState["armies"][string]) => {
+    const identity = factionIdentityForSide(scene, army.sideId);
+    return {
+      ...identity,
+      hp: army.health.hp,
+      maxHp: army.health.maxHp
+    };
+  };
 
   const armyIds = new Set([...Object.keys(previous.armies), ...Object.keys(next.armies)]);
   for (const armyId of armyIds) {
@@ -134,37 +177,88 @@ export function buildSheetWritebackEvent(
     const nextArmy = next.armies[armyId];
 
     if (!nextArmy) {
-      if (previousArmy) removedArmyIds.add(armyId);
+      if (previousArmy) {
+        removedArmyIds.add(armyId);
+        const oldIdentity = identityForArmy(previous.scene, previousArmy);
+        if (oldIdentity.factionId) affectedFactions.add(oldIdentity.factionId);
+        if (oldIdentity.country) affectedCountries.add(oldIdentity.country);
+      }
       continue;
     }
 
-    const identity = countryForSide(next.scene, nextArmy.sideId);
+    const identity = identityForArmy(next.scene, nextArmy);
     const projection: SheetArmySnapshot = {
       armyId,
       stateId: identity.stateId,
       country: identity.country,
-      hp: nextArmy.health.hp,
-      maxHp: nextArmy.health.maxHp
+      hp: identity.hp,
+      maxHp: identity.maxHp
     };
 
     if (!previousArmy) {
       armies.set(armyId, projection);
+      if (identity.factionId) affectedFactions.add(identity.factionId);
+      if (identity.country) affectedCountries.add(identity.country);
       continue;
     }
 
-    const previousIdentity = countryForSide(previous.scene, previousArmy.sideId);
+    const previousIdentity = identityForArmy(previous.scene, previousArmy);
     const previousProjection: SheetArmySnapshot = {
       armyId,
       stateId: previousIdentity.stateId,
       country: previousIdentity.country,
-      hp: previousArmy.health.hp,
-      maxHp: previousArmy.health.maxHp
+      hp: previousIdentity.hp,
+      maxHp: previousIdentity.maxHp
     };
 
     if (!sameArmyProjection(previousProjection, projection)) {
       armies.set(armyId, projection);
+      if (identity.factionId) affectedFactions.add(identity.factionId);
+      if (previousIdentity.factionId) affectedFactions.add(previousIdentity.factionId);
+      if (identity.country) affectedCountries.add(identity.country);
+      if (previousIdentity.country) affectedCountries.add(previousIdentity.country);
     }
   }
+
+  const aggregate = (scene: SceneState) => {
+    const factions = new Map<string, SheetFactionSnapshot>();
+    const states = new Map<string, SheetStateArmySnapshot>();
+    for (const army of Object.values(next.armies)) {
+      const identity = factionIdentityForSide(scene, army.sideId);
+      if (!identity.factionId || !identity.factionName || !identity.country) continue;
+      const faction = factions.get(identity.factionId) ?? {
+        factionId: identity.factionId,
+        factionName: identity.factionName,
+        country: identity.country,
+        hp: 0,
+        maxHp: 0
+      };
+      faction.hp += army.health.hp;
+      faction.maxHp += army.health.maxHp;
+      factions.set(identity.factionId, faction);
+      const state = states.get(identity.country) ?? { country: identity.country, hp: 0, maxHp: 0 };
+      state.hp += army.health.hp;
+      state.maxHp += army.health.maxHp;
+      states.set(identity.country, state);
+    }
+    return { factions, states };
+  };
+  const nextAggregate = aggregate(next.scene);
+  const factions = [...affectedFactions].flatMap((factionId) => {
+    const snapshot = nextAggregate.factions.get(factionId);
+    if (snapshot) return [snapshot];
+    const side = next.scene.sides.find((candidate) => candidate.id === factionId)
+      ?? previous.scene.sides.find((candidate) => candidate.id === factionId);
+    const country = side?.stateId
+      ? (next.scene.states.find((candidate) => candidate.id === side.stateId)
+        ?? previous.scene.states.find((candidate) => candidate.id === side.stateId))?.backendCountry?.trim()
+      : undefined;
+    return side && country ? [{ factionId, factionName: side.name, country, hp: 0, maxHp: 0 }] : [];
+  });
+  const stateArmies = [...affectedCountries].flatMap((country) => {
+    const snapshot = nextAggregate.states.get(country);
+    return snapshot ? [snapshot] : [{ country, hp: 0, maxHp: 0 }];
+  });
 
   const previousShips = shipCountsByCountry(previous.scene);
   const nextShips = shipCountsByCountry(next.scene);
@@ -176,7 +270,7 @@ export function buildSheetWritebackEvent(
     if (previousCount !== nextCount) states.push({ country, ships: nextCount });
   }
 
-  if (armies.size === 0 && removedArmyIds.size === 0 && states.length === 0) return undefined;
+  if (armies.size === 0 && removedArmyIds.size === 0 && states.length === 0 && factions.length === 0 && stateArmies.length === 0) return undefined;
   for (const armyId of removedArmyIds) armies.delete(armyId);
 
   return compactEvent({
@@ -185,7 +279,9 @@ export function buildSheetWritebackEvent(
     createdAt,
     armies: [...armies.values()],
     removedArmyIds: [...removedArmyIds],
-    states
+    states,
+    factions,
+    stateArmies
   });
 }
 
@@ -202,10 +298,14 @@ export function mergeSheetWritebackQueue(
   const armies = new Map<string, SheetArmySnapshot>();
   const removed = new Set<string>();
   const states = new Map<string, SheetStateWriteback>();
+  const factions = new Map<string, SheetFactionSnapshot>();
+  const stateArmies = new Map<string, SheetStateArmySnapshot>();
 
   for (const army of pending?.armies ?? []) armies.set(army.armyId, army);
   for (const armyId of pending?.removedArmyIds ?? []) removed.add(armyId);
   for (const state of pending?.states ?? []) states.set(state.country, state);
+  for (const faction of pending?.factions ?? []) factions.set(faction.factionId, faction);
+  for (const state of pending?.stateArmies ?? []) stateArmies.set(state.country, state);
 
   for (const army of incoming.armies) {
     armies.set(army.armyId, army);
@@ -216,6 +316,8 @@ export function mergeSheetWritebackQueue(
     removed.add(armyId);
   }
   for (const state of incoming.states) states.set(state.country, state);
+  for (const faction of incoming.factions ?? []) factions.set(faction.factionId, faction);
+  for (const state of incoming.stateArmies ?? []) stateArmies.set(state.country, state);
 
   return {
     version: 1,
@@ -227,7 +329,9 @@ export function mergeSheetWritebackQueue(
       createdAt: incoming.createdAt,
       armies: [...armies.values()],
       removedArmyIds: [...removed],
-      states: [...states.values()]
+      states: [...states.values()],
+      factions: [...factions.values()],
+      stateArmies: [...stateArmies.values()]
     })
   };
 }
