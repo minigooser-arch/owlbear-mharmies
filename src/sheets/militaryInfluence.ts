@@ -52,3 +52,14 @@ export function validateMilitaryInfluenceOperation(
   if (balanceAfter < 0) throw new Error("INSUFFICIENT_MILITARY_INFLUENCE");
   return { ...input, delta, balanceAfter };
 }
+
+
+export interface SheetMilitaryInfluenceOperation extends MilitaryInfluenceOperationInput {}
+
+export interface SheetMilitaryInfluenceOperationResult {
+  requestId: string;
+  factionId: string;
+  balanceBefore: number;
+  balanceAfter: number;
+  delta: number;
+}
