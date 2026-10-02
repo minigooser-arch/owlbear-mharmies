@@ -33,7 +33,7 @@ function makeState(overrides: Partial<CommandState> = {}): CommandState {
     }]
   } as unknown as CommandState["scene"];
 
-  const sceneOverride = overrides.scene ?? {};
+  const sceneOverride = (overrides.scene ?? {}) as Partial<CommandState["scene"]>;
   return {
     scene: {
       ...scene,
