@@ -34,6 +34,8 @@ function makeState(overrides: Partial<CommandState> = {}): CommandState {
   } as unknown as CommandState["scene"];
 
   const sceneOverride = (overrides.scene ?? {}) as Partial<CommandState["scene"]>;
+  const rest = { ...overrides };
+  delete rest.scene;
   return {
     scene: {
       ...scene,
@@ -47,7 +49,7 @@ function makeState(overrides: Partial<CommandState> = {}): CommandState {
     barriers: {},
     items: {},
     positions: {},
-    ...overrides
+    ...rest
   };
 }
 
