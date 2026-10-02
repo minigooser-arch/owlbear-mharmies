@@ -606,131 +606,14 @@ function adjustMilitaryInfluenceBatch_(operations) {
 
 function syncState_(event) {
   if (!event || typeof event !== "object") throw new Error("INVALID_SYNC_EVENT");
-  const states = Array.isArray(event.states) ? event.states : [];
-  const armies = Array.isArray(event.armies) ? event.armies : [];
-  const removed = Array.isArray(event.removedArmyIds) ? event.removedArmyIds.map(String) : [];
-
-  const backend = backendSheet_();
+  // Individual army state remains private to Owlbear. Aggregate faction/state
+  // HP is public and is written to the existing ЖИЗНИ columns.
   const index = backendIndex_();
-
-  // Full validation before the first sheet mutation.
-  for (const state of states) {
-    const country = String(state.country || "").trim();
-    const ships = Number(state.ships);
-    if (!country || !index.has(country) || !Number.isInteger(ships) || ships < 0) {
-      throw new Error("INVALID_SHIP_SYNC");
-    }
-  }
-
-  const armyIds = new Set();
-  for (const army of armies) {
-    const armyId = String(army.armyId || "").trim();
-    const stateId = army.stateId == null ? "" : String(army.stateId);
-    const country = army.country == null ? "" : String(army.country);
-    const hp = Number(army.hp);
-    const maxHp = Number(army.maxHp);
-    if (!armyId || armyIds.has(armyId) || !Number.isInteger(hp) || hp < 0 ||
-        !Number.isInteger(maxHp) || maxHp < 0 || hp > maxHp) {
-      throw new Error("INVALID_ARMY_SYNC");
-    }
-    armyIds.add(armyId);
-    if (country && !index.has(country)) throw new Error("COUNTRY_NOT_FOUND:" + country);
-  }
-  if (armies.some(function(army) { return removed.indexOf(String(army.armyId)) >= 0; })) {
-    throw new Error("ARMY_SYNC_CONFLICT");
-  }
-
-  const spreadsheet = openSpreadsheet_();
-  const existingArmySheet = spreadsheet.getSheetByName(WRITEBACK_CONFIG.ARMIES_SHEET);
-  let sheetWasCreated = false;
-  let sheet;
-  let beforeArmyValues = [];
-  let beforeArmyLastRow = 1;
-
-  if (existingArmySheet) {
-    const header = existingArmySheet.getRange(1, 1, 1, ARMY_HEADERS.length).getValues()[0];
-    if (header.join("\u001f") !== ARMY_HEADERS.join("\u001f")) {
-      throw new Error("ARMIES_SHEET_HEADER_INVALID");
-    }
-    sheet = existingArmySheet;
-    beforeArmyLastRow = sheet.getLastRow();
-    if (beforeArmyLastRow >= 2) {
-      beforeArmyValues = sheet.getRange(2, 1, beforeArmyLastRow - 1, ARMY_HEADERS.length).getValues();
-    }
-  } else {
-    sheet = spreadsheet.insertSheet(WRITEBACK_CONFIG.ARMIES_SHEET);
-    sheet.getRange(1, 1, 1, ARMY_HEADERS.length).setValues([ARMY_HEADERS]);
-    sheetWasCreated = true;
-  }
-
-  const oldShipValues = new Map();
-  for (const state of states) {
-    const rowInfo = index.get(String(state.country).trim());
-    oldShipValues.set(rowInfo.row, backend.getRange(rowInfo.row, 8).getValue());
-  }
-
-  try {
-    for (const state of states) {
-      const rowInfo = index.get(String(state.country).trim());
-      backend.getRange(rowInfo.row, 8).setValue(Number(state.ships));
-    }
-
-    const lastRow = sheet.getLastRow();
-    const values = lastRow >= 2 ? sheet.getRange(2, 1, lastRow - 1, ARMY_HEADERS.length).getValues() : [];
-    const rowByArmy = new Map();
-    for (let i = 0; i < values.length; i++) {
-      const id = String(values[i][0] || "").trim();
-      if (id) rowByArmy.set(id, i + 2);
-    }
-
-    for (const army of armies) {
-      const row = rowByArmy.get(String(army.armyId));
-      const valuesToWrite = [[
-        String(army.armyId),
-        army.stateId == null ? "" : String(army.stateId),
-        army.country == null ? "" : String(army.country),
-        Number(army.hp),
-        Number(army.maxHp)
-      ]];
-      if (row) {
-        sheet.getRange(row, 1, 1, ARMY_HEADERS.length).setValues(valuesToWrite);
-      } else {
-        sheet.getRange(sheet.getLastRow() + 1, 1, 1, ARMY_HEADERS.length).setValues(valuesToWrite);
-      }
-    }
-
-    const rowsToDelete = [];
-    for (const armyId of removed) {
-      const row = rowByArmy.get(armyId);
-      if (row) rowsToDelete.push(row);
-    }
-    rowsToDelete.sort(function(a, b) { return b - a; });
-    for (const row of rowsToDelete) sheet.deleteRow(row);
-
-    applyFactionAndStateArmy_(event, index);
-    SpreadsheetApp.flush();
-  } catch (error) {
-    for (const [row, oldValue] of oldShipValues.entries()) {
-      backend.getRange(row, 8).setValue(oldValue);
-    }
-
-    if (sheetWasCreated) {
-      spreadsheet.deleteSheet(sheet);
-    } else {
-      const currentLastRow = sheet.getLastRow();
-      if (currentLastRow >= 2) {
-        sheet.getRange(2, 1, currentLastRow - 1, ARMY_HEADERS.length).clearContent();
-      }
-      if (beforeArmyValues.length > 0) {
-        sheet.getRange(2, 1, beforeArmyValues.length, ARMY_HEADERS.length).setValues(beforeArmyValues);
-      }
-      // Deleted rows do not need physical removal for correctness; clearContent
-      // above restores the exact pre-operation data projection.
-      void beforeArmyLastRow;
-    }
-    SpreadsheetApp.flush();
-    throw error;
-  }
+  applyFactionAndStateArmy_(event, index);
+  const operations = Array.isArray(event.militaryInfluenceOperations)
+    ? event.militaryInfluenceOperations
+    : [];
+  if (operations.length > 0) adjustMilitaryInfluenceBatch_(operations);
 }
 
 function json_(value) {
@@ -743,3 +626,4 @@ function errorCode_(error) {
   if (error && error.message) return String(error.message).slice(0, 200);
   return String(error).slice(0, 200);
 }
+
