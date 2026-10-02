@@ -33,8 +33,16 @@ function makeState(overrides: Partial<CommandState> = {}): CommandState {
     }]
   } as unknown as CommandState["scene"];
 
+  const sceneOverride = overrides.scene ?? {};
   return {
-    scene: { ...scene, ...(overrides.scene ?? {}) } as CommandState["scene"],
+    scene: {
+      ...scene,
+      ...sceneOverride,
+      sides: sceneOverride.sides ?? scene.sides,
+      states: sceneOverride.states ?? scene.states,
+      demographics: sceneOverride.demographics ?? scene.demographics,
+      settings: sceneOverride.settings ?? scene.settings
+    } as CommandState["scene"],
     armies: {},
     barriers: {},
     items: {},
