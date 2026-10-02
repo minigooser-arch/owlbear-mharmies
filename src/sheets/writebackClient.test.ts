@@ -60,4 +60,22 @@ describe("sheet writeback transport", () => {
       Object.defineProperty(globalThis, "fetch", { configurable: true, value: originalFetch });
     }
   });
+
+  it("reads current faction military influence for startup hydration", async () => {
+    const fetcher = vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body));
+      expect(body.action).toBe("GET_FACTIONS");
+      expect(body.factions).toEqual([{ factionId: "f1", factionName: "A", country: "STATE_A" }]);
+      return {
+        ok: true,
+        json: async () => ({ ok: true, result: {
+          factions: [{ factionId: "f1", factionName: "A", country: "STATE_A", militaryInfluence: 7 }]
+        } })
+      } as Response;
+    });
+    const client = new SheetWritebackClient("https://example.test", "secret", fetcher as typeof fetch);
+    await expect(client.getFactionMilitaryInfluence([{ factionId: "f1", factionName: "A", country: "STATE_A" }]))
+      .resolves.toEqual([{ factionId: "f1", factionName: "A", country: "STATE_A", militaryInfluence: 7 }]);
+  });
 });
+
