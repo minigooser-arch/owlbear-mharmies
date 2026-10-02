@@ -102,18 +102,75 @@ function compactEvent(event: SheetWritebackEvent): SheetWritebackEvent {
     createdAt: event.createdAt,
     armies: [],
     removedArmyIds: [],
-    // Army and ship state are private to Owlbear and must never leave the scene.
+    // Individual army and ship state are private to Owlbear and must never
+    // leave the scene. Aggregate HP is intentionally retained for the public
+    // state and faction rows.
     states: [],
-    factions: [],
-    stateArmies: [],
+    factions: [...(event.factions ?? [])].sort((a, b) => a.factionId.localeCompare(b.factionId)),
+    stateArmies: [...(event.stateArmies ?? [])].sort((a, b) => a.country.localeCompare(b.country)),
     militaryInfluenceOperations: [...(event.militaryInfluenceOperations ?? [])].sort((a, b) => a.requestId.localeCompare(b.requestId))
   };
 }
 
+interface HpAggregate {
+  hp: number;
+  maxHp: number;
+}
+
+function addArmyHp(aggregate: HpAggregate, health: { hp: number; maxHp: number }): void {
+  aggregate.hp += health.hp;
+  aggregate.maxHp += health.maxHp;
+}
+
+function factionHpSnapshots(state: CommandState["scene"], armies: CommandState["armies"]): SheetFactionSnapshot[] {
+  const aggregates = new Map<string, HpAggregate>();
+  for (const army of Object.values(armies)) {
+    const aggregate = aggregates.get(army.sideId) ?? { hp: 0, maxHp: 0 };
+    addArmyHp(aggregate, army.health);
+    aggregates.set(army.sideId, aggregate);
+  }
+  return state.sides.flatMap((side) => {
+    const country = state.states.find((candidate) => candidate.id === side.stateId)?.backendCountry?.trim();
+    if (!country) return [];
+    const aggregate = aggregates.get(side.id) ?? { hp: 0, maxHp: 0 };
+    return [{ factionId: side.id, factionName: side.name, country, ...aggregate }];
+  });
+}
+
+function stateHpSnapshots(state: CommandState["scene"], armies: CommandState["armies"]): SheetStateArmySnapshot[] {
+  const sideStateIds = new Map(state.sides.map((side) => [side.id, side.stateId]));
+  const aggregates = new Map<string, HpAggregate>();
+  for (const army of Object.values(armies)) {
+    const stateId = sideStateIds.get(army.sideId);
+    if (!stateId) continue;
+    const aggregate = aggregates.get(stateId) ?? { hp: 0, maxHp: 0 };
+    addArmyHp(aggregate, army.health);
+    aggregates.set(stateId, aggregate);
+  }
+  return state.states.flatMap((countryState) => {
+    const country = countryState.backendCountry?.trim();
+    if (!country) return [];
+    const aggregate = aggregates.get(countryState.id) ?? { hp: 0, maxHp: 0 };
+    return [{ country, ...aggregate }];
+  });
+}
+
+function changedAggregates<T extends { hp: number; maxHp: number }>(
+  previous: readonly T[],
+  next: readonly T[],
+  key: (value: T) => string
+): T[] {
+  const previousByKey = new Map(previous.map((value) => [key(value), value]));
+  return next.filter((value) => {
+    const prior = previousByKey.get(key(value));
+    return !prior || prior.hp !== value.hp || prior.maxHp !== value.maxHp;
+  });
+}
+
 /**
- * Builds the only projection requested for Sheets: military influence
- * operations. Army HP, ship counts and all other unit state stay private to
- * Owlbear.
+ * Builds the Sheets projection: aggregate HP for each mapped faction/state
+ * and military influence operations. Individual army HP, army identifiers,
+ * ship counts and all other unit state stay private to Owlbear.
  */
 export function buildSheetWritebackEvent(
   previous: CommandState,
@@ -122,8 +179,14 @@ export function buildSheetWritebackEvent(
 ): SheetWritebackEvent | undefined {
   const previousInfluenceRequestIds = new Set((previous.scene.militaryInfluenceAudit ?? []).map((entry) => entry.requestId));
   const militaryInfluenceOperations = (next.scene.militaryInfluenceAudit ?? []).filter((entry) => !previousInfluenceRequestIds.has(entry.requestId));
+  const previousFactions = factionHpSnapshots(previous.scene, previous.armies);
+  const nextFactions = factionHpSnapshots(next.scene, next.armies);
+  const previousStates = stateHpSnapshots(previous.scene, previous.armies);
+  const nextStates = stateHpSnapshots(next.scene, next.armies);
+  const factions = changedAggregates(previousFactions, nextFactions, (value) => value.factionId);
+  const stateArmies = changedAggregates(previousStates, nextStates, (value) => value.country);
 
-  if (militaryInfluenceOperations.length === 0) return undefined;
+  if (militaryInfluenceOperations.length === 0 && factions.length === 0 && stateArmies.length === 0) return undefined;
 
   return compactEvent({
     version: 1,
@@ -132,8 +195,8 @@ export function buildSheetWritebackEvent(
     armies: [],
     removedArmyIds: [],
     states: [],
-    factions: [],
-    stateArmies: [],
+    factions,
+    stateArmies,
     militaryInfluenceOperations
   });
 }
@@ -149,10 +212,16 @@ export function mergeSheetWritebackQueue(
 ): SheetWritebackQueue {
   const pending = existing?.pending;
   const militaryInfluenceOperations = new Map<string, SheetMilitaryInfluenceOperation>();
+  const factions = new Map<string, SheetFactionSnapshot>();
+  const stateArmies = new Map<string, SheetStateArmySnapshot>();
 
   for (const operation of pending?.militaryInfluenceOperations ?? []) militaryInfluenceOperations.set(operation.requestId, operation);
+  for (const faction of pending?.factions ?? []) factions.set(faction.factionId, faction);
+  for (const state of pending?.stateArmies ?? []) stateArmies.set(state.country, state);
 
   for (const operation of incoming.militaryInfluenceOperations ?? []) militaryInfluenceOperations.set(operation.requestId, operation);
+  for (const faction of incoming.factions ?? []) factions.set(faction.factionId, faction);
+  for (const state of incoming.stateArmies ?? []) stateArmies.set(state.country, state);
 
   return {
     version: 1,
@@ -165,8 +234,8 @@ export function mergeSheetWritebackQueue(
       armies: [],
       removedArmyIds: [],
       states: [],
-      factions: [],
-      stateArmies: [],
+      factions: [...factions.values()],
+      stateArmies: [...stateArmies.values()],
       militaryInfluenceOperations: [...militaryInfluenceOperations.values()]
     })
   };
@@ -188,8 +257,8 @@ export function readSheetWritebackQueue(metadata: Record<string, unknown>, key: 
       armies: [],
       removedArmyIds: [],
       states: [],
-      factions: [],
-      stateArmies: [],
+      factions: Array.isArray(pending.factions) ? pending.factions as SheetFactionSnapshot[] : [],
+      stateArmies: Array.isArray(pending.stateArmies) ? pending.stateArmies as SheetStateArmySnapshot[] : [],
       militaryInfluenceOperations: Array.isArray(pending.militaryInfluenceOperations)
         ? pending.militaryInfluenceOperations as SheetMilitaryInfluenceOperation[]
         : []
