@@ -1543,6 +1543,17 @@ export class ProductionEngine {
 
   private async flushSheetWriteback(): Promise<void> {
     if (Date.now() < this.sheetWritebackRetryAt) return;
+    let metadata: Record<string, unknown>;
+    try {
+      metadata = await this.port.getSceneMetadata();
+    } catch (error) {
+      this.scheduleSheetWritebackRetry(5_000);
+      this.reportOperationalError(error, "sheet-writeback-read-metadata");
+      return;
+    }
+    const durable = SheetWritebackClient.readQueue(metadata);
+    if (!durable && !this.sheetWritebackFallback) return;
+
     let scene: SceneState;
     try {
       scene = await this.repository.readScene();
@@ -1555,14 +1566,6 @@ export class ProductionEngine {
     const token = readSheetWritebackToken();
     if (!token) {
       this.scheduleSheetWritebackRetry(30_000);
-      return;
-    }
-    let metadata: Record<string, unknown>;
-    try {
-      metadata = await this.port.getSceneMetadata();
-    } catch (error) {
-      this.scheduleSheetWritebackRetry(5_000);
-      this.reportOperationalError(error, "sheet-writeback-read-metadata");
       return;
     }
     const durable = SheetWritebackClient.readQueue(metadata);
