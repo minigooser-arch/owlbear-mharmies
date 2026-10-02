@@ -106,7 +106,7 @@ export const DEFAULT_SETTINGS: SceneSettings = {
   populationTimeZone: "Europe/Moscow",
   populationSheetCsvUrl: DEFAULT_POPULATION_SHEET_CSV_URL,
   conscriptionSheetCsvUrl: DEFAULT_CONSCRIPTION_SHEET_CSV_URL,
-  sheetWritebackUrl: ""
+  sheetWritebackUrl: "https://script.google.com/macros/s/AKfycbyWbwzHbtj0IJL96lKu3pMPj0dQD4uTy6vw3iB_aOtLsssX3RT47OcTPrFfgNmYkAmKWQ/exec"
 };
 
 export const DEFAULT_CONSCRIPTION_LAWS: ConscriptionLaw[] = [
