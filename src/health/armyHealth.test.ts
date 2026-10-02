@@ -22,4 +22,13 @@ describe("army healing limits", () => {
     expect(applyPendingTurnHealing(pending).healing?.pending).toBe(false);
     expect(applyPendingTurnHealing({ ...pending, supply: { supplied: false, checkedOnTurn: 2 } }).health.hp).toBe(30);
   });
+
+  it("applies the requested amount at the next turn start", () => {
+    const damaged = { ...createFormationArmy({ armyId: "a", sideId: "s", status: "READY", maxUnits: 10, turnNumber: 2, experience: 0 }), formation: { active: false, cityId: null, hpAddedThisTurn: 0, checkedOnTurn: 2 }, health: { hp: 30, maxHp: 40 } };
+    const pending = requestArmyHealing(damaged, 2, "leader", 2);
+    expect(pending?.health.hp).toBe(30);
+    expect(pending?.healing?.pendingHp).toBe(2);
+    if (!pending) throw new Error("healing request was rejected");
+    expect(applyPendingTurnHealing(pending).health.hp).toBe(32);
+  });
 });
