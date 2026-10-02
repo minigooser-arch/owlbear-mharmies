@@ -895,6 +895,7 @@ export function normalizeArmyState(raw: unknown): ValidationResult<ArmyState> {
       const healing = isRecord(raw.healing) ? raw.healing : {};
       return {
         pending: typeof healing.pending === "boolean" ? healing.pending : false,
+        ...(nonNegativeInteger(healing.pendingHp) && healing.pendingHp > 0 ? { pendingHp: healing.pendingHp } : {}),
         requestedOnTurn: healing.requestedOnTurn === null || (Number.isInteger(healing.requestedOnTurn) && nonNegative(healing.requestedOnTurn))
           ? healing.requestedOnTurn as number | null
           : null,
