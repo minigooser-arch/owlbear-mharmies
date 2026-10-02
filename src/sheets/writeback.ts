@@ -202,6 +202,31 @@ export function buildSheetWritebackEvent(
 }
 
 /**
+ * Builds a complete aggregate snapshot for coordinator startup. This repairs
+ * stale sheet cells without exporting any individual army or ship state.
+ */
+export function buildSheetWritebackSnapshotEvent(
+  next: CommandState,
+  createdAt = new Date().toISOString()
+): SheetWritebackEvent | undefined {
+  const factions = factionHpSnapshots(next.scene, next.armies);
+  const stateArmies = stateHpSnapshots(next.scene, next.armies);
+  if (factions.length === 0 && stateArmies.length === 0) return undefined;
+
+  return compactEvent({
+    version: 1,
+    eventId: randomId("sheet-sync-snapshot"),
+    createdAt,
+    armies: [],
+    removedArmyIds: [],
+    states: [],
+    factions,
+    stateArmies,
+    militaryInfluenceOperations: []
+  });
+}
+
+/**
  * Merges a new projection into the single durable pending snapshot.
  * This is intentionally not a historical queue: only the latest value for
  * each army/country survives, which keeps scene metadata small.
