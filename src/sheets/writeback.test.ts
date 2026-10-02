@@ -175,6 +175,6 @@ describe("sheet writeback projection", () => {
       } as never
     });
     expect(pendingLRTransactions(previous, next)).toHaveLength(1);
-    expect(pendingLRTransactions(previous, next)[0]!.country).toBe("STATE_A");
+    const pending = pendingLRTransactions(previous, next);\n    expect(pending[0]?.country).toBe("STATE_A");
   });
 });
