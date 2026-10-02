@@ -47,6 +47,10 @@ function doPost(e) {
         return json_({ ok: true, result: withScriptLock_(function() {
           return { states: getStateSnapshots_(body.countries) };
         }) });
+      case "GET_FACTIONS":
+        return json_({ ok: true, result: withScriptLock_(function() {
+          return { factions: getFactionInfluenceSnapshots_(body.factions) };
+        }) });
       case "SPEND_LR_BATCH":
         return json_({ ok: true, result: withScriptLock_(function() {
           return spendLRBatch_(body.operations, body.batchRequestId);
@@ -614,6 +618,28 @@ function syncState_(event) {
     ? event.militaryInfluenceOperations
     : [];
   if (operations.length > 0) adjustMilitaryInfluenceBatch_(operations);
+}
+
+function getFactionInfluenceSnapshots_(factions) {
+  if (!Array.isArray(factions)) throw new Error("INVALID_FACTIONS");
+  const sheet = factionSheet_();
+  const rows = factionRows_();
+  const seen = new Set();
+  return factions.map(function(raw) {
+    const factionId = String(raw && raw.factionId || "").trim();
+    const factionName = String(raw && raw.factionName || "").trim();
+    const country = String(raw && raw.country || "").trim();
+    if (!factionId || !factionName || !country || seen.has(factionId)) {
+      throw new Error("INVALID_FACTION_IDENTITY");
+    }
+    const target = resolveFactionTarget_({ factionId, factionName, country }, rows);
+    const militaryInfluence = Number(sheet.getRange(target.row, 35).getValue());
+    if (!Number.isInteger(militaryInfluence) || militaryInfluence < 0) {
+      throw new Error("MILITARY_INFLUENCE_BALANCE_INVALID:" + factionId);
+    }
+    seen.add(factionId);
+    return { factionId, factionName, country, militaryInfluence };
+  });
 }
 
 function json_(value) {
