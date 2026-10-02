@@ -1600,7 +1600,11 @@ export class ProductionEngine {
       await client.syncState(event);
       const latestMetadata = await this.port.getSceneMetadata();
       const latestQueue = SheetWritebackClient.readQueue(latestMetadata);
-      if (latestQueue?.pending.eventId === event.eventId) {
+      const queueIdsSafeToClear = new Set([
+        event.eventId,
+        durable?.pending.eventId
+      ].filter((value): value is string => Boolean(value)));
+      if (latestQueue && queueIdsSafeToClear.has(latestQueue.pending.eventId)) {
         await this.port.patchSceneMetadata({ [METADATA_KEYS.sheetWritebackQueue]: undefined });
       }
       this.sheetWritebackFallback = undefined;
