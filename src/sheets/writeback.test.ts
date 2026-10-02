@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applySheetStateSnapshots,
   buildSheetWritebackEvent,
+  buildSheetWritebackSnapshotEvent,
   mergeSheetWritebackQueue,
   pendingLRTransactions,
   type SheetWritebackEvent
@@ -222,6 +223,34 @@ describe("sheet writeback projection", () => {
     expect(event?.stateArmies).toEqual([{ country: "STATE_A", hp: 28, maxHp: 80 }]);
     expect(event?.armies).toEqual([]);
     expect(JSON.stringify(event)).not.toContain("army-a");
+  });
+
+  it("can backfill all aggregate HP without exporting units or influence history", () => {
+    const next = makeState({
+      armies: { "army-1": army(19), "army-2": army(11) },
+      scene: {
+        militaryInfluenceAudit: [{
+          requestId: "old-influence",
+          createdAt: "2026-09-30T00:00:00Z",
+          factionId: "side-a",
+          factionName: "A",
+          country: "STATE_A",
+          reasonCode: "LAND_BATTLE_VICTORY",
+          delta: 4,
+          balanceBefore: 0,
+          balanceAfter: 4,
+          reason: "Победа",
+          actorPlayerId: "gm",
+          turnNumber: 1
+        }]
+      } as never
+    });
+    const event = buildSheetWritebackSnapshotEvent(next, "2026-10-01T00:00:00Z");
+    expect(event?.factions).toEqual([{ factionId: "side-a", factionName: "A", country: "STATE_A", hp: 30, maxHp: 80 }]);
+    expect(event?.stateArmies).toEqual([{ country: "STATE_A", hp: 30, maxHp: 80 }]);
+    expect(event?.militaryInfluenceOperations).toEqual([]);
+    expect(event?.armies).toEqual([]);
+    expect(event?.states).toEqual([]);
   });
 
   it("exports only changed aggregate HP for factions and states", () => {

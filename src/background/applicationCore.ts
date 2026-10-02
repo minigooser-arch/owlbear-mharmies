@@ -87,6 +87,7 @@ import { markLRTransactionRecorded } from "../finance/lrLedger";
 import {
   applySheetStateSnapshots,
   buildSheetWritebackEvent,
+  buildSheetWritebackSnapshotEvent,
   mergeSheetWritebackQueue,
   pendingLRTransactions,
   type SheetWritebackEvent
@@ -385,10 +386,33 @@ export class ProductionEngine {
           this.coordinator &&
           this.coordinatorGeneration === generation
         ) {
-          void this.enqueueMutation(() => this.flushSheetWriteback());
+          void this.enqueueMutation(async () => {
+            await this.queueSheetWritebackSnapshot();
+            await this.flushSheetWriteback();
+          });
         }
       });
     }
+  }
+
+  private async queueSheetWritebackSnapshot(): Promise<void> {
+    if (!this.coordinator) return;
+    const metadata = await this.port.getSceneMetadata();
+    const rawScene = metadata[METADATA_KEYS.scene] as Partial<SceneState> | undefined;
+    if (!rawScene?.settings || !sheetWritebackConfigured(rawScene.settings)) return;
+    const frame = await this.repository.readItemFrame();
+    const items = Object.fromEntries(frame.items.map((item) => [item.id, item]));
+    const state: CommandState = {
+      scene: frame.baseScene,
+      armies: Object.fromEntries(frame.armies.map((record) => [record.item.id, record.state])),
+      barriers: Object.fromEntries(frame.barriers.map((record) => [record.item.id, record.state])),
+      items,
+      positions: Object.fromEntries(frame.items.map((item) => [item.id, item.position]))
+    };
+    const event = buildSheetWritebackSnapshotEvent(state, this.wallClock().toISOString());
+    if (!event) return;
+    const writebackQueue = SheetWritebackClient.mergeQueue(metadata, event);
+    await this.port.patchSceneMetadata({ [METADATA_KEYS.sheetWritebackQueue]: writebackQueue });
   }
 
   async normalizeCityBuildingLocations(): Promise<void> {
