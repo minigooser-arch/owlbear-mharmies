@@ -76,6 +76,8 @@ export interface Side {
   leaderPlayerIds: string[];
   /** State the faction belongs to. Null for stateless factions. */
   stateId: string | null;
+  /** Current military influence balance. Values are stored in the scene in whole points. */
+  militaryInfluence?: number;
   armyTokenAsset?: ArmyTokenAsset;
 }
 
@@ -123,6 +125,21 @@ export interface StateDemography {
   conscriptionRate: number;
   humanResourceCapacity: number;
   lastPopulationCalculationDate: string | null;
+}
+
+export interface MilitaryInfluenceAuditEntry {
+  requestId: string;
+  createdAt: string;
+  factionId: string;
+  factionName: string;
+  country: string;
+  reasonCode: import("../sheets/militaryInfluence").MilitaryInfluenceReasonCode;
+  delta: number;
+  balanceBefore: number;
+  balanceAfter: number;
+  reason: string;
+  actorPlayerId: string;
+  turnNumber: number;
 }
 
 export interface ConscriptionLaw {
@@ -418,6 +435,7 @@ export interface SceneState {
   demographics?: StateDemography[];
   conscriptionLaws?: ConscriptionLaw[];
   demographyAudit?: DemographyAuditEntry[];
+  militaryInfluenceAudit?: MilitaryInfluenceAuditEntry[];
 }
 
 /** Boundary-compatible naval scene shape used by existing tactical code and fixtures. */
@@ -623,6 +641,12 @@ export type ArmyCommandPayload =
     | { type: "CREATE_SIDE"; side: Side }
     | { type: "RENAME_SIDE"; sideId: string; name: string }
     | { type: "SET_SIDE_ARMY_TOKEN"; sideId: string; asset: ArmyTokenAsset }
+    | {
+        type: "ADJUST_MILITARY_INFLUENCE";
+        factionId: string;
+        reasonCode: import("../sheets/militaryInfluence").MilitaryInfluenceReasonCode;
+        reason: string;
+      }
     | {
         type: "DELETE_SIDE";
         sideId: string;

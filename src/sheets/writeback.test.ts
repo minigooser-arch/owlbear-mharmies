@@ -98,7 +98,7 @@ const ship = {
 } as never;
 
 describe("sheet writeback projection", () => {
-  it("writes only changed army HP/maxHP and ship counts", () => {
+  it("does not export army HP while preserving ship count writeback", () => {
     const previous = makeState({
       armies: { "army-1": army(20) },
       scene: { ships: { "ship-1": ship } } as never
@@ -108,8 +108,7 @@ describe("sheet writeback projection", () => {
       scene: { ships: { "ship-1": ship } } as never
     });
     const event = buildSheetWritebackEvent(previous, next, "2026-10-01T00:00:00Z");
-    expect(event?.armies).toEqual([{ armyId: "army-1", stateId: "state-a", country: "STATE_A", hp: 19, maxHp: 40 }]);
-    expect(event?.states).toEqual([]);
+    expect(event).toBeUndefined();
 
     const destroyedShip = makeState({
       armies: { "army-1": army(19) },
@@ -117,6 +116,31 @@ describe("sheet writeback projection", () => {
     });
     const shipEvent = buildSheetWritebackEvent(previous, destroyedShip, "2026-10-01T00:00:00Z");
     expect(shipEvent?.states).toEqual([{ country: "STATE_A", ships: 0 }]);
+  });
+
+  it("queues new military influence operations for the LR sheet", () => {
+    const previous = makeState({ scene: { militaryInfluenceAudit: [] } as never });
+    const next = makeState({
+      scene: {
+        militaryInfluenceAudit: [{
+          requestId: "influence-1",
+          createdAt: "2026-10-01T00:00:00Z",
+          factionId: "side-a",
+          factionName: "A",
+          country: "STATE_A",
+          reasonCode: "LAND_BATTLE_VICTORY",
+          delta: 4,
+          balanceBefore: 0,
+          balanceAfter: 4,
+          reason: "Победа",
+          actorPlayerId: "gm",
+          turnNumber: 1
+        }]
+      } as never
+    });
+
+    const event = buildSheetWritebackEvent(previous, next, "2026-10-01T00:00:00Z");
+    expect(event?.militaryInfluenceOperations).toEqual(next.scene.militaryInfluenceAudit);
   });
 
   it("coalesces pending state by army and country", () => {
@@ -162,7 +186,7 @@ describe("sheet writeback projection", () => {
 
 
 
-  it("aggregates changed faction and state HP by stable IDs", () => {
+  it("does not aggregate private faction or state army HP", () => {
     const previous = makeState({
       armies: { "army-a": army(20), "army-b": army(10, 40, "side-b") },
       scene: {
@@ -182,10 +206,7 @@ describe("sheet writeback projection", () => {
       } as never
     });
     const event = buildSheetWritebackEvent(previous, next, "2026-10-01T00:00:00Z");
-    expect(event?.factions).toEqual([
-      { factionId: "side-a", factionName: "A", country: "STATE_A", hp: 18, maxHp: 40 }
-    ]);
-    expect(event?.stateArmies).toEqual([{ country: "STATE_A", hp: 28, maxHp: 80 }]);
+    expect(event).toBeUndefined();
   });
 
   it("extracts only new pending LR transactions", () => {

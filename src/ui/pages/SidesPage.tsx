@@ -1,11 +1,13 @@
 import { useState, type FormEvent } from "react";
 import type { Side } from "../../shared/types";
-import type { PartyPlayerView, UiCommand } from "../state/useExtensionState";
+import { MILITARY_INFLUENCE_DELTAS, type MilitaryInfluenceReasonCode } from "../../sheets/militaryInfluence";
+import type { ArmyView, PartyPlayerView, UiCommand } from "../state/useExtensionState";
 
 interface SidesPageProps {
   role: "GM" | "PLAYER";
   playerId: string;
   sides: readonly Side[];
+  armies?: readonly ArmyView[];
   players: readonly PartyPlayerView[];
   leaderSideIds: ReadonlySet<string>;
   onAction(command: UiCommand): void;
@@ -16,10 +18,25 @@ function playerLabel(player: PartyPlayerView | undefined, playerId: string): str
   return player ? `${player.name} (${player.id})` : playerId;
 }
 
+const MILITARY_INFLUENCE_LABELS: Record<MilitaryInfluenceReasonCode, string> = {
+  LAND_BATTLE_VICTORY: "Победа в сухопутном бою (+4)",
+  NAVAL_BATTLE_VICTORY: "Победа в морском бою (+4)",
+  DESTROY_ENEMY_ARMY: "Уничтожение вражеской армии (+3)",
+  DESTROY_ENEMY_SHIP: "Уничтожение вражеского корабля (+3)",
+  SUCCESSFUL_CITY_DEFENSE: "Успешная оборона своего города (+3)",
+  SUCCESSFUL_CITY_OCCUPATION: "Успешная оккупация вражеского города (+3)",
+  SHIP_TRANSFER: "Передача корабля другой фракции (-15)",
+  MILITARY_UPGRADE_I: "Военная прокачка I уровня (-20)",
+  APPOINT_COMMANDER_IN_CHIEF: "Назначение главнокомандующего (-30)",
+  MILITARY_UPGRADE_II: "Военная прокачка II уровня (-30)",
+  MILITARY_UPGRADE_III: "Военная прокачка III уровня (-50)"
+};
+
 export function SidesPage({
   role,
   playerId,
   sides,
+  armies = [],
   players,
   leaderSideIds,
   onAction,
@@ -27,6 +44,8 @@ export function SidesPage({
 }: SidesPageProps) {
   const [name, setName] = useState("");
   const [color, setColor] = useState("#b3261e");
+  const [influenceReasons, setInfluenceReasons] = useState<Record<string, string>>({});
+  const [influenceCodes, setInfluenceCodes] = useState<Record<string, MilitaryInfluenceReasonCode>>({});
 
   const createSide = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -80,6 +99,9 @@ export function SidesPage({
       <div className="card-list side-list">
         {sides.map((side) => {
           const canManageMembers = role === "GM" || leaderSideIds.has(side.id);
+          const sideArmies = armies.filter((army) => army.sideId === side.id);
+          const currentArmyHp = sideArmies.reduce((total, army) => total + army.healthHp, 0);
+          const maxArmyHp = sideArmies.reduce((total, army) => total + army.healthMaxHp, 0);
           const ids = [...new Set([
             ...players.map((player) => player.id),
             ...side.playerIds,
@@ -180,6 +202,53 @@ export function SidesPage({
                   {side.armyTokenAsset && <small>Ассет: {side.armyTokenAsset.name}</small>}
                 </div>
               )}
+              <div className="registration-card military-influence-card">
+                <div className="registration-copy">
+                  <strong>Военное влияние: {side.militaryInfluence ?? 0} 🪖</strong>
+                  <small>{side.stateId ? "Баланс фракции. Операции записываются в ЛР_ОПЕРАЦИИ." : "Сначала назначьте фракции государство."}</small>
+                  <small>Жизни армий: {currentArmyHp} / {maxArmyHp} HP</small>
+                </div>
+                {role === "GM" && side.stateId && (
+                  <form onSubmit={(event) => {
+                    event.preventDefault();
+                    const reason = influenceReasons[side.id]?.trim();
+                    if (!reason) return;
+                    onAction({
+                      type: "ADJUST_MILITARY_INFLUENCE",
+                      factionId: side.id,
+                      reasonCode: influenceCodes[side.id] ?? "LAND_BATTLE_VICTORY",
+                      reason
+                    });
+                    setInfluenceReasons((current) => ({ ...current, [side.id]: "" }));
+                  }}>
+                    <label>
+                      Результат военного влияния
+                      <select
+                        aria-label={`Результат военного влияния для ${side.name}`}
+                        value={influenceCodes[side.id] ?? "LAND_BATTLE_VICTORY"}
+                        onChange={(event) => setInfluenceCodes((current) => ({ ...current, [side.id]: event.target.value as MilitaryInfluenceReasonCode }))}
+                      >
+                        {(Object.keys(MILITARY_INFLUENCE_DELTAS) as MilitaryInfluenceReasonCode[]).map((code) => (
+                          <option key={code} value={code}>{MILITARY_INFLUENCE_LABELS[code]}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Причина операции военного влияния
+                      <input
+                        aria-label={`Причина операции военного влияния для ${side.name}`}
+                        value={influenceReasons[side.id] ?? ""}
+                        onChange={(event) => setInfluenceReasons((current) => ({ ...current, [side.id]: event.target.value }))}
+                        placeholder="Например, победа зафиксирована мастером"
+                        required
+                      />
+                    </label>
+                    <button className="button subtle" type="submit" disabled={!influenceReasons[side.id]?.trim()}>
+                      Провести операцию военного влияния для {side.name}
+                    </button>
+                  </form>
+                )}
+              </div>
             </article>
           );
         })}

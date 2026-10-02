@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { ConscriptionLaw, LRTransaction, SceneSettings, Side, SideRelation, StateDemography, StateEntity, StateRelations, StrategicCity } from "../../shared/types";
 import type { DiagnosticTestId } from "../../owlbear/diagnostics";
-import type { PartyPlayerView, RebellionStatusView, UiCommand } from "../state/useExtensionState";
+import type { ArmyView, PartyPlayerView, RebellionStatusView, UiCommand } from "../state/useExtensionState";
 import { DiagnosticsPage } from "./DiagnosticsPage";
 import { RelationsPage } from "./RelationsPage";
 import { RebellionsPage } from "./RebellionsPage";
@@ -27,11 +27,12 @@ const LABELS: Record<ManagementSection, string> = {
 };
 
 export function ManagementPage({
-  playerId, sides, states, strategicCities, rebellionStatuses, lrTransactions, demographics, conscriptionLaws, players, relations, stateRelations, settings, leaderSideIds, onAction, onSyncPopulation, runDiagnostic
+  playerId, sides, states, armies, strategicCities, rebellionStatuses, lrTransactions, demographics, conscriptionLaws, players, relations, stateRelations, settings, leaderSideIds, onAction, onSyncPopulation, runDiagnostic
 }: {
   playerId: string;
   sides: readonly Side[];
   states: readonly StateEntity[];
+  armies: readonly ArmyView[];
   strategicCities: readonly StrategicCity[];
   rebellionStatuses: readonly RebellionStatusView[];
   lrTransactions: readonly LRTransaction[];
@@ -54,8 +55,8 @@ export function ManagementPage({
         {(Object.keys(LABELS) as ManagementSection[]).map((item) => <button key={item} type="button" className={section === item ? "active" : ""} onClick={() => setSection(item)}>{LABELS[item]}</button>)}
       </nav>
       <div className="management-content">
-        {section === "SIDES" && <SidesPage role="GM" playerId={playerId} sides={sides} players={players} leaderSideIds={leaderSideIds} onAction={onAction} />}
-        {section === "STATES" && <StatesPage states={states} sides={sides} onAction={onAction} />}
+        {section === "SIDES" && <SidesPage role="GM" playerId={playerId} sides={sides} armies={armies} players={players} leaderSideIds={leaderSideIds} onAction={onAction} />}
+        {section === "STATES" && <StatesPage states={states} sides={sides} armies={armies} onAction={onAction} />}
         {section === "STATE_DIPLOMACY" && <StateDiplomacyPage states={states} stateRelations={stateRelations} onAction={onAction} />}
         {section === "RELATIONS" && <RelationsPage sides={sides} relations={relations} onAction={onAction} />}
         {section === "REBELLIONS" && <RebellionsPage states={states} sides={sides} cities={strategicCities} statuses={rebellionStatuses} onAction={onAction} />}

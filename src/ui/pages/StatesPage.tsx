@@ -1,14 +1,16 @@
 import { useEffect, useState, type FormEvent } from "react";
 import type { Side, StateEntity } from "../../shared/types";
-import type { UiCommand } from "../state/useExtensionState";
+import type { ArmyView, UiCommand } from "../state/useExtensionState";
 
 function StateCard({
   state,
   sides,
+  armies,
   onAction
 }: {
   state: StateEntity;
   sides: readonly Side[];
+  armies: readonly ArmyView[];
   onAction(command: UiCommand): void;
 }) {
   const [name, setName] = useState(state.name);
@@ -22,6 +24,10 @@ function StateCard({
   }, [state.name, state.color, state.backendCountry]);
 
   const members = sides.filter((side) => side.stateId === state.id);
+  const militaryInfluence = members.reduce((total, side) => total + (side.militaryInfluence ?? 0), 0);
+  const stateArmies = armies.filter((army) => members.some((side) => side.id === army.sideId));
+  const currentArmyHp = stateArmies.reduce((total, army) => total + army.healthHp, 0);
+  const maxArmyHp = stateArmies.reduce((total, army) => total + army.healthMaxHp, 0);
   const trimmedName = name.trim();
   const trimmedBackendCountry = backendCountry.trim();
   const detailsChanged = trimmedName !== state.name || color !== (state.color ?? "#607d8b") || trimmedBackendCountry !== (state.backendCountry ?? "");
@@ -35,6 +41,22 @@ function StateCard({
           <p>{state.active ? "Активно" : "Неактивно"}</p>
         </div>
       </header>
+
+      <div className="registration-copy">
+        <strong>Военное влияние государства: {militaryInfluence} 🪖</strong>
+        <small>
+          {members.length > 0
+            ? members.map((side) => `${side.name}: ${side.militaryInfluence ?? 0} 🪖`).join(" · ")
+            : "Фракции государства ещё не назначены"}
+        </small>
+        <small>Жизни армий государства: {currentArmyHp} / {maxArmyHp} HP</small>
+        {members.map((side) => {
+          const factionArmies = stateArmies.filter((army) => army.sideId === side.id);
+          const factionCurrentHp = factionArmies.reduce((total, army) => total + army.healthHp, 0);
+          const factionMaxHp = factionArmies.reduce((total, army) => total + army.healthMaxHp, 0);
+          return <small key={side.id}>{side.name}: {factionCurrentHp} / {factionMaxHp} HP</small>;
+        })}
+      </div>
 
       <label>
         Название
@@ -117,9 +139,10 @@ function StateCard({
   );
 }
 
-export function StatesPage({ states, sides, onAction, createId = () => crypto.randomUUID() }: {
+export function StatesPage({ states, sides, armies = [], onAction, createId = () => crypto.randomUUID() }: {
   states: readonly StateEntity[];
   sides: readonly Side[];
+  armies?: readonly ArmyView[];
   onAction(command: UiCommand): void;
   createId?: () => string;
 }) {
@@ -177,7 +200,7 @@ export function StatesPage({ states, sides, onAction, createId = () => crypto.ra
 
       <div className="card-list side-list">
         {states.map((state) => (
-          <StateCard key={state.id} state={state} sides={sides} onAction={onAction} />
+          <StateCard key={state.id} state={state} sides={sides} armies={armies} onAction={onAction} />
         ))}
       </div>
 

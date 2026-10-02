@@ -112,6 +112,44 @@ function context(
 describe("CommandProcessor", () => {
   const processor = new CommandProcessor();
 
+  it("applies and audits a military influence operation for a faction", () => {
+    const current = state();
+    current.scene.sides = current.scene.sides.map((side) =>
+      side.id === "red" ? { ...side, stateId: "france", militaryInfluence: 8 } : side
+    );
+    current.scene.states = [{
+      id: "france",
+      name: "Франция",
+      backendCountry: "france",
+      rulingFactionId: "red",
+      active: true
+    }];
+
+    const result = processor.execute(
+      context("GM", "gm", current),
+      command({
+        type: "ADJUST_MILITARY_INFLUENCE",
+        factionId: "red",
+        reasonCode: "LAND_BATTLE_VICTORY",
+        reason: "Победа в сухопутном бою"
+      })
+    );
+
+    expect(result.status).toBe("ACCEPTED");
+    if (result.status === "ACCEPTED") {
+      expect(result.state.scene.sides.find((side) => side.id === "red")?.militaryInfluence).toBe(12);
+      expect(result.state.scene.militaryInfluenceAudit?.[0]).toMatchObject({
+        factionId: "red",
+        country: "france",
+        delta: 4,
+        balanceBefore: 8,
+        balanceAfter: 12,
+        reasonCode: "LAND_BATTLE_VICTORY",
+        reason: "Победа в сухопутном бою"
+      });
+    }
+  });
+
   it("stores the configured army token asset on a faction", () => {
     const current = state();
     const asset = {
