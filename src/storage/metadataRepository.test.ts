@@ -219,7 +219,7 @@ describe("MetadataRepository", () => {
     };
     await repository.writeScene({ ...initial, revision: 2 }, 1, () => true, second);
     const queueAfterSecond = readSheetWritebackQueue(port.sceneMetadata, METADATA_KEYS.sheetWritebackQueue);
-    expect(queueAfterSecond?.pending.eventId).toBe("sheet-1");
+    expect(queueAfterSecond?.pending.eventId).toBe("sheet-2");
     expect(queueAfterSecond?.pending.armies).toEqual([{ armyId: "army-1", stateId: "state-1", country: "country-a", hp: 18, maxHp: 40 }]);
     expect(queueAfterSecond?.pending.states).toEqual([{ country: "country-a", ships: 1 }]);
   });
