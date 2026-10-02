@@ -117,9 +117,10 @@ export class SheetWritebackClient {
   }
 
   spendLR(operations: readonly SheetSpendOperation[]): Promise<SheetSpendBatchResult> {
+    const firstOperation = operations[0];
     return this.request<SheetSpendBatchResult>({
       action: "SPEND_LR_BATCH",
-      batchRequestId: operations.length > 0 ? `batch-${operations[0].requestId}` : "batch-empty",
+      batchRequestId: firstOperation ? `batch-${firstOperation.requestId}` : "batch-empty",
       operations
     });
   }
