@@ -42,4 +42,25 @@ describe("sheet writeback transport", () => {
     await expect(client.getStates([])).resolves.toEqual([]);
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
+
+  it("binds the browser fetch function to the global object", async () => {
+    const originalFetch = globalThis.fetch;
+    let receiver: unknown;
+    const detachedSensitiveFetch = function(this: unknown, _url: string, _init?: RequestInit) {
+      receiver = this;
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ ok: true, result: { states: [] } })
+      } as Response);
+    } as typeof fetch;
+    Object.defineProperty(globalThis, "fetch", { configurable: true, value: detachedSensitiveFetch });
+    try {
+      const client = new SheetWritebackClient("https://example.test", "secret");
+      await expect(client.getStates([])).resolves.toEqual([]);
+      expect(receiver).toBe(globalThis);
+    } finally {
+      Object.defineProperty(globalThis, "fetch", { configurable: true, value: originalFetch });
+    }
+  });
 });
+
