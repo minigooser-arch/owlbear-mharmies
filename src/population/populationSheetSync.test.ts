@@ -148,7 +148,7 @@ describe("population sheet sync", () => {
       status: 200,
       text: async () => url.includes("backend")
         ? "country,population,growth_rate\ncountry-a,46084,1.003\n"
-        : [row({ 10: "Государство", 15: "46084", 39: "0М. 584Т." }), row({ 10: "🏳️", 40: "СРОЧНЫЙ ПРИЗЫВ" })].join("\n")
+        : [row({ 10: "Государство", 15: "46084", 40: "0М. 584Т." }), row({ 10: "🏳️", 40: "СРОЧНЫЙ ПРИЗЫВ" })].join("\n")
     }));
 
     const result = await syncPopulationFromPublicSheet({
