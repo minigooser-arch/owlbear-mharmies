@@ -47,7 +47,9 @@ describe("railway supply endpoint", () => {
     ]);
 
     const withoutLogistics = structuredClone(scene);
-    withoutLogistics.strategicCities![0]!.buildings = withoutLogistics.strategicCities![0]!.buildings?.filter((building) => building.type !== "MILITARY_LOGISTICS_CENTER");
+    const hostCity = withoutLogistics.strategicCities?.[0];
+    if (!hostCity) throw new Error("host city fixture missing");
+    hostCity.buildings = (hostCity.buildings ?? []).filter((building) => building.type !== "MILITARY_LOGISTICS_CENTER");
     expect(findSupplyPath(withoutLogistics, { x: 0, y: 0 }, "home")).toBeNull();
   });
 
