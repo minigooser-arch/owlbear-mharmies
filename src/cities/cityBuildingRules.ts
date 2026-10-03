@@ -18,20 +18,6 @@ export type CityBuildingMutationResult =
   | { ok: true; city: StrategicCity }
   | { ok: false; reason: CityBuildingMutationReason };
 
-export function normalizeCityBuildingLocations(cities: readonly StrategicCity[]): StrategicCity[] {
-  return cities.map((city) => {
-    const anchor = city.cells[0];
-    if (!anchor || (city.buildings ?? []).length === 0) return structuredClone(city);
-    return {
-      ...structuredClone(city),
-      buildings: (city.buildings ?? []).map((building) => ({
-        ...structuredClone(building),
-        cell: { ...anchor }
-      }))
-    };
-  });
-}
-
 export function isCityBuildingActive(
   city: StrategicCity,
   building: CityBuilding,
