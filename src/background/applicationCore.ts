@@ -380,9 +380,9 @@ export class ProductionEngine {
     if (active) {
       this.lastMovementAt = performance.now();
       const generation = this.coordinatorGeneration;
-      // Sheet bootstrap is intentionally isolated from gameplay mutations.
-      // Slow Apps Script / Google Sheets requests must never block routes,
-      // army interactions, movement ticks, or coordinator heartbeats.
+      // Let work already requested in the current turn enter the serialized queue
+      // before the startup writeback probe. A scene with no pending queue then
+      // remains a no-op without delaying movement processing.
       queueMicrotask(() => {
         if (
           this.coordinator &&
