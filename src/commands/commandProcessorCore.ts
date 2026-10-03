@@ -628,7 +628,7 @@ export class CommandProcessor {
           });
           return undefined;
         }
-        const embarked = embarkArmy(command.shipId, ship, command.armyId, army, transportLoadingIsFree(ship) ? 0 : transportArmyMovementCostAtCell(state.scene, armyCell));
+        const embarked = embarkArmy(command.shipId, ship, command.armyId, army, transportLoadingIsFree(ship) ? 0 : transportArmyMovementCostAtCell(state.scene, armyCell, army.sideId));
         state.scene.ships ??= {};
         state.scene.ships[command.shipId] = embarked.ship;
         state.armies[command.armyId] = embarked.army;
@@ -664,7 +664,7 @@ export class CommandProcessor {
             cellSupportsDomain(state.scene, shipCell, "SEA")
         });
         if (!geometry.ok) return geometry.reason;
-        const embarked = embarkArmy(command.shipId, ship, command.armyId, army, transportLoadingIsFree(ship) ? 0 : transportArmyMovementCostAtCell(state.scene, armyCell));
+        const embarked = embarkArmy(command.shipId, ship, command.armyId, army, transportLoadingIsFree(ship) ? 0 : transportArmyMovementCostAtCell(state.scene, armyCell, army.sideId));
         state.scene.ships ??= {};
         state.scene.ships[command.shipId] = embarked.ship;
         state.armies[command.armyId] = embarked.army;
@@ -682,7 +682,7 @@ export class CommandProcessor {
         const shipPosition = commandPosition(state, command.shipId);
         if (!shipPosition) return "TRANSPORT_POSITION_UNAVAILABLE";
         if (!cellSupportsDomain(state.scene, command.targetCell, "LAND")) return "LANDING_REQUIRES_LAND";
-        if (seaFortBlocksDisembark(state.scene, command.targetCell, relationForSides(state.scene, ship.sideId, army.sideId) === "ENEMY")) {
+        if (seaFortBlocksDisembark(state.scene, command.targetCell, ship.sideId)) {
           return "SEA_FORT_BLOCKS_LANDING";
         }
         const shipCell = this.cellForPosition(shipPosition);
@@ -709,7 +709,7 @@ export class CommandProcessor {
         if (political.allowedCellCount === 0) {
           return political.blockedReason ?? "INVALID_POLITICAL_CONFIG";
         }
-        const disembarked = disembarkArmy(command.shipId, ship, command.armyId, army, transportLoadingIsFree(ship) ? 0 : transportArmyMovementCostAtCell(state.scene, command.targetCell));
+        const disembarked = disembarkArmy(command.shipId, ship, command.armyId, army, transportLoadingIsFree(ship) ? 0 : transportArmyMovementCostAtCell(state.scene, command.targetCell, army.sideId));
         if (!disembarked.ok) return disembarked.reason;
         const occupantIds = Object.entries(state.armies)
           .filter(([armyId, candidate]) => armyId !== command.armyId && candidate.health.hp > 0 && candidate.embarkedOnShipId == null)
@@ -1680,7 +1680,7 @@ export class CommandProcessor {
           if (political.allowedCellCount < command.cells.length) return political.blockedReason ?? "INVALID_POLITICAL_CONFIG";
         }
         const routeCity = (state.scene.strategicCities ?? []).find((city) => city.cells.some((cell) => sameCell(cell, command.startCell)));
-        const marineCrossing = routeCity ? marineStationAllowsCrossing(state.scene, routeCity.id, command.cells) : false;
+        const marineCrossing = routeCity ? marineStationAllowsCrossing(state.scene, routeCity.id, army.sideId, command.cells) : false;
         const routeTerrain = terrainRegistryForArmy(army, state.scene.terrain);
         if (marineCrossing && routeTerrain.types.sea) routeTerrain.types.sea = { ...routeTerrain.types.sea, movementDomains: ["LAND", "SEA"] };
         const validation = validatePlannedRoute({
