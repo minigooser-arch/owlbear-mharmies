@@ -110,7 +110,7 @@ export class CommandGateway {
 
   constructor(
     private readonly port: BroadcastPort,
-    private readonly timeoutMs = 5_000,
+    private readonly timeoutMs = 20_000,
     private readonly resolveCoordinatorConnectionId: CoordinatorConnectionResolver = () =>
       coordinatorConnectionIdFromScene(port),
     private readonly reportRejection: AckRejectionReporter = () => undefined
