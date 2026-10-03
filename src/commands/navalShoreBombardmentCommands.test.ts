@@ -183,6 +183,42 @@ describe("naval shore bombardment command", () => {
     expect(result.state.scene.activeNavalBattle).toBeNull();
   });
 
+  it("records an enemy coastal battery retaliation so the city cannot fire twice that turn", () => {
+    const commandState = state();
+    commandState.scene.sides = commandState.scene.sides.map((side) =>
+      side.id === "red" ? { ...side, stateId: "red-state" } : { ...side, stateId: "blue-state" }
+    );
+    commandState.scene.states = [
+      { id: "red-state", name: "Red State", rulingFactionId: "red", active: true },
+      { id: "blue-state", name: "Blue State", rulingFactionId: "blue", active: true }
+    ];
+    commandState.scene.gridMap.cells["3,2"] = {
+      terrainId: "plain",
+      impassable: false,
+      factionTerritoryIds: [],
+      recognizedStateId: "blue-state",
+      deFactoStateId: "blue-state"
+    };
+    commandState.scene.strategicCities = [{
+      id: "battery-city",
+      name: "Battery City",
+      cells: [{ x: 3, y: 2 }],
+      recognizedStateId: "blue-state",
+      deFactoStateId: "blue-state",
+      factionInfluenceId: "blue",
+      mayorId: null,
+      isCapital: false,
+      historicalBuildTypeCount: 0,
+      buildings: [{ id: "battery", type: "COASTAL_BATTERY", cell: { x: 3, y: 2 } }]
+    }];
+
+    const result = processor([3, 4, 5, 6, 6]).execute(context("leader", commandState), bombardmentCommand());
+
+    expect(result.status).toBe("ACCEPTED");
+    if (result.status !== "ACCEPTED") return;
+    expect(result.state.scene.strategicCities?.[0]?.coastalBatteryRetaliatedOnTurn).toBe(7);
+  });
+
   it("keeps a zero-hp land-battle participant until the GM resolves the battle", () => {
     const result = processor([6, 6, 6]).execute(context("leader", state(5)), bombardmentCommand());
 
