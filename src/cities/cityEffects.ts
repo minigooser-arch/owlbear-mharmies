@@ -127,6 +127,20 @@ export function seaFortBlocksDisembark(scene: SceneState, targetCell: GridCellCo
   );
 }
 
+export function coastalBatteryRetaliationCity(
+  scene: SceneState,
+  targetCell: GridCellCoord,
+  attackingSideId: string
+): StrategicCity | undefined {
+  return (scene.strategicCities ?? []).find((city) =>
+    city.cells.some((cell) => cellKey(cell) === cellKey(targetCell)) &&
+    city.factionInfluenceId !== null &&
+    relationForSides(scene, attackingSideId, city.factionInfluenceId) === "ENEMY" &&
+    city.coastalBatteryRetaliatedOnTurn !== scene.turn.turnNumber &&
+    Boolean(activeBuilding(scene, city, "COASTAL_BATTERY"))
+  );
+}
+
 export function coastalBatteryCanRetaliate(
   scene: SceneState,
   targetCell: GridCellCoord,
