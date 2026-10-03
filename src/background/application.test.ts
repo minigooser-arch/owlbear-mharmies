@@ -801,6 +801,11 @@ describe("ProductionEngine command boundary", () => {
 
   it("does not finish an old heartbeat after coordinator shutdown", async () => {
     const fixture = commandPort();
+    const engine = new ProductionEngine(fixture.port);
+    engine.setCoordinator(true, "coordinator");
+    await Promise.resolve();
+    await engine.whenIdle();
+
     let releaseRead: (() => void) | undefined;
     let reads = 0;
     fixture.port.getSceneMetadata = async () => {
@@ -810,11 +815,6 @@ describe("ProductionEngine command boundary", () => {
     };
     let writes = 0;
     fixture.port.patchSceneMetadata = async () => { writes += 1; };
-    const engine = new ProductionEngine(fixture.port);
-    engine.setCoordinator(true, "coordinator");
-    await Promise.resolve();
-    await engine.whenIdle();
-    reads = 0;
 
     const heartbeat = engine.writeCoordinatorHeartbeat({
       connectionId: "coordinator",
@@ -831,6 +831,11 @@ describe("ProductionEngine command boundary", () => {
 
   it("cancels a heartbeat when coordinator shutdown happens during its commit read", async () => {
     const fixture = commandPort();
+    const engine = new ProductionEngine(fixture.port);
+    engine.setCoordinator(true, "coordinator");
+    await Promise.resolve();
+    await engine.whenIdle();
+
     let reads = 0;
     let releaseCommitRead: (() => void) | undefined;
     fixture.port.getSceneMetadata = async () => {
@@ -842,11 +847,6 @@ describe("ProductionEngine command boundary", () => {
     };
     let writes = 0;
     fixture.port.patchSceneMetadata = async () => { writes += 1; };
-    const engine = new ProductionEngine(fixture.port);
-    engine.setCoordinator(true, "coordinator");
-    await Promise.resolve();
-    await engine.whenIdle();
-    reads = 0;
 
     const heartbeat = engine.writeCoordinatorHeartbeat({
       connectionId: "coordinator",
