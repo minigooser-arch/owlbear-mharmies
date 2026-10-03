@@ -314,7 +314,7 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
       upgrades: structuredClone(state.upgrades ?? { recovery: {}, motorization: {}, reconnaissance: {} }),
       formationActive: state.formation?.active ?? false,
       formationHpAddedThisTurn: state.formation?.hpAddedThisTurn ?? 0,
-      formationTurnCap: armyFormationCap(input.scene, state.formation?.cityId ?? null),
+      formationTurnCap: armyFormationCap(input.scene, state.formation?.cityId ?? null, state.sideId),
       healingHpHealedThisTurn: state.healing?.hpHealedThisTurn ?? 0,
       ...(input.gridDpi ? { healingRemainingThisTurn } : {}),
       healingPending: state.healing?.pending ?? false,
