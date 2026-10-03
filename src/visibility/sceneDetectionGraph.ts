@@ -1,8 +1,9 @@
 import type { BarrierSegment } from "../barriers/barrierGeometry";
 import type { GridDistancePort } from "../routes/routeMath";
-import type { ArmyState, SceneItemRecord, SceneState, ShipState } from "../shared/types";
+import type { ArmyState, GridCellCoord, SceneItemRecord, SceneState, ShipState, Vector2 } from "../shared/types";
 import { buildDetectionGraph, type DetectionGraph } from "./detectionGraph";
 import { armyConcealmentCells, armyEffectiveDetectionRange, shipDetectionBonus } from "../upgrades/unitUpgrades";
+import { lighthouseDetectionBonusAtCell, watchtowerDetectionBonusAtCell } from "../cities/cityEffects";
 
 export interface SceneDetectionArmy {
   item: SceneItemRecord;
@@ -15,6 +16,7 @@ export async function buildSceneDetectionGraph(input: {
   sceneItems: readonly SceneItemRecord[];
   distancePort: GridDistancePort;
   visionBarriers: readonly BarrierSegment[];
+  cellForPosition?: (position: Vector2) => GridCellCoord;
 }): Promise<DetectionGraph> {
   const sceneItemById = new Map(input.sceneItems.map((item) => [item.id, item]));
   const armyDetectionUnits = input.armies.map(({ item, state }) => ({
@@ -24,7 +26,9 @@ export async function buildSceneDetectionGraph(input: {
     detectionRangeCells: armyEffectiveDetectionRange(
       state,
       state.overrides.detectionRangeCells ?? input.scene.settings.defaultDetectionRangeCells
-    ),
+    ) + (input.cellForPosition
+      ? watchtowerDetectionBonusAtCell(input.scene, state.sideId, input.cellForPosition(item.position))
+      : 0),
     concealmentCells: armyConcealmentCells(state),
     ignoresVisionBarriers: state.ignoresVisionBarriers
   }));
@@ -36,7 +40,11 @@ export async function buildSceneDetectionGraph(input: {
       sideId: state.sideId,
       position: item.position,
       detectionRangeCells:
-        (state.detectionOverride ?? input.scene.settings.defaultDetectionRangeCells) + shipDetectionBonus(state),
+        (state.detectionOverride ?? input.scene.settings.defaultDetectionRangeCells) +
+        shipDetectionBonus(state) +
+        (input.cellForPosition
+          ? lighthouseDetectionBonusAtCell(input.scene, input.cellForPosition(item.position), state.sideId)
+          : 0),
       concealmentCells: 0,
       ignoresVisionBarriers: false
     }];
