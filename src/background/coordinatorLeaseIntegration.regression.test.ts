@@ -2,7 +2,7 @@ import { expect, it } from "vitest";
 import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE, METADATA_KEYS } from "../shared/constants";
 import { COMMAND_PROTOCOL_VERSION, type SceneState } from "../shared/types";
 import type { OwlbearPort } from "../owlbear/sdkAdapter";
-import { CoordinatorLease } from "./coordinator";
+import { COORDINATOR_LEASE_DURATION_MS, CoordinatorLease } from "./coordinator";
 import { ProductionEngine } from "./application";
 import { GridStorageError } from "../storage/gridChunkCodec";
 
@@ -99,7 +99,7 @@ it("persists the initial coordinator lease before activating the production engi
   expect(state.scene.coordinatorLease).toEqual({
     connectionId: "gm-a",
     epoch: 1,
-    expiresAt: 13_000
+    expiresAt: 10_000 + COORDINATOR_LEASE_DURATION_MS
   });
   expect(engine.isCoordinator()).toBe(true);
 });
