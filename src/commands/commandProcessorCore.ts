@@ -8,7 +8,7 @@ import { applyDemographyCorrection, debitHumanResource as debitHumanResourceFrom
 import { validateMilitaryInfluenceOperation } from "../sheets/militaryInfluence";
 import { recalculateHumanResourceCapacity } from "../population/populationRules";
 import { isCityBuildingActive } from "../cities/cityBuildingRules";
-import { activeShipyardAtCell, canalCellHasBothDomains, cityForCell, coastalBatteryRetaliationCity, coastalBatteryRetaliationDamage, hasActiveCityBuilding, marineStationAllowsCrossing, repairShipAtShipyard, seaFortBlocksDisembark, transportArmyMovementCostAtCell } from "../cities/cityEffects";
+import { activeShipyardAtCell, canalCellHasBothDomains, cityForCell, coastalBatteryRetaliationCity, coastalBatteryRetaliationDamage, hasActiveCityBuilding, marineStationAllowsCrossing, postStationMovementBonusAtCell, repairShipAtShipyard, seaFortBlocksDisembark, transportArmyMovementCostAtCell } from "../cities/cityEffects";
 import { requestArmyDisband } from "../disband/disbandService";
 import { canRenumberTurn, cancelTurnDeferral, completeTurn, deferTurn, pauseAutoTurns, renumberSceneTurn, resumeAutoTurns } from "../turns/turnService";
 import { preCheckpointTurnBlockers } from "../turns/turnCompletionGuard";
@@ -193,7 +193,7 @@ function revalidateArmyRoute(state: CommandState, armyId: string): void {
     terrain: terrainRegistryForArmy(army, state.scene.terrain),
     wars: state.scene.wars,
     remainingUnits: army.plannedRoute.executeOnTurn > state.scene.turn.turnNumber
-      ? armyEffectiveMovementUnits(army)
+      ? armyEffectiveMovementUnits(army) + postStationMovementBonusAtCell(state.scene, army.sideId, army.plannedRoute.startCell)
       : army.movement.remainingUnits,
     readCell: (cell) => readCell(state.scene.gridMap, cell),
     landDomainOverride: (cell) => canalCellHasBothDomains(state.scene, cell),
@@ -1695,7 +1695,7 @@ export class CommandProcessor {
           sideId: army.sideId,
           terrain: routeTerrain,
           wars: state.scene.wars,
-          remainingUnits: armyEffectiveMovementUnits(army),
+          remainingUnits: armyEffectiveMovementUnits(army) + postStationMovementBonusAtCell(state.scene, army.sideId, command.startCell),
           readCell: (cell) => readCell(state.scene.gridMap, cell),
           landDomainOverride: (cell) => canalCellHasBothDomains(state.scene, cell),
           armyStateAllowsMovement: true
