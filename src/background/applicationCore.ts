@@ -350,6 +350,7 @@ export class ProductionEngine {
   private activeCoordinatorConnectionId: string | undefined;
   private lastMovementAt = performance.now();
   private mutationTail: Promise<void> = Promise.resolve();
+  private sheetWorkTail: Promise<void> = Promise.resolve();
   private lastMapOverlaySignature: string | undefined;
   private clearedLegacyMapOverlays = false;
   private clearedSharedMapOverlays = false;
@@ -387,7 +388,7 @@ export class ProductionEngine {
           this.coordinator &&
           this.coordinatorGeneration === generation
         ) {
-          void this.enqueueMutation(async () => {
+          void this.enqueueSheetWork(async () => {
             await this.queueSheetWritebackSnapshot();
             await this.flushSheetWriteback();
           });
@@ -1751,7 +1752,7 @@ export class ProductionEngine {
     if (this.sheetWritebackRetryTimer !== undefined) clearTimeout(this.sheetWritebackRetryTimer);
     this.sheetWritebackRetryTimer = setTimeout(() => {
       this.sheetWritebackRetryTimer = undefined;
-      if (this.coordinator) void this.enqueueMutation(() => this.flushSheetWriteback());
+      if (this.coordinator) void this.enqueueSheetWork(() => this.flushSheetWriteback());
     }, delayMs);
   }
 
@@ -1936,7 +1937,7 @@ export class ProductionEngine {
           throw error;
         }
       }
-      void this.enqueueMutation(() => this.flushSheetWriteback());
+      void this.enqueueSheetWork(() => this.flushSheetWriteback());
     } catch (error) {
       for (const write of applied.reverse()) {
         try {
@@ -2005,8 +2006,17 @@ export class ProductionEngine {
     return result;
   }
 
+  private enqueueSheetWork<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.sheetWorkTail.then(operation, operation);
+    this.sheetWorkTail = result.then(
+      () => undefined,
+      () => undefined
+    );
+    return result;
+  }
+
   async whenIdle(): Promise<void> {
-    await this.mutationTail;
+    await Promise.all([this.mutationTail, this.sheetWorkTail]);
   }
 
   private async reconcileOverlays(
@@ -2251,7 +2261,7 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
   };
   const routeGateway = new CommandGateway(
     port,
-    5_000,
+    20_000,
     async () => resolveCoordinatorConnectionId(
       await party(),
       await engine.readCoordinatorLease().catch(() => undefined),

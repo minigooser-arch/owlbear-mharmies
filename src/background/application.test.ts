@@ -396,6 +396,94 @@ it("loads one command input item frame before fresh persistence checks", async (
   expect(fixture.sceneItemReads).toBe(1);
 });
 
+describe("ProductionEngine latency isolation", () => {
+  type SheetWorkQueueAccess = {
+    enqueueSheetWork<T>(operation: () => Promise<T>): Promise<T>;
+  };
+
+  function holdSheetQueue(engine: ProductionEngine): {
+    work: Promise<void>;
+    release: () => void;
+    isDone: () => boolean;
+  } {
+    let release: (() => void) | undefined;
+    let done = false;
+    const work = (engine as unknown as SheetWorkQueueAccess)
+      .enqueueSheetWork(() => new Promise<void>((resolve) => { release = resolve; }))
+      .then(() => { done = true; });
+    return {
+      work,
+      release: () => release?.(),
+      isDone: () => done
+    };
+  }
+
+  it("does not let slow sheet work block gameplay commands", async () => {
+    const fixture = commandPort();
+    const engine = new ProductionEngine(fixture.port);
+    engine.setCoordinator(true, "coordinator");
+    const slowSheet = holdSheetQueue(engine);
+
+    let commandDone = false;
+    const commandWork = engine.processCommand({
+      connectionId: "gm-connection",
+      data: {
+        protocolVersion: COMMAND_PROTOCOL_VERSION,
+        requestId: "responsive-command",
+        senderPlayerId: "gm",
+        senderConnectionId: "gm-connection",
+        expectedRevision: fixture.scene.revision,
+        type: "CREATE_SIDE",
+        side: {
+          id: "responsive",
+          name: "Responsive",
+          color: "#123456",
+          playerIds: [],
+          leaderPlayerIds: []
+        }
+      }
+    }, {
+      role: "GM",
+      playerId: "gm",
+      connectionId: "gm-connection",
+      connectedPlayerIds: new Set(["gm"])
+    }).then(() => { commandDone = true; });
+
+    await vi.waitFor(() => expect(commandDone).toBe(true), { timeout: 500 });
+    expect(slowSheet.isDone()).toBe(false);
+    expect(fixture.sent.at(-1)?.data).toMatchObject({
+      requestId: "responsive-command",
+      status: "ACCEPTED"
+    });
+
+    slowSheet.release();
+    await Promise.all([slowSheet.work, commandWork]);
+  });
+
+  it("does not let slow sheet work block coordinator heartbeats", async () => {
+    const fixture = commandPort();
+    const engine = new ProductionEngine(fixture.port);
+    const slowSheet = holdSheetQueue(engine);
+
+    let heartbeatDone = false;
+    const heartbeatWork = engine.writeCoordinatorHeartbeat({
+      connectionId: "coordinator",
+      epoch: 2,
+      expiresAt: Date.now() + 20_000
+    }).then(() => { heartbeatDone = true; });
+
+    await vi.waitFor(() => expect(heartbeatDone).toBe(true), { timeout: 500 });
+    expect(slowSheet.isDone()).toBe(false);
+    expect(fixture.scene.coordinatorLease).toMatchObject({
+      connectionId: "coordinator",
+      epoch: 2
+    });
+
+    slowSheet.release();
+    await Promise.all([slowSheet.work, heartbeatWork]);
+  });
+});
+
 describe("ProductionEngine command boundary", () => {
   it("skips grid hydration on idle movement ticks", async () => {
     const fixture = commandPort();
@@ -713,6 +801,11 @@ describe("ProductionEngine command boundary", () => {
 
   it("does not finish an old heartbeat after coordinator shutdown", async () => {
     const fixture = commandPort();
+    const engine = new ProductionEngine(fixture.port);
+    engine.setCoordinator(true, "coordinator");
+    await Promise.resolve();
+    await engine.whenIdle();
+
     let releaseRead: (() => void) | undefined;
     let reads = 0;
     fixture.port.getSceneMetadata = async () => {
@@ -722,8 +815,6 @@ describe("ProductionEngine command boundary", () => {
     };
     let writes = 0;
     fixture.port.patchSceneMetadata = async () => { writes += 1; };
-    const engine = new ProductionEngine(fixture.port);
-    engine.setCoordinator(true, "coordinator");
 
     const heartbeat = engine.writeCoordinatorHeartbeat({
       connectionId: "coordinator",
@@ -740,6 +831,11 @@ describe("ProductionEngine command boundary", () => {
 
   it("cancels a heartbeat when coordinator shutdown happens during its commit read", async () => {
     const fixture = commandPort();
+    const engine = new ProductionEngine(fixture.port);
+    engine.setCoordinator(true, "coordinator");
+    await Promise.resolve();
+    await engine.whenIdle();
+
     let reads = 0;
     let releaseCommitRead: (() => void) | undefined;
     fixture.port.getSceneMetadata = async () => {
@@ -751,8 +847,6 @@ describe("ProductionEngine command boundary", () => {
     };
     let writes = 0;
     fixture.port.patchSceneMetadata = async () => { writes += 1; };
-    const engine = new ProductionEngine(fixture.port);
-    engine.setCoordinator(true, "coordinator");
 
     const heartbeat = engine.writeCoordinatorHeartbeat({
       connectionId: "coordinator",
