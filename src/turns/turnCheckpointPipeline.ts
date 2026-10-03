@@ -53,10 +53,11 @@ function applySupplyCheckpoint(
       : factionState && armyCell
         ? isArmySupplied(scene, army, armyCell)
         : true;
-    const graceEligible = !routeSupplied &&
-      Boolean(factionState && armyCell && hasRailwayGraceAtCell(scene, factionState.id, armyCell)) &&
+    const supplyJustLost = !routeSupplied &&
       army.supply.supplied &&
       army.supply.unsuppliedSinceTurn === undefined;
+    const graceEligible = supplyJustLost &&
+      Boolean(factionState && armyCell && hasRailwayGraceAtCell(scene, factionState.id, armyCell));
     const supplied = routeSupplied || graceEligible;
 
     nextArmies[armyId] = {
@@ -64,10 +65,8 @@ function applySupplyCheckpoint(
       supply: {
         supplied,
         checkedOnTurn: nextTurnNumber,
-        ...(!routeSupplied && (graceEligible || army.supply.unsuppliedSinceTurn === undefined)
-          ? { unsuppliedSinceTurn: nextTurnNumber }
-          : {}),
-        ...(!routeSupplied && !graceEligible && army.supply.unsuppliedSinceTurn !== undefined
+        ...(supplyJustLost ? { unsuppliedSinceTurn: nextTurnNumber } : {}),
+        ...(!routeSupplied && !supplyJustLost && army.supply.unsuppliedSinceTurn !== undefined
           ? { unsuppliedSinceTurn: army.supply.unsuppliedSinceTurn }
           : {})
       },
