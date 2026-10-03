@@ -2046,7 +2046,17 @@ export class CommandProcessor {
         if (!position) return "ARMY_POSITION_UNAVAILABLE";
         const cell = this.cellForPosition(position);
         const city = cityForCell(state.scene, cell);
-        const hasHospital = city ? hasActiveCityBuilding(state.scene, city.id, "MILITARY_HOSPITAL") : false;
+        const hospitalAvailableToArmy = city
+          ? city.factionInfluenceId === army.sideId &&
+            hasActiveCityBuilding(state.scene, city.id, "MILITARY_HOSPITAL") &&
+            !Object.entries(state.armies).some(([otherArmyId, candidate]) =>
+              otherArmyId !== command.armyId &&
+              candidate.healing?.checkedOnTurn === state.scene.turn.turnNumber &&
+              candidate.healing.hospitalCityId === city.id &&
+              (candidate.healing.pending === true || candidate.healing.hpHealedThisTurn > 0)
+            )
+          : false;
+        const hasHospital = hospitalAvailableToArmy;
         const terrainId = readCell(state.scene.gridMap, cell).terrainId ?? state.scene.terrain.defaultTerrainId;
         const location = hasHospital
           ? "HOSPITAL" as const
