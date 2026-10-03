@@ -812,6 +812,9 @@ describe("ProductionEngine command boundary", () => {
     fixture.port.patchSceneMetadata = async () => { writes += 1; };
     const engine = new ProductionEngine(fixture.port);
     engine.setCoordinator(true, "coordinator");
+    await Promise.resolve();
+    await engine.whenIdle();
+    reads = 0;
 
     const heartbeat = engine.writeCoordinatorHeartbeat({
       connectionId: "coordinator",
@@ -841,6 +844,9 @@ describe("ProductionEngine command boundary", () => {
     fixture.port.patchSceneMetadata = async () => { writes += 1; };
     const engine = new ProductionEngine(fixture.port);
     engine.setCoordinator(true, "coordinator");
+    await Promise.resolve();
+    await engine.whenIdle();
+    reads = 0;
 
     const heartbeat = engine.writeCoordinatorHeartbeat({
       connectionId: "coordinator",
