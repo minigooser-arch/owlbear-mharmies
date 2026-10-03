@@ -209,6 +209,27 @@ describe("StrategicCityEditor", () => {
     expect(onUpdate.mock.calls[0]?.[1]).not.toHaveProperty("deFactoStateId");
   });
 
+  it("removes buildings through the dedicated building callback", () => {
+    const onRemoveBuilding = vi.fn();
+    const cityWithBuilding: StrategicCity = {
+      ...city,
+      buildings: [{ id: "port", type: "PORT", cell: { x: 5, y: 6 } }]
+    };
+    render(<StrategicCityEditor
+      role="GM"
+      states={states}
+      sides={sides}
+      cities={[cityWithBuilding]}
+      onCreate={vi.fn()}
+      onUpdate={vi.fn()}
+      onDelete={vi.fn()}
+      onRemoveBuilding={onRemoveBuilding}
+    />);
+    fireEvent.click(screen.getByText("Показать детали города Москва"));
+    fireEvent.click(screen.getByRole("button", { name: "Снять PORT" }));
+    expect(onRemoveBuilding).toHaveBeenCalledWith("moscow", "port");
+  });
+
   it("offers watchtower logistics center and post station in the building selector", () => {
     render(<StrategicCityEditor
       role="GM"
