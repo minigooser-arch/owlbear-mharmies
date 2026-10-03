@@ -396,7 +396,6 @@ it("loads one command input item frame before fresh persistence checks", async (
   expect(fixture.sceneItemReads).toBe(1);
 });
 
-
 describe("ProductionEngine latency isolation", () => {
   type SheetWorkQueueAccess = {
     enqueueSheetWork<T>(operation: () => Promise<T>): Promise<T>;
