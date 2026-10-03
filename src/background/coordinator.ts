@@ -1,3 +1,6 @@
+export const COORDINATOR_HEARTBEAT_INTERVAL_MS = 1_000;
+export const COORDINATOR_LEASE_DURATION_MS = 20_000;
+
 export interface CoordinatorParticipant {
   connectionId: string;
   role: "GM" | "PLAYER";
@@ -80,7 +83,7 @@ export class CoordinatorLease {
       () => void this.requestTick(generation).catch((error: unknown) => {
         this.reportError(error, "coordinator-heartbeat");
       }),
-      1_000
+      COORDINATOR_HEARTBEAT_INTERVAL_MS
     );
   }
 
@@ -147,7 +150,7 @@ export class CoordinatorLease {
     await this.options.writeHeartbeat({
       connectionId,
       epoch: nextEpoch,
-      expiresAt: this.options.now() + 3_000
+      expiresAt: this.options.now() + COORDINATOR_LEASE_DURATION_MS
     });
     if (!this.generationIsCurrent(generation)) return;
 
