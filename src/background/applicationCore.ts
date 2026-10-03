@@ -410,6 +410,11 @@ export class ProductionEngine {
       items,
       positions: Object.fromEntries(frame.items.map((item) => [item.id, item.position]))
     };
+    try {
+      state.scene = await this.hydrateDemographyFromSheet(state.scene);
+    } catch (error) {
+      this.reportOperationalError(error, "sheet-demography-bootstrap");
+    }
     let hydratedState: CommandState;
     try {
       hydratedState = await this.hydrateMilitaryInfluenceFromSheet(state);
@@ -424,6 +429,34 @@ export class ProductionEngine {
     if (!event) return;
     const writebackQueue = SheetWritebackClient.mergeQueue(metadata, event);
     await this.port.patchSceneMetadata({ [METADATA_KEYS.sheetWritebackQueue]: writebackQueue });
+  }
+
+  private async hydrateDemographyFromSheet(scene: SceneState): Promise<SceneState> {
+    const token = readSheetWritebackToken();
+    const url = scene.settings.sheetWritebackUrl?.trim();
+    if (!token || !url || !scene.demographics) return scene;
+    const countries = scene.states
+      .map((state) => state.backendCountry?.trim())
+      .filter((country): country is string => Boolean(country));
+    if (countries.length === 0) return scene;
+    const snapshots = await new SheetWritebackClient(url, token).getStates(countries);
+    const nextScene = applySheetStateSnapshots(scene, snapshots);
+    if (JSON.stringify(nextScene.demographics) === JSON.stringify(scene.demographics)) return scene;
+
+    const expectedRevision = scene.revision;
+    const canCommit = this.captureCoordinatorGuard();
+    if (!canCommit()) return scene;
+    const metadata = await this.port.getSceneMetadata();
+    const rawScene = metadata[METADATA_KEYS.scene];
+    const currentResult = migrateSceneState(rawScene ?? { version: 5 });
+    if (!currentResult.ok || currentResult.value.revision !== expectedRevision || !canCommit()) return scene;
+    const persistedScene = {
+      ...(typeof rawScene === "object" && rawScene !== null ? rawScene as Record<string, unknown> : {}),
+      demographics: nextScene.demographics,
+      revision: expectedRevision + 1
+    };
+    await this.port.patchSceneMetadata({ [METADATA_KEYS.scene]: persistedScene });
+    return { ...nextScene, revision: expectedRevision + 1 };
   }
 
   private async hydrateMilitaryInfluenceFromSheet(state: CommandState): Promise<CommandState> {
