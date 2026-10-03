@@ -1,4 +1,5 @@
 import { resolveCityDeFactoState } from "../cities/strategicCities";
+import { lighthouseDetectionBonusAtCell, watchtowerDetectionBonusAtCell } from "../cities/cityEffects";
 import { createGridErrorReporter } from "./gridErrorReporter";
 import { forcedExitRouteGate, hasRightToRemain } from "../movement/forcedExitService";
 import { joinReinforcements } from "../battles/battleGroupService";
@@ -540,6 +541,13 @@ export class ProductionEngine {
       return ship && shipEmbarkedArmyIds(ship).includes(item.id) ? [item.id] : [];
     }));
     const activeLandArmies = armies.filter(({ item }) => !reciprocallyEmbarkedArmyIds.has(item.id));
+    let visibilityCellForPosition: ((position: Vector2) => GridCellCoord) | undefined;
+    try {
+      const visibilityGrid = new StrategicGridAdapter({ dpi: await this.grid.getDpi(), offset: { x: 0, y: 0 } });
+      visibilityCellForPosition = (position) => visibilityGrid.sceneToCell(position);
+    } catch {
+      // Building-local detection bonuses fail closed while grid geometry is unavailable.
+    }
     const armyDetectionUnits = activeLandArmies.map(({ item, state }) => ({
       id: item.id,
       sideId: state.sideId,
@@ -547,7 +555,9 @@ export class ProductionEngine {
       detectionRangeCells: armyEffectiveDetectionRange(
         state,
         state.overrides.detectionRangeCells ?? scene.settings.defaultDetectionRangeCells
-      ),
+      ) + (visibilityCellForPosition
+        ? watchtowerDetectionBonusAtCell(scene, state.sideId, visibilityCellForPosition(item.position))
+        : 0),
       concealmentCells: armyConcealmentCells(state),
       ignoresVisionBarriers: state.ignoresVisionBarriers
     }));
@@ -559,7 +569,11 @@ export class ProductionEngine {
         sideId: state.sideId,
         position: item.position,
         detectionRangeCells:
-          (state.detectionOverride ?? scene.settings.defaultDetectionRangeCells) + shipDetectionBonus(state),
+          (state.detectionOverride ?? scene.settings.defaultDetectionRangeCells) +
+          shipDetectionBonus(state) +
+          (visibilityCellForPosition
+            ? lighthouseDetectionBonusAtCell(scene, visibilityCellForPosition(item.position), state.sideId)
+            : 0),
         concealmentCells: 0,
         ignoresVisionBarriers: false
       }];
@@ -1320,7 +1334,8 @@ export class ProductionEngine {
           armies: armyRecords,
           sceneItems,
           distancePort: this.grid,
-          visionBarriers: extractBarrierSegments(barrierRecords, "vision")
+          visionBarriers: extractBarrierSegments(barrierRecords, "vision"),
+          ...(commandCellForPosition ? { cellForPosition: commandCellForPosition } : {})
         });
         detectedNavalTargetsForSide = (sideId) =>
           detectedShipIdsForSide(detectionGraph, scene.ships ?? {}, sideId);
@@ -2034,7 +2049,9 @@ export class ProductionEngine {
           rangeCells: armyEffectiveDetectionRange(
             state,
             state.overrides.detectionRangeCells ?? scene.settings.defaultDetectionRangeCells
-          )
+          ) + (visibilityCellForPosition
+            ? watchtowerDetectionBonusAtCell(scene, state.sideId, visibilityCellForPosition(item.position))
+            : 0)
         })),
         { isGM: role === "GM", memberSideIds: new Set(memberSideIds) },
         await this.grid.getDpi()
