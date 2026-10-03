@@ -450,11 +450,23 @@ export class ProductionEngine {
     const expectedRevision = state.scene.revision;
     const nextScene = { ...state.scene, sides, revision: expectedRevision + 1 };
     const canCommit = this.captureCoordinatorGuard();
-    await this.repository.writeScene(
-      nextScene,
-      expectedRevision,
-      (current) => canCommit() && current.revision === expectedRevision
-    );
+    if (!canCommit()) return state;
+
+    // Influence hydration does not change the grid. Writing through
+    // MetadataRepository would first reread the grid manifest and can block
+    // startup forever when an older room contains a stale/corrupt grid chunk.
+    // Patch only the scene metadata after a revision check so the sheet values
+    // can still hydrate independently of grid storage.
+    const metadata = await this.port.getSceneMetadata();
+    const rawScene = metadata[METADATA_KEYS.scene];
+    const currentResult = migrateSceneState(rawScene ?? { version: 5 });
+    if (!currentResult.ok || currentResult.value.revision !== expectedRevision || !canCommit()) return state;
+    const persistedScene = {
+      ...(typeof rawScene === "object" && rawScene !== null ? rawScene as Record<string, unknown> : {}),
+      sides,
+      revision: expectedRevision + 1
+    };
+    await this.port.patchSceneMetadata({ [METADATA_KEYS.scene]: persistedScene });
     return { ...state, scene: nextScene };
   }
 
