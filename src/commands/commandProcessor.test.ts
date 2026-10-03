@@ -168,6 +168,36 @@ describe("CommandProcessor", () => {
     }
   });
 
+  it("accepts an army route through an active canal sea cell", () => {
+    const current = state();
+    current.scene.version = 9;
+    current.scene.sides = current.scene.sides.map((side) =>
+      side.id === "red" ? { ...side, stateId: "red-state" } : side
+    );
+    current.scene.states = [{ id: "red-state", name: "Red State", rulingFactionId: "red", active: true }];
+    current.scene.gridMap.cells["0,0"] = {
+      terrainId: "plain", impassable: false, factionTerritoryIds: [],
+      recognizedStateId: "red-state", deFactoStateId: "red-state"
+    };
+    current.scene.gridMap.cells["1,0"] = {
+      terrainId: "sea", impassable: false, factionTerritoryIds: [],
+      recognizedStateId: "red-state", deFactoStateId: "red-state"
+    };
+    current.scene.strategicCities = [{
+      id: "canal-city", name: "Canal City", cells: [{ x: 0, y: 0 }],
+      recognizedStateId: "red-state", deFactoStateId: "red-state", factionInfluenceId: "red",
+      mayorId: null, isCapital: false, historicalBuildTypeCount: 0,
+      buildings: [{ id: "canal", type: "CANAL", cell: { x: 1, y: 0 } }]
+    }];
+
+    const result = processor.execute(context("PLAYER", "leader", current), command({
+      type: "SET_ROUTE", armyId: "army-red", startCell: { x: 0, y: 0 },
+      cells: [{ x: 1, y: 0 }], route: [{ x: 150, y: 50 }]
+    }, "leader"));
+
+    expect(result.status).toBe("ACCEPTED");
+  });
+
   it("rejects a crafted route into closed foreign land for a non-ruling faction", () => {
     const current = state();
     current.scene.version = 7;
