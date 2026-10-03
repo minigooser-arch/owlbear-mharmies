@@ -126,9 +126,10 @@ export function parseConscriptionCategoryCsv(csv: string): StateConscriptionRow[
     if (isStateRow) {
       pendingStateName = stateName;
       pendingPopulation = parseHumanResource(record[15]);
-      // AO (zero-based column 40) contains the formula-derived current LR on the state row.
-      // The following faction row reuses AO for the conscription category, so read it only here.
-      pendingHumanResource = parseHumanResource(record[40]);
+      // Current exports place the formula-derived LR in AO (zero-based 40).
+      // Keep AR (43) as a legacy fallback for older 44-column exports used by existing scenes.
+      const currentHumanResource = parseHumanResource(record[40]);
+      pendingHumanResource = currentHumanResource ?? parseHumanResource(record[43]);
     }
     const category = record[40]?.trim();
     if (pendingStateName && isUsableCategory(category) && parseNumber(category) === undefined && parseHumanResource(category) === undefined) {
