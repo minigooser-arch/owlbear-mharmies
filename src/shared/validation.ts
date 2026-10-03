@@ -231,7 +231,7 @@ function normalizeDemographics(value: unknown, stateIds?: ReadonlySet<string>): 
   const records = Array.isArray(value)
     ? value
         .map(normalizeStateDemography)
-        .filter((record): record is StateDemography => record !== undefined && (!stateIds || stateIds.has(record.stateId)))
+        .filter((record): record is StateDemography => record !== undefined && (!stateIds || stateIds.size === 0 || stateIds.has(record.stateId)))
     : [];
   return [...new Map(records.map((record) => [record.stateId, record])).values()];
 }
