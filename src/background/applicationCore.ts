@@ -83,6 +83,7 @@ import {
 } from "../shared/types";
 import { MetadataRepository, RevisionConflict, type ArmyRecord, type BarrierRecord, type MetadataItemFrame } from "../storage/metadataRepository";
 import { GridStorageError } from "../storage/gridChunkCodec";
+import { migrateSceneState } from "../storage/migrations";
 import { markLRTransactionRecorded } from "../finance/lrLedger";
 import {
   applySheetStateSnapshots,
