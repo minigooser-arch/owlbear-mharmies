@@ -36,6 +36,11 @@ export function watchtowerDetectionBonusAtCell(scene: SceneState, sideId: string
   return city && controlledBySide(city, sideId) && activeBuilding(scene, city, "WATCHTOWER") ? 1 : 0;
 }
 
+export function postStationMovementBonusAtCell(scene: SceneState, sideId: string, cell: GridCellCoord): number {
+  const city = cityForCell(scene, cell);
+  return city && controlledBySide(city, sideId) && activeBuilding(scene, city, "POST_STATION") ? 2 : 0;
+}
+
 export function portTransportMovementCost(scene: SceneState, cityId: string | null, targetCell: GridCellCoord, sideId: string): number {
   const city = cityId ? (scene.strategicCities ?? []).find((candidate) => candidate.id === cityId) : undefined;
   const port = city && controlledBySide(city, sideId) ? activeBuilding(scene, city, "PORT") : undefined;
