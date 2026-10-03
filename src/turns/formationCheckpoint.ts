@@ -35,7 +35,7 @@ export function applyAutomaticArmyFormation(
       ? (scene.strategicCities ?? []).find((candidate) => candidate.id === army.formation?.cityId)
       : undefined;
     const hasBarracks = city
-      ? hasActiveCityBuilding(scene, city.id, "BARRACKS")
+      ? city.factionInfluenceId === army.sideId && hasActiveCityBuilding(scene, city.id, "BARRACKS")
       : false;
     const turnCap = hasBarracks
       ? BARRACKS_FORMATION_HP_PER_TURN
