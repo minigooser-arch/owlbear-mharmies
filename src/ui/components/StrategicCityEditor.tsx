@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { CityBuildingType, GridCellCoord, Side, StateEntity, StrategicCity } from "../../shared/types";
 
-const BUILDING_TYPES: readonly CityBuildingType[] = ["MILITARY_DEPARTMENT", "MILITARY_HOSPITAL", "BARRACKS", "TRAINING_GROUND", "MILITARY_ACADEMY", "RAILWAY_STATION", "PORT", "SHIPYARD", "MARINE_STATION", "CANAL", "LIGHTHOUSE", "BUNKERING_STATION", "SEA_FORT", "COASTAL_BATTERY", "AERODROME"];
+const BUILDING_TYPES: readonly CityBuildingType[] = ["MILITARY_DEPARTMENT", "MILITARY_HOSPITAL", "AERODROME", "BARRACKS", "TRAINING_GROUND", "MILITARY_ACADEMY", "WATCHTOWER", "COASTAL_BATTERY", "RAILWAY_STATION", "MILITARY_LOGISTICS_CENTER", "POST_STATION", "PORT", "SHIPYARD", "MARINE_STATION", "CANAL", "LIGHTHOUSE", "BUNKERING_STATION", "SEA_FORT"];
 
 export interface StrategicCityEditorProps {
   role: "GM" | "PLAYER";
