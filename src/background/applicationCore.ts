@@ -1,5 +1,5 @@
 import { resolveCityDeFactoState } from "../cities/strategicCities";
-import { lighthouseDetectionBonusAtCell, watchtowerDetectionBonusAtCell } from "../cities/cityEffects";
+import { canalCellHasBothDomains, lighthouseDetectionBonusAtCell, watchtowerDetectionBonusAtCell } from "../cities/cityEffects";
 import { createGridErrorReporter } from "./gridErrorReporter";
 import { forcedExitRouteGate, hasRightToRemain } from "../movement/forcedExitService";
 import { joinReinforcements } from "../battles/battleGroupService";
@@ -971,6 +971,7 @@ export class ProductionEngine {
             wars: scene.wars,
             remainingUnits: record.state.movement.remainingUnits,
             readCell: (cell) => readCell(scene.gridMap, cell),
+            landDomainOverride: (cell) => canalCellHasBothDomains(scene, cell),
             armyStateAllowsMovement: true,
             skipLegacyPoliticalCheck: true
           });
