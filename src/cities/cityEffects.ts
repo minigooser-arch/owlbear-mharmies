@@ -83,8 +83,8 @@ export function marineStationAllowsCrossing(
     scene.gridMap.cells[cellKey(cell)]?.terrainId === "sea" ? [index] : []
   );
   const landingCell = route[1];
-  return Boolean(landingCell) &&
-    seaIndexes.length === 1 &&
+  if (!landingCell) return false;
+  return seaIndexes.length === 1 &&
     seaIndexes[0] === 0 &&
     scene.gridMap.cells[cellKey(landingCell)]?.terrainId !== "sea";
 }
