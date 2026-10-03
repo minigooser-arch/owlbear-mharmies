@@ -12,8 +12,8 @@ const scene = {
 describe("city effects", () => {
   it("calculates barracks, exact port, and bunkering effects", () => {
     expect(armyFormationCap(scene, "c")).toBe(35);
-    expect(portTransportMovementCost(scene, "c", { x: 2, y: 2 })).toBe(0);
-    expect(portTransportMovementCost(scene, "c", { x: 1, y: 1 })).toBe(3);
-    expect(shipBunkeringBonus(scene, "c", { x: 0, y: 0 })).toBe(2);
+    expect(portTransportMovementCost(scene, "c", { x: 2, y: 2 }, "f")).toBe(0);
+    expect(portTransportMovementCost(scene, "c", { x: 1, y: 1 }, "f")).toBe(3);
+    expect(shipBunkeringBonus(scene, "c", { x: 0, y: 0 }, "f")).toBe(2);
   });
 });
