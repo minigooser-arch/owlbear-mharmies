@@ -323,6 +323,7 @@ function normalizeStateEntity(value: unknown): StateEntity | undefined {
       ? value.rulingFactionId as string | null
       : null,
     active: typeof value.active === "boolean" ? value.active : true,
+    ...(nonNegativeInteger(value.militaryInfluence) ? { militaryInfluence: value.militaryInfluence } : {}),
     ...(value.backendCountry === null || nonEmptyString(value.backendCountry)
       ? { backendCountry: value.backendCountry === null ? null : value.backendCountry.trim() }
       : {})
