@@ -8,7 +8,7 @@ import { applyDemographyCorrection, debitHumanResource as debitHumanResourceFrom
 import { validateMilitaryInfluenceOperation } from "../sheets/militaryInfluence";
 import { recalculateHumanResourceCapacity } from "../population/populationRules";
 import { isCityBuildingActive } from "../cities/cityBuildingRules";
-import { activeShipyardAtCell, cityForCell, coastalBatteryRetaliationDamage, hasActiveCityBuilding, marineStationAllowsCrossing, repairShipAtShipyard, seaFortBlocksDisembark, transportArmyMovementCostAtCell } from "../cities/cityEffects";
+import { activeShipyardAtCell, canalCellHasBothDomains, cityForCell, coastalBatteryRetaliationDamage, hasActiveCityBuilding, marineStationAllowsCrossing, repairShipAtShipyard, seaFortBlocksDisembark, transportArmyMovementCostAtCell } from "../cities/cityEffects";
 import { requestArmyDisband } from "../disband/disbandService";
 import { canRenumberTurn, cancelTurnDeferral, completeTurn, deferTurn, pauseAutoTurns, renumberSceneTurn, resumeAutoTurns } from "../turns/turnService";
 import { preCheckpointTurnBlockers } from "../turns/turnCompletionGuard";
@@ -196,6 +196,7 @@ function revalidateArmyRoute(state: CommandState, armyId: string): void {
       ? armyEffectiveMovementUnits(army)
       : army.movement.remainingUnits,
     readCell: (cell) => readCell(state.scene.gridMap, cell),
+    landDomainOverride: (cell) => canalCellHasBothDomains(state.scene, cell),
     armyStateAllowsMovement: !army.formation?.active && (army.status === "READY" || army.status === "PAUSED" || army.status === "MOVING")
   });
   const plannedRoute: ArmyState["plannedRoute"] = result.valid
@@ -1691,6 +1692,7 @@ export class CommandProcessor {
           wars: state.scene.wars,
           remainingUnits: armyEffectiveMovementUnits(army),
           readCell: (cell) => readCell(state.scene.gridMap, cell),
+          landDomainOverride: (cell) => canalCellHasBothDomains(state.scene, cell),
           armyStateAllowsMovement: true
         });
         if (!validation.valid) return validation.reason;
