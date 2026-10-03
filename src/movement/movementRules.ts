@@ -35,6 +35,8 @@ export interface MovementStepContext {
   remainingUnits: number;
   withinBounds: boolean;
   armyStateAllowsMovement: boolean;
+  /** Allows a specific cell to act as LAND without mutating its terrain type (for example, an active canal). */
+  landDomainOverride?: boolean;
   /** Deprecated compatibility input; faction territory is ignored regardless of this value. */
   skipLegacyPoliticalCheck?: boolean;
 }
@@ -54,7 +56,7 @@ export function validateMovementStep(context: MovementStepContext): MovementStep
   if (!terrain.ok) {
     return { allowed: false, reason: "INVALID_TERRAIN", problemCell };
   }
-  if (!terrainSupportsDomain(terrain.terrain, "LAND")) {
+  if (!context.landDomainOverride && !terrainSupportsDomain(terrain.terrain, "LAND")) {
     return { allowed: false, reason: "INVALID_TERRAIN", problemCell };
   }
   const stepCostUnits = terrain.terrain.movementCostUnits;
@@ -89,6 +91,8 @@ export interface PlannedRouteValidationContext {
   readCell: (cell: GridCellCoord) => CellState;
   withinBounds?: (cell: GridCellCoord) => boolean;
   armyStateAllowsMovement?: boolean;
+  /** Allows individual cells to act as LAND without changing the underlying terrain registry. */
+  landDomainOverride?: (cell: GridCellCoord) => boolean;
   /** Deprecated compatibility input; retained while old callers are migrated. */
   skipLegacyPoliticalCheck?: boolean;
 }
@@ -118,7 +122,8 @@ export function validatePlannedRoute(context: PlannedRouteValidationContext): Pl
       wars: context.wars,
       remainingUnits,
       withinBounds: context.withinBounds?.(to) ?? true,
-      armyStateAllowsMovement: context.armyStateAllowsMovement ?? true
+      armyStateAllowsMovement: context.armyStateAllowsMovement ?? true,
+      landDomainOverride: context.landDomainOverride?.(to) ?? false
     });
     if (!step.allowed) {
       const result: PlannedRouteValidationResult = {

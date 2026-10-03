@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { CityBuildingType, GridCellCoord, Side, StateEntity, StrategicCity } from "../../shared/types";
 
-const BUILDING_TYPES: readonly CityBuildingType[] = ["MILITARY_DEPARTMENT", "MILITARY_HOSPITAL", "BARRACKS", "TRAINING_GROUND", "MILITARY_ACADEMY", "RAILWAY_STATION", "PORT", "SHIPYARD", "MARINE_STATION", "CANAL", "LIGHTHOUSE", "BUNKERING_STATION", "SEA_FORT", "COASTAL_BATTERY", "AERODROME"];
+const BUILDING_TYPES: readonly CityBuildingType[] = ["MILITARY_DEPARTMENT", "MILITARY_HOSPITAL", "AERODROME", "BARRACKS", "TRAINING_GROUND", "MILITARY_ACADEMY", "WATCHTOWER", "COASTAL_BATTERY", "RAILWAY_STATION", "MILITARY_LOGISTICS_CENTER", "POST_STATION", "PORT", "SHIPYARD", "MARINE_STATION", "CANAL", "LIGHTHOUSE", "BUNKERING_STATION", "SEA_FORT"];
 
 export interface StrategicCityEditorProps {
   role: "GM" | "PLAYER";
@@ -13,6 +13,7 @@ export interface StrategicCityEditorProps {
   onUpdate(cityId: string, patch: Partial<Omit<StrategicCity, "id">>): void | Promise<void>;
   onDelete(cityId: string): void | Promise<void>;
   onAddBuilding?(cityId: string, building: { id: string; type: CityBuildingType; cell: GridCellCoord }): void | Promise<void>;
+  onRemoveBuilding?(cityId: string, buildingId: string): void | Promise<void>;
   onOpenCellPicker?(): void | Promise<void>;
   onCloseCellPicker?(): void | Promise<void>;
   pickedCells?: readonly GridCellCoord[];
@@ -70,7 +71,8 @@ function StrategicCityRow({
   role,
   onUpdate,
   onDelete,
-  onAddBuilding
+  onAddBuilding,
+  onRemoveBuilding
 }: {
   city: StrategicCity;
   stateNames: ReadonlyMap<string, string>;
@@ -79,6 +81,7 @@ function StrategicCityRow({
   onUpdate(cityId: string, patch: Partial<Omit<StrategicCity, "id">>): void | Promise<void>;
   onDelete(cityId: string): void | Promise<void>;
   onAddBuilding?(cityId: string, building: { id: string; type: CityBuildingType; cell: GridCellCoord }): void | Promise<void>;
+  onRemoveBuilding?(cityId: string, buildingId: string): void | Promise<void>;
 }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(city.name);
@@ -148,7 +151,7 @@ function StrategicCityRow({
       <p>Исторических типов построек: {city.historicalBuildTypeCount}</p>
       <p>Постройки: {(city.buildings ?? []).length === 0 ? "нет" : (city.buildings ?? []).map((building) => `${building.type} (${building.cell.x},${building.cell.y})`).join(" · ")}</p>
       {role === "GM" && (city.buildings ?? []).length > 0 ? <div className="card-actions" aria-label={`Постройки города ${city.name}`}>
-        {(city.buildings ?? []).map((building) => <button key={building.id} type="button" onClick={() => void onUpdate(city.id, { buildings: (city.buildings ?? []).filter((candidate) => candidate.id !== building.id) })}>Снять {building.type}</button>)}
+        {(city.buildings ?? []).map((building) => <button key={building.id} type="button" onClick={() => void onRemoveBuilding?.(city.id, building.id)}>Снять {building.type}</button>)}
       </div> : null}
       {role === "GM" && onAddBuilding ? <div className="card-actions" aria-label={`Добавить постройку в ${city.name}`}>
         <select aria-label={`Тип новой постройки ${city.name}`} value={buildingType} onChange={(event) => setBuildingType(event.target.value as CityBuildingType)}>{BUILDING_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}</select>
@@ -211,6 +214,7 @@ export function StrategicCityEditor({
   onUpdate,
   onDelete,
   onAddBuilding,
+  onRemoveBuilding,
   onOpenCellPicker,
   onCloseCellPicker,
   pickedCells = [],
@@ -334,7 +338,7 @@ export function StrategicCityEditor({
       </label>
     </div> : null}
     <div className="strategic-city-list">
-      {visibleCities.map((city) => <StrategicCityRow key={city.id} city={city} stateNames={stateNames} sides={sides} role={role} onUpdate={onUpdate} onDelete={onDelete} {...(onAddBuilding ? { onAddBuilding } : {})} />)}
+      {visibleCities.map((city) => <StrategicCityRow key={city.id} city={city} stateNames={stateNames} sides={sides} role={role} onUpdate={onUpdate} onDelete={onDelete} {...(onAddBuilding ? { onAddBuilding } : {})} {...(onRemoveBuilding ? { onRemoveBuilding } : {})} />)}
       {cities.length === 0 ? <p className="empty">Города не добавлены.</p> : null}
       {cities.length > 0 && visibleCities.length === 0 ? <p className="empty">По этим условиям города не найдены.</p> : null}
     </div>

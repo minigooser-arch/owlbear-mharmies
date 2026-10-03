@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { firstBarrierIntersection } from "../barriers/barrierGeometry";
 import type { GridDistancePort } from "../routes/routeMath";
-import type { Vector2 } from "../shared/types";
+import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE } from "../shared/constants";
+import type { ArmyState, SceneItemRecord, SceneState, Vector2 } from "../shared/types";
 import { buildDetectionGraph, type DetectionUnit } from "./detectionGraph";
+import { createRegisteredShip } from "../naval/ships/shipLifecycle";
+import { buildSceneDetectionGraph } from "./sceneDetectionGraph";
 
 function serializeGraph(graph: Awaited<ReturnType<typeof buildDetectionGraph>>) {
   return {
@@ -133,5 +136,84 @@ describe("detection graph", () => {
     expect(calls).toBe(72);
     expect(maxInFlight).toBeGreaterThan(1);
     expect(maxInFlight).toBeLessThanOrEqual(8);
+  });
+});
+
+
+function sceneArmy(sideId: string): ArmyState {
+  return {
+    version: 4, registered: true, sideId, status: "READY", overrides: {}, route: [],
+    plannedRoute: { startCell: { x: 0, y: 0 }, executeOnTurn: 0, cells: [], totalCostUnits: 0, validatedRevision: 1, requiresReplan: false },
+    movement: { maxUnits: 10, remainingUnits: 10, enteredRouteCellCount: 0 },
+    health: { hp: 40, maxHp: 40 }, supply: { supplied: true, checkedOnTurn: 1 },
+    disband: { pending: false, requestedOnTurn: null, requestedByPlayerId: null },
+    currentWaypointIndex: 0, segmentProgressCells: 0, ignoresMovementBarriers: false, ignoresVisionBarriers: false, revision: 1
+  };
+}
+
+function sceneItem(id: string, x: number, y: number): SceneItemRecord {
+  return { id, type: "IMAGE", position: { x, y }, metadata: {} };
+}
+
+function detectionScene(): SceneState {
+  return {
+    version: 9, revision: 1, settings: { ...DEFAULT_SETTINGS, defaultDetectionRangeCells: 1 },
+    sides: [
+      { id: "f", name: "F", color: "#fff", playerIds: [], leaderPlayerIds: [], stateId: "s" },
+      { id: "e", name: "E", color: "#000", playerIds: [], leaderPlayerIds: [], stateId: "enemy-state" }
+    ],
+    states: [
+      { id: "s", name: "S", color: "#fff", rulingFactionId: "f", active: true },
+      { id: "enemy-state", name: "Enemy", color: "#000", rulingFactionId: "e", active: true }
+    ],
+    relations: { f: { e: "ENEMY" } }, stateRelations: {}, battleGroups: [],
+    terrain: structuredClone(DEFAULT_TERRAIN),
+    gridMap: { version: 1, revision: 1, cells: {
+      "0,0": { terrainId: "plain", impassable: false, factionTerritoryIds: [], recognizedStateId: "s", deFactoStateId: "s" }
+    } },
+    wars: [], turn: { ...structuredClone(DEFAULT_TURN_STATE), phase: "MOVEMENT" },
+    ships: { "ship-f": createRegisteredShip("f", "CRUISER", "EAST"), "ship-e": createRegisteredShip("e", "CRUISER", "WEST") },
+    strategicCities: [{
+      id: "city", name: "City", cells: [{ x: 0, y: 0 }], recognizedStateId: "s", deFactoStateId: "s",
+      factionInfluenceId: "f", mayorId: null, isCapital: false, historicalBuildTypeCount: 0,
+      buildings: [
+        { id: "watch", type: "WATCHTOWER", cell: { x: 0, y: 0 } },
+        { id: "port", type: "PORT", cell: { x: 2, y: 2 } },
+        { id: "light", type: "LIGHTHOUSE", cell: { x: 3, y: 3 } }
+      ]
+    }]
+  };
+}
+
+describe("city detection integration", () => {
+  const gridDistance = { distance: async (from: Vector2, to: Vector2) => Math.max(Math.abs(to.x - from.x), Math.abs(to.y - from.y)) };
+
+  it("adds watchtower range to a friendly army inside the city", async () => {
+    const friendly = sceneItem("army-f", 0, 0);
+    const enemy = sceneItem("army-e", 2, 0);
+    const graph = await buildSceneDetectionGraph({
+      scene: detectionScene(),
+      armies: [{ item: friendly, state: sceneArmy("f") }, { item: enemy, state: sceneArmy("e") }],
+      sceneItems: [friendly, enemy],
+      distancePort: gridDistance,
+      visionBarriers: [],
+      cellForPosition: (position) => ({ x: position.x, y: position.y })
+    });
+    expect(graph.visibleTargetsBySide.get("f")?.has("army-e")).toBe(true);
+  });
+
+  it("adds lighthouse range only to the owning ship on its port cell", async () => {
+    const friendly = sceneItem("ship-f", 2, 2);
+    const enemy = sceneItem("ship-e", 4, 2);
+    const graph = await buildSceneDetectionGraph({
+      scene: detectionScene(),
+      armies: [],
+      sceneItems: [friendly, enemy],
+      distancePort: gridDistance,
+      visionBarriers: [],
+      cellForPosition: (position) => ({ x: position.x, y: position.y })
+    });
+    expect(graph.visibleTargetsBySide.get("f")?.has("ship-e")).toBe(true);
+    expect(graph.visibleTargetsBySide.get("e")?.has("ship-f")).not.toBe(true);
   });
 });

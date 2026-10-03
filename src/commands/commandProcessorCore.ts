@@ -8,7 +8,7 @@ import { applyDemographyCorrection, debitHumanResource as debitHumanResourceFrom
 import { validateMilitaryInfluenceOperation } from "../sheets/militaryInfluence";
 import { recalculateHumanResourceCapacity } from "../population/populationRules";
 import { isCityBuildingActive } from "../cities/cityBuildingRules";
-import { activeShipyardAtCell, cityForCell, coastalBatteryRetaliationDamage, hasActiveCityBuilding, marineStationAllowsCrossing, repairShipAtShipyard, seaFortBlocksDisembark, transportArmyMovementCostAtCell } from "../cities/cityEffects";
+import { activeShipyardAtCell, canalCellHasBothDomains, cityForCell, coastalBatteryRetaliationCity, coastalBatteryRetaliationDamage, hasActiveCityBuilding, marineStationAllowsCrossing, postStationMovementBonusAtCell, repairShipAtShipyard, seaFortBlocksDisembark, transportArmyMovementCostAtCell } from "../cities/cityEffects";
 import { requestArmyDisband } from "../disband/disbandService";
 import { canRenumberTurn, cancelTurnDeferral, completeTurn, deferTurn, pauseAutoTurns, renumberSceneTurn, resumeAutoTurns } from "../turns/turnService";
 import { preCheckpointTurnBlockers } from "../turns/turnCompletionGuard";
@@ -193,9 +193,10 @@ function revalidateArmyRoute(state: CommandState, armyId: string): void {
     terrain: terrainRegistryForArmy(army, state.scene.terrain),
     wars: state.scene.wars,
     remainingUnits: army.plannedRoute.executeOnTurn > state.scene.turn.turnNumber
-      ? armyEffectiveMovementUnits(army)
+      ? armyEffectiveMovementUnits(army) + postStationMovementBonusAtCell(state.scene, army.sideId, army.plannedRoute.startCell)
       : army.movement.remainingUnits,
     readCell: (cell) => readCell(state.scene.gridMap, cell),
+    landDomainOverride: (cell) => canalCellHasBothDomains(state.scene, cell),
     armyStateAllowsMovement: !army.formation?.active && (army.status === "READY" || army.status === "PAUSED" || army.status === "MOVING")
   });
   const plannedRoute: ArmyState["plannedRoute"] = result.valid
@@ -628,7 +629,7 @@ export class CommandProcessor {
           });
           return undefined;
         }
-        const embarked = embarkArmy(command.shipId, ship, command.armyId, army, transportLoadingIsFree(ship) ? 0 : transportArmyMovementCostAtCell(state.scene, armyCell));
+        const embarked = embarkArmy(command.shipId, ship, command.armyId, army, transportLoadingIsFree(ship) ? 0 : transportArmyMovementCostAtCell(state.scene, armyCell, army.sideId));
         state.scene.ships ??= {};
         state.scene.ships[command.shipId] = embarked.ship;
         state.armies[command.armyId] = embarked.army;
@@ -664,7 +665,7 @@ export class CommandProcessor {
             cellSupportsDomain(state.scene, shipCell, "SEA")
         });
         if (!geometry.ok) return geometry.reason;
-        const embarked = embarkArmy(command.shipId, ship, command.armyId, army, transportLoadingIsFree(ship) ? 0 : transportArmyMovementCostAtCell(state.scene, armyCell));
+        const embarked = embarkArmy(command.shipId, ship, command.armyId, army, transportLoadingIsFree(ship) ? 0 : transportArmyMovementCostAtCell(state.scene, armyCell, army.sideId));
         state.scene.ships ??= {};
         state.scene.ships[command.shipId] = embarked.ship;
         state.armies[command.armyId] = embarked.army;
@@ -682,7 +683,7 @@ export class CommandProcessor {
         const shipPosition = commandPosition(state, command.shipId);
         if (!shipPosition) return "TRANSPORT_POSITION_UNAVAILABLE";
         if (!cellSupportsDomain(state.scene, command.targetCell, "LAND")) return "LANDING_REQUIRES_LAND";
-        if (seaFortBlocksDisembark(state.scene, command.targetCell, relationForSides(state.scene, ship.sideId, army.sideId) === "ENEMY")) {
+        if (seaFortBlocksDisembark(state.scene, command.targetCell, ship.sideId)) {
           return "SEA_FORT_BLOCKS_LANDING";
         }
         const shipCell = this.cellForPosition(shipPosition);
@@ -709,7 +710,7 @@ export class CommandProcessor {
         if (political.allowedCellCount === 0) {
           return political.blockedReason ?? "INVALID_POLITICAL_CONFIG";
         }
-        const disembarked = disembarkArmy(command.shipId, ship, command.armyId, army, transportLoadingIsFree(ship) ? 0 : transportArmyMovementCostAtCell(state.scene, command.targetCell));
+        const disembarked = disembarkArmy(command.shipId, ship, command.armyId, army, transportLoadingIsFree(ship) ? 0 : transportArmyMovementCostAtCell(state.scene, command.targetCell, army.sideId));
         if (!disembarked.ok) return disembarked.reason;
         const occupantIds = Object.entries(state.armies)
           .filter(([armyId, candidate]) => armyId !== command.armyId && candidate.health.hp > 0 && candidate.embarkedOnShipId == null)
@@ -1098,12 +1099,17 @@ export class CommandProcessor {
         } else {
           state.armies[command.armyId] = result.target;
         }
-        const retaliation = coastalBatteryRetaliationDamage(
-          state.scene,
-          targetCell,
-          relation === "ENEMY",
-          this.rollD6
-        );
+        const batteryCity = coastalBatteryRetaliationCity(state.scene, targetCell, ship.sideId);
+        const retaliation = batteryCity
+          ? coastalBatteryRetaliationDamage(state.scene, targetCell, true, this.rollD6)
+          : 0;
+        if (batteryCity) {
+          state.scene.strategicCities = (state.scene.strategicCities ?? []).map((city) =>
+            city.id === batteryCity.id
+              ? { ...city, coastalBatteryRetaliatedOnTurn: state.scene.turn.turnNumber }
+              : city
+          );
+        }
         if (retaliation > 0) {
           const armor = shipEffectiveArmor(ship);
           const damage = Math.max(0, retaliation - armor);
@@ -1680,7 +1686,7 @@ export class CommandProcessor {
           if (political.allowedCellCount < command.cells.length) return political.blockedReason ?? "INVALID_POLITICAL_CONFIG";
         }
         const routeCity = (state.scene.strategicCities ?? []).find((city) => city.cells.some((cell) => sameCell(cell, command.startCell)));
-        const marineCrossing = routeCity ? marineStationAllowsCrossing(state.scene, routeCity.id, command.cells) : false;
+        const marineCrossing = routeCity ? marineStationAllowsCrossing(state.scene, routeCity.id, army.sideId, command.cells) : false;
         const routeTerrain = terrainRegistryForArmy(army, state.scene.terrain);
         if (marineCrossing && routeTerrain.types.sea) routeTerrain.types.sea = { ...routeTerrain.types.sea, movementDomains: ["LAND", "SEA"] };
         const validation = validatePlannedRoute({
@@ -1689,8 +1695,9 @@ export class CommandProcessor {
           sideId: army.sideId,
           terrain: routeTerrain,
           wars: state.scene.wars,
-          remainingUnits: armyEffectiveMovementUnits(army),
+          remainingUnits: armyEffectiveMovementUnits(army) + postStationMovementBonusAtCell(state.scene, army.sideId, command.startCell),
           readCell: (cell) => readCell(state.scene.gridMap, cell),
+          landDomainOverride: (cell) => canalCellHasBothDomains(state.scene, cell),
           armyStateAllowsMovement: true
         });
         if (!validation.valid) return validation.reason;
@@ -2046,7 +2053,17 @@ export class CommandProcessor {
         if (!position) return "ARMY_POSITION_UNAVAILABLE";
         const cell = this.cellForPosition(position);
         const city = cityForCell(state.scene, cell);
-        const hasHospital = city ? hasActiveCityBuilding(state.scene, city.id, "MILITARY_HOSPITAL") : false;
+        const hospitalAvailableToArmy = city
+          ? city.factionInfluenceId === army.sideId &&
+            hasActiveCityBuilding(state.scene, city.id, "MILITARY_HOSPITAL") &&
+            !Object.entries(state.armies).some(([otherArmyId, candidate]) =>
+              otherArmyId !== command.armyId &&
+              candidate.healing?.checkedOnTurn === state.scene.turn.turnNumber &&
+              candidate.healing.hospitalCityId === city.id &&
+              (candidate.healing.pending === true || candidate.healing.hpHealedThisTurn > 0)
+            )
+          : false;
+        const hasHospital = hospitalAvailableToArmy;
         const terrainId = readCell(state.scene.gridMap, cell).terrainId ?? state.scene.terrain.defaultTerrainId;
         const location = hasHospital
           ? "HOSPITAL" as const

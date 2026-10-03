@@ -314,7 +314,7 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
       upgrades: structuredClone(state.upgrades ?? { recovery: {}, motorization: {}, reconnaissance: {} }),
       formationActive: state.formation?.active ?? false,
       formationHpAddedThisTurn: state.formation?.hpAddedThisTurn ?? 0,
-      formationTurnCap: armyFormationCap(input.scene, state.formation?.cityId ?? null),
+      formationTurnCap: armyFormationCap(input.scene, state.formation?.cityId ?? null, state.sideId),
       healingHpHealedThisTurn: state.healing?.hpHealedThisTurn ?? 0,
       ...(input.gridDpi ? { healingRemainingThisTurn } : {}),
       healingPending: state.healing?.pending ?? false,
@@ -441,7 +441,7 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
       effectiveDetectionRange:
         (state.detectionOverride ?? input.scene.settings.defaultDetectionRangeCells) +
         shipDetectionBonus(state) +
-        (input.gridDpi ? lighthouseDetectionBonusAtCell(input.scene, new StrategicGridAdapter({ dpi: input.gridDpi, offset: { x: 0, y: 0 } }).sceneToCell(item.position)) : 0),
+        (input.gridDpi ? lighthouseDetectionBonusAtCell(input.scene, new StrategicGridAdapter({ dpi: input.gridDpi, offset: { x: 0, y: 0 } }).sceneToCell(item.position), state.sideId) : 0),
       experience: state.experience ?? 0,
       upgrades: structuredClone(state.upgrades ?? {}),
       hospitalSupportDice: hospitalSupportDice(state),

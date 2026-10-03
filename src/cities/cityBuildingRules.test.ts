@@ -5,7 +5,6 @@ import {
   addCityBuilding,
   canUseCityBuilding,
   isCityBuildingActive,
-  normalizeCityBuildingLocations,
   removeCityBuilding
 } from "./cityBuildingRules";
 
@@ -51,6 +50,7 @@ describe("city building rules", () => {
   it("allows building cells outside city territory, enforces one type and unique canal cells", () => {
     const first = addCityBuilding(city, { id: "hospital", type: "MILITARY_HOSPITAL", cell: { x: 9, y: 9 } }, []);
     expect(first.ok).toBe(true);
+    if (first.ok) expect(first.city.buildings?.find((building) => building.id === "hospital")?.cell).toEqual({ x: 9, y: 9 });
     const duplicate = addCityBuilding(first.ok ? first.city : city, { id: "hospital-2", type: "MILITARY_HOSPITAL", cell: { x: 10, y: 10 } }, []);
     expect(duplicate).toMatchObject({ ok: false, reason: "BUILDING_TYPE_DUPLICATE" });
     const canal = addCityBuilding(city, { id: "canal", type: "CANAL", cell: { x: 4, y: 4 } }, []);
@@ -62,30 +62,3 @@ describe("city building rules", () => {
 });
 
 
-describe("city building location normalization", () => {
-  it("moves every existing building to the city's first strategic cell", () => {
-    const city: StrategicCity = {
-      id: "city-1",
-      name: "Москва",
-      cells: [{ x: 12, y: -4 }, { x: 13, y: -4 }],
-      recognizedStateId: "state-1",
-      deFactoStateId: "state-1",
-      factionInfluenceId: "side-1",
-      mayorId: null,
-      isCapital: true,
-      historicalBuildTypeCount: 0,
-      buildings: [
-        { id: "barracks", type: "BARRACKS", cell: { x: 99, y: 99 } },
-        { id: "hospital", type: "MILITARY_HOSPITAL", cell: { x: -8, y: 20 } }
-      ]
-    };
-
-    const normalized = normalizeCityBuildingLocations([city]);
-
-    expect(normalized[0]?.buildings).toEqual([
-      { id: "barracks", type: "BARRACKS", cell: { x: 12, y: -4 } },
-      { id: "hospital", type: "MILITARY_HOSPITAL", cell: { x: 12, y: -4 } }
-    ]);
-    expect(city.buildings?.[0]?.cell).toEqual({ x: 99, y: 99 });
-  });
-});

@@ -116,6 +116,62 @@ it("automatically forms 35 HP per turn in a city with active barracks", () => {
   expect(result.scene.demographics?.[0]?.humanResource).toBe(234);
 });
 
+it("adds two movement points when an army starts the turn in its active post-station city", () => {
+  const current = scene();
+  current.strategicCities = [{
+    id: "post-city", name: "Post City", cells: [{ x: 0, y: 0 }],
+    recognizedStateId: "red-state", deFactoStateId: "red-state", factionInfluenceId: "red",
+    mayorId: null, isCapital: false, historicalBuildTypeCount: 0,
+    buildings: [
+      { id: "post", type: "POST_STATION", cell: { x: 0, y: 0 } },
+      { id: "rail", type: "RAILWAY_STATION", cell: { x: 0, y: 0 } }
+    ]
+  }];
+  const result = completeTurn(current, { a: army(0) }, {
+    source: "MANUAL",
+    completedAt: new Date("2026-09-30T10:00:00.000Z"),
+    armyCells: { a: { x: 0, y: 0 } }
+  });
+  expect(result.changed).toBe(true);
+  if (!result.changed) return;
+  expect(result.armies.a?.movement).toEqual({ maxUnits: 12, remainingUnits: 12, enteredRouteCellCount: 0 });
+});
+
+it("grants exactly one supplied turn to an army stranded inside its railway city", () => {
+  const current = scene();
+  current.sides.push({ id: "blue", name: "Blue", color: "#00f", playerIds: [], leaderPlayerIds: [], stateId: "blue-state" });
+  current.states.push({ id: "blue-state", name: "Blue State", rulingFactionId: "blue", active: true });
+  current.gridMap.cells["0,0"] = { terrainId: "plain", impassable: false, factionTerritoryIds: [], recognizedStateId: "red-state", deFactoStateId: "red-state" };
+  current.gridMap.cells["1,0"] = { terrainId: "plain", impassable: false, factionTerritoryIds: [], recognizedStateId: "blue-state", deFactoStateId: "blue-state" };
+  current.gridMap.cells["2,0"] = { terrainId: "plain", impassable: false, factionTerritoryIds: [], recognizedStateId: "red-state", deFactoStateId: "red-state" };
+  current.strategicCities = [{
+    id: "rail-city", name: "Rail City", cells: [{ x: 0, y: 0 }, { x: 2, y: 0 }],
+    recognizedStateId: "red-state", deFactoStateId: "red-state", factionInfluenceId: "red",
+    mayorId: null, isCapital: false, historicalBuildTypeCount: 0,
+    buildings: [{ id: "rail", type: "RAILWAY_STATION", cell: { x: 2, y: 0 } }]
+  }];
+
+  const first = completeTurn(current, { a: army(0) }, {
+    source: "MANUAL",
+    completedAt: new Date("2026-09-30T10:00:00.000Z"),
+    armyCells: { a: { x: 0, y: 0 } }
+  });
+  expect(first.changed).toBe(true);
+  if (!first.changed) return;
+  expect(first.armies.a?.supply).toEqual({ supplied: true, checkedOnTurn: 2, unsuppliedSinceTurn: 2 });
+
+  first.scene.turn.phase = "POST_MOVEMENT";
+  const second = completeTurn(first.scene, first.armies, {
+    source: "MANUAL",
+    completedAt: new Date("2026-10-01T10:00:00.000Z"),
+    armyCells: { a: { x: 0, y: 0 } }
+  });
+  expect(second.changed).toBe(true);
+  if (!second.changed) return;
+  expect(second.armies.a?.supply.supplied).toBe(false);
+  expect(second.armies.a?.supply.unsuppliedSinceTurn).toBe(2);
+});
+
 it("always starts the new turn in movement phase", () => {
   const current = scene();
   current.turn.phase = "POST_MOVEMENT";

@@ -1,6 +1,6 @@
 import type { GridCellCoord, SceneItemRecord, SceneState, Vector2 } from "../../shared/types";
 import { shipBunkeringBonusAtCell } from "../../cities/cityEffects";
-import { SHIP_CLASSES } from "./shipClasses";
+import { shipEffectiveMovement } from "../../upgrades/unitUpgrades";
 import { hasDuplicateLiveShipCells } from "./shipCellOccupancy";
 import { planShipStrategicRoute, type ShipStrategicMovementFailure } from "./shipStrategicMovement";
 
@@ -41,8 +41,8 @@ export function resolvePlannedShipRoutes(
     const startCellForBonus = position && cellForPosition ? cellForPosition(position) : undefined;
     const validationShip = {
       ...ship,
-      globalMovementRemaining: SHIP_CLASSES[ship.classId].movement +
-        (startCellForBonus ? shipBunkeringBonusAtCell(scene, startCellForBonus) : 0)
+      globalMovementRemaining: shipEffectiveMovement(ship) +
+        (startCellForBonus ? shipBunkeringBonusAtCell(scene, startCellForBonus, ship.sideId) : 0)
     };
     const planned = planShipStrategicRoute(
       scene,

@@ -2,7 +2,7 @@ import { destroyArmy } from "../armies/armyLifecycle";
 import { validatePlannedRoute } from "../movement/movementRules";
 import { politicalRouteGate } from "../movement/authoritativeStateMovement";
 import { forcedExitRouteGate, forcedExitTurnRoute } from "../movement/forcedExitService";
-import { shipBunkeringBonusAtCell } from "../cities/cityEffects";
+import { canalCellHasBothDomains, postStationMovementBonusAtCell, shipBunkeringBonusAtCell } from "../cities/cityEffects";
 import { readCell } from "../terrain/gridMap";
 import type { ArmyState, GridCellCoord, SceneState, TurnState, Vector2 } from "../shared/types";
 import { runTurnCheckpoint } from "./turnCheckpointPipeline";
@@ -44,7 +44,7 @@ function prepareArmyForNewTurn(
   nextTurn: number,
   positionForCell?: (cell: GridCellCoord) => Vector2
 ): ArmyState {
-  const movementUnits = armyEffectiveMovementUnits(army);
+  const movementUnits = armyEffectiveMovementUnits(army) + (armyCell ? postStationMovementBonusAtCell(scene, army.sideId, armyCell) : 0);
   const healing = army.healing ? { ...army.healing } : undefined;
   if (healing) delete healing.pendingHp;
   let next: ArmyState = {
@@ -86,6 +86,7 @@ function prepareArmyForNewTurn(
       wars: scene.wars,
       remainingUnits: movementUnits,
       readCell: (cell) => readCell(scene.gridMap, cell),
+      landDomainOverride: (cell) => canalCellHasBothDomains(scene, cell),
       armyStateAllowsMovement: true
     });
     const cleanRoute = { ...next.plannedRoute };
@@ -210,7 +211,7 @@ export function completeTurn(
     for (const [shipId, ship] of Object.entries(nextScene.ships)) {
       nextScene.ships[shipId] = {
         ...ship,
-        globalMovementRemaining: shipEffectiveMovement(ship) + (input.shipCells?.[shipId] ? shipBunkeringBonusAtCell(nextScene, input.shipCells[shipId]) : 0),
+        globalMovementRemaining: shipEffectiveMovement(ship) + (input.shipCells?.[shipId] ? shipBunkeringBonusAtCell(nextScene, input.shipCells[shipId], ship.sideId) : 0),
         movementSpentThisTurn: false,
         revision: ship.revision + 1
       };

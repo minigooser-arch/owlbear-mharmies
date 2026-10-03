@@ -168,6 +168,65 @@ describe("CommandProcessor", () => {
     }
   });
 
+  it("uses the post-station bonus while validating next-turn routes", () => {
+    const current = state();
+    current.scene.version = 9;
+    current.scene.sides = current.scene.sides.map((side) =>
+      side.id === "red" ? { ...side, stateId: "red-state" } : side
+    );
+    current.scene.states = [{ id: "red-state", name: "Red State", rulingFactionId: "red", active: true }];
+    for (let x = 0; x <= 6; x += 1) {
+      current.scene.gridMap.cells[`${x},0`] = {
+        terrainId: "plain", impassable: false, factionTerritoryIds: [],
+        recognizedStateId: "red-state", deFactoStateId: "red-state"
+      };
+    }
+    current.scene.strategicCities = [{
+      id: "post-city", name: "Post City", cells: [{ x: 0, y: 0 }],
+      recognizedStateId: "red-state", deFactoStateId: "red-state", factionInfluenceId: "red",
+      mayorId: null, isCapital: false, historicalBuildTypeCount: 0,
+      buildings: [{ id: "post", type: "POST_STATION", cell: { x: 0, y: 0 } }]
+    }];
+    const cells = Array.from({ length: 6 }, (_, index) => ({ x: index + 1, y: 0 }));
+    const route = cells.map((cell) => ({ x: cell.x * 100 + 50, y: 50 }));
+
+    const result = processor.execute(context("PLAYER", "leader", current), command({
+      type: "SET_ROUTE", armyId: "army-red", startCell: { x: 0, y: 0 }, cells, route
+    }, "leader"));
+
+    expect(result.status).toBe("ACCEPTED");
+  });
+
+  it("accepts an army route through an active canal sea cell", () => {
+    const current = state();
+    current.scene.version = 9;
+    current.scene.sides = current.scene.sides.map((side) =>
+      side.id === "red" ? { ...side, stateId: "red-state" } : side
+    );
+    current.scene.states = [{ id: "red-state", name: "Red State", rulingFactionId: "red", active: true }];
+    current.scene.gridMap.cells["0,0"] = {
+      terrainId: "plain", impassable: false, factionTerritoryIds: [],
+      recognizedStateId: "red-state", deFactoStateId: "red-state"
+    };
+    current.scene.gridMap.cells["1,0"] = {
+      terrainId: "sea", impassable: false, factionTerritoryIds: [],
+      recognizedStateId: "red-state", deFactoStateId: "red-state"
+    };
+    current.scene.strategicCities = [{
+      id: "canal-city", name: "Canal City", cells: [{ x: 0, y: 0 }],
+      recognizedStateId: "red-state", deFactoStateId: "red-state", factionInfluenceId: "red",
+      mayorId: null, isCapital: false, historicalBuildTypeCount: 0,
+      buildings: [{ id: "canal", type: "CANAL", cell: { x: 1, y: 0 } }]
+    }];
+
+    const result = processor.execute(context("PLAYER", "leader", current), command({
+      type: "SET_ROUTE", armyId: "army-red", startCell: { x: 0, y: 0 },
+      cells: [{ x: 1, y: 0 }], route: [{ x: 150, y: 50 }]
+    }, "leader"));
+
+    expect(result.status).toBe("ACCEPTED");
+  });
+
   it("rejects a crafted route into closed foreign land for a non-ruling faction", () => {
     const current = state();
     current.scene.version = 7;
@@ -744,6 +803,79 @@ describe("CommandProcessor", () => {
       hp: 6,
       ratePerHp: 2.5,
       amount: 15
+    });
+  });
+
+  it("reserves a military hospital for the first friendly army and charges later armies the normal rate", () => {
+    const current = state();
+    current.scene.sides = current.scene.sides.map((side) =>
+      side.id === "red" ? { ...side, stateId: "red-state" } : side
+    );
+    current.scene.states = [{
+      id: "red-state",
+      name: "Красное государство",
+      rulingFactionId: "red",
+      active: true
+    }];
+    current.scene.demographics = [{
+      stateId: "red-state",
+      population: 1_000,
+      populationGrowthFactor: 1.003,
+      humanResource: 100,
+      conscriptionLawId: "GENERAL_MOBILIZATION",
+      conscriptionRate: 0.24,
+      humanResourceCapacity: 240,
+      lastPopulationCalculationDate: "2026-09-28"
+    }];
+    current.scene.gridMap.cells["0,0"] = {
+      terrainId: "plain",
+      impassable: false,
+      factionTerritoryIds: ["red"],
+      recognizedStateId: "red-state",
+      deFactoStateId: "red-state"
+    };
+    current.scene.strategicCities = [{
+      id: "city-red",
+      name: "Красный город",
+      cells: [{ x: 0, y: 0 }],
+      recognizedStateId: "red-state",
+      deFactoStateId: "red-state",
+      factionInfluenceId: "red",
+      mayorId: null,
+      isCapital: false,
+      historicalBuildTypeCount: 0,
+      buildings: [{ id: "hospital", type: "MILITARY_HOSPITAL", cell: { x: 0, y: 0 } }]
+    }];
+    const firstArmy = current.armies["army-red"];
+    if (!firstArmy) throw new Error("red army missing");
+    current.armies["army-red"] = { ...firstArmy, health: { hp: 30, maxHp: 50 } };
+    current.armies["army-red-2"] = { ...army("red"), health: { hp: 30, maxHp: 50 } };
+    current.items["army-red-2"] = image("army-red-2", true);
+
+    const positioned = new CommandProcessor(
+      () => new Date("2026-09-30T08:00:00.000Z"),
+      (position) => ({ x: Math.floor(position.x / 100), y: Math.floor(position.y / 100) })
+    );
+    const first = positioned.execute(
+      context("PLAYER", "leader", current),
+      command({ type: "HEAL_ARMY", requestId: "hospital-first", armyId: "army-red", amount: 10 }, "leader")
+    );
+    expect(first.status).toBe("ACCEPTED");
+    if (first.status !== "ACCEPTED") return;
+
+    const second = positioned.execute(
+      context("PLAYER", "leader", first.state),
+      command({ type: "HEAL_ARMY", requestId: "hospital-second", armyId: "army-red-2", amount: 10, expectedRevision: first.state.scene.revision }, "leader")
+    );
+    expect(second.status).toBe("ACCEPTED");
+    if (second.status !== "ACCEPTED") return;
+
+    expect(first.state.armies["army-red"]?.healing?.hospitalCityId).toBe("city-red");
+    expect(second.state.armies["army-red-2"]?.healing?.hospitalCityId).toBeNull();
+    expect(second.state.scene.lrTransactions?.at(-1)).toMatchObject({
+      requestId: "hospital-second",
+      kind: "HEALING",
+      ratePerHp: 5
     });
   });
 

@@ -1,7 +1,7 @@
 import { reconcileForcedExitStates } from "../movement/forcedExitService";
 import { stateForFaction } from "../states/stateRules";
 import { applyEncirclementCheckpoint } from "../supply/encirclementService";
-import { isArmySupplied } from "../supply/supplyService";
+import { hasRailwayGraceAtCell, isArmySupplied } from "../supply/supplyService";
 import type { ArmyState, GridCellCoord, SceneState } from "../shared/types";
 import { applyTerritorialScoreCheckpoint } from "../wars/territorialScore";
 import { shipEmbarkedArmyIds } from "../naval/transport/transportRules";
@@ -48,19 +48,27 @@ function applySupplyCheckpoint(
     const embarkedShip = embarkedShipId !== null ? scene.ships?.[embarkedShipId] : undefined;
     const genuinelyEmbarked = embarkedShip !== undefined &&
       shipEmbarkedArmyIds(embarkedShip).includes(armyId);
-    const supplied = genuinelyEmbarked
+    const routeSupplied = genuinelyEmbarked
       ? true
       : factionState && armyCell
         ? isArmySupplied(scene, army, armyCell)
         : true;
+    const supplyJustLost = !routeSupplied &&
+      army.supply.supplied &&
+      army.supply.unsuppliedSinceTurn === undefined;
+    const graceEligible = supplyJustLost &&
+      Boolean(factionState && armyCell && hasRailwayGraceAtCell(scene, factionState.id, armyCell));
+    const supplied = routeSupplied || graceEligible;
 
     nextArmies[armyId] = {
       ...army,
       supply: {
         supplied,
         checkedOnTurn: nextTurnNumber,
-        ...(!supplied && army.supply.supplied ? { unsuppliedSinceTurn: nextTurnNumber } : {}),
-        ...(!supplied && !army.supply.supplied && army.supply.unsuppliedSinceTurn !== undefined ? { unsuppliedSinceTurn: army.supply.unsuppliedSinceTurn } : {})
+        ...(supplyJustLost ? { unsuppliedSinceTurn: nextTurnNumber } : {}),
+        ...(!routeSupplied && !supplyJustLost && army.supply.unsuppliedSinceTurn !== undefined
+          ? { unsuppliedSinceTurn: army.supply.unsuppliedSinceTurn }
+          : {})
       },
       revision: army.revision + 1
     };
