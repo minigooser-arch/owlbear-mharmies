@@ -2042,6 +2042,8 @@ export class ProductionEngine {
     };
     const sideColors = new Map(scene.sides.map((side) => [side.id, side.color]));
     try {
+      const visionDpi = await this.grid.getDpi();
+      const visionGrid = new StrategicGridAdapter({ dpi: visionDpi, offset: { x: 0, y: 0 } });
       await new VisionLightService(overlayPort).reconcile(
         armies.map(({ item, state }) => ({
           sourceItemId: item.id,
@@ -2050,12 +2052,10 @@ export class ProductionEngine {
           rangeCells: armyEffectiveDetectionRange(
             state,
             state.overrides.detectionRangeCells ?? scene.settings.defaultDetectionRangeCells
-          ) + (visibilityCellForPosition
-            ? watchtowerDetectionBonusAtCell(scene, state.sideId, visibilityCellForPosition(item.position))
-            : 0)
+          ) + watchtowerDetectionBonusAtCell(scene, state.sideId, visionGrid.sceneToCell(item.position))
         })),
         { isGM: role === "GM", memberSideIds: new Set(memberSideIds) },
-        await this.grid.getDpi()
+        visionDpi
       );
     } catch {
       // Fog lighting is cosmetic; visibility and command handling must remain available.
