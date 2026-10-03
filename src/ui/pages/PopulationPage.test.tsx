@@ -62,6 +62,15 @@ describe("PopulationPage", () => {
     expect(await screen.findByRole("status")).toHaveTextContent("Обновлено записей: 1");
   });
 
+  it("renders conscription laws as read-only source labels", () => {
+    render(<PopulationPage states={[]} demographics={[]} conscriptionLaws={laws} onAction={vi.fn()} />);
+
+    expect(screen.getByText("Справочник законов о призыве")).toBeInTheDocument();
+    expect(screen.getByText("24% населения → ЛР")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Обновить закон" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Ставка")).not.toBeInTheDocument();
+  });
+
   it("shows synchronization error details", async () => {
     const onSyncPopulation = vi.fn().mockResolvedValue({
       applied: 0,
