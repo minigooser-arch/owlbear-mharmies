@@ -2,7 +2,7 @@ import { destroyArmy } from "../armies/armyLifecycle";
 import { validatePlannedRoute } from "../movement/movementRules";
 import { politicalRouteGate } from "../movement/authoritativeStateMovement";
 import { forcedExitRouteGate, forcedExitTurnRoute } from "../movement/forcedExitService";
-import { shipBunkeringBonusAtCell } from "../cities/cityEffects";
+import { postStationMovementBonusAtCell, shipBunkeringBonusAtCell } from "../cities/cityEffects";
 import { readCell } from "../terrain/gridMap";
 import type { ArmyState, GridCellCoord, SceneState, TurnState, Vector2 } from "../shared/types";
 import { runTurnCheckpoint } from "./turnCheckpointPipeline";
@@ -44,7 +44,7 @@ function prepareArmyForNewTurn(
   nextTurn: number,
   positionForCell?: (cell: GridCellCoord) => Vector2
 ): ArmyState {
-  const movementUnits = armyEffectiveMovementUnits(army);
+  const movementUnits = armyEffectiveMovementUnits(army) + (armyCell ? postStationMovementBonusAtCell(scene, army.sideId, armyCell) : 0);
   const healing = army.healing ? { ...army.healing } : undefined;
   if (healing) delete healing.pendingHp;
   let next: ArmyState = {
