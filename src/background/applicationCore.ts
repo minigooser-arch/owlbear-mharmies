@@ -1306,6 +1306,7 @@ export class ProductionEngine {
       command.type === "REGISTER_SHIP" ||
       command.type === "SET_SHIP_ROUTE" ||
       command.type === "NAVAL_MOVE_FORWARD" ||
+      command.type === "REQUEST_NAVAL_BATTLE" ||
       command.type === "START_NAVAL_BATTLE" ||
       command.type === "NAVAL_SHORE_BOMBARDMENT" ||
       command.type === "EMBARK_ARMY" ||
