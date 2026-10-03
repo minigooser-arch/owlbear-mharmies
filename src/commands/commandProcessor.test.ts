@@ -836,7 +836,7 @@ describe("CommandProcessor", () => {
 
     const second = positioned.execute(
       context("PLAYER", "leader", first.state),
-      command({ type: "HEAL_ARMY", requestId: "hospital-second", armyId: "army-red-2", amount: 10 }, "leader")
+      command({ type: "HEAL_ARMY", requestId: "hospital-second", armyId: "army-red-2", amount: 10, expectedRevision: first.state.scene.revision }, "leader")
     );
     expect(second.status).toBe("ACCEPTED");
     if (second.status !== "ACCEPTED") return;
