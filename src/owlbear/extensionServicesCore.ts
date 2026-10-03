@@ -441,7 +441,7 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
       effectiveDetectionRange:
         (state.detectionOverride ?? input.scene.settings.defaultDetectionRangeCells) +
         shipDetectionBonus(state) +
-        (input.gridDpi ? lighthouseDetectionBonusAtCell(input.scene, new StrategicGridAdapter({ dpi: input.gridDpi, offset: { x: 0, y: 0 } }).sceneToCell(item.position)) : 0),
+        (input.gridDpi ? lighthouseDetectionBonusAtCell(input.scene, new StrategicGridAdapter({ dpi: input.gridDpi, offset: { x: 0, y: 0 } }).sceneToCell(item.position), state.sideId) : 0),
       experience: state.experience ?? 0,
       upgrades: structuredClone(state.upgrades ?? {}),
       hospitalSupportDice: hospitalSupportDice(state),
