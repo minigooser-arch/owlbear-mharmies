@@ -208,7 +208,8 @@ function normalizeStrategicCities(value: unknown, stateIds: ReadonlySet<string>)
       isCapital: raw.isCapital === true,
       historicalBuildTypeCount: raw.historicalBuildTypeCount,
       ...(raw.markerItemId === null || nonEmptyString(raw.markerItemId) ? { markerItemId: raw.markerItemId as string | null } : {}),
-      ...(Array.isArray(raw.buildings) ? { buildings } : {})
+      ...(Array.isArray(raw.buildings) ? { buildings } : {}),
+      ...(nonNegativeInteger(raw.coastalBatteryRetaliatedOnTurn) ? { coastalBatteryRetaliatedOnTurn: raw.coastalBatteryRetaliatedOnTurn } : {})
     });
   }
   return [...result.values()];
