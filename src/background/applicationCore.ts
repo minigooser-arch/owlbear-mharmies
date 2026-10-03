@@ -409,7 +409,7 @@ export class ProductionEngine {
       items,
       positions: Object.fromEntries(frame.items.map((item) => [item.id, item.position]))
     };
-    let hydratedState = state;
+    let hydratedState: CommandState;
     try {
       hydratedState = await this.hydrateMilitaryInfluenceFromSheet(state);
     } catch (error) {
