@@ -228,6 +228,7 @@ export interface StrategicCity {
   historicalBuildTypeCount: number;
   markerItemId?: string | null;
   buildings?: CityBuilding[];
+  coastalBatteryRetaliatedOnTurn?: number;
 }
 
 export interface TerritorialScore {
