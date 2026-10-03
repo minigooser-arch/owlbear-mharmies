@@ -10,5 +10,6 @@ describe("shipyard", () => {
     const repaired = repairShipAtShipyard(scene, ship, { x: 2, y: 2 }, 20, 1);
     expect(repaired.hp).toBe(25);
     expect(repairShipAtShipyard(scene, repaired, { x: 2, y: 2 }, 1, 1).hp).toBe(25);
+    expect(repairShipAtShipyard(scene, { ...ship, sideId: "enemy" }, { x: 2, y: 2 }, 10, 1).hp).toBe(15);
   });
 });
