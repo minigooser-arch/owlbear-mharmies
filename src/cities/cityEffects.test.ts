@@ -15,5 +15,7 @@ describe("city effects", () => {
     expect(portTransportMovementCost(scene, "c", { x: 2, y: 2 }, "f")).toBe(0);
     expect(portTransportMovementCost(scene, "c", { x: 1, y: 1 }, "f")).toBe(3);
     expect(shipBunkeringBonus(scene, "c", { x: 0, y: 0 }, "f")).toBe(2);
+    expect(portTransportMovementCost(scene, "c", { x: 2, y: 2 }, "enemy")).toBe(3);
+    expect(shipBunkeringBonus(scene, "c", { x: 0, y: 0 }, "enemy")).toBe(0);
   });
 });
