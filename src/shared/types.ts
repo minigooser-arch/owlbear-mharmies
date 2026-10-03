@@ -90,6 +90,8 @@ export interface StateEntity {
   active: boolean;
   /** Stable country key from the public population sheet's backend tab. */
   backendCountry?: string | null;
+  /** Current state-level military influence balance from the state sheet. */
+  militaryInfluence?: number;
 }
 
 export interface NormalizedStateEntity extends StateEntity {
