@@ -2,7 +2,7 @@ import { destroyArmy } from "../armies/armyLifecycle";
 import { validatePlannedRoute } from "../movement/movementRules";
 import { politicalRouteGate } from "../movement/authoritativeStateMovement";
 import { forcedExitRouteGate, forcedExitTurnRoute } from "../movement/forcedExitService";
-import { postStationMovementBonusAtCell, shipBunkeringBonusAtCell } from "../cities/cityEffects";
+import { canalCellHasBothDomains, postStationMovementBonusAtCell, shipBunkeringBonusAtCell } from "../cities/cityEffects";
 import { readCell } from "../terrain/gridMap";
 import type { ArmyState, GridCellCoord, SceneState, TurnState, Vector2 } from "../shared/types";
 import { runTurnCheckpoint } from "./turnCheckpointPipeline";
@@ -86,6 +86,7 @@ function prepareArmyForNewTurn(
       wars: scene.wars,
       remainingUnits: movementUnits,
       readCell: (cell) => readCell(scene.gridMap, cell),
+      landDomainOverride: (cell) => canalCellHasBothDomains(scene, cell),
       armyStateAllowsMovement: true
     });
     const cleanRoute = { ...next.plannedRoute };
