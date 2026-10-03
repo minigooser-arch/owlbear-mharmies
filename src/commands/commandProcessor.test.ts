@@ -747,6 +747,79 @@ describe("CommandProcessor", () => {
     });
   });
 
+  it("reserves a military hospital for the first friendly army and charges later armies the normal rate", () => {
+    const current = state();
+    current.scene.sides = current.scene.sides.map((side) =>
+      side.id === "red" ? { ...side, stateId: "red-state" } : side
+    );
+    current.scene.states = [{
+      id: "red-state",
+      name: "Красное государство",
+      rulingFactionId: "red",
+      active: true
+    }];
+    current.scene.demographics = [{
+      stateId: "red-state",
+      population: 1_000,
+      populationGrowthFactor: 1.003,
+      humanResource: 100,
+      conscriptionLawId: "GENERAL_MOBILIZATION",
+      conscriptionRate: 0.24,
+      humanResourceCapacity: 240,
+      lastPopulationCalculationDate: "2026-09-28"
+    }];
+    current.scene.gridMap.cells["0,0"] = {
+      terrainId: "plain",
+      impassable: false,
+      factionTerritoryIds: ["red"],
+      recognizedStateId: "red-state",
+      deFactoStateId: "red-state"
+    };
+    current.scene.strategicCities = [{
+      id: "city-red",
+      name: "Красный город",
+      cells: [{ x: 0, y: 0 }],
+      recognizedStateId: "red-state",
+      deFactoStateId: "red-state",
+      factionInfluenceId: "red",
+      mayorId: null,
+      isCapital: false,
+      historicalBuildTypeCount: 0,
+      buildings: [{ id: "hospital", type: "MILITARY_HOSPITAL", cell: { x: 0, y: 0 } }]
+    }];
+    const firstArmy = current.armies["army-red"];
+    if (!firstArmy) throw new Error("red army missing");
+    current.armies["army-red"] = { ...firstArmy, health: { hp: 30, maxHp: 50 } };
+    current.armies["army-red-2"] = { ...army("red"), health: { hp: 30, maxHp: 50 } };
+    current.items["army-red-2"] = image("army-red-2", true);
+
+    const positioned = new CommandProcessor(
+      () => new Date("2026-09-30T08:00:00.000Z"),
+      (position) => ({ x: Math.floor(position.x / 100), y: Math.floor(position.y / 100) })
+    );
+    const first = positioned.execute(
+      context("PLAYER", "leader", current),
+      command({ type: "HEAL_ARMY", requestId: "hospital-first", armyId: "army-red", amount: 10 }, "leader")
+    );
+    expect(first.status).toBe("ACCEPTED");
+    if (first.status !== "ACCEPTED") return;
+
+    const second = positioned.execute(
+      context("PLAYER", "leader", first.state),
+      command({ type: "HEAL_ARMY", requestId: "hospital-second", armyId: "army-red-2", amount: 10 }, "leader")
+    );
+    expect(second.status).toBe("ACCEPTED");
+    if (second.status !== "ACCEPTED") return;
+
+    expect(first.state.armies["army-red"]?.healing?.hospitalCityId).toBe("city-red");
+    expect(second.state.armies["army-red-2"]?.healing?.hospitalCityId).toBeNull();
+    expect(second.state.scene.lrTransactions?.at(-1)).toMatchObject({
+      requestId: "hospital-second",
+      kind: "HEALING",
+      ratePerHp: 5
+    });
+  });
+
   it("rejects a crafted player registration without mutating state", () => {
     const playerContext = context("PLAYER", "member");
     const before = structuredClone(playerContext.state);
