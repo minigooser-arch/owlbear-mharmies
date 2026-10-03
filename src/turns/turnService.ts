@@ -210,7 +210,7 @@ export function completeTurn(
     for (const [shipId, ship] of Object.entries(nextScene.ships)) {
       nextScene.ships[shipId] = {
         ...ship,
-        globalMovementRemaining: shipEffectiveMovement(ship) + (input.shipCells?.[shipId] ? shipBunkeringBonusAtCell(nextScene, input.shipCells[shipId]) : 0),
+        globalMovementRemaining: shipEffectiveMovement(ship) + (input.shipCells?.[shipId] ? shipBunkeringBonusAtCell(nextScene, input.shipCells[shipId], ship.sideId) : 0),
         movementSpentThisTurn: false,
         revision: ship.revision + 1
       };
