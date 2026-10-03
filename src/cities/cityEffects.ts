@@ -21,9 +21,9 @@ export function cityForCell(scene: SceneState, cell: GridCellCoord): StrategicCi
   return (scene.strategicCities ?? []).find((city) => city.cells.some((candidate) => cellKey(candidate) === cellKey(cell)));
 }
 
-export function armyFormationCap(scene: SceneState, cityId: string | null): number {
+export function armyFormationCap(scene: SceneState, cityId: string | null, sideId: string): number {
   const city = cityId ? (scene.strategicCities ?? []).find((candidate) => candidate.id === cityId) : undefined;
-  return city && activeBuilding(scene, city, "BARRACKS") ? 35 : 20;
+  return city && controlledBySide(city, sideId) && activeBuilding(scene, city, "BARRACKS") ? 35 : 20;
 }
 
 export function hasActiveCityBuilding(scene: SceneState, cityId: string, type: string): boolean {
