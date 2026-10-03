@@ -93,21 +93,58 @@ function findPathToAnchor(
   return null;
 }
 
+function findLegacySupplyPath(
+  scene: SceneState,
+  start: GridCellCoord,
+  stateId: string,
+  maxVisitedCells: number
+): GridCellCoord[] | null {
+  if (effectiveController(scene, start) !== stateId) return null;
+  const queue: GridCellCoord[] = [{ ...start }];
+  const parents = new Map<string, string | null>([[cellKey(start), null]]);
+  let head = 0;
+
+  while (head < queue.length && parents.size <= maxVisitedCells) {
+    const current = queue[head++];
+    if (!current) break;
+    const currentKey = cellKey(current);
+    const cell = readCell(scene.gridMap, current);
+    if (effectiveController(scene, current) === stateId && cell.recognizedStateId === stateId) {
+      const path: GridCellCoord[] = [];
+      let key: string | null = currentKey;
+      while (key) {
+        const [rawX, rawY] = key.split(",");
+        const x = Number(rawX);
+        const y = Number(rawY);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+        path.push({ x, y });
+        key = parents.get(key) ?? null;
+      }
+      return path.reverse();
+    }
+
+    for (const delta of NEIGHBORS) {
+      const next = { x: current.x + delta.x, y: current.y + delta.y };
+      const nextKey = cellKey(next);
+      if (parents.has(nextKey) || effectiveController(scene, next) !== stateId) continue;
+      parents.set(nextKey, currentKey);
+      queue.push(next);
+    }
+  }
+  return null;
+}
+
 export function findSupplyPath(
   scene: SceneState,
   start: GridCellCoord,
   stateId: string,
   maxVisitedCells = 100_000
 ): GridCellCoord[] | null {
-  const anchors = railwayAnchors(scene, stateId);
-  if (anchors.length === 0) {
-    // Legacy scenes without city records retain the old recognized-state endpoint until migrated.
-    if ((scene.strategicCities ?? []).length === 0) {
-      const controller = effectiveController(scene, start);
-      return controller === stateId && readCell(scene.gridMap, start).recognizedStateId === stateId ? [{ ...start }] : null;
-    }
-    return null;
+  if ((scene.strategicCities ?? []).length === 0) {
+    return findLegacySupplyPath(scene, start, stateId, maxVisitedCells);
   }
+  const anchors = railwayAnchors(scene, stateId);
+  if (anchors.length === 0) return null;
 
   let shortest: GridCellCoord[] | null = null;
   for (const anchor of anchors) {
