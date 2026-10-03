@@ -227,9 +227,11 @@ function normalizeStateDemography(value: unknown): StateDemography | undefined {
   };
 }
 
-function normalizeDemographics(value: unknown): StateDemography[] {
+function normalizeDemographics(value: unknown, stateIds?: ReadonlySet<string>): StateDemography[] {
   const records = Array.isArray(value)
-    ? value.map(normalizeStateDemography).filter((record): record is StateDemography => record !== undefined)
+    ? value
+        .map(normalizeStateDemography)
+        .filter((record): record is StateDemography => record !== undefined && (!stateIds || stateIds.has(record.stateId)))
     : [];
   return [...new Map(records.map((record) => [record.stateId, record])).values()];
 }
@@ -822,7 +824,7 @@ export function normalizeSceneState(raw: unknown): ValidationResult<SceneState> 
     navalBattleHistory,
     navalRevealUntilTurn: normalizeNavalRevealMap(raw.navalRevealUntilTurn),
     lrTransactions,
-    demographics: normalizeDemographics(raw.demographics),
+    demographics: normalizeDemographics(raw.demographics, stateIds),
     conscriptionLaws: normalizeConscriptionLaws(raw.conscriptionLaws),
     demographyAudit: normalizeDemographyAudit(raw.demographyAudit)
   };
