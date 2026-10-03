@@ -50,6 +50,7 @@ describe("city building rules", () => {
   it("allows building cells outside city territory, enforces one type and unique canal cells", () => {
     const first = addCityBuilding(city, { id: "hospital", type: "MILITARY_HOSPITAL", cell: { x: 9, y: 9 } }, []);
     expect(first.ok).toBe(true);
+    if (first.ok) expect(first.city.buildings?.find((building) => building.id === "hospital")?.cell).toEqual({ x: 9, y: 9 });
     const duplicate = addCityBuilding(first.ok ? first.city : city, { id: "hospital-2", type: "MILITARY_HOSPITAL", cell: { x: 10, y: 10 } }, []);
     expect(duplicate).toMatchObject({ ok: false, reason: "BUILDING_TYPE_DUPLICATE" });
     const canal = addCityBuilding(city, { id: "canal", type: "CANAL", cell: { x: 4, y: 4 } }, []);
