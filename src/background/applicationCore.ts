@@ -414,6 +414,10 @@ export class ProductionEngine {
       hydratedState = await this.hydrateMilitaryInfluenceFromSheet(state);
     } catch (error) {
       this.reportOperationalError(error, "sheet-influence-bootstrap");
+      // Do not enqueue a writeback based on a partially hydrated scene.
+      // A grid-storage failure is retried on the next coordinator/scene cycle,
+      // but must not create an abort loop in the background runtime.
+      return;
     }
     const event = buildSheetWritebackSnapshotEvent(hydratedState, this.wallClock().toISOString());
     if (!event) return;
