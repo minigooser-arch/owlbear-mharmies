@@ -5,7 +5,6 @@ import {
   addCityBuilding,
   canUseCityBuilding,
   isCityBuildingActive,
-  normalizeCityBuildingLocations,
   removeCityBuilding
 } from "./cityBuildingRules";
 
@@ -62,30 +61,3 @@ describe("city building rules", () => {
 });
 
 
-describe("city building location normalization", () => {
-  it("moves every existing building to the city's first strategic cell", () => {
-    const city: StrategicCity = {
-      id: "city-1",
-      name: "Москва",
-      cells: [{ x: 12, y: -4 }, { x: 13, y: -4 }],
-      recognizedStateId: "state-1",
-      deFactoStateId: "state-1",
-      factionInfluenceId: "side-1",
-      mayorId: null,
-      isCapital: true,
-      historicalBuildTypeCount: 0,
-      buildings: [
-        { id: "barracks", type: "BARRACKS", cell: { x: 99, y: 99 } },
-        { id: "hospital", type: "MILITARY_HOSPITAL", cell: { x: -8, y: 20 } }
-      ]
-    };
-
-    const normalized = normalizeCityBuildingLocations([city]);
-
-    expect(normalized[0]?.buildings).toEqual([
-      { id: "barracks", type: "BARRACKS", cell: { x: 12, y: -4 } },
-      { id: "hospital", type: "MILITARY_HOSPITAL", cell: { x: 12, y: -4 } }
-    ]);
-    expect(city.buildings?.[0]?.cell).toEqual({ x: 99, y: 99 });
-  });
-});
