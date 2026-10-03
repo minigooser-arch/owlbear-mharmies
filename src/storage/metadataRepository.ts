@@ -9,7 +9,7 @@ import type {
   ValidationResult
 } from "../shared/types";
 import { migrateArmyState, migrateBarrierState, migrateSceneState, migrateShipState } from "./migrations";
-import { GridChunkRepository, readGridManifest } from "./gridChunkRepository";
+import { GridChunkRepository, readGridManifest, type StagedGrid } from "./gridChunkRepository";
 import { GridStorageError, utf8Size } from "./gridChunkCodec";
 import { compactDefaultTerrain } from "../terrain/gridMap";
 import { sendBatches } from "../owlbear/boundedBatches";
@@ -272,7 +272,12 @@ export class MetadataRepository {
     const { state: current, metadata } = await this.readSnapshot();
     assertRevision(current.revision, expectedRevision);
     if (!canCommit(current)) throw new CommitPreconditionFailed();
-    const next = { ...state, terrain: { ...state.terrain, defaultTerrainId: "sea" }, gridMap: compactDefaultTerrain(state.gridMap, "sea") };
+    const gridWasRequestedUnchanged = JSON.stringify(current.gridMap) === JSON.stringify(state.gridMap);
+    const next = {
+      ...state,
+      terrain: { ...state.terrain, defaultTerrainId: "sea" },
+      gridMap: gridWasRequestedUnchanged ? current.gridMap : compactDefaultTerrain(state.gridMap, "sea")
+    };
     if (!this.port.addSceneItems || !this.port.deleteSceneItems) {
       // Legacy embedding ports may still write small scenes, but never destroy an existing manifest.
       if (readGridManifest(metadata)) throw new GridStorageError("GRID_CHUNK_WRITE_FAILED");
@@ -291,6 +296,10 @@ export class MetadataRepository {
     const previousGridManifest = readGridManifest(metadata);
     const previousLedgerManifest = readLRLedgerManifest(metadata);
     const previousAuditManifest = readDemographyAuditManifest(metadata);
+    // Demography, faction influence and sheet writeback updates do not change
+    // the grid. Reusing its existing manifest avoids rewriting legacy/corrupt
+    // grid chunks during an otherwise unrelated metadata update.
+
     const sceneItems = previousGridManifest?.version === 2 || (previousLedgerManifest?.partCount ?? 0) > 0 ||
       (previousAuditManifest?.partCount ?? 0) > 0
       ? await this.port.getSceneItems()
@@ -299,7 +308,9 @@ export class MetadataRepository {
     const ledger = new LRLedgerRepository(this.port);
     const audit = new DemographyAuditRepository(this.port);
     const addSceneItems = this.port.addSceneItems.bind(this.port);
-    const staged = await chunks.stage(current.gridMap, next.gridMap, previousGridManifest, sceneItems);
+    const staged: StagedGrid = gridWasRequestedUnchanged && previousGridManifest?.version === 2
+      ? { manifest: previousGridManifest, additions: [], superseded: [], supersededManifestParts: [] }
+      : await chunks.stage(current.gridMap, next.gridMap, previousGridManifest, sceneItems);
     const stagedLedger = await ledger.stage(
       current.lrTransactions ?? [],
       next.lrTransactions ?? [],
