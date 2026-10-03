@@ -82,8 +82,11 @@ export function marineStationAllowsCrossing(
   const seaIndexes = route.flatMap((cell, index) =>
     scene.gridMap.cells[cellKey(cell)]?.terrainId === "sea" ? [index] : []
   );
-  return seaIndexes.length === 1 && seaIndexes[0] === 0 &&
-    scene.gridMap.cells[cellKey(route[1]!)]?.terrainId !== "sea";
+  const landingCell = route[1];
+  return Boolean(landingCell) &&
+    seaIndexes.length === 1 &&
+    seaIndexes[0] === 0 &&
+    scene.gridMap.cells[cellKey(landingCell)]?.terrainId !== "sea";
 }
 
 export function repairShipAtShipyard(scene: SceneState, ship: ShipState, shipCell: GridCellCoord, amount: number, turnNumber: number): ShipState {
