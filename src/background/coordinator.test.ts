@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  COORDINATOR_LEASE_DURATION_MS,
   CoordinatorLease,
   electCoordinator,
   resolveCoordinatorConnectionId
@@ -46,7 +47,7 @@ describe("GM coordinator", () => {
     )).toBe("b");
   });
 
-  it("writes a one-second heartbeat with a three-second expiry only when elected", async () => {
+  it("writes a one-second heartbeat with a resilient lease expiry only when elected", async () => {
     const write = vi.fn(async () => undefined);
     const lease = new CoordinatorLease({
       currentConnectionId: async () => "a",
@@ -60,7 +61,7 @@ describe("GM coordinator", () => {
     });
     await lease.tick();
     expect(lease.isCoordinator()).toBe(true);
-    expect(write).toHaveBeenCalledWith({ connectionId: "a", epoch: 1, expiresAt: 13_000 });
+    expect(write).toHaveBeenCalledWith({ connectionId: "a", epoch: 1, expiresAt: 10_000 + COORDINATOR_LEASE_DURATION_MS });
   });
 
   it("does not become coordinator until its heartbeat claim is persisted", async () => {
