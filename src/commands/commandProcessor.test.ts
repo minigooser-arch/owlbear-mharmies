@@ -168,6 +168,35 @@ describe("CommandProcessor", () => {
     }
   });
 
+  it("uses the post-station bonus while validating next-turn routes", () => {
+    const current = state();
+    current.scene.version = 9;
+    current.scene.sides = current.scene.sides.map((side) =>
+      side.id === "red" ? { ...side, stateId: "red-state" } : side
+    );
+    current.scene.states = [{ id: "red-state", name: "Red State", rulingFactionId: "red", active: true }];
+    for (let x = 0; x <= 6; x += 1) {
+      current.scene.gridMap.cells[`${x},0`] = {
+        terrainId: "plain", impassable: false, factionTerritoryIds: [],
+        recognizedStateId: "red-state", deFactoStateId: "red-state"
+      };
+    }
+    current.scene.strategicCities = [{
+      id: "post-city", name: "Post City", cells: [{ x: 0, y: 0 }],
+      recognizedStateId: "red-state", deFactoStateId: "red-state", factionInfluenceId: "red",
+      mayorId: null, isCapital: false, historicalBuildTypeCount: 0,
+      buildings: [{ id: "post", type: "POST_STATION", cell: { x: 0, y: 0 } }]
+    }];
+    const cells = Array.from({ length: 6 }, (_, index) => ({ x: index + 1, y: 0 }));
+    const route = cells.map((cell) => ({ x: cell.x * 100 + 50, y: 50 }));
+
+    const result = processor.execute(context("PLAYER", "leader", current), command({
+      type: "SET_ROUTE", armyId: "army-red", startCell: { x: 0, y: 0 }, cells, route
+    }, "leader"));
+
+    expect(result.status).toBe("ACCEPTED");
+  });
+
   it("accepts an army route through an active canal sea cell", () => {
     const current = state();
     current.scene.version = 9;
