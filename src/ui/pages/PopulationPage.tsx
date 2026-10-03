@@ -12,15 +12,13 @@ interface PopulationPageProps {
   onSyncPopulation?: () => Promise<PopulationSyncSummary>;
 }
 
-type DemographyDraft = Pick<StateDemography, "population" | "populationGrowthFactor" | "humanResource" | "conscriptionLawId" | "conscriptionRate">;
+type DemographyDraft = Pick<StateDemography, "population" | "populationGrowthFactor" | "humanResource">;
 
 function draftFor(record: StateDemography): DemographyDraft {
   return {
     population: record.population,
     populationGrowthFactor: record.populationGrowthFactor,
-    humanResource: record.humanResource,
-    conscriptionLawId: record.conscriptionLawId,
-    conscriptionRate: record.conscriptionRate
+    humanResource: record.humanResource
   };
 }
 
@@ -29,17 +27,11 @@ export function PopulationPage({ states, demographics, conscriptionLaws, onActio
     Object.fromEntries(demographics.map((record) => [record.stateId, draftFor(record)]))
   );
   const [reasons, setReasons] = useState<Record<string, string>>({});
-  const [lawDrafts, setLawDrafts] = useState<Record<string, ConscriptionLaw>>(() =>
-    Object.fromEntries(conscriptionLaws.map((law) => [law.id, { ...law }]))
-  );
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   useEffect(() => {
     setDrafts(Object.fromEntries(demographics.map((record) => [record.stateId, draftFor(record)])));
   }, [demographics]);
-  useEffect(() => {
-    setLawDrafts(Object.fromEntries(conscriptionLaws.map((law) => [law.id, { ...law }])));
-  }, [conscriptionLaws]);
   const stateNames = new Map(states.map((state) => [state.id, state.name]));
   const updateDraft = (record: StateDemography, patch: Partial<DemographyDraft>) => {
     setDrafts((current) => ({ ...current, [record.stateId]: { ...(current[record.stateId] ?? draftFor(record)), ...patch } }));
@@ -95,8 +87,6 @@ export function PopulationPage({ states, demographics, conscriptionLaws, onActio
                 <label>Население (тыс.)<input type="number" min="0" step="any" value={draft.population} onChange={(event) => updateDraft(record, { population: Number(event.target.value) })} /></label>
                 <label>Коэффициент роста<input type="number" min="0.000001" step="0.000001" value={draft.populationGrowthFactor} onChange={(event) => updateDraft(record, { populationGrowthFactor: Number(event.target.value) })} /></label>
                 <label>Текущий ЛР (тыс.)<input type="number" min="0" step="any" value={draft.humanResource} onChange={(event) => updateDraft(record, { humanResource: Number(event.target.value) })} /></label>
-                <label>Закон о призыве<select value={draft.conscriptionLawId} onChange={(event) => { const law = conscriptionLaws.find((candidate) => candidate.id === event.target.value); updateDraft(record, { conscriptionLawId: event.target.value, ...(law ? { conscriptionRate: law.rate } : {}) }); }}><option value="">Выберите закон</option>{conscriptionLaws.map((law) => <option key={law.id} value={law.id}>{law.name} ({(law.rate * 100).toLocaleString("ru-RU")}%)</option>)}</select></label>
-                <label>Ставка закона<input type="number" min="0" max="1" step="0.01" value={draft.conscriptionRate} onChange={(event) => updateDraft(record, { conscriptionRate: Number(event.target.value) })} /></label>
                 <label>Причина изменения<input required value={reasons[record.stateId] ?? ""} onChange={(event) => setReasons((current) => ({ ...current, [record.stateId]: event.target.value }))} placeholder="Например, импорт из таблицы" /></label>
               </div>
               <button className="button primary" type="submit" disabled={!reasons[record.stateId]?.trim()}>Сохранить корректировку</button>
@@ -106,10 +96,15 @@ export function PopulationPage({ states, demographics, conscriptionLaws, onActio
       </div>
       <div className="management-stack">
         <h3>Справочник законов о призыве</h3>
-        {conscriptionLaws.map((law) => {
-          const draft = lawDrafts[law.id] ?? law;
-          return <form className="registration-card management-form" key={law.id} onSubmit={(event) => { event.preventDefault(); onAction({ type: "UPSERT_CONSCRIPTION_LAW", law: draft, reason: "Изменение закона мастером" }); }}><div className="form-grid"><label>Название<input value={draft.name} onChange={(event) => setLawDrafts((current) => ({ ...current, [law.id]: { ...draft, name: event.target.value } }))} /></label><label>Ставка<input type="number" min="0" max="1" step="0.01" value={draft.rate} onChange={(event) => setLawDrafts((current) => ({ ...current, [law.id]: { ...draft, rate: Number(event.target.value) } }))} /></label></div><button className="button subtle" type="submit">Обновить закон</button></form>;
-        })}
+        <p className="page-description">Категория и процент загружаются из таблицы. В Родео этот справочник доступен только для просмотра.</p>
+        {conscriptionLaws.map((law) => (
+          <div className="registration-card" key={law.id}>
+            <div className="registration-copy">
+              <strong>{law.name}</strong>
+              <small>{(law.rate * 100).toLocaleString("ru-RU")}% населения → ЛР</small>
+            </div>
+          </div>
+        ))}
       </div>
     </section>
   );
