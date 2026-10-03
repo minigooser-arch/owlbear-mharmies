@@ -42,7 +42,7 @@ export function resolvePlannedShipRoutes(
     const validationShip = {
       ...ship,
       globalMovementRemaining: SHIP_CLASSES[ship.classId].movement +
-        (startCellForBonus ? shipBunkeringBonusAtCell(scene, startCellForBonus) : 0)
+        (startCellForBonus ? shipBunkeringBonusAtCell(scene, startCellForBonus, ship.sideId) : 0)
     };
     const planned = planShipStrategicRoute(
       scene,
