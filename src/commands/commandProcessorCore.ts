@@ -8,7 +8,7 @@ import { applyDemographyCorrection, debitHumanResource as debitHumanResourceFrom
 import { validateMilitaryInfluenceOperation } from "../sheets/militaryInfluence";
 import { recalculateHumanResourceCapacity } from "../population/populationRules";
 import { isCityBuildingActive } from "../cities/cityBuildingRules";
-import { activeShipyardAtCell, canalCellHasBothDomains, cityForCell, coastalBatteryRetaliationDamage, hasActiveCityBuilding, marineStationAllowsCrossing, repairShipAtShipyard, seaFortBlocksDisembark, transportArmyMovementCostAtCell } from "../cities/cityEffects";
+import { activeShipyardAtCell, canalCellHasBothDomains, cityForCell, coastalBatteryRetaliationCity, coastalBatteryRetaliationDamage, hasActiveCityBuilding, marineStationAllowsCrossing, repairShipAtShipyard, seaFortBlocksDisembark, transportArmyMovementCostAtCell } from "../cities/cityEffects";
 import { requestArmyDisband } from "../disband/disbandService";
 import { canRenumberTurn, cancelTurnDeferral, completeTurn, deferTurn, pauseAutoTurns, renumberSceneTurn, resumeAutoTurns } from "../turns/turnService";
 import { preCheckpointTurnBlockers } from "../turns/turnCompletionGuard";
@@ -1099,12 +1099,17 @@ export class CommandProcessor {
         } else {
           state.armies[command.armyId] = result.target;
         }
-        const retaliation = coastalBatteryRetaliationDamage(
-          state.scene,
-          targetCell,
-          relation === "ENEMY",
-          this.rollD6
-        );
+        const batteryCity = coastalBatteryRetaliationCity(state.scene, targetCell, ship.sideId);
+        const retaliation = batteryCity
+          ? coastalBatteryRetaliationDamage(state.scene, targetCell, true, this.rollD6)
+          : 0;
+        if (batteryCity) {
+          state.scene.strategicCities = (state.scene.strategicCities ?? []).map((city) =>
+            city.id === batteryCity.id
+              ? { ...city, coastalBatteryRetaliatedOnTurn: state.scene.turn.turnNumber }
+              : city
+          );
+        }
         if (retaliation > 0) {
           const armor = shipEffectiveArmor(ship);
           const damage = Math.max(0, retaliation - armor);
