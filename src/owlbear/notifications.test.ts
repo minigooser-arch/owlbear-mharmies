@@ -52,7 +52,7 @@ describe("notificationMessage", () => {
     ["NO_NAVAL_LOS", "Линия огня к цели перекрыта."],
     ["NAVAL_POSITION_UNAVAILABLE", "Не удалось определить позиции кораблей для морского действия."],
     ["TARGET_NOT_IN_NAVAL_BATTLE", "Цель не участвует в текущем морском бою."],
-    ["NAVAL_BATTLE_ACTIVE", "Сначала завершите текущий морской бой."]
+    ["NAVAL_BATTLE_ACTIVE", "Сначала завершите текущий морской бой."],
     ["SHEET_WRITEBACK_TOKEN_MISSING", "Для синхронизации с таблицей не задан writeback-токен GM. Откройте «Управление → Настройки» и сохраните токен."],
     ["SHEET_WRITEBACK_URL_MISSING", "Для синхронизации с таблицей не задан URL Apps Script. Откройте «Управление → Настройки» и сохраните URL."]
   ])("translates %s into Russian", (code, message) => {
