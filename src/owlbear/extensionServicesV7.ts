@@ -114,7 +114,7 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
     },
     send: core.send,
     sendStrategic,
-    clearFocusedEntity: core.clearFocusedEntity,
+    ...(core.clearFocusedEntity ? { clearFocusedEntity: core.clearFocusedEntity } : {}),
     runDiagnostic: core.runDiagnostic,
     stop: () => {
       unsubscribeCore();
