@@ -42,8 +42,9 @@ function CityInspector({
   const faction = city.factionInfluenceId
     ? sides.find((side) => side.id === city.factionInfluenceId)?.name ?? city.factionInfluenceId
     : "Нет";
-  const canCreateArmy = city.factionInfluenceId !== null &&
-    (role === "GM" || leaderSideIds.has(city.factionInfluenceId)) &&
+  const influenceSideId = city.factionInfluenceId;
+  const canCreateArmy = influenceSideId !== null &&
+    (role === "GM" || leaderSideIds.has(influenceSideId)) &&
     (city.buildings ?? []).some((building) => building.type === "MILITARY_DEPARTMENT");
   return (
     <div className="entity-city-inspector">
@@ -73,14 +74,14 @@ function CityInspector({
         <h3>Положение</h3>
         <p className="helper-text">{city.cells.map((cell) => `${cell.x},${cell.y}`).join(" · ")}</p>
       </div>
-      {canCreateArmy && city.factionInfluenceId !== null && (
+      {canCreateArmy && influenceSideId !== null && (
         <div className="entity-section entity-city-actions">
           <h3>Формирование</h3>
           <button
             className="button primary"
             type="button"
             aria-label={`Создать армию в городе ${city.name}`}
-            onClick={() => onAction({ type: "CREATE_SELECTED_CITY_ARMY", cityId: city.id, sideId: city.factionInfluenceId! })}
+            onClick={() => onAction({ type: "CREATE_SELECTED_CITY_ARMY", cityId: city.id, sideId: influenceSideId })}
           >
             Создать армию в городе
           </button>
@@ -168,3 +169,4 @@ export function EntityInspector({
     </aside>
   );
 }
+
