@@ -25,17 +25,26 @@ const BUILDING_LABELS: Record<string, string> = {
 function CityInspector({
   city,
   states,
-  sides
+  sides,
+  role,
+  leaderSideIds,
+  onAction
 }: {
   city: StrategicCity;
   states: readonly StateEntity[];
   sides: readonly Side[];
+  role: "GM" | "PLAYER";
+  leaderSideIds: ReadonlySet<string>;
+  onAction(command: UiCommand): void;
 }) {
   const recognized = states.find((state) => state.id === city.recognizedStateId)?.name ?? city.recognizedStateId;
   const deFacto = states.find((state) => state.id === city.deFactoStateId)?.name ?? city.deFactoStateId;
   const faction = city.factionInfluenceId
     ? sides.find((side) => side.id === city.factionInfluenceId)?.name ?? city.factionInfluenceId
     : "Нет";
+  const canCreateArmy = city.factionInfluenceId !== null &&
+    (role === "GM" || leaderSideIds.has(city.factionInfluenceId)) &&
+    (city.buildings ?? []).some((building) => building.type === "MILITARY_DEPARTMENT");
   return (
     <div className="entity-city-inspector">
       <div className="entity-inspector-eyebrow">Город</div>
@@ -64,6 +73,20 @@ function CityInspector({
         <h3>Положение</h3>
         <p className="helper-text">{city.cells.map((cell) => `${cell.x},${cell.y}`).join(" · ")}</p>
       </div>
+      {canCreateArmy && city.factionInfluenceId !== null && (
+        <div className="entity-section entity-city-actions">
+          <h3>Формирование</h3>
+          <button
+            className="button primary"
+            type="button"
+            aria-label={`Создать армию в городе ${city.name}`}
+            onClick={() => onAction({ type: "CREATE_SELECTED_CITY_ARMY", cityId: city.id, sideId: city.factionInfluenceId! })}
+          >
+            Создать армию в городе
+          </button>
+          <p className="helper-text">Новая армия начнёт формирование с 5 HP.</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -139,7 +162,7 @@ export function EntityInspector({
             />
           );
         })()}
-        {city && <CityInspector city={city} states={states} sides={sides} />}
+        {city && <CityInspector city={city} states={states} sides={sides} role={role} leaderSideIds={leaderSideIds} onAction={onAction} />}
         {!army && !ship && !city && <p className="empty empty-panel">Объект больше не существует или недоступен.</p>}
       </div>
     </aside>
