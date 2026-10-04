@@ -57,6 +57,16 @@ export function sheetWritebackAuthorized(settings: SceneSettings): boolean {
   return sheetWritebackConfigured(settings) && Boolean(readSheetWritebackToken());
 }
 
+/**
+ * Returns whether the background runtime may use the sheet as an authority.
+ * The URL is scene configuration, while the GM token is local to the current
+ * GM connection. Without both values, normal Owlbear gameplay must continue
+ * from the scene cache instead of failing during a sheet refresh.
+ */
+export function sheetWritebackRuntimeEnabled(settings: SceneSettings): boolean {
+  return sheetWritebackAuthorized(settings);
+}
+
 export class SheetWritebackError extends Error {
   constructor(
     readonly code: string,

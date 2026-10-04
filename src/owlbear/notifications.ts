@@ -34,6 +34,8 @@ export type NotificationCode =
   | "STATE_NOT_FOUND"
   | "INSUFFICIENT_HUMAN_RESOURCE"
   | "INVALID_AMOUNT"
+  | "SHEET_WRITEBACK_TOKEN_MISSING"
+  | "SHEET_WRITEBACK_URL_MISSING"
   | "ALREADY_REGISTERED"
   | "PERSISTENCE_FAILED"
   | "SCENE_ITEM_CREATION_UNAVAILABLE"
@@ -125,6 +127,8 @@ const RUSSIAN_MESSAGES: Readonly<Record<NotificationCode, string>> = {
   STATE_NOT_FOUND: "Для государства фракции нет демографической записи. Создайте её или синхронизируйте население.",
   INSUFFICIENT_HUMAN_RESOURCE: "Недостаточно людского ресурса для создания или комплектования армии.",
   INVALID_AMOUNT: "Указана недопустимая сумма людского ресурса.",
+  SHEET_WRITEBACK_TOKEN_MISSING: "Для синхронизации с таблицей не задан writeback-токен GM. Откройте «Управление → Настройки» и сохраните токен.",
+  SHEET_WRITEBACK_URL_MISSING: "Для синхронизации с таблицей не задан URL Apps Script. Откройте «Управление → Настройки» и сохраните URL.",
   ALREADY_REGISTERED: "Выбранное изображение уже зарегистрировано как армия.",
   PERSISTENCE_FAILED: "Армия сформирована, но не удалось сохранить её токен в сцене. Проверьте выбранный ассет армии и повторите действие.",
   SCENE_ITEM_CREATION_UNAVAILABLE: "В этой сцене нельзя создать токен армии. Перезагрузите расширение и повторите действие.",

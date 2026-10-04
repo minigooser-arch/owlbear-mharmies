@@ -97,7 +97,8 @@ import {
   readSheetWritebackToken,
   SheetWritebackClient,
   SheetWritebackError,
-  sheetWritebackConfigured
+  sheetWritebackConfigured,
+  sheetWritebackRuntimeEnabled
 } from "../sheets/writebackClient";
 import { buildDetectionGraph } from "../visibility/detectionGraph";
 import { buildSceneDetectionGraph, detectedShipIdsForSide } from "../visibility/sceneDetectionGraph";
@@ -401,7 +402,7 @@ export class ProductionEngine {
     if (!this.coordinator) return;
     const metadata = await this.port.getSceneMetadata();
     const rawScene = metadata[METADATA_KEYS.scene] as Partial<SceneState> | undefined;
-    if (!rawScene?.settings || !sheetWritebackConfigured(rawScene.settings)) return;
+    if (!rawScene?.settings || !sheetWritebackRuntimeEnabled(rawScene.settings)) return;
     const frame = await this.repository.readItemFrame();
     const items = Object.fromEntries(frame.items.map((item) => [item.id, item]));
     const state: CommandState = {
@@ -779,7 +780,7 @@ export class ProductionEngine {
     const now = this.wallClock();
     const frame = await this.repository.readFrame();
     const sourceScene = frame.scene;
-    const scene = sheetWritebackConfigured(sourceScene.settings)
+    const scene = sheetWritebackRuntimeEnabled(sourceScene.settings)
       ? sourceScene
       : applyPopulationCalendarToScene(sourceScene, now);
     const armyRecords = frame.items.armies;
@@ -798,7 +799,7 @@ export class ProductionEngine {
       return;
     }
     let authoritativeScene = scene;
-    if (sheetWritebackConfigured(scene.settings)) {
+    if (sheetWritebackRuntimeEnabled(scene.settings)) {
       try {
         const countries = scene.states
           .map((state) => state.backendCountry?.trim())
@@ -1268,13 +1269,13 @@ export class ProductionEngine {
     }
     const command = validation.command;
     const frame = await this.repository.readFrame();
-    let scene = sheetWritebackConfigured(frame.scene.settings)
+    let scene = sheetWritebackRuntimeEnabled(frame.scene.settings)
       ? frame.scene
       : applyPopulationCalendarToScene(frame.scene, this.wallClock());
     const armyRecords = frame.items.armies;
     const barrierRecords = frame.items.barriers;
     const sceneItems = frame.items.items;
-    if (sheetWritebackConfigured(scene.settings) &&
+    if (sheetWritebackRuntimeEnabled(scene.settings) &&
       (command.type === "HEAL_ARMY" || command.type === "COMPLETE_TURN_NOW")) {
       try {
         const targetCountries = this.countriesNeedingAuthoritativeDemography(
@@ -1611,7 +1612,7 @@ export class ProductionEngine {
     scene: SceneState,
     countries: readonly string[]
   ): Promise<SceneState> {
-    if (!sheetWritebackConfigured(scene.settings)) return scene;
+    if (!sheetWritebackRuntimeEnabled(scene.settings)) return scene;
     const token = readSheetWritebackToken();
     if (!token) throw new SheetWritebackError("SHEET_WRITEBACK_TOKEN_MISSING");
     const url = scene.settings.sheetWritebackUrl?.trim();

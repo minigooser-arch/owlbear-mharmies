@@ -4,10 +4,26 @@ import {
   SheetWritebackClient,
   readSheetWritebackToken,
   saveSheetWritebackToken,
-  clearSheetWritebackToken
+  clearSheetWritebackToken,
+  sheetWritebackRuntimeEnabled
 } from "./writebackClient";
 
 describe("sheet writeback local secret", () => {
+  it("does not enable runtime sheet sync until a GM token is available", () => {
+    const storage = new Map<string, string>();
+    const localStorage = {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => { storage.set(key, value); },
+      removeItem: (key: string) => { storage.delete(key); }
+    };
+    Object.defineProperty(globalThis, "localStorage", { configurable: true, value: localStorage });
+    const settings = { sheetWritebackUrl: "https://example.test" } as never;
+    expect(sheetWritebackRuntimeEnabled(settings)).toBe(false);
+    saveSheetWritebackToken("secret");
+    expect(sheetWritebackRuntimeEnabled(settings)).toBe(true);
+    vi.restoreAllMocks();
+  });
+
   it("stores the token outside SceneSettings", () => {
     const storage = new Map<string, string>();
     const localStorage = {
