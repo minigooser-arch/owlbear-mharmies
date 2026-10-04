@@ -24,13 +24,18 @@ export function findSupplyPath(
   const isControlled = (cell: GridCellCoord) => effectiveController(cell) === stateId;
   const railwayCells = (scene.strategicCities ?? []).flatMap((city) => {
     const building = (city.buildings ?? []).find((candidate) => candidate.type === "RAILWAY_STATION");
-    return building && isCityBuildingActive(city, building, scene.gridMap, scene.states, scene.sides) && effectiveController(building.cell) === stateId
-      ? [building.cell] : [];
+    if (!building || !isCityBuildingActive(city, building, scene.gridMap, scene.states, scene.sides)) return [];
+    // Building locations may be outside the city's territory and sparse grid maps
+    // omit untouched cells. The station is still the endpoint of the active city
+    // effect when its cell has no explicit controller; an explicitly enemy-held
+    // station remains unusable.
+    const stationController = effectiveController(building.cell);
+    return stationController === null || stationController === stateId ? [building.cell] : [];
   });
   const isAnchor = (cell: GridCellCoord) => railwayCells.some((candidate) => cellKey(candidate) === cellKey(cell)) ||
     // Legacy scenes without city records retain the old recognized-state endpoint until migrated.
     ((scene.strategicCities ?? []).length === 0 && effectiveController(cell) === stateId && readCell(scene.gridMap, cell).recognizedStateId === stateId);
-  if (!isControlled(start)) return null;
+  if (!isControlled(start) && !isAnchor(start)) return null;
   const queue: GridCellCoord[] = [{ ...start }];
   const parents = new Map<string, string | null>([[cellKey(start), null]]);
   let head = 0;
@@ -53,7 +58,7 @@ export function findSupplyPath(
     for (const delta of NEIGHBORS) {
       const next = { x: current.x + delta.x, y: current.y + delta.y };
       const nextKey = cellKey(next);
-      if (parents.has(nextKey) || !isControlled(next)) continue;
+      if (parents.has(nextKey) || (!isControlled(next) && !isAnchor(next))) continue;
       parents.set(nextKey, cellKey(current));
       queue.push(next);
     }
@@ -65,3 +70,4 @@ export function isArmySupplied(scene: SceneState, army: ArmyState, armyCell: Gri
   const state = stateForFaction(scene, army.sideId);
   return state ? findSupplyPath(scene, armyCell, state.id) !== null : false;
 }
+
