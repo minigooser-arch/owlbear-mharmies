@@ -30,6 +30,7 @@ const harness = vi.hoisted(() => {
       return () => undefined;
     }),
     send: vi.fn(async () => undefined),
+    clearFocusedEntity: vi.fn(async () => undefined),
     runDiagnostic: vi.fn(async () => undefined),
     stop: vi.fn()
   };
@@ -106,5 +107,15 @@ it("rebuilds the cached snapshot after the core store publishes a new snapshot",
   expect(second.playerId).toBe("gm-2");
   expect(services.getSnapshot()).toBe(second);
 
+  services.stop();
+});
+
+
+it("forwards clearing a focused map entity to the core services", async () => {
+  const services = await createOwlbearExtensionServices();
+
+  await services.clearFocusedEntity?.();
+
+  expect(harness.core.clearFocusedEntity).toHaveBeenCalledTimes(1);
   services.stop();
 });
