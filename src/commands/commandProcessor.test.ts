@@ -405,7 +405,7 @@ describe("CommandProcessor", () => {
       .execute(context("PLAYER", "leader", current), command({ type: "CREATE_CITY_ARMY", itemId: "candidate-image", cityId: "city-red", sideId: "red" }, "leader"));
     expect(result.status).toBe("ACCEPTED");
     if (result.status === "ACCEPTED") {
-      expect(result.state.armies["candidate-image"]).toMatchObject({ sideId: "red", health: { hp: 0, maxHp: 40 }, formation: { active: true, cityId: "city-red", hpAddedThisTurn: 0 } });
+      expect(result.state.armies["candidate-image"]).toMatchObject({ sideId: "red", health: { hp: 5, maxHp: 40 }, formation: { active: true, cityId: "city-red", hpAddedThisTurn: 0 } });
       const demographics = result.state.scene.demographics;
       if (!demographics) throw new Error("demography missing");
       expect(demographics[0]?.humanResource).toBe(100_000);
@@ -574,7 +574,7 @@ describe("CommandProcessor", () => {
     ).execute(context("PLAYER", "leader", current), command({ type: "CREATE_CITY_ARMY", cityId: "city-red", sideId: "red" }, "leader"));
     expect(result.status).toBe("ACCEPTED");
     if (result.status === "ACCEPTED") {
-      expect(result.state.armies["army-request"]).toMatchObject({ sideId: "red", health: { hp: 0, maxHp: 40 } });
+      expect(result.state.armies["army-request"]).toMatchObject({ sideId: "red", health: { hp: 5, maxHp: 40 } });
       expect(result.state.items["army-request"]).toMatchObject({ type: "IMAGE", position: { x: 50, y: 50 }, visible: false, image: asset.image, grid: asset.grid });
     }
   });
