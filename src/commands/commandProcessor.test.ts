@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { COMMAND_PROTOCOL_VERSION, DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE, METADATA_KEYS } from "../shared/constants";
+import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE, METADATA_KEYS } from "../shared/constants";
 import type { StrategicCityCommand } from "../cities/strategicCityCommands";
+import { COMMAND_PROTOCOL_VERSION } from "../shared/types";
 import type { ArmyCommand, ArmyState, SceneItemRecord, SceneState } from "../shared/types";
 import { CommandProcessor, type CommandContext, type CommandState } from "./commandProcessor";
 
