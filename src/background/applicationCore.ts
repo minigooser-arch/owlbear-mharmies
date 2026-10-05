@@ -83,7 +83,6 @@ import {
 } from "../shared/types";
 import { MetadataRepository, RevisionConflict, type ArmyRecord, type BarrierRecord, type MetadataItemFrame } from "../storage/metadataRepository";
 import { GridStorageError } from "../storage/gridChunkCodec";
-import { migrateSceneState } from "../storage/migrations";
 import { markLRTransactionRecorded } from "../finance/lrLedger";
 import {
   applySheetStateSnapshots,
@@ -351,7 +350,6 @@ export class ProductionEngine {
   private activeCoordinatorConnectionId: string | undefined;
   private lastMovementAt = performance.now();
   private mutationTail: Promise<void> = Promise.resolve();
-  private sheetWorkTail: Promise<void> = Promise.resolve();
   private lastMapOverlaySignature: string | undefined;
   private clearedLegacyMapOverlays = false;
   private clearedSharedMapOverlays = false;
@@ -389,7 +387,7 @@ export class ProductionEngine {
           this.coordinator &&
           this.coordinatorGeneration === generation
         ) {
-          void this.enqueueSheetWork(async () => {
+          void this.enqueueMutation(async () => {
             await this.queueSheetWritebackSnapshot();
             await this.flushSheetWriteback();
           });
@@ -412,53 +410,16 @@ export class ProductionEngine {
       items,
       positions: Object.fromEntries(frame.items.map((item) => [item.id, item.position]))
     };
-    try {
-      state.scene = await this.hydrateDemographyFromSheet(state.scene);
-    } catch (error) {
-      this.reportOperationalError(error, "sheet-demography-bootstrap");
-    }
-    let hydratedState: CommandState;
+    let hydratedState = state;
     try {
       hydratedState = await this.hydrateMilitaryInfluenceFromSheet(state);
     } catch (error) {
       this.reportOperationalError(error, "sheet-influence-bootstrap");
-      // Do not enqueue a writeback based on a partially hydrated scene.
-      // A grid-storage failure is retried on the next coordinator/scene cycle,
-      // but must not create an abort loop in the background runtime.
-      return;
     }
     const event = buildSheetWritebackSnapshotEvent(hydratedState, this.wallClock().toISOString());
     if (!event) return;
     const writebackQueue = SheetWritebackClient.mergeQueue(metadata, event);
     await this.port.patchSceneMetadata({ [METADATA_KEYS.sheetWritebackQueue]: writebackQueue });
-  }
-
-  private async hydrateDemographyFromSheet(scene: SceneState): Promise<SceneState> {
-    const token = readSheetWritebackToken();
-    const url = scene.settings.sheetWritebackUrl?.trim();
-    if (!token || !url || !scene.demographics) return scene;
-    const countries = scene.states
-      .map((state) => state.backendCountry?.trim())
-      .filter((country): country is string => Boolean(country));
-    if (countries.length === 0) return scene;
-    const snapshots = await new SheetWritebackClient(url, token).getStates(countries);
-    const nextScene = applySheetStateSnapshots(scene, snapshots);
-    if (JSON.stringify(nextScene.demographics) === JSON.stringify(scene.demographics)) return scene;
-
-    const expectedRevision = scene.revision;
-    const canCommit = this.captureCoordinatorGuard();
-    if (!canCommit()) return scene;
-    const metadata = await this.port.getSceneMetadata();
-    const rawScene = metadata[METADATA_KEYS.scene];
-    const currentResult = migrateSceneState(rawScene ?? { version: 5 });
-    if (!currentResult.ok || currentResult.value.revision !== expectedRevision || !canCommit()) return scene;
-    const persistedScene = {
-      ...(typeof rawScene === "object" && rawScene !== null ? rawScene as Record<string, unknown> : {}),
-      demographics: nextScene.demographics,
-      revision: expectedRevision + 1
-    };
-    await this.port.patchSceneMetadata({ [METADATA_KEYS.scene]: persistedScene });
-    return { ...nextScene, revision: expectedRevision + 1 };
   }
 
   private async hydrateMilitaryInfluenceFromSheet(state: CommandState): Promise<CommandState> {
@@ -486,23 +447,11 @@ export class ProductionEngine {
     const expectedRevision = state.scene.revision;
     const nextScene = { ...state.scene, sides, revision: expectedRevision + 1 };
     const canCommit = this.captureCoordinatorGuard();
-    if (!canCommit()) return state;
-
-    // Influence hydration does not change the grid. Writing through
-    // MetadataRepository would first reread the grid manifest and can block
-    // startup forever when an older room contains a stale/corrupt grid chunk.
-    // Patch only the scene metadata after a revision check so the sheet values
-    // can still hydrate independently of grid storage.
-    const metadata = await this.port.getSceneMetadata();
-    const rawScene = metadata[METADATA_KEYS.scene];
-    const currentResult = migrateSceneState(rawScene ?? { version: 5 });
-    if (!currentResult.ok || currentResult.value.revision !== expectedRevision || !canCommit()) return state;
-    const persistedScene = {
-      ...(typeof rawScene === "object" && rawScene !== null ? rawScene as Record<string, unknown> : {}),
-      sides,
-      revision: expectedRevision + 1
-    };
-    await this.port.patchSceneMetadata({ [METADATA_KEYS.scene]: persistedScene });
+    await this.repository.writeScene(
+      nextScene,
+      expectedRevision,
+      (current) => canCommit() && current.revision === expectedRevision
+    );
     return { ...state, scene: nextScene };
   }
 
@@ -1319,7 +1268,8 @@ export class ProductionEngine {
       command.type === "ACCEPT_EMBARK_ARMY" ||
       command.type === "DISEMBARK_ARMY" ||
       command.type === "HEAL_ARMY" ||
-      command.type === "CREATE_CITY_ARMY"
+      command.type === "CREATE_CITY_ARMY" ||
+      command.type === "ADD_CITY_BUILDING"
     ) {
       try {
         const grid = new StrategicGridAdapter({ dpi: await this.grid.getDpi(), offset: { x: 0, y: 0 } });
@@ -1753,7 +1703,7 @@ export class ProductionEngine {
     if (this.sheetWritebackRetryTimer !== undefined) clearTimeout(this.sheetWritebackRetryTimer);
     this.sheetWritebackRetryTimer = setTimeout(() => {
       this.sheetWritebackRetryTimer = undefined;
-      if (this.coordinator) void this.enqueueSheetWork(() => this.flushSheetWriteback());
+      if (this.coordinator) void this.enqueueMutation(() => this.flushSheetWriteback());
     }, delayMs);
   }
 
@@ -1938,7 +1888,7 @@ export class ProductionEngine {
           throw error;
         }
       }
-      void this.enqueueSheetWork(() => this.flushSheetWriteback());
+      void this.enqueueMutation(() => this.flushSheetWriteback());
     } catch (error) {
       for (const write of applied.reverse()) {
         try {
@@ -2007,17 +1957,8 @@ export class ProductionEngine {
     return result;
   }
 
-  private enqueueSheetWork<T>(operation: () => Promise<T>): Promise<T> {
-    const result = this.sheetWorkTail.then(operation, operation);
-    this.sheetWorkTail = result.then(
-      () => undefined,
-      () => undefined
-    );
-    return result;
-  }
-
   async whenIdle(): Promise<void> {
-    await Promise.all([this.mutationTail, this.sheetWorkTail]);
+    await this.mutationTail;
   }
 
   private async reconcileOverlays(
@@ -2262,7 +2203,7 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
   };
   const routeGateway = new CommandGateway(
     port,
-    20_000,
+    5_000,
     async () => resolveCoordinatorConnectionId(
       await party(),
       await engine.readCoordinatorLease().catch(() => undefined),
