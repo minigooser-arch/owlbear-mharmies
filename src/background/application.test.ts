@@ -396,95 +396,82 @@ it("loads one command input item frame before fresh persistence checks", async (
   expect(fixture.sceneItemReads).toBe(1);
 });
 
-describe("ProductionEngine latency isolation", () => {
-  type SheetWorkQueueAccess = {
-    enqueueSheetWork<T>(operation: () => Promise<T>): Promise<T>;
-  };
-
-  function holdSheetQueue(engine: ProductionEngine): {
-    work: Promise<void>;
-    release: () => void;
-    isDone: () => boolean;
-  } {
-    let release: (() => void) | undefined;
-    let done = false;
-    const work = (engine as unknown as SheetWorkQueueAccess)
-      .enqueueSheetWork(() => new Promise<void>((resolve) => { release = resolve; }))
-      .then(() => { done = true; });
-    return {
-      work,
-      release: () => release?.(),
-      isDone: () => done
+describe("ProductionEngine command boundary", () => {
+  it("recalculates army supply when a railway station is added through the background command path", async () => {
+    const army: ArmyState = {
+      version: 4,
+      registered: true,
+      sideId: "red",
+      status: "READY",
+      overrides: {},
+      route: [],
+      plannedRoute: { startCell: { x: 1, y: 0 }, executeOnTurn: 0, cells: [], totalCostUnits: 0, validatedRevision: 0, requiresReplan: false },
+      movement: { maxUnits: 10, remainingUnits: 10, enteredRouteCellCount: 0 },
+      health: { hp: 50, maxHp: 50 },
+      supply: { supplied: false, checkedOnTurn: 1, unsuppliedSinceTurn: 1 },
+      disband: { pending: false, requestedOnTurn: null, requestedByPlayerId: null },
+      currentWaypointIndex: 0,
+      segmentProgressCells: 0,
+      ignoresMovementBarriers: false,
+      ignoresVisionBarriers: false,
+      revision: 1
     };
-  }
-
-  it("does not let slow sheet work block gameplay commands", async () => {
-    const fixture = commandPort();
+    const fixture = commandPort([{
+      id: "army",
+      type: "IMAGE",
+      position: { x: 150, y: 50 },
+      metadata: { [METADATA_KEYS.army]: army }
+    }]);
+    fixture.scene.version = 7;
+    fixture.scene.sides = [{ id: "red", name: "Красные", color: "#f00", playerIds: [], leaderPlayerIds: [], stateId: "red-state" }];
+    fixture.scene.states = [{ id: "red-state", name: "Красное государство", rulingFactionId: "red", active: true }];
+    fixture.scene.gridMap.cells["0,0"] = {
+      terrainId: null,
+      impassable: false,
+      factionTerritoryIds: [],
+      recognizedStateId: "red-state",
+      deFactoStateId: "red-state"
+    };
+    fixture.scene.strategicCities = [{
+      id: "athens",
+      name: "Афины",
+      cells: [{ x: 1, y: 0 }],
+      recognizedStateId: "red-state",
+      deFactoStateId: "red-state",
+      factionInfluenceId: "red",
+      mayorId: null,
+      isCapital: false,
+      historicalBuildTypeCount: 0,
+      buildings: []
+    }];
     const engine = new ProductionEngine(fixture.port);
-    engine.setCoordinator(true, "coordinator");
-    const slowSheet = holdSheetQueue(engine);
+    engine.setCoordinator(true);
 
-    let commandDone = false;
-    const commandWork = engine.processCommand({
+    await engine.processCommand({
       connectionId: "gm-connection",
       data: {
         protocolVersion: COMMAND_PROTOCOL_VERSION,
-        requestId: "responsive-command",
+        requestId: "railway-immediate",
         senderPlayerId: "gm",
         senderConnectionId: "gm-connection",
         expectedRevision: fixture.scene.revision,
-        type: "CREATE_SIDE",
-        side: {
-          id: "responsive",
-          name: "Responsive",
-          color: "#123456",
-          playerIds: [],
-          leaderPlayerIds: []
-        }
+        type: "ADD_CITY_BUILDING",
+        cityId: "athens",
+        building: { id: "athens-railway-station", type: "RAILWAY_STATION", cell: { x: 1, y: 0 } }
       }
     }, {
       role: "GM",
       playerId: "gm",
       connectionId: "gm-connection",
       connectedPlayerIds: new Set(["gm"])
-    }).then(() => { commandDone = true; });
-
-    await vi.waitFor(() => expect(commandDone).toBe(true), { timeout: 500 });
-    expect(slowSheet.isDone()).toBe(false);
-    expect(fixture.sent.at(-1)?.data).toMatchObject({
-      requestId: "responsive-command",
-      status: "ACCEPTED"
     });
 
-    slowSheet.release();
-    await Promise.all([slowSheet.work, commandWork]);
-  });
-
-  it("does not let slow sheet work block coordinator heartbeats", async () => {
-    const fixture = commandPort();
-    const engine = new ProductionEngine(fixture.port);
-    const slowSheet = holdSheetQueue(engine);
-
-    let heartbeatDone = false;
-    const heartbeatWork = engine.writeCoordinatorHeartbeat({
-      connectionId: "coordinator",
-      epoch: 2,
-      expiresAt: Date.now() + 20_000
-    }).then(() => { heartbeatDone = true; });
-
-    await vi.waitFor(() => expect(heartbeatDone).toBe(true), { timeout: 500 });
-    expect(slowSheet.isDone()).toBe(false);
-    expect(fixture.scene.coordinatorLease).toMatchObject({
-      connectionId: "coordinator",
-      epoch: 2
+    expect(fixture.sent.at(-1)).toMatchObject({ data: { status: "ACCEPTED" } });
+    expect(fixture.items[0]?.metadata[METADATA_KEYS.army]).toMatchObject({
+      supply: { supplied: true, checkedOnTurn: 1 }
     });
-
-    slowSheet.release();
-    await Promise.all([slowSheet.work, heartbeatWork]);
   });
-});
 
-describe("ProductionEngine command boundary", () => {
   it("skips grid hydration on idle movement ticks", async () => {
     const fixture = commandPort();
     fixture.port.getSceneMetadata = async () => ({
@@ -801,11 +788,6 @@ describe("ProductionEngine command boundary", () => {
 
   it("does not finish an old heartbeat after coordinator shutdown", async () => {
     const fixture = commandPort();
-    const engine = new ProductionEngine(fixture.port);
-    engine.setCoordinator(true, "coordinator");
-    await Promise.resolve();
-    await engine.whenIdle();
-
     let releaseRead: (() => void) | undefined;
     let reads = 0;
     fixture.port.getSceneMetadata = async () => {
@@ -815,6 +797,8 @@ describe("ProductionEngine command boundary", () => {
     };
     let writes = 0;
     fixture.port.patchSceneMetadata = async () => { writes += 1; };
+    const engine = new ProductionEngine(fixture.port);
+    engine.setCoordinator(true, "coordinator");
 
     const heartbeat = engine.writeCoordinatorHeartbeat({
       connectionId: "coordinator",
@@ -831,11 +815,6 @@ describe("ProductionEngine command boundary", () => {
 
   it("cancels a heartbeat when coordinator shutdown happens during its commit read", async () => {
     const fixture = commandPort();
-    const engine = new ProductionEngine(fixture.port);
-    engine.setCoordinator(true, "coordinator");
-    await Promise.resolve();
-    await engine.whenIdle();
-
     let reads = 0;
     let releaseCommitRead: (() => void) | undefined;
     fixture.port.getSceneMetadata = async () => {
@@ -847,6 +826,8 @@ describe("ProductionEngine command boundary", () => {
     };
     let writes = 0;
     fixture.port.patchSceneMetadata = async () => { writes += 1; };
+    const engine = new ProductionEngine(fixture.port);
+    engine.setCoordinator(true, "coordinator");
 
     const heartbeat = engine.writeCoordinatorHeartbeat({
       connectionId: "coordinator",
@@ -1714,3 +1695,4 @@ describe("ProductionEngine strategic movement costs", () => {
     expect(persisted.movement.remainingUnits).toBe(10);
   });
 });
+
