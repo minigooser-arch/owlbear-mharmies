@@ -91,7 +91,7 @@ export function recalculateArmySupply(
       : (() => {
           const factionState = stateForFaction(scene, army.sideId);
           const armyCell = armyCells[armyId];
-          return factionState && armyCell ? isArmySupplied(scene, army, armyCell) : true;
+          return factionState && armyCell ? isArmySupplied(scene, army, armyCell) : army.supply.supplied;
         })();
     const nextSupply = supplied
       ? { supplied: true, checkedOnTurn: checkedOnTurn }
