@@ -1126,6 +1126,8 @@ it("keeps the fixed five-OP budget when a legacy route-distance override is edit
     enteredRouteCellCount: 0
   });
 
+});
+
   it("recalculates an army's supply immediately when a railway station is added", () => {
     const current = state();
     current.scene.version = 7;
@@ -1178,5 +1180,3 @@ it("keeps the fixed five-OP budget when a legacy route-distance override is edit
       });
     }
   });
-});
-
