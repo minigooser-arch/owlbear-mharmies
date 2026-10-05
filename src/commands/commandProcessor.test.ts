@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE, METADATA_KEYS } from "../shared/constants";
+import { COMMAND_PROTOCOL_VERSION, DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE, METADATA_KEYS } from "../shared/constants";
+import type { StrategicCityCommand } from "../cities/strategicCityCommands";
 import type { ArmyCommand, ArmyState, SceneItemRecord, SceneState } from "../shared/types";
 import { CommandProcessor, type CommandContext, type CommandState } from "./commandProcessor";
 
@@ -1122,6 +1123,59 @@ it("keeps the fixed five-OP budget when a legacy route-distance override is edit
     maxUnits: 10,
     remainingUnits: 7,
     enteredRouteCellCount: 0
+  });
+
+  it("recalculates an army's supply immediately when a railway station is added", () => {
+    const current = state();
+    current.scene.version = 7;
+    current.scene.sides = current.scene.sides.map((side) => side.id === "red"
+      ? { ...side, stateId: "red-state" }
+      : side);
+    current.scene.states = [{ id: "red-state", name: "Красное государство", rulingFactionId: "red", active: true }];
+    current.scene.strategicCities = [{
+      id: "city-red",
+      name: "Красный город",
+      cells: [{ x: 1, y: 0 }],
+      recognizedStateId: "red-state",
+      deFactoStateId: "red-state",
+      factionInfluenceId: "red",
+      mayorId: null,
+      isCapital: false,
+      historicalBuildTypeCount: 0,
+      buildings: []
+    }];
+    const armyRed = current.armies["army-red"];
+    if (!armyRed) throw new Error("army missing");
+    current.armies["army-red"] = {
+      ...armyRed,
+      supply: { supplied: false, checkedOnTurn: current.scene.turn.turnNumber, unsuppliedSinceTurn: current.scene.turn.turnNumber }
+    };
+    const armyItem = current.items["army-red"];
+    if (!armyItem) throw new Error("army item missing");
+    current.items["army-red"] = { ...armyItem, position: { x: 150, y: 50 } };
+    const positioned = new CommandProcessor(
+      () => new Date(),
+      ({ x, y }) => ({ x: Math.floor(x / 100), y: Math.floor(y / 100) })
+    );
+    const addStation: StrategicCityCommand = {
+      protocolVersion: COMMAND_PROTOCOL_VERSION,
+      requestId: "request",
+      senderPlayerId: "gm",
+      senderConnectionId: "gm-connection",
+      expectedRevision: 2,
+      type: "ADD_CITY_BUILDING",
+      cityId: "city-red",
+      building: { id: "railway-red", type: "RAILWAY_STATION", cell: { x: 1, y: 0 } }
+    };
+    const result = positioned.execute(context("GM", "gm", current), addStation);
+
+    expect(result.status).toBe("ACCEPTED");
+    if (result.status === "ACCEPTED") {
+      expect(result.state.armies["army-red"]?.supply).toEqual({
+        supplied: true,
+        checkedOnTurn: current.scene.turn.turnNumber
+      });
+    }
   });
 });
 
