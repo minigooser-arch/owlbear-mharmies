@@ -1,5 +1,6 @@
 import { stateForFaction } from "../states/stateRules";
 import { readCell } from "../terrain/gridMap";
+import { shipEmbarkedArmyIds } from "../naval/transport/transportRules";
 import type { ArmyState, GridCellCoord, SceneState } from "../shared/types";
 import { cellKey } from "../grid/strategicGrid";
 import { isCityBuildingActive } from "../cities/cityBuildingRules";
@@ -69,5 +70,41 @@ export function findSupplyPath(
 export function isArmySupplied(scene: SceneState, army: ArmyState, armyCell: GridCellCoord): boolean {
   const state = stateForFaction(scene, army.sideId);
   return state ? findSupplyPath(scene, armyCell, state.id) !== null : false;
+}
+
+/**
+ * Rechecks current supply without applying checkpoint damage. This is used when a
+ * supply source changes during a movement phase, such as adding a railway station.
+ */
+export function recalculateArmySupply(
+  scene: SceneState,
+  armies: Readonly<Record<string, ArmyState>>,
+  armyCells: Readonly<Record<string, GridCellCoord>>,
+  checkedOnTurn = scene.turn.turnNumber
+): Record<string, ArmyState> {
+  const nextArmies = structuredClone(armies) as Record<string, ArmyState>;
+  for (const [armyId, army] of Object.entries(nextArmies)) {
+    const embarkedShipId = army.embarkedOnShipId ?? null;
+    const embarkedShip = embarkedShipId !== null ? scene.ships?.[embarkedShipId] : undefined;
+    const supplied = embarkedShip !== undefined && shipEmbarkedArmyIds(embarkedShip).includes(armyId)
+      ? true
+      : (() => {
+          const factionState = stateForFaction(scene, army.sideId);
+          const armyCell = armyCells[armyId];
+          return factionState && armyCell ? isArmySupplied(scene, army, armyCell) : true;
+        })();
+    const nextSupply = supplied
+      ? { supplied: true, checkedOnTurn: checkedOnTurn }
+      : {
+          supplied: false,
+          checkedOnTurn,
+          ...(army.supply.unsuppliedSinceTurn === undefined
+            ? { unsuppliedSinceTurn: checkedOnTurn }
+            : { unsuppliedSinceTurn: army.supply.unsuppliedSinceTurn })
+        };
+    if (JSON.stringify(army.supply) === JSON.stringify(nextSupply)) continue;
+    nextArmies[armyId] = { ...army, supply: nextSupply, revision: army.revision + 1 };
+  }
+  return nextArmies;
 }
 
