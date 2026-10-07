@@ -11,7 +11,7 @@ import {
   type BroadcastEvent,
   type CommandAck
 } from "../commands/commandGateway";
-import { CommandProcessor, type CommandState } from "../commands/commandProcessor";
+import { closeMovementPhase, CommandProcessor, type CommandState } from "../commands/commandProcessor";
 import { validateArmyCommand } from "../commands/commandValidation";
 import { advanceArmy } from "../movement/movementEngine";
 import { validatePlannedRoute } from "../movement/movementRules";
@@ -87,6 +87,7 @@ import { markLRTransactionRecorded } from "../finance/lrLedger";
 import {
   applySheetStateSnapshots,
   buildSheetWritebackEvent,
+  buildSheetWritebackSnapshotEvent,
   mergeSheetWritebackQueue,
   pendingLRTransactions,
   type SheetWritebackEvent
@@ -95,7 +96,8 @@ import {
   readSheetWritebackToken,
   SheetWritebackClient,
   SheetWritebackError,
-  sheetWritebackConfigured
+  sheetWritebackConfigured,
+  sheetWritebackRuntimeEnabled
 } from "../sheets/writebackClient";
 import { buildDetectionGraph } from "../visibility/detectionGraph";
 import { buildSceneDetectionGraph, detectedShipIdsForSide } from "../visibility/sceneDetectionGraph";
@@ -385,10 +387,72 @@ export class ProductionEngine {
           this.coordinator &&
           this.coordinatorGeneration === generation
         ) {
-          void this.enqueueMutation(() => this.flushSheetWriteback());
+          void this.enqueueMutation(async () => {
+            await this.queueSheetWritebackSnapshot();
+            await this.flushSheetWriteback();
+          });
         }
       });
     }
+  }
+
+  private async queueSheetWritebackSnapshot(): Promise<void> {
+    if (!this.coordinator) return;
+    const metadata = await this.port.getSceneMetadata();
+    const rawScene = metadata[METADATA_KEYS.scene] as Partial<SceneState> | undefined;
+    if (!rawScene?.settings || !sheetWritebackRuntimeEnabled(rawScene.settings)) return;
+    const frame = await this.repository.readItemFrame();
+    const items = Object.fromEntries(frame.items.map((item) => [item.id, item]));
+    const state: CommandState = {
+      scene: frame.baseScene,
+      armies: Object.fromEntries(frame.armies.map((record) => [record.item.id, record.state])),
+      barriers: Object.fromEntries(frame.barriers.map((record) => [record.item.id, record.state])),
+      items,
+      positions: Object.fromEntries(frame.items.map((item) => [item.id, item.position]))
+    };
+    let hydratedState = state;
+    try {
+      hydratedState = await this.hydrateMilitaryInfluenceFromSheet(state);
+    } catch (error) {
+      this.reportOperationalError(error, "sheet-influence-bootstrap");
+    }
+    const event = buildSheetWritebackSnapshotEvent(hydratedState, this.wallClock().toISOString());
+    if (!event) return;
+    const writebackQueue = SheetWritebackClient.mergeQueue(metadata, event);
+    await this.port.patchSceneMetadata({ [METADATA_KEYS.sheetWritebackQueue]: writebackQueue });
+  }
+
+  private async hydrateMilitaryInfluenceFromSheet(state: CommandState): Promise<CommandState> {
+    const token = readSheetWritebackToken();
+    const url = state.scene.settings.sheetWritebackUrl?.trim();
+    if (!token || !url) return state;
+    const inputs = state.scene.sides.flatMap((side) => {
+      const country = side.stateId
+        ? state.scene.states.find((candidate) => candidate.id === side.stateId)?.backendCountry?.trim()
+        : undefined;
+      return country
+        ? [{ factionId: side.id, factionName: side.name, country }]
+        : [];
+    });
+    if (inputs.length === 0) return state;
+    const snapshots = await new SheetWritebackClient(url, token).getFactionMilitaryInfluence(inputs);
+    const balances = new Map(snapshots.map((snapshot) => [snapshot.factionId, snapshot.militaryInfluence]));
+    const sides = state.scene.sides.map((side) => {
+      const balance = balances.get(side.id);
+      return balance === undefined || balance === side.militaryInfluence
+        ? side
+        : { ...side, militaryInfluence: balance };
+    });
+    if (sides.every((side, index) => side === state.scene.sides[index])) return state;
+    const expectedRevision = state.scene.revision;
+    const nextScene = { ...state.scene, sides, revision: expectedRevision + 1 };
+    const canCommit = this.captureCoordinatorGuard();
+    await this.repository.writeScene(
+      nextScene,
+      expectedRevision,
+      (current) => canCommit() && current.revision === expectedRevision
+    );
+    return { ...state, scene: nextScene };
   }
 
   async normalizeCityBuildingLocations(): Promise<void> {
@@ -665,7 +729,7 @@ export class ProductionEngine {
     const now = this.wallClock();
     const frame = await this.repository.readFrame();
     const sourceScene = frame.scene;
-    const scene = sheetWritebackConfigured(sourceScene.settings)
+    const scene = sheetWritebackRuntimeEnabled(sourceScene.settings)
       ? sourceScene
       : applyPopulationCalendarToScene(sourceScene, now);
     const armyRecords = frame.items.armies;
@@ -673,7 +737,8 @@ export class ProductionEngine {
     const sceneItems = frame.items.items;
     if (!canCommit()) return;
     const boundary = getDueTurnBoundary(now, scene.turn);
-    if (!boundary) {
+    const completionRequested = scene.turn.completionRequested === true;
+    if (!boundary && !completionRequested) {
       if (scene !== sourceScene) {
         await this.repository.writeScene(
           { ...scene, revision: sourceScene.revision + 1 },
@@ -684,7 +749,7 @@ export class ProductionEngine {
       return;
     }
     let authoritativeScene = scene;
-    if (sheetWritebackConfigured(scene.settings)) {
+    if (sheetWritebackRuntimeEnabled(scene.settings)) {
       try {
         const countries = scene.states
           .map((state) => state.backendCountry?.trim())
@@ -695,7 +760,7 @@ export class ProductionEngine {
         return;
       }
     }
-    const armies = Object.fromEntries(armyRecords.map((record) => [record.item.id, record.state]));
+    let armies = Object.fromEntries(armyRecords.map((record) => [record.item.id, record.state]));
     let strategicGrid: StrategicGridAdapter;
     try {
       strategicGrid = new StrategicGridAdapter({
@@ -706,6 +771,31 @@ export class ProductionEngine {
       this.reportOperationalError(error, "turn-grid-unavailable");
       return;
     }
+    const barriers = Object.fromEntries(barrierRecords.map((record) => [record.item.id, record.state]));
+    const sceneItemsById = Object.fromEntries(sceneItems.map((item) => [item.id, item]));
+    const positions = Object.fromEntries(sceneItems.map((item) => [item.id, item.position]));
+    let movementClosed = false;
+    if (boundary && authoritativeScene.turn.phase === "MOVEMENT") {
+      const movementState: CommandState = {
+        scene: authoritativeScene,
+        armies,
+        barriers,
+        items: sceneItemsById,
+        positions
+      };
+      const movementFailure = closeMovementPhase(
+        movementState,
+        (position) => strategicGrid.sceneToCell(position),
+        (cell) => strategicGrid.cellToSceneCenter(cell)
+      );
+      if (movementFailure) {
+        this.reportOperationalError(new Error(movementFailure), "turn-movement-phase");
+        return;
+      }
+      authoritativeScene = movementState.scene;
+      armies = movementState.armies;
+      movementClosed = true;
+    }
     const armyCells = Object.fromEntries(armyRecords.map((record) => [
       record.item.id,
       strategicGrid.sceneToCell(record.item.position)
@@ -715,15 +805,29 @@ export class ProductionEngine {
       strategicGrid.sceneToCell(record.item.position)
     ]));
     const completion = completeTurn(authoritativeScene, armies, {
-      source: "SCHEDULE",
+      source: completionRequested ? "MANUAL" : "SCHEDULE",
       completedAt: now,
-      boundaryId: boundary.id,
+      ...(boundary && !completionRequested ? { boundaryId: boundary.id } : {}),
       positionForCell: (cell) => strategicGrid.cellToSceneCenter(cell),
       armyCells,
       shipCells
     });
     if (!completion.changed) {
-      if (scene !== sourceScene) {
+      if (movementClosed) {
+        const previous: CommandState = {
+          scene,
+          armies: Object.fromEntries(armyRecords.map((record) => [record.item.id, record.state])),
+          barriers,
+          items: sceneItemsById,
+          positions
+        };
+        const next: CommandState = {
+          ...structuredClone(previous),
+          scene: { ...authoritativeScene, revision: authoritativeScene.revision + 1 },
+          armies
+        };
+        if (canCommit()) await this.persistCommandState(next, previous, sceneItems);
+      } else if (scene !== sourceScene) {
         await this.repository.writeScene(
           { ...scene, revision: sourceScene.revision + 1 },
           sourceScene.revision,
@@ -736,9 +840,9 @@ export class ProductionEngine {
     const previous: CommandState = {
       scene: authoritativeScene,
       armies,
-      barriers: Object.fromEntries(barrierRecords.map((record) => [record.item.id, record.state])),
-      items: Object.fromEntries(sceneItems.map((item) => [item.id, item])),
-      positions: Object.fromEntries(sceneItems.map((item) => [item.id, item.position]))
+      barriers,
+      items: sceneItemsById,
+      positions
     };
     const next: CommandState = {
       ...structuredClone(previous),
@@ -757,7 +861,10 @@ export class ProductionEngine {
     const deltaSeconds = Math.max(0, (now - this.lastMovementAt) / 1_000);
     this.lastMovementAt = now;
     const itemFrame = initialItemFrame ?? await this.repository.readItemFrame();
-    if (!hasEligibleArmyMovement(itemFrame.armies, itemFrame.baseScene)) return;
+    if (!hasEligibleArmyMovement(itemFrame.armies, itemFrame.baseScene)) {
+      if (itemFrame.baseScene.turn.completionRequested) await this.turnTickNow();
+      return;
+    }
     const frame = await this.repository.readFrame(itemFrame);
     const scene = frame.scene;
     const armies = frame.items.armies;
@@ -1154,13 +1261,13 @@ export class ProductionEngine {
     }
     const command = validation.command;
     const frame = await this.repository.readFrame();
-    let scene = sheetWritebackConfigured(frame.scene.settings)
+    let scene = sheetWritebackRuntimeEnabled(frame.scene.settings)
       ? frame.scene
       : applyPopulationCalendarToScene(frame.scene, this.wallClock());
     const armyRecords = frame.items.armies;
     const barrierRecords = frame.items.barriers;
     const sceneItems = frame.items.items;
-    if (sheetWritebackConfigured(scene.settings) &&
+    if (sheetWritebackRuntimeEnabled(scene.settings) &&
       (command.type === "HEAL_ARMY" || command.type === "COMPLETE_TURN_NOW")) {
       try {
         const targetCountries = this.countriesNeedingAuthoritativeDemography(
@@ -1204,7 +1311,8 @@ export class ProductionEngine {
       command.type === "ACCEPT_EMBARK_ARMY" ||
       command.type === "DISEMBARK_ARMY" ||
       command.type === "HEAL_ARMY" ||
-      command.type === "CREATE_CITY_ARMY"
+      command.type === "CREATE_CITY_ARMY" ||
+      command.type === "ADD_CITY_BUILDING"
     ) {
       try {
         const grid = new StrategicGridAdapter({ dpi: await this.grid.getDpi(), offset: { x: 0, y: 0 } });
@@ -1497,7 +1605,7 @@ export class ProductionEngine {
     scene: SceneState,
     countries: readonly string[]
   ): Promise<SceneState> {
-    if (!sheetWritebackConfigured(scene.settings)) return scene;
+    if (!sheetWritebackRuntimeEnabled(scene.settings)) return scene;
     const token = readSheetWritebackToken();
     if (!token) throw new SheetWritebackError("SHEET_WRITEBACK_TOKEN_MISSING");
     const url = scene.settings.sheetWritebackUrl?.trim();
@@ -1588,14 +1696,15 @@ export class ProductionEngine {
         : undefined;
     if (!merged) return;
     const event = {
-      ...merged.pending,
-      // Army HP and per-faction/state army projections are private to Owlbear.
-      // Strip legacy queued values before any request reaches Google Sheets.
-      armies: [],
-      removedArmyIds: [],
-      factions: [],
-      stateArmies: []
-    };
+        ...merged.pending,
+        // Individual army HP and ship counts are private to Owlbear. Keep only
+        // aggregate faction/state HP projections and military influence.
+        armies: [],
+        removedArmyIds: [],
+        states: [],
+        factions: [...(merged.pending.factions ?? [])],
+        stateArmies: [...(merged.pending.stateArmies ?? [])]
+      };
     if (event.armies.length === 0 && event.removedArmyIds.length === 0 && event.states.length === 0 &&
       (event.factions?.length ?? 0) === 0 && (event.stateArmies?.length ?? 0) === 0 &&
       (event.militaryInfluenceOperations?.length ?? 0) === 0) {
@@ -2402,3 +2511,4 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
     }
   };
 }
+

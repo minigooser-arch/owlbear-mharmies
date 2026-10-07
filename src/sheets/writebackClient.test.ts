@@ -4,10 +4,26 @@ import {
   SheetWritebackClient,
   readSheetWritebackToken,
   saveSheetWritebackToken,
-  clearSheetWritebackToken
+  clearSheetWritebackToken,
+  sheetWritebackRuntimeEnabled
 } from "./writebackClient";
 
 describe("sheet writeback local secret", () => {
+  it("does not enable runtime sheet sync until a GM token is available", () => {
+    const storage = new Map<string, string>();
+    const localStorage = {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => { storage.set(key, value); },
+      removeItem: (key: string) => { storage.delete(key); }
+    };
+    Object.defineProperty(globalThis, "localStorage", { configurable: true, value: localStorage });
+    const settings = { sheetWritebackUrl: "https://example.test" } as never;
+    expect(sheetWritebackRuntimeEnabled(settings)).toBe(false);
+    saveSheetWritebackToken("secret");
+    expect(sheetWritebackRuntimeEnabled(settings)).toBe(true);
+    vi.restoreAllMocks();
+  });
+
   it("stores the token outside SceneSettings", () => {
     const storage = new Map<string, string>();
     const localStorage = {
@@ -60,4 +76,22 @@ describe("sheet writeback transport", () => {
       Object.defineProperty(globalThis, "fetch", { configurable: true, value: originalFetch });
     }
   });
+
+  it("reads current faction military influence for startup hydration", async () => {
+    const fetcher = vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body));
+      expect(body.action).toBe("GET_FACTIONS");
+      expect(body.factions).toEqual([{ factionId: "f1", factionName: "A", country: "STATE_A" }]);
+      return {
+        ok: true,
+        json: async () => ({ ok: true, result: {
+          factions: [{ factionId: "f1", factionName: "A", country: "STATE_A", militaryInfluence: 7 }]
+        } })
+      } as Response;
+    });
+    const client = new SheetWritebackClient("https://example.test", "secret", fetcher as typeof fetch);
+    await expect(client.getFactionMilitaryInfluence([{ factionId: "f1", factionName: "A", country: "STATE_A" }]))
+      .resolves.toEqual([{ factionId: "f1", factionName: "A", country: "STATE_A", militaryInfluence: 7 }]);
+  });
 });
+

@@ -307,6 +307,7 @@ function normalizeSide(value: unknown): Side | undefined {
     playerIds: [...new Set([...playerIds, ...leaderPlayerIds])],
     leaderPlayerIds,
     stateId: value.stateId === null || nonEmptyString(value.stateId) ? value.stateId as string | null : null,
+    ...(nonNegativeInteger(value.militaryInfluence) ? { militaryInfluence: value.militaryInfluence } : {}),
     ...(armyTokenAsset ? { armyTokenAsset } : {})
   };
 }
@@ -458,6 +459,7 @@ function normalizeTurn(value: unknown): TurnState {
   return {
     turnNumber: positiveInteger(value.turnNumber) ? value.turnNumber : DEFAULT_TURN_STATE.turnNumber,
     phase,
+    completionRequested: value.completionRequested === true,
     autoTurnsPaused: typeof value.autoTurnsPaused === "boolean" ? value.autoTurnsPaused : false,
     deferredUntil: value.deferredUntil === null || validIsoTimestamp(value.deferredUntil)
       ? value.deferredUntil as string | null
@@ -894,6 +896,7 @@ export function normalizeArmyState(raw: unknown): ValidationResult<ArmyState> {
       const healing = isRecord(raw.healing) ? raw.healing : {};
       return {
         pending: typeof healing.pending === "boolean" ? healing.pending : false,
+        ...(nonNegativeInteger(healing.pendingHp) && healing.pendingHp > 0 ? { pendingHp: healing.pendingHp } : {}),
         requestedOnTurn: healing.requestedOnTurn === null || (Number.isInteger(healing.requestedOnTurn) && nonNegative(healing.requestedOnTurn))
           ? healing.requestedOnTurn as number | null
           : null,
@@ -961,3 +964,4 @@ export function normalizeBarrierState(raw: unknown): ValidationResult<BarrierSta
     }
   };
 }
+

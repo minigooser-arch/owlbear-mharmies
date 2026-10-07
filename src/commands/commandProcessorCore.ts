@@ -1,6 +1,6 @@
 import { joinReinforcements, releaseBattleGroup } from "../battles/battleGroupService";
 import { destroyArmy } from "../armies/armyLifecycle";
-import { canHealArmy, healArmyForTurn } from "../health/armyHealth";
+import { canHealArmy, requestArmyHealing } from "../health/armyHealth";
 import { createFormationArmy, interruptFormation } from "../armies/armyFormation";
 import { appendLRTransaction } from "../finance/lrLedger";
 import { markLRTransactionRecorded } from "../finance/lrLedger";
@@ -251,6 +251,32 @@ function startRoutesForMovementPhase(state: CommandState): void {
       segmentProgressCells: 0
     });
   }
+}
+
+/**
+ * Close the internal movement window used by legacy scenes. The user-facing
+ * command now calls this as the first part of finishing a complete turn.
+ */
+export function closeMovementPhase(
+  state: CommandState,
+  cellForPosition?: (position: Vector2) => GridCellCoord,
+  positionForCell?: (cell: GridCellCoord) => Vector2
+): string | undefined {
+  if (state.scene.turn.phase !== "MOVEMENT") return "NOT_MOVEMENT_PHASE";
+  state.positions ??= {};
+  const resolved = resolvePlannedShipRoutes(
+    state.scene,
+    state.items,
+    state.positions,
+    cellForPosition,
+    positionForCell
+  );
+  if (!resolved.ok) return resolved.reason;
+  startRoutesForMovementPhase(state);
+  state.scene.turn.phase = "POST_MOVEMENT";
+  state.scene.turn.completionRequested = false;
+  state.scene.transportEmbarkRequests = [];
+  return undefined;
 }
 
 function reconcileForcedExits(state: CommandState, cellForPosition: ((position: Vector2) => GridCellCoord) | undefined, reason: ForcedExitReason): void {
@@ -1262,25 +1288,13 @@ export class CommandProcessor {
         }
       }
       case "COMPLETE_MOVEMENT_PHASE": {
-        if (state.scene.turn.phase !== "MOVEMENT") return "NOT_MOVEMENT_PHASE";
-        state.positions ??= {};
-        const resolved = resolvePlannedShipRoutes(
-          state.scene,
-          state.items,
-          state.positions,
-          this.cellForPosition,
-          this.positionForCell
-        );
-        if (!resolved.ok) return resolved.reason;
-        startRoutesForMovementPhase(state);
-        state.scene.turn.phase = "POST_MOVEMENT";
-        state.scene.transportEmbarkRequests = [];
-        return undefined;
+        return closeMovementPhase(state, this.cellForPosition, this.positionForCell);
       }
       case "REOPEN_MOVEMENT_PHASE":
         if (state.scene.turn.phase !== "POST_MOVEMENT") return "NOT_POST_MOVEMENT_PHASE";
         if (state.scene.activeNavalBattle?.status === "ACTIVE") return "NAVAL_BATTLE_ACTIVE";
         state.scene.turn.phase = "MOVEMENT";
+        state.scene.turn.completionRequested = false;
         state.scene.navalBattleRequests = [];
         return undefined;
       case "COMPLETE_NAVAL_BATTLE": {
@@ -2036,7 +2050,7 @@ export class CommandProcessor {
         const army = state.armies[command.armyId];
         if (!army) return "ARMY_NOT_FOUND";
         // The command request is idempotent. If its LR transaction is already present,
-        // the healing effect has already been applied by the authoritative command path.
+        // the request and its reserved HP have already been accepted.
         if ((state.scene.lrTransactions ?? []).some((transaction) => transaction.requestId === command.requestId)) return undefined;
         if (army.healing?.pending) return "HEALING_ALREADY_REQUESTED";
         const permission = canHealArmy(army);
@@ -2078,14 +2092,14 @@ export class CommandProcessor {
         const healedHp = Number.isFinite(hp) ? hp : Math.min(remainingTurnCap, missingHp);
         if (healedHp <= 0) return "HEALING_UNAVAILABLE";
 
-        const healed = healArmyForTurn(
+        const requested = requestArmyHealing(
           army,
-          healedHp,
           state.scene.turn.turnNumber,
-          turnCap,
+          command.senderPlayerId,
+          healedHp,
           hasHospital ? city?.id ?? null : null
         );
-        if (!healed) return "HEALING_UNAVAILABLE";
+        if (!requested) return "HEALING_UNAVAILABLE";
         const amount = healedHp * ratePerHp;
         const debit = this.debitHumanResource(state, army.sideId, amount, {
           requestId: command.requestId,
@@ -2101,7 +2115,7 @@ export class CommandProcessor {
           createdAt: this.now().toISOString()
         });
         if (debit) return debit;
-        state.armies[command.armyId] = healed;
+        state.armies[command.armyId] = requested;
         if (state.scene.demographics === undefined) {
           state.scene.lrTransactions = appendLRTransaction(state.scene.lrTransactions ?? [], {
             id: `${command.requestId}:healing`,
@@ -2159,8 +2173,19 @@ export class CommandProcessor {
         return undefined;
       }
       case "COMPLETE_TURN_NOW": {
+        if (state.scene.turn.phase === "MOVEMENT") {
+          const movementFailure = closeMovementPhase(state, this.cellForPosition, this.positionForCell);
+          if (movementFailure) return movementFailure;
+        }
         const blockers = preCheckpointTurnBlockers(state.scene, state.armies);
-        if (blockers.length > 0) return `TURN_BLOCKED:${blockers.join(",")}`;
+        if (blockers.length > 0) {
+          const onlyMovement = blockers.every((blocker) => blocker === "MOVEMENT_RESOLUTION_PENDING");
+          if (onlyMovement) {
+            state.scene.turn.completionRequested = true;
+            return undefined;
+          }
+          return `TURN_BLOCKED:${blockers.join(",")}`;
+        }
         const armyCells = Object.fromEntries(Object.entries(state.armies).flatMap(([armyId]) => {
           const position = state.positions?.[armyId];
           if (!position || !this.cellForPosition) return [];
@@ -2193,4 +2218,5 @@ export class CommandProcessor {
     }
   }
 }
+
 

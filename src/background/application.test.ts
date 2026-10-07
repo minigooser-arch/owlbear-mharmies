@@ -397,6 +397,81 @@ it("loads one command input item frame before fresh persistence checks", async (
 });
 
 describe("ProductionEngine command boundary", () => {
+  it("recalculates army supply when a railway station is added through the background command path", async () => {
+    const army: ArmyState = {
+      version: 4,
+      registered: true,
+      sideId: "red",
+      status: "READY",
+      overrides: {},
+      route: [],
+      plannedRoute: { startCell: { x: 1, y: 0 }, executeOnTurn: 0, cells: [], totalCostUnits: 0, validatedRevision: 0, requiresReplan: false },
+      movement: { maxUnits: 10, remainingUnits: 10, enteredRouteCellCount: 0 },
+      health: { hp: 50, maxHp: 50 },
+      supply: { supplied: false, checkedOnTurn: 1, unsuppliedSinceTurn: 1 },
+      disband: { pending: false, requestedOnTurn: null, requestedByPlayerId: null },
+      currentWaypointIndex: 0,
+      segmentProgressCells: 0,
+      ignoresMovementBarriers: false,
+      ignoresVisionBarriers: false,
+      revision: 1
+    };
+    const fixture = commandPort([{
+      id: "army",
+      type: "IMAGE",
+      position: { x: 150, y: 50 },
+      metadata: { [METADATA_KEYS.army]: army }
+    }]);
+    fixture.scene.version = 7;
+    fixture.scene.sides = [{ id: "red", name: "Красные", color: "#f00", playerIds: [], leaderPlayerIds: [], stateId: "red-state" }];
+    fixture.scene.states = [{ id: "red-state", name: "Красное государство", rulingFactionId: "red", active: true }];
+    fixture.scene.gridMap.cells["0,0"] = {
+      terrainId: null,
+      impassable: false,
+      factionTerritoryIds: [],
+      recognizedStateId: "red-state",
+      deFactoStateId: "red-state"
+    };
+    fixture.scene.strategicCities = [{
+      id: "athens",
+      name: "Афины",
+      cells: [{ x: 1, y: 0 }],
+      recognizedStateId: "red-state",
+      deFactoStateId: "red-state",
+      factionInfluenceId: "red",
+      mayorId: null,
+      isCapital: false,
+      historicalBuildTypeCount: 0,
+      buildings: []
+    }];
+    const engine = new ProductionEngine(fixture.port);
+    engine.setCoordinator(true);
+
+    await engine.processCommand({
+      connectionId: "gm-connection",
+      data: {
+        protocolVersion: COMMAND_PROTOCOL_VERSION,
+        requestId: "railway-immediate",
+        senderPlayerId: "gm",
+        senderConnectionId: "gm-connection",
+        expectedRevision: fixture.scene.revision,
+        type: "ADD_CITY_BUILDING",
+        cityId: "athens",
+        building: { id: "athens-railway-station", type: "RAILWAY_STATION", cell: { x: 1, y: 0 } }
+      }
+    }, {
+      role: "GM",
+      playerId: "gm",
+      connectionId: "gm-connection",
+      connectedPlayerIds: new Set(["gm"])
+    });
+
+    expect(fixture.sent.at(-1)).toMatchObject({ data: { status: "ACCEPTED" } });
+    expect(fixture.items[0]?.metadata[METADATA_KEYS.army]).toMatchObject({
+      supply: { supplied: true, checkedOnTurn: 1 }
+    });
+  });
+
   it("skips grid hydration on idle movement ticks", async () => {
     const fixture = commandPort();
     fixture.port.getSceneMetadata = async () => ({
@@ -709,6 +784,63 @@ describe("ProductionEngine command boundary", () => {
 
     await engine.turnTick();
     expect(fixture.scene.turn.turnNumber).toBe(2);
+  });
+
+  it("closes the internal movement window before an automatic turn", async () => {
+    const fixture = commandPort();
+    fixture.scene.version = 6;
+    fixture.scene.turn.phase = "MOVEMENT";
+    fixture.scene.ships = {};
+    fixture.scene.navalBattleRequests = [];
+    fixture.scene.activeNavalBattle = null;
+    fixture.scene.navalBattleHistory = [];
+    fixture.scene.navalRevealUntilTurn = {};
+    const engine = new ProductionEngine(
+      fixture.port,
+      () => new Date("2026-09-02T12:00:01.000Z")
+    );
+    engine.setCoordinator(true, "coordinator");
+
+    await engine.turnTick();
+
+    expect(fixture.scene.turn.turnNumber).toBe(2);
+    expect(fixture.scene.turn.phase).toBe("MOVEMENT");
+    expect(fixture.scene.turn.lastCompletedBy).toBe("SCHEDULE");
+  });
+
+  it("finishes a manually requested turn after movement has settled", async () => {
+    const army: ArmyState = {
+      version: 3, registered: true, sideId: "red", status: "READY", overrides: {}, route: [],
+      plannedRoute: { startCell: { x: 0, y: 0 }, executeOnTurn: 0, cells: [], totalCostUnits: 0, validatedRevision: 2, requiresReplan: false },
+      movement: { maxUnits: 10, remainingUnits: 3, enteredRouteCellCount: 0 },
+      health: { hp: 50, maxHp: 50 }, supply: { supplied: true, checkedOnTurn: 1 },
+      disband: { pending: false, requestedOnTurn: null, requestedByPlayerId: null },
+      currentWaypointIndex: 0, segmentProgressCells: 0,
+      ignoresMovementBarriers: false, ignoresVisionBarriers: false, revision: 1
+    };
+    const fixture = commandPort([{
+      id: "army", type: "IMAGE", position: { x: 0, y: 0 },
+      metadata: { [METADATA_KEYS.army]: army }
+    }]);
+    fixture.scene.version = 6;
+    fixture.scene.turn.phase = "POST_MOVEMENT";
+    fixture.scene.turn.completionRequested = true;
+    fixture.scene.ships = {};
+    fixture.scene.navalBattleRequests = [];
+    fixture.scene.activeNavalBattle = null;
+    fixture.scene.navalBattleHistory = [];
+    fixture.scene.navalRevealUntilTurn = {};
+    const engine = new ProductionEngine(
+      fixture.port,
+      () => new Date("2026-09-01T12:00:01.000Z")
+    );
+    engine.setCoordinator(true, "coordinator");
+
+    await engine.movementTick();
+
+    expect(fixture.scene.turn.turnNumber).toBe(2);
+    expect(fixture.scene.turn.completionRequested).toBe(false);
+    expect(fixture.scene.turn.lastCompletedBy).toBe("MANUAL");
   });
 
   it("does not finish an old heartbeat after coordinator shutdown", async () => {
@@ -1620,3 +1752,4 @@ describe("ProductionEngine strategic movement costs", () => {
     expect(persisted.movement.remainingUnits).toBe(10);
   });
 });
+

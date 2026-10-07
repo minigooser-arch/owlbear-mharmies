@@ -197,6 +197,8 @@ export interface ArmyFormationState {
 
 export interface ArmyHealingState {
   pending?: boolean;
+  /** HP reserved by the treatment request and applied at the next turn start. */
+  pendingHp?: number;
   requestedOnTurn?: number | null;
   requestedByPlayerId?: string | null;
   hpHealedThisTurn: number;
@@ -310,6 +312,8 @@ export interface TurnState {
   turnNumber: number;
   /** Missing on legacy v5 inputs; migration supplies MOVEMENT. */
   phase?: TurnPhase;
+  /** GM requested the unified turn completion while movement is still resolving. */
+  completionRequested?: boolean;
   autoTurnsPaused: boolean;
   deferredUntil: string | null;
   lastCompletedAt: string | null;
@@ -751,4 +755,5 @@ export interface ValidationIssue {
 export type ValidationResult<T> =
   | { ok: true; value: T }
   | { ok: false; issue: ValidationIssue };
+
 

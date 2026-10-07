@@ -85,7 +85,7 @@ it("shows turn administration on the turn page only to the GM", () => {
 
   render(<App services={services({ role: "GM", mapVisibleSourceIds: new Set() })} />);
   expect(screen.getByRole("button", { name: "Обзор" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Завершить фазу перемещения" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Завершить ход" })).toBeInTheDocument();
 });
 
 it("keeps leader faction management inside the troops screen", () => {
@@ -212,6 +212,35 @@ it("opens a focused army as a full-panel inspector and closes it through the cro
   expect(clearFocusedEntity).toHaveBeenCalledTimes(1);
 });
 
+it("offers army creation from a focused city", () => {
+  const send = vi.fn(async () => undefined);
+  const focusedServices = services({
+    role: "GM",
+    mapVisibleSourceIds: new Set(),
+    focusedEntity: { type: "CITY", id: "city-a" },
+    sides: [{ id: "A", name: "Красные", color: "#f00", playerIds: [], leaderPlayerIds: [], stateId: "state-a" }],
+    states: [{ id: "state-a", name: "Красное государство", rulingFactionId: "A", active: true }],
+    strategicCities: [{
+      id: "city-a",
+      name: "Красный город",
+      cells: [{ x: 0, y: 0 }],
+      recognizedStateId: "state-a",
+      deFactoStateId: "state-a",
+      factionInfluenceId: "A",
+      mayorId: null,
+      isCapital: false,
+      historicalBuildTypeCount: 0,
+      buildings: [{ id: "military-department", type: "MILITARY_DEPARTMENT", cell: { x: 0, y: 0 } }]
+    }]
+  });
+  focusedServices.send = send;
+
+  render(<App services={focusedServices} />);
+
+  fireEvent.click(screen.getByRole("button", { name: /Создать армию в городе/ }));
+  expect(send).toHaveBeenCalledWith({ type: "CREATE_SELECTED_CITY_ARMY", cityId: "city-a", sideId: "A" });
+});
+
 it("renders loading, no-scene, and future-schema states", () => {
   const { rerender } = render(<App services={services({ ready: false })} />);
   expect(screen.getByText("Загрузка…")).toBeInTheDocument();
@@ -220,3 +249,4 @@ it("renders loading, no-scene, and future-schema states", () => {
   rerender(<App services={services({ futureSchema: true })} />);
   expect(screen.getByText(/более новой версией расширения/)).toBeInTheDocument();
 });
+

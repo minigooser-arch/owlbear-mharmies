@@ -89,10 +89,11 @@ CoreProductionEngine.prototype.movementTick = function patchedMovementTick(this:
   const repository = new MetadataRepository(port);
   return this.movementTickTransaction(async (run) => {
     const frame = await repository.readItemFrame();
-    if (!hasEligibleArmyMovement(frame.armies, frame.baseScene)) return;
+    if (!hasEligibleArmyMovement(frame.armies, frame.baseScene) && !frame.baseScene.turn.completionRequested) return;
     return runAtomicMovement(port, frame.items, () => run(frame));
   });
 };
 
 export { CoreProductionEngine as ProductionEngine };
 export const startBackgroundApplication = startCoreBackgroundApplication;
+

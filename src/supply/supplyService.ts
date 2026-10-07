@@ -1,5 +1,6 @@
 import { stateForFaction } from "../states/stateRules";
 import { readCell } from "../terrain/gridMap";
+import { shipEmbarkedArmyIds } from "../naval/transport/transportRules";
 import type { ArmyState, GridCellCoord, SceneState } from "../shared/types";
 import { cellKey } from "../grid/strategicGrid";
 import { isCityBuildingActive } from "../cities/cityBuildingRules";
@@ -24,13 +25,18 @@ export function findSupplyPath(
   const isControlled = (cell: GridCellCoord) => effectiveController(cell) === stateId;
   const railwayCells = (scene.strategicCities ?? []).flatMap((city) => {
     const building = (city.buildings ?? []).find((candidate) => candidate.type === "RAILWAY_STATION");
-    return building && isCityBuildingActive(city, building, scene.gridMap, scene.states, scene.sides) && effectiveController(building.cell) === stateId
-      ? [building.cell] : [];
+    if (!building || !isCityBuildingActive(city, building, scene.gridMap, scene.states, scene.sides)) return [];
+    // Building locations may be outside the city's territory and sparse grid maps
+    // omit untouched cells. The station is still the endpoint of the active city
+    // effect when its cell has no explicit controller; an explicitly enemy-held
+    // station remains unusable.
+    const stationController = effectiveController(building.cell);
+    return stationController === null || stationController === stateId ? [building.cell] : [];
   });
   const isAnchor = (cell: GridCellCoord) => railwayCells.some((candidate) => cellKey(candidate) === cellKey(cell)) ||
     // Legacy scenes without city records retain the old recognized-state endpoint until migrated.
     ((scene.strategicCities ?? []).length === 0 && effectiveController(cell) === stateId && readCell(scene.gridMap, cell).recognizedStateId === stateId);
-  if (!isControlled(start)) return null;
+  if (!isControlled(start) && !isAnchor(start)) return null;
   const queue: GridCellCoord[] = [{ ...start }];
   const parents = new Map<string, string | null>([[cellKey(start), null]]);
   let head = 0;
@@ -53,7 +59,7 @@ export function findSupplyPath(
     for (const delta of NEIGHBORS) {
       const next = { x: current.x + delta.x, y: current.y + delta.y };
       const nextKey = cellKey(next);
-      if (parents.has(nextKey) || !isControlled(next)) continue;
+      if (parents.has(nextKey) || (!isControlled(next) && !isAnchor(next))) continue;
       parents.set(nextKey, cellKey(current));
       queue.push(next);
     }
@@ -65,3 +71,40 @@ export function isArmySupplied(scene: SceneState, army: ArmyState, armyCell: Gri
   const state = stateForFaction(scene, army.sideId);
   return state ? findSupplyPath(scene, armyCell, state.id) !== null : false;
 }
+
+/**
+ * Rechecks current supply without applying checkpoint damage. This is used when a
+ * supply source changes during a movement phase, such as adding a railway station.
+ */
+export function recalculateArmySupply(
+  scene: SceneState,
+  armies: Readonly<Record<string, ArmyState>>,
+  armyCells: Readonly<Record<string, GridCellCoord>>,
+  checkedOnTurn = scene.turn.turnNumber
+): Record<string, ArmyState> {
+  const nextArmies = structuredClone(armies) as Record<string, ArmyState>;
+  for (const [armyId, army] of Object.entries(nextArmies)) {
+    const embarkedShipId = army.embarkedOnShipId ?? null;
+    const embarkedShip = embarkedShipId !== null ? scene.ships?.[embarkedShipId] : undefined;
+    const supplied = embarkedShip !== undefined && shipEmbarkedArmyIds(embarkedShip).includes(armyId)
+      ? true
+      : (() => {
+          const factionState = stateForFaction(scene, army.sideId);
+          const armyCell = armyCells[armyId];
+          return factionState && armyCell ? isArmySupplied(scene, army, armyCell) : army.supply.supplied;
+        })();
+    const nextSupply = supplied
+      ? { supplied: true, checkedOnTurn: checkedOnTurn }
+      : {
+          supplied: false,
+          checkedOnTurn,
+          ...(army.supply.unsuppliedSinceTurn === undefined
+            ? { unsuppliedSinceTurn: checkedOnTurn }
+            : { unsuppliedSinceTurn: army.supply.unsuppliedSinceTurn })
+        };
+    if (JSON.stringify(army.supply) === JSON.stringify(nextSupply)) continue;
+    nextArmies[armyId] = { ...army, supply: nextSupply, revision: army.revision + 1 };
+  }
+  return nextArmies;
+}
+

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE, METADATA_KEYS } from "../shared/constants";
-import type { ArmyCommand, ArmyState, SceneItemRecord, SceneState } from "../shared/types";
+import { COMMAND_PROTOCOL_VERSION, type ArmyCommand, type ArmyState, type SceneItemRecord, type SceneState } from "../shared/types";
+import type { StrategicCityCommand } from "../cities/strategicCityCommands";
 import { CommandProcessor, type CommandContext, type CommandState } from "./commandProcessor";
 
 function army(sideId: string, directOwnerPlayerId?: string): ArmyState {
@@ -405,11 +406,65 @@ describe("CommandProcessor", () => {
       .execute(context("PLAYER", "leader", current), command({ type: "CREATE_CITY_ARMY", itemId: "candidate-image", cityId: "city-red", sideId: "red" }, "leader"));
     expect(result.status).toBe("ACCEPTED");
     if (result.status === "ACCEPTED") {
-      expect(result.state.armies["candidate-image"]).toMatchObject({ sideId: "red", health: { hp: 0, maxHp: 40 }, formation: { active: true, cityId: "city-red", hpAddedThisTurn: 0 } });
+      expect(result.state.armies["candidate-image"]).toMatchObject({ sideId: "red", health: { hp: 5, maxHp: 40 }, formation: { active: true, cityId: "city-red", hpAddedThisTurn: 0 } });
       const demographics = result.state.scene.demographics;
       if (!demographics) throw new Error("demography missing");
       expect(demographics[0]?.humanResource).toBe(100_000);
       expect(result.state.scene.lrTransactions ?? []).toEqual([]);
+    }
+  });
+
+  it("recalculates an army's supply immediately when a railway station is added", () => {
+    const current = state();
+    current.scene.version = 7;
+    current.scene.sides = current.scene.sides.map((side) => side.id === "red"
+      ? { ...side, stateId: "red-state" }
+      : side);
+    current.scene.states = [{ id: "red-state", name: "Красное государство", rulingFactionId: "red", active: true }];
+    current.scene.strategicCities = [{
+      id: "city-red",
+      name: "Красный город",
+      cells: [{ x: 1, y: 0 }],
+      recognizedStateId: "red-state",
+      deFactoStateId: "red-state",
+      factionInfluenceId: "red",
+      mayorId: null,
+      isCapital: false,
+      historicalBuildTypeCount: 0,
+      buildings: []
+    }];
+    const armyRed = current.armies["army-red"];
+    if (!armyRed) throw new Error("army missing");
+    current.armies["army-red"] = {
+      ...armyRed,
+      supply: { supplied: false, checkedOnTurn: current.scene.turn.turnNumber, unsuppliedSinceTurn: current.scene.turn.turnNumber }
+    };
+    const armyItem = current.items["army-red"];
+    if (!armyItem) throw new Error("army item missing");
+    current.items["army-red"] = { ...armyItem, position: { x: 150, y: 50 } };
+    const positioned = new CommandProcessor(() => new Date(), ({ x, y }) => ({
+      x: Math.floor(x / 100),
+      y: Math.floor(y / 100)
+    }));
+
+    const addStation: StrategicCityCommand = {
+      protocolVersion: COMMAND_PROTOCOL_VERSION,
+      requestId: "request",
+      senderPlayerId: "gm",
+      senderConnectionId: "gm-connection",
+      expectedRevision: 2,
+      type: "ADD_CITY_BUILDING",
+      cityId: "city-red",
+      building: { id: "railway-red", type: "RAILWAY_STATION", cell: { x: 1, y: 0 } }
+    };
+    const result = positioned.execute(context("GM", "gm", current), addStation);
+
+    expect(result.status).toBe("ACCEPTED");
+    if (result.status === "ACCEPTED") {
+      expect(result.state.armies["army-red"]?.supply).toEqual({
+        supplied: true,
+        checkedOnTurn: current.scene.turn.turnNumber
+      });
     }
   });
 
@@ -574,12 +629,12 @@ describe("CommandProcessor", () => {
     ).execute(context("PLAYER", "leader", current), command({ type: "CREATE_CITY_ARMY", cityId: "city-red", sideId: "red" }, "leader"));
     expect(result.status).toBe("ACCEPTED");
     if (result.status === "ACCEPTED") {
-      expect(result.state.armies["army-request"]).toMatchObject({ sideId: "red", health: { hp: 0, maxHp: 40 } });
+      expect(result.state.armies["army-request"]).toMatchObject({ sideId: "red", health: { hp: 5, maxHp: 40 } });
       expect(result.state.items["army-request"]).toMatchObject({ type: "IMAGE", position: { x: 50, y: 50 }, visible: false, image: asset.image, grid: asset.grid });
     }
   });
 
-  it("heals immediately up to the amount affordable from human resources", () => {
+  it("schedules treatment up to the amount affordable from human resources", () => {
     const current = state();
     current.scene.sides = current.scene.sides.map((side) =>
       side.id === "red" ? { ...side, stateId: "red-state" } : side
@@ -622,7 +677,8 @@ describe("CommandProcessor", () => {
 
     expect(result.status).toBe("ACCEPTED");
     if (result.status !== "ACCEPTED") return;
-    expect(result.state.armies["army-red"]?.health.hp).toBe(32);
+    expect(result.state.armies["army-red"]?.health.hp).toBe(30);
+    expect(result.state.armies["army-red"]?.healing).toMatchObject({ pending: true, pendingHp: 2 });
     expect(result.state.scene.demographics?.[0]?.humanResource).toBe(2);
     expect(result.state.scene.lrTransactions?.at(-1)).toMatchObject({
       kind: "HEALING",
@@ -676,7 +732,7 @@ describe("CommandProcessor", () => {
     const second = positioned.execute(context("PLAYER", "leader", first.state), request);
     expect(second.status).toBe("ACCEPTED");
     if (second.status !== "ACCEPTED") return;
-    expect(second.state.armies["army-red"]?.health.hp).toBe(34);
+    expect(second.state.armies["army-red"]?.health.hp).toBe(30);
     expect(second.state.scene.lrTransactions?.filter((transaction) => transaction.requestId === request.requestId)).toHaveLength(1);
   });
 
@@ -735,7 +791,8 @@ describe("CommandProcessor", () => {
 
     expect(result.status).toBe("ACCEPTED");
     if (result.status !== "ACCEPTED") return;
-    expect(result.state.armies["army-red"]?.health.hp).toBe(36);
+    expect(result.state.armies["army-red"]?.health.hp).toBe(30);
+    expect(result.state.armies["army-red"]?.healing).toMatchObject({ pending: true, pendingHp: 6, hospitalCityId: "city-red" });
     expect(result.state.scene.demographics?.[0]?.humanResource).toBe(0);
     expect(result.state.scene.lrTransactions?.at(-1)).toMatchObject({
       kind: "HEALING",
@@ -1020,6 +1077,52 @@ describe("CommandProcessor", () => {
     expect(completed.state.armies["army-red"]?.movement.remainingUnits).toBe(10);
   });
 
+  it("combines movement closure and turn completion into one GM action", () => {
+    const commandState = state();
+    commandState.scene.turn.phase = "MOVEMENT";
+    const completed = new CommandProcessor(() => new Date("2026-09-02T12:30:00.000Z")).execute(
+      context("GM", "gm", commandState),
+      command({ type: "COMPLETE_TURN_NOW" })
+    );
+
+    expect(completed.status).toBe("ACCEPTED");
+    if (completed.status !== "ACCEPTED") return;
+    expect(completed.state.scene.turn.turnNumber).toBe(2);
+    expect(completed.state.scene.turn.lastCompletedBy).toBe("MANUAL");
+    expect(completed.state.scene.turn.completionRequested).toBe(false);
+  });
+
+  it("keeps the unified completion request pending while a route is moving", () => {
+    const commandState = state();
+    commandState.scene.turn.phase = "MOVEMENT";
+    commandState.scene.gridMap.cells = {
+      "0,0": { terrainId: "plain", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null },
+      "1,0": { terrainId: "plain", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null }
+    };
+    const movingArmy = commandState.armies["army-red"];
+    if (!movingArmy) throw new Error("Expected army-red fixture");
+    commandState.armies["army-red"] = {
+      ...movingArmy,
+      route: [{ x: 100, y: 0 }],
+      plannedRoute: {
+        startCell: { x: 0, y: 0 }, executeOnTurn: 2, cells: [{ x: 1, y: 0 }],
+        totalCostUnits: 1, validatedRevision: 2, requiresReplan: false
+      }
+    };
+
+    const result = new CommandProcessor().execute(
+      context("GM", "gm", commandState),
+      command({ type: "COMPLETE_TURN_NOW" })
+    );
+
+    expect(result.status).toBe("ACCEPTED");
+    if (result.status !== "ACCEPTED") return;
+    expect(result.state.scene.turn.phase).toBe("POST_MOVEMENT");
+    expect(result.state.scene.turn.completionRequested).toBe(true);
+    expect(result.state.armies["army-red"]?.status).toBe("MOVING");
+    expect(result.state.scene.turn.turnNumber).toBe(1);
+  });
+
   it("rejects a turn deferral that is not in the future", () => {
     const processor = new CommandProcessor(() => new Date("2026-09-02T12:30:00.000Z"));
     expect(processor.execute(
@@ -1122,4 +1225,5 @@ it("keeps the fixed five-OP budget when a legacy route-distance override is edit
     enteredRouteCellCount: 0
   });
 });
+
 

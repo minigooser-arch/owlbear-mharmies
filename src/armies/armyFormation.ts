@@ -20,7 +20,7 @@ export function createFormationArmy(options: CreateFormationArmyOptions): ArmySt
     route: [],
     plannedRoute: { startCell: { x: 0, y: 0 }, executeOnTurn: 0, cells: [], totalCostUnits: 0, validatedRevision: 0, requiresReplan: false },
     movement: { maxUnits: options.maxUnits, remainingUnits: 0, enteredRouteCellCount: 0 },
-    health: { hp: 0, maxHp: 40 },
+    health: { hp: 5, maxHp: 40 },
     supply: { supplied: true, checkedOnTurn: options.turnNumber },
     disband: { pending: false, requestedOnTurn: null, requestedByPlayerId: null },
     currentWaypointIndex: 0,
@@ -69,3 +69,4 @@ export function interruptFormation(army: ArmyState): ArmyState {
   if (!army.formation?.active) return army;
   return { ...structuredClone(army), movement: { ...army.movement, remainingUnits: army.movement.maxUnits }, formation: { ...army.formation, active: false }, revision: army.revision + 1 };
 }
+

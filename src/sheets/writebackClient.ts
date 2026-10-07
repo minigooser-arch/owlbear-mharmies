@@ -16,6 +16,13 @@ import type {
 
 export const SHEET_WRITEBACK_TOKEN_STORAGE_KEY = `${EXTENSION_ID}/sheet-writeback-token`;
 
+export interface SheetFactionInfluenceSnapshot {
+  factionId: string;
+  factionName: string;
+  country: string;
+  militaryInfluence: number;
+}
+
 export function readSheetWritebackToken(): string {
   try {
     return globalThis.localStorage?.getItem(SHEET_WRITEBACK_TOKEN_STORAGE_KEY)?.trim() ?? "";
@@ -48,6 +55,16 @@ export function sheetWritebackConfigured(settings: SceneSettings): boolean {
 
 export function sheetWritebackAuthorized(settings: SceneSettings): boolean {
   return sheetWritebackConfigured(settings) && Boolean(readSheetWritebackToken());
+}
+
+/**
+ * Returns whether the background runtime may use the sheet as an authority.
+ * The URL is scene configuration, while the GM token is local to the current
+ * GM connection. Without both values, normal Owlbear gameplay must continue
+ * from the scene cache instead of failing during a sheet refresh.
+ */
+export function sheetWritebackRuntimeEnabled(settings: SceneSettings): boolean {
+  return sheetWritebackAuthorized(settings);
 }
 
 export class SheetWritebackError extends Error {
@@ -120,6 +137,15 @@ export class SheetWritebackClient {
     }).then((result) => result.states);
   }
 
+  getFactionMilitaryInfluence(
+    factions: readonly Pick<SheetFactionInfluenceSnapshot, "factionId" | "factionName" | "country">[]
+  ): Promise<SheetFactionInfluenceSnapshot[]> {
+    return this.request<{ factions: SheetFactionInfluenceSnapshot[] }>({
+      action: "GET_FACTIONS",
+      factions
+    }).then((result) => result.factions);
+  }
+
   spendLR(operations: readonly SheetSpendOperation[]): Promise<SheetSpendBatchResult> {
     const firstOperation = operations[0];
     return this.request<SheetSpendBatchResult>({
@@ -159,3 +185,4 @@ export class SheetWritebackClient {
     );
   }
 }
+

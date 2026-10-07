@@ -9,6 +9,8 @@ import {
   isStrategicCityCommand,
   type StrategicCityCommand
 } from "../cities/strategicCityCommands";
+import { recalculateArmySupply } from "../supply/supplyService";
+import type { GridCellCoord, Vector2 } from "../shared/types";
 import {
   CommandProcessor as CoreCommandProcessor,
   type CommandContext,
@@ -19,8 +21,10 @@ export * from "./commandProcessorCore";
 
 export class CommandProcessor {
   private readonly core: CoreCommandProcessor;
+  private readonly cellForPosition: ((position: Vector2) => GridCellCoord) | undefined;
 
   constructor(...args: ConstructorParameters<typeof CoreCommandProcessor>) {
+    this.cellForPosition = args[1];
     this.core = new CoreCommandProcessor(...args);
   }
 
@@ -65,6 +69,15 @@ export class CommandProcessor {
     if (!result.ok) return { status: "REJECTED", reason: result.reason };
     state.scene.strategicCities = result.cities;
     state.scene.revision += 1;
+    const cellForPosition = this.cellForPosition;
+    if (command.type === "ADD_CITY_BUILDING" && command.building.type === "RAILWAY_STATION" && cellForPosition) {
+      const armyCells = Object.fromEntries(Object.entries(state.armies).flatMap(([armyId]) => {
+        const position = state.positions?.[armyId] ?? state.items[armyId]?.position;
+        return position ? [[armyId, cellForPosition(position)]] : [];
+      }));
+      state.armies = recalculateArmySupply(state.scene, state.armies, armyCells);
+    }
     return { status: "ACCEPTED", state };
   }
 }
+

@@ -34,6 +34,8 @@ export type NotificationCode =
   | "STATE_NOT_FOUND"
   | "INSUFFICIENT_HUMAN_RESOURCE"
   | "INVALID_AMOUNT"
+  | "SHEET_WRITEBACK_TOKEN_MISSING"
+  | "SHEET_WRITEBACK_URL_MISSING"
   | "ALREADY_REGISTERED"
   | "PERSISTENCE_FAILED"
   | "SCENE_ITEM_CREATION_UNAVAILABLE"
@@ -125,6 +127,8 @@ const RUSSIAN_MESSAGES: Readonly<Record<NotificationCode, string>> = {
   STATE_NOT_FOUND: "Для государства фракции нет демографической записи. Создайте её или синхронизируйте население.",
   INSUFFICIENT_HUMAN_RESOURCE: "Недостаточно людского ресурса для создания или комплектования армии.",
   INVALID_AMOUNT: "Указана недопустимая сумма людского ресурса.",
+  SHEET_WRITEBACK_TOKEN_MISSING: "Для синхронизации с таблицей не задан writeback-токен GM. Откройте «Управление → Настройки» и сохраните токен.",
+  SHEET_WRITEBACK_URL_MISSING: "Для синхронизации с таблицей не задан URL Apps Script. Откройте «Управление → Настройки» и сохраните URL.",
   ALREADY_REGISTERED: "Выбранное изображение уже зарегистрировано как армия.",
   PERSISTENCE_FAILED: "Армия сформирована, но не удалось сохранить её токен в сцене. Проверьте выбранный ассет армии и повторите действие.",
   SCENE_ITEM_CREATION_UNAVAILABLE: "В этой сцене нельзя создать токен армии. Перезагрузите расширение и повторите действие.",
@@ -183,11 +187,27 @@ const RUSSIAN_MESSAGES: Readonly<Record<NotificationCode, string>> = {
 
 const UNKNOWN_FAILURE_MESSAGE = "Не удалось выполнить действие.";
 
+const TURN_BLOCKER_MESSAGES: Readonly<Record<string, string>> = {
+  LAND_BATTLE_ACTIVE: "Сначала завершите или освободите текущий сухопутный бой.",
+  NAVAL_BATTLE_ACTIVE: "Сначала завершите текущий морской бой.",
+  MOVEMENT_RESOLUTION_PENDING: "Сначала дождитесь окончания движения армий или остановите незавершённые маршруты.",
+  FORCED_EXIT_PENDING: "Сначала завершите обработку вынужденного выхода армий.",
+  SUPPLY_CHECK_PENDING: "Сначала завершите проверку снабжения.",
+  ENCIRCLEMENT_PENDING: "Сначала завершите пересчёт окружения.",
+  TERRITORIAL_SCORE_PENDING: "Сначала завершите пересчёт территориального счёта."
+};
+
 export interface NotificationPort {
   show(message: string, variant: "INFO" | "WARNING" | "ERROR"): Promise<void>;
 }
 
 export function notificationMessage(code: string): string {
+  if (code.startsWith("TURN_BLOCKED:")) {
+    const blockers = code.slice("TURN_BLOCKED:".length)
+      .split(",")
+      .map((blocker) => TURN_BLOCKER_MESSAGES[blocker] ?? `Причина: ${blocker}.`);
+    return `Ход пока нельзя завершить: ${blockers.join(" ")}`;
+  }
   return RUSSIAN_MESSAGES[code as NotificationCode] ?? (
     /^[A-Z][A-Z0-9_]*$/.test(code)
       ? `Не удалось выполнить действие (код: ${code}).`
@@ -202,3 +222,4 @@ export async function notifyRussian(
 ): Promise<void> {
   await port.show(notificationMessage(code), variant);
 }
+

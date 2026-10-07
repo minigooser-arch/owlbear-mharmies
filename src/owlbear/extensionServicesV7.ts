@@ -114,6 +114,7 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
     },
     send: core.send,
     sendStrategic,
+    ...(core.clearFocusedEntity ? { clearFocusedEntity: core.clearFocusedEntity } : {}),
     runDiagnostic: core.runDiagnostic,
     stop: () => {
       unsubscribeCore();
@@ -123,3 +124,4 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
     }
   };
 }
+

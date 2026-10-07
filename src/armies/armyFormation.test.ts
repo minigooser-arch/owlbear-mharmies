@@ -8,8 +8,8 @@ const army = createFormationArmy({
 });
 
 describe("army formation", () => {
-  it("creates a 0 HP immobile formation army with immediate experience", () => {
-    expect(army.health).toEqual({ hp: 0, maxHp: 40 });
+  it("creates a 5 HP immobile formation army with immediate experience", () => {
+    expect(army.health).toEqual({ hp: 5, maxHp: 40 });
     expect(army.formation).toMatchObject({ active: true, hpAddedThisTurn: 0 });
     expect(army.movement.remainingUnits).toBe(0);
     expect(army.experience).toBe(1);
@@ -23,7 +23,7 @@ describe("army formation", () => {
     const result = applyFormationHp(army, 20, 4, 10000);
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.army.health.hp).toBe(20);
+      expect(result.army.health.hp).toBe(25);
       expect(result.amount).toBe(200000);
       expect(result.army.movement.remainingUnits).toBe(0);
     }
@@ -37,3 +37,4 @@ describe("army formation", () => {
     expect(interrupted.movement.remainingUnits).toBe(interrupted.movement.maxUnits);
   });
 });
+

@@ -45,11 +45,13 @@ function prepareArmyForNewTurn(
   positionForCell?: (cell: GridCellCoord) => Vector2
 ): ArmyState {
   const movementUnits = armyEffectiveMovementUnits(army);
+  const healing = army.healing ? { ...army.healing } : undefined;
+  if (healing) delete healing.pendingHp;
   let next: ArmyState = {
     ...army,
     movement: { maxUnits: movementUnits, remainingUnits: army.formation?.active ? 0 : movementUnits, enteredRouteCellCount: 0 },
     ...(army.formation ? { formation: { ...army.formation, hpAddedThisTurn: 0, checkedOnTurn: nextTurn } } : {}),
-    ...(army.healing ? { healing: { ...army.healing, pending: false, requestedOnTurn: null, requestedByPlayerId: null, hpHealedThisTurn: 0, checkedOnTurn: nextTurn, hospitalCityId: null } } : {}),
+    ...(healing ? { healing: { ...healing, pending: false, requestedOnTurn: null, requestedByPlayerId: null, hpHealedThisTurn: 0, checkedOnTurn: nextTurn, hospitalCityId: null } } : {}),
     revision: army.revision + 1
   };
 
@@ -221,6 +223,7 @@ export function completeTurn(
     ...nextScene.turn,
     turnNumber: nextTurn,
     phase: "MOVEMENT",
+    completionRequested: false,
     deferredUntil: null,
     lastCompletedAt: completedAtIso,
     lastCompletedBy: input.source,
@@ -369,4 +372,5 @@ export function deferredBoundaryId(turn: TurnState): string | undefined {
   const date = new Date(turn.deferredUntil);
   return Number.isFinite(date.getTime()) ? deferredBoundary(date).id : undefined;
 }
+
 

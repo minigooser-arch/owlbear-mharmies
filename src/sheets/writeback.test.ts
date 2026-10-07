@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applySheetStateSnapshots,
   buildSheetWritebackEvent,
+  buildSheetWritebackSnapshotEvent,
   mergeSheetWritebackQueue,
   pendingLRTransactions,
   type SheetWritebackEvent
@@ -98,7 +99,7 @@ const ship = {
 } as never;
 
 describe("sheet writeback projection", () => {
-  it("does not export army HP while preserving ship count writeback", () => {
+  it("exports aggregate HP but never ship counts or individual armies", () => {
     const previous = makeState({
       armies: { "army-1": army(20) },
       scene: { ships: { "ship-1": ship } } as never
@@ -108,14 +109,20 @@ describe("sheet writeback projection", () => {
       scene: { ships: { "ship-1": ship } } as never
     });
     const event = buildSheetWritebackEvent(previous, next, "2026-10-01T00:00:00Z");
-    expect(event).toBeUndefined();
+    expect(event?.factions).toEqual([{ factionId: "side-a", factionName: "A", country: "STATE_A", hp: 19, maxHp: 40 }]);
+    expect(event?.stateArmies).toEqual([{ country: "STATE_A", hp: 19, maxHp: 40 }]);
+    expect(event?.armies).toEqual([]);
+    expect(event?.states).toEqual([]);
 
     const destroyedShip = makeState({
       armies: { "army-1": army(19) },
       scene: { ships: {} } as never
     });
     const shipEvent = buildSheetWritebackEvent(previous, destroyedShip, "2026-10-01T00:00:00Z");
-    expect(shipEvent?.states).toEqual([{ country: "STATE_A", ships: 0 }]);
+    expect(shipEvent?.factions).toEqual([{ factionId: "side-a", factionName: "A", country: "STATE_A", hp: 19, maxHp: 40 }]);
+    expect(shipEvent?.stateArmies).toEqual([{ country: "STATE_A", hp: 19, maxHp: 40 }]);
+    expect(shipEvent?.armies).toEqual([]);
+    expect(shipEvent?.states).toEqual([]);
   });
 
   it("queues new military influence operations for the LR sheet", () => {
@@ -143,7 +150,7 @@ describe("sheet writeback projection", () => {
     expect(event?.militaryInfluenceOperations).toEqual(next.scene.militaryInfluenceAudit);
   });
 
-  it("coalesces pending state by army and country", () => {
+  it("drops legacy unit projections while preserving military influence operations", () => {
     const first: SheetWritebackEvent = {
       version: 1, eventId: "e1", createdAt: "a",
       armies: [{ armyId: "a", stateId: "s", country: "C", hp: 20, maxHp: 40 }],
@@ -159,9 +166,9 @@ describe("sheet writeback projection", () => {
     const merged = mergeSheetWritebackQueue(undefined, first);
     const next = mergeSheetWritebackQueue(merged, second);
     expect(next.pending.eventId).toBe("e2");
-    expect(next.pending.armies).toEqual([{ armyId: "a", stateId: "s", country: "C", hp: 18, maxHp: 40 }]);
-    expect(next.pending.states).toEqual([{ country: "C", ships: 2 }]);
-    expect(next.pending.removedArmyIds).toEqual(["b"]);
+    expect(next.pending.armies).toEqual([]);
+    expect(next.pending.states).toEqual([]);
+    expect(next.pending.removedArmyIds).toEqual([]);
   });
 
   it("applies authoritative population/LR snapshots and rejects unmappable states", () => {
@@ -186,7 +193,7 @@ describe("sheet writeback projection", () => {
 
 
 
-  it("does not aggregate private faction or state army HP", () => {
+  it("does not export individual army HP while allowing aggregate HP", () => {
     const previous = makeState({
       armies: { "army-a": army(20), "army-b": army(10, 40, "side-b") },
       scene: {
@@ -206,7 +213,83 @@ describe("sheet writeback projection", () => {
       } as never
     });
     const event = buildSheetWritebackEvent(previous, next, "2026-10-01T00:00:00Z");
-    expect(event).toBeUndefined();
+    expect(event?.factions).toEqual([{
+      factionId: "side-a",
+      factionName: "A",
+      country: "STATE_A",
+      hp: 18,
+      maxHp: 40
+    }]);
+    expect(event?.stateArmies).toEqual([{ country: "STATE_A", hp: 28, maxHp: 80 }]);
+    expect(event?.armies).toEqual([]);
+    expect(JSON.stringify(event)).not.toContain("army-a");
+  });
+
+  it("can backfill all aggregate HP without exporting units or influence history", () => {
+    const next = makeState({
+      armies: { "army-1": army(19), "army-2": army(11) },
+      scene: {
+        militaryInfluenceAudit: [{
+          requestId: "old-influence",
+          createdAt: "2026-09-30T00:00:00Z",
+          factionId: "side-a",
+          factionName: "A",
+          country: "STATE_A",
+          reasonCode: "LAND_BATTLE_VICTORY",
+          delta: 4,
+          balanceBefore: 0,
+          balanceAfter: 4,
+          reason: "Победа",
+          actorPlayerId: "gm",
+          turnNumber: 1
+        }]
+      } as never
+    });
+    const event = buildSheetWritebackSnapshotEvent(next, "2026-10-01T00:00:00Z");
+    expect(event?.factions).toEqual([{ factionId: "side-a", factionName: "A", country: "STATE_A", hp: 30, maxHp: 80 }]);
+    expect(event?.stateArmies).toEqual([{ country: "STATE_A", hp: 30, maxHp: 80 }]);
+    expect(event?.militaryInfluenceOperations).toEqual([]);
+    expect(event?.armies).toEqual([]);
+    expect(event?.states).toEqual([]);
+  });
+
+  it("exports only changed aggregate HP for factions and states", () => {
+    const previous = makeState({
+      armies: { "army-a": army(20), "army-b": army(10, 40, "side-b") },
+      scene: {
+        sides: [
+          { id: "side-a", name: "A", color: "#fff", playerIds: [], leaderPlayerIds: [], stateId: "state-a" },
+          { id: "side-b", name: "B", color: "#000", playerIds: [], leaderPlayerIds: [], stateId: "state-a" }
+        ]
+      } as never
+    });
+    const next = makeState({
+      armies: { "army-a": army(18), "army-b": army(10, 40, "side-b") },
+      scene: {
+        sides: [
+          { id: "side-a", name: "A", color: "#fff", playerIds: [], leaderPlayerIds: [], stateId: "state-a" },
+          { id: "side-b", name: "B", color: "#000", playerIds: [], leaderPlayerIds: [], stateId: "state-a" }
+        ]
+      } as never
+    });
+
+    const event = buildSheetWritebackEvent(previous, next, "2026-10-01T00:00:00Z");
+
+    expect(event?.factions).toEqual([{
+      factionId: "side-a",
+      factionName: "A",
+      country: "STATE_A",
+      hp: 18,
+      maxHp: 40
+    }]);
+    expect(event?.stateArmies).toEqual([{
+      country: "STATE_A",
+      hp: 28,
+      maxHp: 80
+    }]);
+    expect(event?.armies).toEqual([]);
+    expect(event?.removedArmyIds).toEqual([]);
+    expect(JSON.stringify(event)).not.toContain("army-a");
   });
 
   it("extracts only new pending LR transactions", () => {
@@ -238,3 +321,4 @@ describe("sheet writeback projection", () => {
     expect(pending[0]?.country).toBe("STATE_A");
   });
 });
+
