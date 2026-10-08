@@ -18,8 +18,9 @@ export default defineConfig({
         // Keep turn scheduling as a shared chunk for both pages. Historical
         // deployed HTML references this chunk by hash, so the compatibility
         // alias builder must always have a real implementation to copy.
-        manualChunks: {
-          turnSchedule: [resolve(rootDir, "src/turns/turnSchedule.ts")]
+        manualChunks(id) {
+          if (id === resolve(rootDir, "src/turns/turnSchedule.ts")) return "turnSchedule";
+          return undefined;
         }
       }
     }
