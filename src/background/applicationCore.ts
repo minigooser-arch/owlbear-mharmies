@@ -779,10 +779,6 @@ export class ProductionEngine {
       record.item.id,
       strategicGrid.sceneToCell(record.item.position)
     ]));
-    const shipCells = Object.fromEntries(frame.items.ships.map((record) => [
-      record.item.id,
-      strategicGrid.sceneToCell(record.item.position)
-    ]));
     const previous: CommandState = {
       scene: authoritativeScene,
       armies,
@@ -800,12 +796,19 @@ export class ProductionEngine {
         this.reportOperationalError(new Error(failure), "scheduled-turn-movement-resolution");
         return;
       }
+      if (!boundary) return;
       next.scene.turn.completionPending = {
         source: "SCHEDULE",
-        boundaryId: boundary?.id ?? ""
+        boundaryId: boundary.id
       };
       startedMovement = true;
     }
+    // Planned ship routes have moved their tokens during phase resolution.
+    // New-turn fuel bonuses must use the authoritative new positions.
+    const shipCells = Object.fromEntries(Object.keys(next.scene.ships ?? {}).flatMap((shipId) => {
+      const position = next.positions?.[shipId] ?? next.items[shipId]?.position;
+      return position ? [[shipId, strategicGrid.sceneToCell(position)]] : [];
+    }));
     const source = pending?.source ?? "SCHEDULE";
     const boundaryId = pending?.boundaryId ?? boundary?.id;
     const completion = completeTurn(next.scene, next.armies, {
