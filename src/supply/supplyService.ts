@@ -74,6 +74,7 @@ function traceSupplyPath(
   sourceKeys: ReadonlySet<string>,
   maxVisitedCells: number
 ): GridCellCoord[] | null {
+  if (sourceKeys.size === 0) return null;
   const startKey = cellKey(start);
   const queue: GridCellCoord[] = [{ ...start }];
   const parents = new Map<string, string | null>([[startKey, null]]);
