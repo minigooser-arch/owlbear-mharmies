@@ -57,7 +57,7 @@ import { shipEmbarkedArmyIds } from "../naval/transport/transportRules";
 import { territorialCityContributions } from "../wars/territorialScore";
 import { isFactionStateAtWar } from "../states/stateRules";
 import { readCell } from "../terrain/gridMap";
-import { MetadataRepository, type ArmyRecord, type MetadataItemFrame, type ShipRecord } from "../storage/metadataRepository";
+import { MetadataRepository, type ArmyRecord, type MetadataReadFrame, type ShipRecord } from "../storage/metadataRepository";
 import type {
   ArmyView,
   ExtensionServices,
@@ -117,7 +117,7 @@ export async function readCoreSnapshotItemFrame(repository: MetadataRepository) 
 
 export function buildRoleSafeSnapshotFromItemFrame(
   input: Omit<SnapshotInput, "scene" | "armies" | "ships">,
-  frame: MetadataItemFrame
+  frame: MetadataReadFrame
 ): RawExtensionSnapshot {
   return buildRoleSafeSnapshot({
     ...input,
