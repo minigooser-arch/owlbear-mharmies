@@ -213,7 +213,7 @@ function conscriptionRate_(category) {
   return Object.prototype.hasOwnProperty.call(rates, normalized) ? rates[normalized] : undefined;
 }
 
-function snapshotForCountry_(country, index) {
+function snapshotForCountry_(country, index, spentByCountry) {
   const backendRow = index.get(country);
   if (!backendRow) throw new Error("COUNTRY_NOT_FOUND:" + country);
   const context = stateContext_(country, backendRow);
@@ -228,11 +228,89 @@ function snapshotForCountry_(country, index) {
 function getStateSnapshots_(countries) {
   if (!Array.isArray(countries)) throw new Error("INVALID_COUNTRIES");
   const index = backendIndex_();
+  const spentByCountry = lrV2SpentByCountry_(lrLogSheet_());
   const unique = [...new Set(countries.map(function(country) {
     return String(country || "").trim();
   }).filter(Boolean))];
   return unique.map(function(country) {
-    return snapshotForCountry_(country, index);
+    return snapshotForCountry_(country, index, spentByCountry);
+  });
+}
+
+const LR_V2_REASON_CODE = "LR_V2";
+
+/** Read only new confirmed army expenses; earlier APPLIED rows do not count. */
+function lrV2SpentByCountry_(schema) {
+  const spent = new Map();
+  const lastRow = schema.sheet.getLastRow();
+  if (lastRow < 2) return spent;
+  const idx = headerIndex_(schema.headers);
+  const rows = schema.sheet.getRange(2, 1, lastRow - 1, schema.headers.length).getValues();
+  for (const row of rows) {
+    if (String(cell_(row, idx, "operationType")).trim() !== "LR" ||
+      String(cell_(row, idx, "status")).trim() !== "APPLIED" ||
+      String(cell_(row, idx, "reasonCode")).trim() !== LR_V2_REASON_CODE) continue;
+    const country = String(cell_(row, idx, "country") || "").trim();
+    const amount = Number(cell_(row, idx, "amount"));
+    if (!country || !Number.isFinite(amount) || amount <= 0) throw new Error("LR_V2_LEDGER_INVALID");
+    spent.set(country, (spent.get(country) || 0) + amount);
+  }
+  return spent;
+}
+
+/**
+ * One-time migration: preserves the ORIGINAL AO formula and subtracts only
+ * LR_V2 operations. Install in the same bound Apps Script project as growth.
+ * Safe to rerun: migrated formulas are skipped.
+ */
+function installLrV2Formulas() {
+  return withScriptLock_(function() {
+    const index = backendIndex_();
+    const sheet = stateSheet_();
+    lrLogSheet_(); // Check or extend the schema before writing formulas.
+    for (const [country, entry] of index.entries()) {
+      const cell = sheet.getRange(entry.stateRow, 41);
+      const oldFormula = cell.getFormula();
+      if (oldFormula.indexOf('LR_V2') >= 0) continue;
+      if (!oldFormula || oldFormula[0] !== "=") throw new Error("LR_V2_SOURCE_FORMULA_MISSING:" + country);
+      const safeCountry = country.replace(/"/g, '""');
+      const r = "'ЛР_ОПЕРАЦИИ'!";
+      const spent = 'SUMIFS(' + r + '$I$2:$I;' + r + '$C$2:$C;"' + safeCountry +
+        '";' + r + '$V$2:$V;"APPLIED";' + r + '$W$2:$W;"LR";' +
+        r + '$AC$2:$AC;"LR_V2")';
+      cell.setFormula('=MAX(0;(' + oldFormula.slice(1) + ')-' + spent + ')');
+    }
+    SpreadsheetApp.flush();
+    for (const country of index.keys()) {
+      const value = Number(stateSheet_().getRange(index.get(country).stateRow, 41).getValue());
+      if (!Number.isFinite(value) || value < 0) throw new Error("LR_V2_MIGRATED_FORMULA_INVALID:" + country);
+    }
+    PropertiesService.getScriptProperties().setProperty("LR_V2_ENABLED", "true");
+  });
+}
+
+/** Google time triggers are approximate, not exactly 01:00:00. */
+function installDailySheetSyncTrigger() {
+  const handler = "dailySheetSyncAtOneMsk";
+  for (const trigger of ScriptApp.getProjectTriggers()) {
+    if (trigger.getHandlerFunction() === handler) ScriptApp.deleteTrigger(trigger);
+  }
+  ScriptApp.newTrigger(handler).timeBased().atHour(1).nearMinute(0).everyDays(1)
+    .inTimezone("Europe/Moscow").create();
+}
+
+/** Independent sheet health/check job; scene HP/ships require a live GM. */
+function dailySheetSyncAtOneMsk() {
+  return withScriptLock_(function() {
+    if (PropertiesService.getScriptProperties().getProperty("LR_V2_ENABLED") !== "true") return;
+    const index = backendIndex_();
+    const spent = lrV2SpentByCountry_(lrLogSheet_());
+    for (const country of index.keys()) snapshotForCountry_(country, index, spent);
+    SpreadsheetApp.flush();
+    PropertiesService.getScriptProperties().setProperty(
+      "LR_V2_LAST_SHEET_CHECK_MSK",
+      Utilities.formatDate(new Date(), "Europe/Moscow", "yyyy-MM-dd'T'HH:mm:ss")
+    );
   });
 }
 
@@ -378,8 +456,9 @@ function spendLRBatch_(operations, batchRequestId) {
     schema.sheet.getRange(startRow, 1, rows.length, schema.headers.length).setValues(rows);
     SpreadsheetApp.flush();
   }
+  const spentByCountry = lrV2SpentByCountry_(schema);
   const states = [...new Set(normalized.map(function(item) { return item.op.country; }))].map(function(country) {
-    return snapshotForCountry_(country, index);
+    return snapshotForCountry_(country, index, spentByCountry);
   });
   return { operations: results, states: states };
 }
