@@ -214,7 +214,7 @@ describe("capital and port state supply", () => {
 
   it("keeps transport-embarked armies exempt from land supply", () => {
     const map = scene({ "0,0": cell(B) }, []);
-    map.ships = { transport: { classId: "TRANSPORT", embarkedArmyId: "army", additionalEmbarkedArmyId: null } } as unknown as SceneState["ships"];
+    map.ships = { transport: { classId: "TRANSPORT", embarkedArmyId: "army", additionalEmbarkedArmyId: null } } as unknown as NonNullable<SceneState["ships"]>;
     const army = {
       sideId: "f-a",
       embarkedOnShipId: "transport",
