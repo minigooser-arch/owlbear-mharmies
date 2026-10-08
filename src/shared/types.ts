@@ -319,6 +319,8 @@ export interface TurnState {
   lastCompletedAt: string | null;
   lastCompletedBy: "SCHEDULE" | "MANUAL" | null;
   lastProcessedBoundaryId: string | null;
+  /** Internal single-click turn completion, waiting for routes or battles to settle. */
+  completionPending?: { source: "SCHEDULE" | "MANUAL"; boundaryId?: string };
 }
 
 export interface ShipState {
