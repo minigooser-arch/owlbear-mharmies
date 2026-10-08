@@ -85,6 +85,7 @@ import {
 import { MetadataRepository, RevisionConflict, type ArmyRecord, type BarrierRecord, type MetadataItemFrame } from "../storage/metadataRepository";
 import { GridStorageError } from "../storage/gridChunkCodec";
 import { markLRTransactionRecorded } from "../finance/lrLedger";
+import { dueDailySheetSyncDate } from "../sheets/dailySyncSchedule";
 import {
   applySheetStateSnapshots,
   buildSheetWritebackEvent,
@@ -720,7 +721,44 @@ export class ProductionEngine {
   }
 
   turnTick(): Promise<void> {
-    return this.enqueueMutation(() => this.turnTickNow());
+    return this.enqueueMutation(async () => {
+      try {
+        await this.dailySheetSyncIfDue();
+      } catch (error) {
+        this.reportOperationalError(error, "daily-sheet-sync");
+      }
+      await this.turnTickNow();
+    });
+  }
+
+  private async dailySheetSyncIfDue(): Promise<void> {
+    if (!this.coordinator) return;
+    const key = `${METADATA_KEYS.scene}/last-daily-sheet-sync-msk`;
+    const metadata = await this.port.getSceneMetadata();
+    const date = dueDailySheetSyncDate(this.wallClock(), String(metadata[key] ?? ""));
+    if (!date) return;
+    const guard = this.captureCoordinatorGuard();
+    const scene = await this.repository.readScene();
+    if (!sheetWritebackRuntimeEnabled(scene.settings) || !guard()) return;
+
+    const countries = scene.states
+      .map((state) => state.backendCountry?.trim())
+      .filter((country): country is string => Boolean(country));
+    const refreshed = await this.refreshDemographyForCountries(scene, countries);
+    if (!guard()) return;
+    if (JSON.stringify(scene.demographics) !== JSON.stringify(refreshed.demographics)) {
+      await this.repository.writeScene(
+        { ...refreshed, revision: scene.revision + 1 },
+        scene.revision,
+        (current) => guard() && current.revision === scene.revision
+      );
+    }
+    await this.queueSheetWritebackSnapshot();
+    await this.flushSheetWriteback();
+    if (!guard()) return;
+    const after = await this.port.getSceneMetadata();
+    if (SheetWritebackClient.readQueue(after) || this.sheetWritebackFallback) return;
+    await this.port.patchSceneMetadata({ [key]: date });
   }
 
   private async turnTickNow(): Promise<void> {
