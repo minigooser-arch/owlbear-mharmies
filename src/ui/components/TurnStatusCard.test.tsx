@@ -41,27 +41,28 @@ it("converts a GM deferral input from Moscow local time", () => {
   expect(action).toHaveBeenCalledWith({ type: "DEFER_TURN", until: "2026-09-03T15:00:00.000Z" });
 });
 
-it("finishes movement phase before offering global turn completion", () => {
+it("uses a single completion command from the movement phase", () => {
   const action = vi.fn();
-  render(<TurnStatusCard
-    turn={{ ...DEFAULT_TURN_STATE, phase: "MOVEMENT" }}
-    role="GM"
-    onAction={action}
-  />);
-  expect(screen.queryByRole("button", { name: "Завершить ход сейчас" })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Завершить фазу перемещения" }));
-  expect(action).toHaveBeenCalledWith({ type: "COMPLETE_MOVEMENT_PHASE" });
+  render(<TurnStatusCard turn={{ ...DEFAULT_TURN_STATE, phase: "MOVEMENT" }} role="GM" onAction={action} />);
+  fireEvent.click(screen.getByRole("button", { name: "Завершить ход" }));
+  expect(action).toHaveBeenCalledTimes(1);
+  expect(action).toHaveBeenCalledWith({ type: "COMPLETE_TURN_NOW" });
+  expect(screen.queryByRole("button", { name: "Завершить фазу перемещения" })).not.toBeInTheDocument();
 });
 
-it("offers global turn completion and movement reopening in post-movement", () => {
+it("uses the same single command for a legacy post-movement turn", () => {
   const action = vi.fn();
-  render(<TurnStatusCard
-    turn={{ ...DEFAULT_TURN_STATE, phase: "POST_MOVEMENT" }}
-    role="GM"
-    onAction={action}
-  />);
-  fireEvent.click(screen.getByRole("button", { name: "Завершить ход сейчас" }));
-  fireEvent.click(screen.getByRole("button", { name: "Вернуться к перемещению" }));
+  render(<TurnStatusCard turn={{ ...DEFAULT_TURN_STATE, phase: "POST_MOVEMENT" }} role="GM" onAction={action} />);
+  fireEvent.click(screen.getByRole("button", { name: "Завершить ход" }));
   expect(action).toHaveBeenCalledWith({ type: "COMPLETE_TURN_NOW" });
-  expect(action).toHaveBeenCalledWith({ type: "REOPEN_MOVEMENT_PHASE" });
+  expect(screen.queryByRole("button", { name: "Вернуться к перемещению" })).not.toBeInTheDocument();
+});
+
+it("disables the finish button during automatic completion", () => {
+  const action = vi.fn();
+  render(<TurnStatusCard turn={{ ...DEFAULT_TURN_STATE, phase: "POST_MOVEMENT",
+    completionPending: { source: "SCHEDULE", boundaryId: "STANDARD:2026-10-07T15:00:00+03:00" } }} role="GM" onAction={action} />);
+  expect(screen.getByRole("button", { name: /Завершение хода выполняется/ })).toBeDisabled();
+  expect(screen.getByRole("status")).toHaveTextContent("Новый ход начнётся автоматически");
+  expect(action).not.toHaveBeenCalled();
 });
