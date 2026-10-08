@@ -397,7 +397,7 @@ it("loads one command input item frame before fresh persistence checks", async (
 });
 
 describe("ProductionEngine command boundary", () => {
-  it("recalculates army supply when a railway station is added through the background command path", async () => {
+  it("recalculates army supply when a port is added through the background command path", async () => {
     const army: ArmyState = {
       version: 4,
       registered: true,
@@ -432,6 +432,13 @@ describe("ProductionEngine command boundary", () => {
       recognizedStateId: "red-state",
       deFactoStateId: "red-state"
     };
+    fixture.scene.gridMap.cells["1,0"] = {
+      terrainId: null,
+      impassable: false,
+      factionTerritoryIds: [],
+      recognizedStateId: "red-state",
+      deFactoStateId: "red-state"
+    };
     fixture.scene.strategicCities = [{
       id: "athens",
       name: "Афины",
@@ -451,13 +458,13 @@ describe("ProductionEngine command boundary", () => {
       connectionId: "gm-connection",
       data: {
         protocolVersion: COMMAND_PROTOCOL_VERSION,
-        requestId: "railway-immediate",
+        requestId: "port-immediate",
         senderPlayerId: "gm",
         senderConnectionId: "gm-connection",
         expectedRevision: fixture.scene.revision,
         type: "ADD_CITY_BUILDING",
         cityId: "athens",
-        building: { id: "athens-railway-station", type: "RAILWAY_STATION", cell: { x: 1, y: 0 } }
+        building: { id: "athens-port", type: "PORT", cell: { x: 1, y: 0 } }
       }
     }, {
       role: "GM",
