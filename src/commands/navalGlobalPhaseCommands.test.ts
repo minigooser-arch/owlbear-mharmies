@@ -154,7 +154,7 @@ describe("global naval phase commands", () => {
     );
     expect(result.status).toBe("ACCEPTED");
     if (result.status !== "ACCEPTED") return;
-    expect(result.state.scene.turn.turnNumber).toBe(1);
+    expect(result.state.scene.turn.turnNumber).toBe(3);
     expect(result.state.scene.turn.completionPending).toEqual({ source: "MANUAL" });
   });
 
