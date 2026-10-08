@@ -5,7 +5,7 @@ import { StrategicCityEditor } from "./components/StrategicCityEditor";
 import { BattlesPage } from "./pages/BattlesPage";
 import { ForcesPage, type ForcesSection } from "./pages/ForcesPage";
 import { PlayerOverviewPage } from "./pages/PlayerOverviewPage";
-import { ManagementPage } from "./pages/ManagementPage";
+import { ManagementPage, type ManagementSection } from "./pages/ManagementPage";
 import { MapEditorPage } from "./pages/MapEditorPage";
 import { OverviewPage } from "./pages/OverviewPage";
 import { SidesPage } from "./pages/SidesPage";
@@ -32,6 +32,7 @@ export function App({ services }: { services: ExtensionServices }) {
   const [gmTab, setGmTab] = useState<GmTab>("OVERVIEW");
   const [worldSection, setWorldSection] = useState<WorldSection>("MAP");
   const [forcesSection, setForcesSection] = useState<ForcesSection>("ARMIES");
+  const [managementSection, setManagementSection] = useState<ManagementSection>("SIDES");
   const [focusArmyId, setFocusArmyId] = useState<string | undefined>();
   const [dangerous, setDangerous] = useState<UiCommand | undefined>();
   if (!state.ready) return <main className="state-screen">Загрузка…</main>;
@@ -99,7 +100,7 @@ export function App({ services }: { services: ExtensionServices }) {
           </section>
         )}
         {tab === "BATTLES" && <BattlesPage battles={state.battleGroups} armies={state.armies} ships={state.ships} pendingNavalBattleRequests={state.pendingNavalBattleRequests} territorialScores={state.territorialScores} {...(state.navalBattleAreaDraft ? { navalBattleAreaDraft: state.navalBattleAreaDraft } : {})} {...(state.activeNavalBattle ? { activeNavalBattle: state.activeNavalBattle } : {})} isGM={isGM} onAction={send} />}
-        {tab === "MANAGEMENT" && isGM && <ManagementPage playerId={state.playerId} sides={state.sides} states={state.states} armies={state.armies} strategicCities={state.strategicCities} rebellionStatuses={state.rebellionStatuses} lrTransactions={state.lrTransactions ?? []} demographics={state.demographics ?? []} conscriptionLaws={state.conscriptionLaws ?? []} players={state.players} relations={state.relations} stateRelations={state.stateRelations ?? {}} settings={state.settings} leaderSideIds={state.leaderSideIds} onAction={send} onSyncPopulation={() => syncPopulationFromPublicSheet({ csvUrl: state.settings.populationSheetCsvUrl ?? DEFAULT_POPULATION_SHEET_CSV_URL, conscriptionCsvUrl: state.settings.conscriptionSheetCsvUrl ?? DEFAULT_CONSCRIPTION_SHEET_CSV_URL, states: state.states, demographics: state.demographics ?? [], conscriptionLaws: state.conscriptionLaws ?? [], applyCorrection: async (stateId, patch) => {
+        {tab === "MANAGEMENT" && isGM && <ManagementPage section={managementSection} onSectionChange={setManagementSection} playerId={state.playerId} sides={state.sides} states={state.states} armies={state.armies} strategicCities={state.strategicCities} rebellionStatuses={state.rebellionStatuses} lrTransactions={state.lrTransactions ?? []} demographics={state.demographics ?? []} conscriptionLaws={state.conscriptionLaws ?? []} players={state.players} relations={state.relations} stateRelations={state.stateRelations ?? {}} settings={state.settings} leaderSideIds={state.leaderSideIds} onAction={send} onSyncPopulation={() => syncPopulationFromPublicSheet({ csvUrl: state.settings.populationSheetCsvUrl ?? DEFAULT_POPULATION_SHEET_CSV_URL, conscriptionCsvUrl: state.settings.conscriptionSheetCsvUrl ?? DEFAULT_CONSCRIPTION_SHEET_CSV_URL, states: state.states, demographics: state.demographics ?? [], conscriptionLaws: state.conscriptionLaws ?? [], applyCorrection: async (stateId, patch) => {
             let lastRejection: { status: string; reason?: string; actualRevision?: number } | undefined;
             let missingAcknowledgement = false;
             for (let attempt = 0; attempt < 5; attempt += 1) {
