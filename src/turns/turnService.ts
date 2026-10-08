@@ -233,6 +233,7 @@ export function completeTurn(
       : latestStandard?.id ?? nextScene.turn.lastProcessedBoundaryId
   };
 
+  delete nextScene.turn.completionPending;
   return { changed: true, scene: nextScene, armies: nextArmies };
 }
 
@@ -362,7 +363,9 @@ export function resumeAutoTurns(turn: TurnState, now: Date): TurnState {
     ...turn,
     autoTurnsPaused: false,
     deferredUntil: null,
-    lastProcessedBoundaryId: getLatestStandardTurnBoundary(now)?.id ?? turn.lastProcessedBoundaryId
+    lastProcessedBoundaryId: turn.completionPending?.source === "SCHEDULE"
+      ? turn.lastProcessedBoundaryId
+      : getLatestStandardTurnBoundary(now)?.id ?? turn.lastProcessedBoundaryId
   };
 }
 
