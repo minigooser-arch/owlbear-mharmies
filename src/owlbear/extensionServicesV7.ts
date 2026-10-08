@@ -2,6 +2,7 @@ import type { StrategicCityCommandPayload } from "../cities/strategicCityCommand
 import { METADATA_KEYS } from "../shared/constants";
 import type { StateRelations, StrategicCity } from "../shared/types";
 import { migrateSceneState } from "../storage/migrations";
+import { semanticValueEqual } from "./snapshotEquality";
 import type { RawExtensionSnapshot } from "../ui/state/useExtensionState";
 import {
   buildRoleSafeSnapshot as buildCoreRoleSafeSnapshot,
@@ -95,12 +96,15 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
     publish();
   });
 
+  let overlayRefreshGeneration = 0;
   const unsubscribeMetadata = OBR.scene.onMetadataChange(() => {
+    const generation = ++overlayRefreshGeneration;
     void readStrategicOverlay(OBR).then((next) => {
+      if (generation !== overlayRefreshGeneration || semanticValueEqual(overlay, next)) return;
       overlay = next;
       rebuildSnapshot();
       publish();
-    });
+    }).catch((error: unknown) => console.error("[Letopis] Strategic overlay refresh failed", error));
   });
 
   const sendStrategic = (command: StrategicCityCommandPayload): Promise<unknown> =>
@@ -117,6 +121,7 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
     ...(core.clearFocusedEntity ? { clearFocusedEntity: core.clearFocusedEntity } : {}),
     runDiagnostic: core.runDiagnostic,
     stop: () => {
+      overlayRefreshGeneration += 1;
       unsubscribeCore();
       unsubscribeMetadata();
       listeners.clear();
