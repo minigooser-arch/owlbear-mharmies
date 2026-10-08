@@ -253,6 +253,25 @@ function startRoutesForMovementPhase(state: CommandState): void {
   }
 }
 
+/** Starts ship movement resolution and land route execution for both manual and
+ * scheduled turn completion. Atomic with the caller's command transaction. */
+export function beginMovementResolution(
+  state: CommandState,
+  cellForPosition: ((position: Vector2) => GridCellCoord) | undefined,
+  positionForCell: ((cell: GridCellCoord) => Vector2) | undefined
+): string | undefined {
+  if (state.scene.turn.phase !== "MOVEMENT") return undefined;
+  state.positions ??= {};
+  const resolved = resolvePlannedShipRoutes(
+    state.scene, state.items, state.positions, cellForPosition, positionForCell
+  );
+  if (!resolved.ok) return resolved.reason;
+  startRoutesForMovementPhase(state);
+  state.scene.turn.phase = "POST_MOVEMENT";
+  state.scene.transportEmbarkRequests = [];
+  return undefined;
+}
+
 function reconcileForcedExits(state: CommandState, cellForPosition: ((position: Vector2) => GridCellCoord) | undefined, reason: ForcedExitReason): void {
   if (!cellForPosition) return;
   const cells = Object.fromEntries(Object.keys(state.armies).flatMap((armyId) => {
@@ -1261,26 +1280,11 @@ export class CommandProcessor {
           return "INVALID_NAVAL_BATTLE";
         }
       }
-      case "COMPLETE_MOVEMENT_PHASE": {
-        if (state.scene.turn.phase !== "MOVEMENT") return "NOT_MOVEMENT_PHASE";
-        state.positions ??= {};
-        const resolved = resolvePlannedShipRoutes(
-          state.scene,
-          state.items,
-          state.positions,
-          this.cellForPosition,
-          this.positionForCell
-        );
-        if (!resolved.ok) return resolved.reason;
-        startRoutesForMovementPhase(state);
-        state.scene.turn.phase = "POST_MOVEMENT";
-        state.scene.transportEmbarkRequests = [];
-        return undefined;
-      }
       case "REOPEN_MOVEMENT_PHASE":
         if (state.scene.turn.phase !== "POST_MOVEMENT") return "NOT_POST_MOVEMENT_PHASE";
         if (state.scene.activeNavalBattle?.status === "ACTIVE") return "NAVAL_BATTLE_ACTIVE";
         state.scene.turn.phase = "MOVEMENT";
+        delete state.scene.turn.completionPending;
         state.scene.navalBattleRequests = [];
         return undefined;
       case "COMPLETE_NAVAL_BATTLE": {
@@ -2158,9 +2162,13 @@ export class CommandProcessor {
         state.armies = renumbered.armies;
         return undefined;
       }
+      case "COMPLETE_MOVEMENT_PHASE":
       case "COMPLETE_TURN_NOW": {
-        const blockers = preCheckpointTurnBlockers(state.scene, state.armies);
-        if (blockers.length > 0) return `TURN_BLOCKED:${blockers.join(",")}`;
+        // Legacy phase-completion commands now mean the same one-click action.
+        if (state.scene.turn.completionPending) return "TURN_COMPLETION_PENDING";
+        const failure = beginMovementResolution(state, this.cellForPosition, this.positionForCell);
+        if (failure) return failure;
+        state.scene.turn.completionPending = { source: "MANUAL" };
         const armyCells = Object.fromEntries(Object.entries(state.armies).flatMap(([armyId]) => {
           const position = state.positions?.[armyId];
           if (!position || !this.cellForPosition) return [];
@@ -2176,6 +2184,10 @@ export class CommandProcessor {
           return Boolean(side?.stateId) && !armyCells[armyId];
         });
         if (hasStateBoundArmyWithoutCell) return "TURN_POSITION_UNAVAILABLE";
+        const blockers = preCheckpointTurnBlockers(state.scene, state.armies);
+        // Route animations and battles continue under the background coordinator.
+        // The persisted intent makes the second button press unnecessary.
+        if (blockers.length > 0) return undefined;
         const result = completeTurn(state.scene, state.armies, {
           source: "MANUAL",
           completedAt: this.now(),
@@ -2183,7 +2195,7 @@ export class CommandProcessor {
           armyCells,
           shipCells
         });
-        if (!result.changed) return "blockers" in result ? `TURN_BLOCKED:${result.blockers.join(",")}` : result.reason;
+        if (!result.changed) return "blockers" in result ? undefined : result.reason;
         state.scene = result.scene;
         state.armies = result.armies;
         return undefined;
