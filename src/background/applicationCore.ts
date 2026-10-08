@@ -1198,6 +1198,16 @@ export class ProductionEngine {
             current.coordinatorLease?.connectionId === expectedCoordinatorConnectionId)
       );
     }
+    // Finalize a one-click turn as soon as the last moving army stops.
+    // Queue the follow-up only after movement persistence; never await a
+    // nested mutation from inside the serialization queue.
+    if (scene.turn.completionPending) {
+      const updatedStatuses = new Map(frames.map((frame) => [frame.record.item.id, frame.state.status]));
+      const allSettled = armies.every((record) =>
+        (updatedStatuses.get(record.item.id) ?? record.state.status) !== "MOVING"
+      );
+      if (allSettled) void this.turnTick();
+    }
   }
 
   pauseMovingArmies(): Promise<void> {
