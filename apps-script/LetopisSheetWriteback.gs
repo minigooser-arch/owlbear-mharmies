@@ -221,6 +221,7 @@ function snapshotForCountry_(country, index, spentByCountry) {
     country,
     population: Number(backendSheet_().getRange(backendRow.row, 3).getValue()),
     humanResource: context.humanResource,
+    humanResourceCapacity: context.humanResource + (spentByCountry ? (spentByCountry.get(country) || 0) : 0),
     ...(context.conscriptionRate === undefined ? {} : { conscriptionRate: context.conscriptionRate })
   };
 }
