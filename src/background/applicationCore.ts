@@ -1209,7 +1209,9 @@ export class ProductionEngine {
       const allSettled = armies.every((record) =>
         (updatedStatuses.get(record.item.id) ?? record.state.status) !== "MOVING"
       );
-      if (allSettled) void this.turnTick();
+      if (allSettled) void this.turnTick().catch((error: unknown) => {
+        this.reportOperationalError(error, "pending-turn-followup");
+      });
     }
   }
 
