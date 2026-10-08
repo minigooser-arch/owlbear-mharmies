@@ -76,7 +76,7 @@ export function ArmiesPage({
 
       <div className="army-toolbar" role="search" aria-label="Поиск и фильтры армий">
         <div className="filters">
-          <input aria-label="Поиск армий" placeholder="Найти армию" value={query} onChange={(event) => setQuery(event.target.value)} />
+          <input type="search" aria-label="Поиск армий" placeholder="Найти армию" value={query} onChange={(event) => setQuery(event.target.value)} />
           <select aria-label="Фильтр по стороне" value={selectedFilterSideId} onChange={(event) => setFilterSideId(event.target.value)}>
             <option value="ALL">Все стороны</option>
             {filterSides.map((side) => <option key={side.id} value={side.id}>{side.name}</option>)}
