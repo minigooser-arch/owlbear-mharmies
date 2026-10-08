@@ -1,4 +1,3 @@
-import { useState } from "react";
 import type { ConscriptionLaw, LRTransaction, SceneSettings, Side, SideRelation, StateDemography, StateEntity, StateRelations, StrategicCity } from "../../shared/types";
 import type { DiagnosticTestId } from "../../owlbear/diagnostics";
 import type { ArmyView, PartyPlayerView, RebellionStatusView, UiCommand } from "../state/useExtensionState";
@@ -13,7 +12,7 @@ import { LRLedgerPage } from "./LRLedgerPage";
 import { PopulationPage } from "./PopulationPage";
 import type { PopulationSyncSummary } from "../../population/populationSheetSync";
 
-type ManagementSection = "SIDES" | "STATES" | "STATE_DIPLOMACY" | "RELATIONS" | "REBELLIONS" | "POPULATION" | "LR" | "SETTINGS" | "DIAGNOSTICS";
+export type ManagementSection = "SIDES" | "STATES" | "STATE_DIPLOMACY" | "RELATIONS" | "REBELLIONS" | "POPULATION" | "LR" | "SETTINGS" | "DIAGNOSTICS";
 const LABELS: Record<ManagementSection, string> = {
   SIDES: "Фракции",
   STATES: "Государства",
@@ -26,8 +25,14 @@ const LABELS: Record<ManagementSection, string> = {
   DIAGNOSTICS: "Диагностика"
 };
 
+const GROUPS: readonly { id: string; label: string; sections: readonly ManagementSection[] }[] = [
+  { id: "POLITICS", label: "Политика", sections: ["SIDES", "STATES", "STATE_DIPLOMACY", "RELATIONS", "REBELLIONS"] },
+  { id: "RESOURCES", label: "Ресурсы", sections: ["POPULATION", "LR"] },
+  { id: "SYSTEM", label: "Система", sections: ["SETTINGS", "DIAGNOSTICS"] }
+];
+
 export function ManagementPage({
-  playerId, sides, states, armies, strategicCities, rebellionStatuses, lrTransactions, demographics, conscriptionLaws, players, relations, stateRelations, settings, leaderSideIds, onAction, onSyncPopulation, runDiagnostic
+  playerId, sides, states, armies, strategicCities, rebellionStatuses, lrTransactions, demographics, conscriptionLaws, players, relations, stateRelations, settings, leaderSideIds, section, onSectionChange, onAction, onSyncPopulation, runDiagnostic
 }: {
   playerId: string;
   sides: readonly Side[];
@@ -43,17 +48,28 @@ export function ManagementPage({
   stateRelations: StateRelations;
   settings: SceneSettings;
   leaderSideIds: ReadonlySet<string>;
+  section: ManagementSection;
+  onSectionChange(next: ManagementSection): void;
   onAction(command: UiCommand): void;
   onSyncPopulation(): Promise<PopulationSyncSummary>;
   runDiagnostic(testId: DiagnosticTestId): Promise<unknown>;
 }) {
-  const [section, setSection] = useState<ManagementSection>("SIDES");
+  const group = GROUPS.find((entry) => entry.sections.includes(section)) ?? GROUPS[0];
   return (
     <section aria-labelledby="management-title">
       <div className="section-heading wiki-page-heading"><div><p className="eyebrow">Администрирование</p><h2 id="management-title">Управление</h2><p className="page-description">Фракции, государства, дипломатия, восстания и технические настройки сцены.</p></div></div>
-      <nav className="subtabs" aria-label="Разделы управления">
-        {(Object.keys(LABELS) as ManagementSection[]).map((item) => <button key={item} type="button" className={section === item ? "active" : ""} onClick={() => setSection(item)}>{LABELS[item]}</button>)}
+      <nav className="management-groups" aria-label="Группы управления">
+        {GROUPS.map((entry) => (
+          <button key={entry.id} type="button" className={entry.id === group.id ? "active" : ""} onClick={() => onSectionChange(entry.sections[0] ?? "SIDES")}>
+            {entry.label}
+          </button>
+        ))}
       </nav>
+      <label className="management-picker">Раздел
+        <select aria-label="Раздел управления" value={section} onChange={(event) => onSectionChange(event.target.value as ManagementSection)}>
+          {group.sections.map((item) => <option key={item} value={item}>{LABELS[item]}</option>)}
+        </select>
+      </label>
       <div className="management-content">
         {section === "SIDES" && <SidesPage role="GM" playerId={playerId} sides={sides} armies={armies} players={players} leaderSideIds={leaderSideIds} onAction={onAction} />}
         {section === "STATES" && <StatesPage states={states} sides={sides} armies={armies} onAction={onAction} />}
