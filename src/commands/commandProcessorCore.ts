@@ -261,6 +261,10 @@ export function beginMovementResolution(
   positionForCell: ((cell: GridCellCoord) => Vector2) | undefined
 ): string | undefined {
   if (state.scene.turn.phase !== "MOVEMENT") return undefined;
+  // Resolve every naval order before advancing the global turn. Requests must
+  // never be silently discarded by the following turn checkpoint.
+  if ((state.scene.navalBattleRequests?.length ?? 0) > 0) return "NAVAL_REQUESTS_PENDING";
+  if (state.scene.activeNavalBattle?.status === "ACTIVE") return "NAVAL_BATTLE_ACTIVE";
   state.positions ??= {};
   const resolved = resolvePlannedShipRoutes(
     state.scene, state.items, state.positions, cellForPosition, positionForCell
@@ -780,7 +784,7 @@ export class CommandProcessor {
         return undefined;
       }
       case "REQUEST_NAVAL_BATTLE": {
-        if (state.scene.turn.phase !== "POST_MOVEMENT") return "NOT_POST_MOVEMENT_PHASE";
+        if (state.scene.turn.phase !== "MOVEMENT" || state.scene.turn.completionPending) return "NOT_MOVEMENT_PHASE";
         const initiatingShip = state.scene.ships?.[command.initiatingShipId];
         if (!initiatingShip) return "SHIP_NOT_FOUND";
         const result = createNavalBattleRequest({
@@ -1048,7 +1052,7 @@ export class CommandProcessor {
         return undefined;
       }
       case "NAVAL_SHORE_BOMBARDMENT": {
-        if (state.scene.turn.phase !== "POST_MOVEMENT") return "NOT_POST_MOVEMENT_PHASE";
+        if (state.scene.turn.phase !== "MOVEMENT" || state.scene.turn.completionPending) return "NOT_MOVEMENT_PHASE";
         if (state.scene.activeNavalBattle?.status === "ACTIVE") return "NAVAL_BATTLE_ACTIVE";
         const ship = state.scene.ships?.[command.shipId];
         if (!ship) return "SHIP_NOT_FOUND";
@@ -1234,6 +1238,7 @@ export class CommandProcessor {
         return undefined;
       }
       case "START_NAVAL_BATTLE": {
+        if (state.scene.turn.phase !== "MOVEMENT" || state.scene.turn.completionPending) return "NOT_MOVEMENT_PHASE";
         if (!this.cellForPosition) return "SHIP_POSITION_UNAVAILABLE";
         const snapshots: Record<string, import("../shared/types").NavalBattleShipSnapshot> = {};
         const normalizedArea = new Map(
