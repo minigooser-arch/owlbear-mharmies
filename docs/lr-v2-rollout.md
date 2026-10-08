@@ -5,7 +5,7 @@
 ## Invariants
 
 - Existing `backend!C` population is never debited by FORMATION, COMPLETION or HEALING.
-- Existing population growth runs in the bound Apps Script project using the same `LockService.getScriptLock()`.
+- Population growth runs in a separate Apps Script project. `ScriptLock` does not coordinate across projects, but LR V2 never writes `backend!C` (single population writer remains the existing growth job). Formulas calculate available LR directly from the latest population plus permanent spend ledger.
 - Permanent spend is the sum of `ЛР_ОПЕРАЦИИ` rows with `operationType = LR`, `reasonCode = LR_V2`, `status = APPLIED`.
 - Old expense records (even old `APPLIED` records) do not enter that sum. No backdated population correction.
 - Original AO potential-LR formula is preserved *verbatim* in each country's AW cell, and visible AO becomes `MAX(0; AW - LR_V2 expenses)`.
@@ -16,10 +16,10 @@
 
 1. A fresh **spreadsheet-only** backup was saved on 2026-10-08: [pre-migration backup](https://docs.google.com/spreadsheets/d/1VerjYl4zaWF0MuyN6fvDTpDohBavW8Y2CXDZVtql1qQ/edit). Independently export/back up the **entire Apps Script project** (the spreadsheet copy alone does not guarantee a separate copy of the script's deployed code, script properties, or triggers).
 2. Temporarily block new army creation/healing while changing the web app.
-3. **Replace**, do not duplicate, the Apps Script file implementing `doPost` with `apps-script/LetopisSheetWriteback.gs` from this branch. Keep it in the same project as the population-growth script; never create a separate lock domain.
+3. **Replace**, do not duplicate, the Apps Script file implementing `doPost` with `apps-script/LetopisSheetWriteback.gs` from this branch in the **existing writeback Apps Script project**. The population-growth project is separate and must remain untouched.
 4. Save, deploy a **new version** of the bound Apps Script Web App as the spreadsheet owner, keeping its existing Web App URL and `API_TOKEN` Script Property.
 5. Run `installLrV2Formulas()` once from the Apps Script editor, and check that `LR_V2_ENABLED=true` is set only after every formula succeeds. The installer preflights all 24 countries, refuses occupied AW cells, verifies exact ledger subtraction, and attempts to roll back changed formulas on errors. It is idempotent; abort on `LR_V2_CAPACITY_CONFLICT` or another error and inspect the backup before proceeding.
-6. Run `installDailySheetSyncTrigger()` once from the editor and authorize time-driven triggers. The existing population-growth trigger must remain enabled.
+6. Run `installDailySheetSyncTrigger()` once from the writeback editor and authorize time-driven triggers. The independent population-growth script and its trigger remain untouched.
 7. Check `ГОСУДАРСТВА [1910]!AO` is available LR, `AW` is unchanged original potential LR, and a test `GET_STATES` response contains distinct `humanResource` and `humanResourceCapacity`.
 8. Merge the corresponding Owlbear PR and allow its normal GitHub Pages deployment. Reopen the Owlbear GM client and verify daily-sync metadata, faction/state HP, and backend!H ship counts. Resume army actions.
 9. Run one authorized small new LR_V2 army/spend operation; check the population has **not** changed, the ledger gained exactly one `LR_V2` row and AO decreased by exactly `amount` (in thousands). A retry with identical `requestId` must not double-charge.
