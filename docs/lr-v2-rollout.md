@@ -14,11 +14,11 @@
 
 ## Live deployment (maintenance window)
 
-1. Save a backup of the live spreadsheet and of its entire Apps Script project, including the population-growth handler and trigger settings.
+1. A fresh **spreadsheet-only** backup was saved on 2026-10-08: [pre-migration backup](https://docs.google.com/spreadsheets/d/1VerjYl4zaWF0MuyN6fvDTpDohBavW8Y2CXDZVtql1qQ/edit). Independently export/back up the **entire Apps Script project** (the spreadsheet copy alone does not guarantee a separate copy of the script's deployed code, script properties, or triggers).
 2. Temporarily block new army creation/healing while changing the web app.
 3. **Replace**, do not duplicate, the Apps Script file implementing `doPost` with `apps-script/LetopisSheetWriteback.gs` from this branch. Keep it in the same project as the population-growth script; never create a separate lock domain.
 4. Save, deploy a **new version** of the bound Apps Script Web App as the spreadsheet owner, keeping its existing Web App URL and `API_TOKEN` Script Property.
-5. Run `installLrV2Formulas()` once from the Apps Script editor, and check that `LR_V2_ENABLED=true` is set only after every formula succeeds. The installer is idempotent; abort on `LR_V2_CAPACITY_CONFLICT` or another error and inspect the backup before proceeding.
+5. Run `installLrV2Formulas()` once from the Apps Script editor, and check that `LR_V2_ENABLED=true` is set only after every formula succeeds. The installer preflights all 24 countries, refuses occupied AW cells, verifies exact ledger subtraction, and attempts to roll back changed formulas on errors. It is idempotent; abort on `LR_V2_CAPACITY_CONFLICT` or another error and inspect the backup before proceeding.
 6. Run `installDailySheetSyncTrigger()` once from the editor and authorize time-driven triggers. The existing population-growth trigger must remain enabled.
 7. Check `ГОСУДАРСТВА [1910]!AO` is available LR, `AW` is unchanged original potential LR, and a test `GET_STATES` response contains distinct `humanResource` and `humanResourceCapacity`.
 8. Merge the corresponding Owlbear PR and allow its normal GitHub Pages deployment. Reopen the Owlbear GM client and verify daily-sync metadata, faction/state HP, and backend!H ship counts. Resume army actions.
