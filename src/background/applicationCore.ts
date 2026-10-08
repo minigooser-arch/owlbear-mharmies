@@ -1269,7 +1269,12 @@ export class ProductionEngine {
       command.type === "DISEMBARK_ARMY" ||
       command.type === "HEAL_ARMY" ||
       command.type === "CREATE_CITY_ARMY" ||
-      command.type === "ADD_CITY_BUILDING"
+      command.type === "ADD_CITY_BUILDING" ||
+      command.type === "REMOVE_CITY_BUILDING" ||
+      command.type === "CREATE_STRATEGIC_CITY" ||
+      command.type === "CREATE_STRATEGIC_CITY_FROM_TOKEN" ||
+      command.type === "UPDATE_STRATEGIC_CITY" ||
+      command.type === "DELETE_STRATEGIC_CITY"
     ) {
       try {
         const grid = new StrategicGridAdapter({ dpi: await this.grid.getDpi(), offset: { x: 0, y: 0 } });

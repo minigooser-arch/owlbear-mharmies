@@ -21,7 +21,12 @@ const army = (sideId: string): ArmyState => ({
 
 const scene = (cells: Record<string, ReturnType<typeof cell>>, deFacto = "red-state"): SceneState => ({
   version: 7, revision: 1, settings: {} as SceneState["settings"], sides: [{ id: "red", name: "Red", color: "#f00", playerIds: [], leaderPlayerIds: [], stateId: deFacto === "red-state" ? "red-state" : "blue-state" }],
-  states: [{ id: "red-state", name: "Red", rulingFactionId: "red", active: true }], relations: {}, battleGroups: [], terrain: { defaultTerrainId: "plain", types: {} }, gridMap: { version: 1, cells, revision: 1 }, wars: [], turn: { turnNumber: 1, phase: "MOVEMENT", autoTurnsPaused: false, deferredUntil: null, lastCompletedAt: null, lastCompletedBy: null, lastProcessedBoundaryId: null }, stateRelations: {}, strategicCities: [], territorialScores: [], rebellions: [], forcedExitStates: [], turnCheckpoint: null
+  states: [{ id: "red-state", name: "Red", rulingFactionId: "red", active: true }], relations: {}, battleGroups: [], terrain: { defaultTerrainId: "plain", types: {} }, gridMap: { version: 1, cells, revision: 1 }, wars: [], turn: { turnNumber: 1, phase: "MOVEMENT", autoTurnsPaused: false, deferredUntil: null, lastCompletedAt: null, lastCompletedBy: null, lastProcessedBoundaryId: null }, stateRelations: {}, strategicCities: [{
+    id: "red-capital", name: "Red Capital", cells: [{ x: 1, y: 0 }],
+    recognizedStateId: "red-state", deFactoStateId: "red-state",
+    factionInfluenceId: "red", mayorId: null, isCapital: true,
+    historicalBuildTypeCount: 0, buildings: []
+  }], territorialScores: [], rebellions: [], forcedExitStates: [], turnCheckpoint: null
 });
 
 describe("supplyService", () => {

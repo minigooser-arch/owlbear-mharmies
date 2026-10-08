@@ -13,7 +13,13 @@ function scene(): SceneState {
       "0,0":{terrainId:"plain",impassable:false,factionTerritoryIds:["red"],recognizedStateId:"red-state",deFactoStateId:"red-state"},
       "1,0":{terrainId:"plain",impassable:false,factionTerritoryIds:["red"],recognizedStateId:"red-state",deFactoStateId:"red-state"}
     }},
-    wars:[], turn:{...structuredClone(DEFAULT_TURN_STATE),phase:"POST_MOVEMENT"}
+    wars:[], turn:{...structuredClone(DEFAULT_TURN_STATE),phase:"POST_MOVEMENT"},
+    strategicCities: [{
+      id: "red-capital", name: "Red Capital", cells: [{ x: 0, y: 0 }],
+      recognizedStateId: "red-state", deFactoStateId: "red-state",
+      factionInfluenceId: "red", mayorId: null, isCapital: true,
+      historicalBuildTypeCount: 0, buildings: []
+    }]
   };
 }
 function army(remaining: number, executeOnTurn = 0): ArmyState {
@@ -203,6 +209,8 @@ it("disbands pending armies before the new turn", () => {
 
 it("checks supply and applies ten percent max HP damage before movement", () => {
   const current = scene();
+  // An enemy-held capital is not a supply source.
+  if (current.strategicCities?.[0]) current.strategicCities[0].cells = [{ x: 1, y: 0 }];
   current.gridMap.cells["0,0"] = {terrainId:null,impassable:false,factionTerritoryIds:[],recognizedStateId:"blue",deFactoStateId:"red-state"};
   current.gridMap.cells["1,0"] = {terrainId:null,impassable:false,factionTerritoryIds:[],recognizedStateId:"blue",deFactoStateId:"blue"};
   const result = completeTurn(current, { a: army(3) }, { source:"MANUAL", completedAt:new Date("2026-09-02T10:00:00Z"), armyCells:{a:{x:0,y:0}} });

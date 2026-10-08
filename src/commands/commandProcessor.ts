@@ -69,8 +69,10 @@ export class CommandProcessor {
     if (!result.ok) return { status: "REJECTED", reason: result.reason };
     state.scene.strategicCities = result.cities;
     state.scene.revision += 1;
+    // City mutations can create, move or remove a supply source. Recheck every
+    // mapped army immediately, not only when the next global turn completes.
     const cellForPosition = this.cellForPosition;
-    if (command.type === "ADD_CITY_BUILDING" && command.building.type === "RAILWAY_STATION" && cellForPosition) {
+    if (cellForPosition) {
       const armyCells = Object.fromEntries(Object.entries(state.armies).flatMap(([armyId]) => {
         const position = state.positions?.[armyId] ?? state.items[armyId]?.position;
         return position ? [[armyId, cellForPosition(position)]] : [];
