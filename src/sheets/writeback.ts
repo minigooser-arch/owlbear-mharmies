@@ -14,6 +14,8 @@ export interface SheetStateSnapshot {
   country: string;
   population: number;
   humanResource: number;
+  /** Potential LR before permanent LR_V2 expenses. */
+  humanResourceCapacity?: number;
   conscriptionRate?: number;
 }
 
@@ -308,9 +310,8 @@ export function applySheetStateSnapshots(
       ...record,
       population: snapshot.population,
       humanResource: snapshot.humanResource,
-      // In the Sheets-authoritative mode AR is the available LR and therefore
-      // also the current capacity. The local nonlinear formula is not used.
-      humanResourceCapacity: snapshot.humanResource,
+      // AO is the available LR, distinct from potential recruitment capacity.
+      humanResourceCapacity: snapshot.humanResourceCapacity ?? snapshot.humanResource,
       ...(snapshot.conscriptionRate !== undefined
         ? { conscriptionRate: snapshot.conscriptionRate }
         : {})
