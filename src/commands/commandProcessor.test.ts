@@ -113,6 +113,21 @@ function context(
 
 describe("CommandProcessor", () => {
   const processor = new CommandProcessor();
+  it("lets only the GM reject a pending naval battle request", () => {
+    const current = state();
+    current.scene.navalBattleRequests = [{ id: "pending", initiatingShipId: "a", targetShipId: "b" }];
+    const cancel = command({ type: "REJECT_NAVAL_BATTLE_REQUEST", navalRequestId: "pending" });
+    expect(processor.execute(context("PLAYER", "leader", current), cancel))
+      .toEqual({ status: "REJECTED", reason: "SENDER_MISMATCH" });
+    const result = processor.execute(context("GM", "gm", current), cancel);
+    expect(result.status).toBe("ACCEPTED");
+    if (result.status !== "ACCEPTED") return;
+    expect(result.state.scene.navalBattleRequests).toEqual([]);
+    const missing = processor.execute(context("GM", "gm", current),
+      command({ type: "REJECT_NAVAL_BATTLE_REQUEST", navalRequestId: "missing" }));
+    expect(missing).toEqual({ status: "REJECTED", reason: "NAVAL_BATTLE_REQUEST_NOT_FOUND" });
+  });
+
   it("accepts naval actions only during the normal global movement turn", () => {
     const current = state();
     for (const type of ["REQUEST_NAVAL_BATTLE", "NAVAL_SHORE_BOMBARDMENT"] as const) {

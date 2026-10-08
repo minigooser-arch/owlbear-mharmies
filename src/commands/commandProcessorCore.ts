@@ -783,6 +783,12 @@ export class CommandProcessor {
         }
         return undefined;
       }
+      case "REJECT_NAVAL_BATTLE_REQUEST": {
+        const requests = state.scene.navalBattleRequests ?? [];
+        if (!requests.some((request) => request.id === command.navalRequestId)) return "NAVAL_BATTLE_REQUEST_NOT_FOUND";
+        state.scene.navalBattleRequests = requests.filter((request) => request.id !== command.navalRequestId);
+        return undefined;
+      }
       case "REQUEST_NAVAL_BATTLE": {
         if (state.scene.turn.phase !== "MOVEMENT" || state.scene.turn.completionPending) return "NOT_MOVEMENT_PHASE";
         const initiatingShip = state.scene.ships?.[command.initiatingShipId];
