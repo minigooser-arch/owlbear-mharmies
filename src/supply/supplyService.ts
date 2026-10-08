@@ -1,5 +1,4 @@
 import { stateForFaction } from "../states/stateRules";
-import { readCell } from "../terrain/gridMap";
 import { shipEmbarkedArmyIds } from "../naval/transport/transportRules";
 import type { ArmyState, GridCellCoord, SceneState } from "../shared/types";
 import { cellKey } from "../grid/strategicGrid";
@@ -18,8 +17,8 @@ const NEIGHBORS = [
  * Legacy cells with no de-facto annotation keep their recognized controller.
  */
 function isStateControlledCell(scene: SceneState, cell: GridCellCoord, stateId: string): boolean {
-  const value = readCell(scene.gridMap, cell);
-  return !value.impassable && (
+  const value = scene.gridMap.cells[cellKey(cell)];
+  return value !== undefined && !value.impassable && (
     value.deFactoStateId === stateId ||
     (value.deFactoStateId == null && value.recognizedStateId === stateId)
   );
@@ -52,8 +51,8 @@ function supplySourceKeys(scene: SceneState, stateId: string): Set<string> {
       // A port may be placed in an unclaimed coastal water cell. It supplies
       // from the state's controlled city shoreline, never across water or a
       // foreign-controlled port cell.
-      const portCell = readCell(scene.gridMap, port.cell);
-      if (portCell.recognizedStateId == null && portCell.deFactoStateId == null) {
+      const portCell = scene.gridMap.cells[cellKey(port.cell)];
+      if (portCell?.recognizedStateId == null && portCell?.deFactoStateId == null) {
         for (const cell of city.cells) {
           if (isStateControlledCell(scene, cell, stateId)) result.add(cellKey(cell));
         }
@@ -68,18 +67,13 @@ function supplySourceKeys(scene: SceneState, stateId: string): Set<string> {
  * or active port, or null if the supply line is blocked. Every path cell,
  * including the army's cell and the source, must be state-controlled.
  */
-export function findSupplyPath(
+function traceSupplyPath(
   scene: SceneState,
   start: GridCellCoord,
   stateId: string,
-  maxVisitedCells = 100_000
+  sourceKeys: ReadonlySet<string>,
+  maxVisitedCells: number
 ): GridCellCoord[] | null {
-  if (!Number.isInteger(maxVisitedCells) || maxVisitedCells < 1) return null;
-  if (!isStateControlledCell(scene, start, stateId)) return null;
-
-  const sourceKeys = supplySourceKeys(scene, stateId);
-  if (sourceKeys.size === 0) return null;
-
   const startKey = cellKey(start);
   const queue: GridCellCoord[] = [{ ...start }];
   const parents = new Map<string, string | null>([[startKey, null]]);
@@ -113,6 +107,56 @@ export function findSupplyPath(
   return null;
 }
 
+export function findSupplyPath(
+  scene: SceneState,
+  start: GridCellCoord,
+  stateId: string,
+  maxVisitedCells = 100_000
+): GridCellCoord[] | null {
+  if (!Number.isInteger(maxVisitedCells) || maxVisitedCells < 1) return null;
+  if (!isStateControlledCell(scene, start, stateId)) return null;
+  return traceSupplyPath(scene, start, stateId, supplySourceKeys(scene, stateId), maxVisitedCells);
+}
+
+/**
+ * Per-operation cache. Never reuse across scene mutations: territorial and
+ * capital/port changes must take effect on the next command or checkpoint.
+ * Does not change the public deterministic shortest-path algorithm.
+ */
+export function createSupplyChecker(scene: SceneState): (sideId: string, cell: GridCellCoord) => boolean {
+  const stateBySide = new Map<string, string | null>();
+  const sourcesByState = new Map<string, ReadonlySet<string>>();
+  const resultByState = new Map<string, Map<string, boolean>>();
+  return (sideId, cell) => {
+    let stateId = stateBySide.get(sideId);
+    if (stateId === undefined) {
+      stateId = stateForFaction(scene, sideId)?.id ?? null;
+      stateBySide.set(sideId, stateId);
+    }
+    if (!stateId) return false;
+    const key = cellKey(cell);
+    let results = resultByState.get(stateId);
+    if (!results) {
+      results = new Map<string, boolean>();
+      resultByState.set(stateId, results);
+    }
+    const cached = results.get(key);
+    if (cached !== undefined) return cached;
+    if (!isStateControlledCell(scene, cell, stateId)) {
+      results.set(key, false);
+      return false;
+    }
+    let sources = sourcesByState.get(stateId);
+    if (!sources) {
+      sources = supplySourceKeys(scene, stateId);
+      sourcesByState.set(stateId, sources);
+    }
+    const supplied = traceSupplyPath(scene, cell, stateId, sources, 100_000) !== null;
+    results.set(key, supplied);
+    return supplied;
+  };
+}
+
 export function isArmySupplied(scene: SceneState, army: ArmyState, armyCell: GridCellCoord): boolean {
   const state = stateForFaction(scene, army.sideId);
   return state ? findSupplyPath(scene, armyCell, state.id) !== null : false;
@@ -129,6 +173,7 @@ export function recalculateArmySupply(
   checkedOnTurn = scene.turn.turnNumber
 ): Record<string, ArmyState> {
   const nextArmies = structuredClone(armies) as Record<string, ArmyState>;
+  const checkSupply = createSupplyChecker(scene);
   for (const [armyId, army] of Object.entries(nextArmies)) {
     const embarkedShipId = army.embarkedOnShipId ?? null;
     const embarkedShip = embarkedShipId !== null ? scene.ships?.[embarkedShipId] : undefined;
@@ -139,7 +184,7 @@ export function recalculateArmySupply(
       : !factionState
         ? false
         : armyCell
-          ? isArmySupplied(scene, army, armyCell)
+          ? checkSupply(army.sideId, armyCell)
           : army.supply.supplied;
     const nextSupply = supplied
       ? { supplied: true, checkedOnTurn }
