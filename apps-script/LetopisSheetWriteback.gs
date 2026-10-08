@@ -2,8 +2,10 @@
  * Летопись — Owlbear → Google Sheets writeback.
  *
  * IMPORTANT:
- * 1) Put this file into the same Apps Script project that owns the 00:06 population-growth job.
- * 2) Both jobs use the same ScriptLock, so growth and LR spending cannot mutate backend!C concurrently.
+ * 1) Deploy this handler in the existing Owlbear writeback Apps Script project.
+ * 2) The population-growth job lives in a SEPARATE Apps Script project.
+ *    ScriptLock coordinates requests only within this writeback project.
+ *    LR V2 never writes backend!C, so the independent population job remains the sole writer.
  * 3) Set Script Property API_TOKEN to a long random secret. The Owlbear GM stores that secret
  *    only in browser localStorage; it is never written into SceneSettings.
  * 4) Deploy as Web App, Execute as the spreadsheet owner, access according to your project policy.
@@ -274,7 +276,7 @@ function lrV2SpentByCountry_(schema) {
 
 /**
  * One-time migration: preserves the ORIGINAL AO formula and subtracts only
- * LR_V2 operations. Install in the same bound Apps Script project as growth.
+ * LR_V2 operations. Install in the existing writeback Apps Script project.
  * Safe to rerun: migrated formulas are skipped.
  */
 function installLrV2Formulas() {
