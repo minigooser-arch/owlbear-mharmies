@@ -281,40 +281,78 @@ function installLrV2Formulas() {
   return withScriptLock_(function() {
     const index = backendIndex_();
     const sheet = stateSheet_();
-    lrLogSheet_(); // Check/extend journal headers before changing formulas.
+    const schema = lrLogSheet_(); // Confirm ledger columns before touching formulas.
+    const spent = lrV2SpentByCountry_(schema);
+    const plan = [];
+
+    // Preflight EVERY country. In particular, do not overwrite an occupied AW
+    // helper cell: the previous installer only checked its formula, not a value.
     for (const [country, entry] of index.entries()) {
       const row = entry.stateRow;
-      const cell = sheet.getRange(row, 41); // AO: publicly visible available LR
-      const potentialCell = sheet.getRange(row, 49); // AW: original potential LR
-      const formula = cell.getFormula();
-      const oldCapacityFormula = potentialCell.getFormula();
-      if (formula.indexOf('LR_V2') >= 0) {
-        if (!oldCapacityFormula) throw new Error("LR_V2_CAPACITY_FORMULA_MISSING:" + country);
+      const availableCell = sheet.getRange(row, 41); // AO
+      const potentialCell = sheet.getRange(row, 49); // AW
+      const formula = availableCell.getFormula();
+      const original = potentialCell.getFormula();
+      const occupied = potentialCell.getValue();
+      if (formula.indexOf('"LR_V2"') >= 0) {
+        if (!original) throw new Error("LR_V2_CAPACITY_FORMULA_MISSING:" + country);
+        plan.push({ country, row, migrated: true, original });
         continue;
       }
       if (!formula || formula[0] !== "=") throw new Error("LR_V2_SOURCE_FORMULA_MISSING:" + country);
-      if (oldCapacityFormula && oldCapacityFormula !== formula) throw new Error("LR_V2_CAPACITY_CONFLICT:" + country);
-      // Keeping this exact original formula allows later mobilization reductions
-      // without forgetting how much LR had already been permanently spent.
-      potentialCell.setFormula(formula);
-      const safeCountry = country.replace(/"/g, '""');
-      const r = "'ЛР_ОПЕРАЦИИ'!";
-      const spent = 'SUMIFS(' + r + '$I$2:$I;' + r + '$C$2:$C;"' + safeCountry +
-        '";' + r + '$V$2:$V;"APPLIED";' + r + '$W$2:$W;"LR";' +
-        r + '$AC$2:$AC;"LR_V2")';
-      cell.setFormula('=MAX(0;AW' + row + '-' + spent + ')');
-    }
-    SpreadsheetApp.flush();
-    for (const [country, entry] of index.entries()) {
-      const cell = sheet.getRange(entry.stateRow, 41);
-      const capacityCell = sheet.getRange(entry.stateRow, 49);
-      if (!Number.isFinite(Number(cell.getValue())) ||
-          !Number.isFinite(Number(capacityCell.getValue()))) {
-        throw new Error("LR_V2_MIGRATED_FORMULA_INVALID:" + country);
+      if (original && original !== formula || (!original && occupied !== "" && occupied !== null)) {
+        throw new Error("LR_V2_CAPACITY_CONFLICT:" + country);
       }
+      plan.push({ country, row, migrated: false, source: formula, original });
     }
-    sheet.hideColumns(49); // AW is internal; keep the public state layout unchanged.
-    PropertiesService.getScriptProperties().setProperty("LR_V2_ENABLED", "true");
+
+    const applied = [];
+    try {
+      for (const item of plan) {
+        if (item.migrated) continue;
+        const availableCell = sheet.getRange(item.row, 41);
+        const potentialCell = sheet.getRange(item.row, 49);
+        const originalAW = potentialCell.getFormula();
+        const originalAWValue = potentialCell.getValue();
+        applied.push({ row: item.row, originalAO: item.source,
+          originalAW, originalAWValue });
+        potentialCell.setFormula(item.source);
+        const safeCountry = item.country.replace(/"/g, '""');
+        const r = "'ЛР_ОПЕРАЦИИ'!";
+        const sum = 'SUMIFS(' + r + '$I$2:$I;' + r + '$C$2:$C;"' + safeCountry +
+          '";' + r + '$V$2:$V;"APPLIED";' + r + '$W$2:$W;"LR";' +
+          r + '$AC$2:$AC;"LR_V2")';
+        availableCell.setFormula('=MAX(0;AW' + item.row + '-' + sum + ')');
+      }
+      SpreadsheetApp.flush();
+      for (const item of plan) {
+        const available = sheet.getRange(item.row, 41).getValue();
+        const potential = sheet.getRange(item.row, 49).getValue();
+        if (typeof available !== "number" || !Number.isFinite(available) ||
+            typeof potential !== "number" || !Number.isFinite(potential) ||
+            Math.abs(available - Math.max(0, potential - (spent.get(item.country) || 0))) > 0.000001) {
+          throw new Error("LR_V2_MIGRATED_FORMULA_INVALID:" + item.country);
+        }
+      }
+      sheet.hideColumns(49);
+      PropertiesService.getScriptProperties().setProperty("LR_V2_ENABLED", "true");
+    } catch (error) {
+      // Google Sheets writes are not transactional. Undo every row touched
+      // by this invocation so a bad formula or a partial failure never leaves
+      // production in a half-migrated state.
+      for (const item of applied.reverse()) {
+        try {
+          sheet.getRange(item.row, 41).setFormula(item.originalAO);
+          const potentialCell = sheet.getRange(item.row, 49);
+          if (item.originalAW) potentialCell.setFormula(item.originalAW);
+          else potentialCell.setValue(item.originalAWValue);
+        } catch (restoreError) {
+          console.error("LR_V2_ROLLBACK_FAILED:" + item.row, restoreError);
+        }
+      }
+      SpreadsheetApp.flush();
+      throw error;
+    }
   });
 }
 
