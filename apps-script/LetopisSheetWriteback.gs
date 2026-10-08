@@ -183,13 +183,20 @@ function stateContext_(country, backendRow) {
   const stateRow = backendRow.stateRow;
   const stateName = String(sheet.getRange(stateRow, 10).getDisplayValue() || country).trim();
   const humanResource = Number(sheet.getRange(stateRow, 41).getValue());
-  if (!Number.isFinite(humanResource)) throw new Error("STATE_LR_INVALID:" + country);
+  const capacityCell = sheet.getRange(stateRow, 49); // AW, reserved for original LR formula
+  const humanResourceCapacity = capacityCell.getFormula()
+    ? Number(capacityCell.getValue())
+    : humanResource; // Before the one-time V2 migration.
+  if (!Number.isFinite(humanResource) || !Number.isFinite(humanResourceCapacity)) {
+    throw new Error("STATE_LR_INVALID:" + country);
+  }
   const category = String(sheet.getRange(stateRow + 1, 41).getDisplayValue() || "").trim();
   return {
     country,
     stateName,
     stateRow,
     humanResource,
+    humanResourceCapacity,
     category,
     conscriptionRate: conscriptionRate_(category)
   };
@@ -221,7 +228,7 @@ function snapshotForCountry_(country, index, spentByCountry) {
     country,
     population: Number(backendSheet_().getRange(backendRow.row, 3).getValue()),
     humanResource: context.humanResource,
-    humanResourceCapacity: context.humanResource + (spentByCountry ? (spentByCountry.get(country) || 0) : 0),
+    humanResourceCapacity: context.humanResourceCapacity,
     ...(context.conscriptionRate === undefined ? {} : { conscriptionRate: context.conscriptionRate })
   };
 }
@@ -268,23 +275,37 @@ function installLrV2Formulas() {
   return withScriptLock_(function() {
     const index = backendIndex_();
     const sheet = stateSheet_();
-    lrLogSheet_(); // Check or extend the schema before writing formulas.
+    lrLogSheet_(); // Check/extend journal headers before changing formulas.
     for (const [country, entry] of index.entries()) {
-      const cell = sheet.getRange(entry.stateRow, 41);
-      const oldFormula = cell.getFormula();
-      if (oldFormula.indexOf('LR_V2') >= 0) continue;
-      if (!oldFormula || oldFormula[0] !== "=") throw new Error("LR_V2_SOURCE_FORMULA_MISSING:" + country);
+      const row = entry.stateRow;
+      const cell = sheet.getRange(row, 41); // AO: publicly visible available LR
+      const potentialCell = sheet.getRange(row, 49); // AW: original potential LR
+      const formula = cell.getFormula();
+      const oldCapacityFormula = potentialCell.getFormula();
+      if (formula.indexOf('LR_V2') >= 0) {
+        if (!oldCapacityFormula) throw new Error("LR_V2_CAPACITY_FORMULA_MISSING:" + country);
+        continue;
+      }
+      if (!formula || formula[0] !== "=") throw new Error("LR_V2_SOURCE_FORMULA_MISSING:" + country);
+      if (oldCapacityFormula && oldCapacityFormula !== formula) throw new Error("LR_V2_CAPACITY_CONFLICT:" + country);
+      // Keeping this exact original formula allows later mobilization reductions
+      // without forgetting how much LR had already been permanently spent.
+      potentialCell.setFormula(formula);
       const safeCountry = country.replace(/"/g, '""');
       const r = "'ЛР_ОПЕРАЦИИ'!";
       const spent = 'SUMIFS(' + r + '$I$2:$I;' + r + '$C$2:$C;"' + safeCountry +
         '";' + r + '$V$2:$V;"APPLIED";' + r + '$W$2:$W;"LR";' +
         r + '$AC$2:$AC;"LR_V2")';
-      cell.setFormula('=MAX(0;(' + oldFormula.slice(1) + ')-' + spent + ')');
+      cell.setFormula('=MAX(0;AW' + row + '-' + spent + ')');
     }
     SpreadsheetApp.flush();
-    for (const country of index.keys()) {
-      const value = Number(stateSheet_().getRange(index.get(country).stateRow, 41).getValue());
-      if (!Number.isFinite(value) || value < 0) throw new Error("LR_V2_MIGRATED_FORMULA_INVALID:" + country);
+    for (const [country, entry] of index.entries()) {
+      const cell = sheet.getRange(entry.stateRow, 41);
+      const capacityCell = sheet.getRange(entry.stateRow, 49);
+      if (!Number.isFinite(Number(cell.getValue())) ||
+          !Number.isFinite(Number(capacityCell.getValue()))) {
+        throw new Error("LR_V2_MIGRATED_FORMULA_INVALID:" + country);
+      }
     }
     PropertiesService.getScriptProperties().setProperty("LR_V2_ENABLED", "true");
   });
