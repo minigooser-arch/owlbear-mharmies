@@ -19,6 +19,9 @@ export function ForcesPage({
   transportEmbarkTargets = [],
   pendingTransportEmbarkRequests = [],
   turnPhase,
+  section,
+  onSectionChange,
+  focusArmyId,
   onAction
 }: {
   armies: readonly ArmyView[];
@@ -34,9 +37,11 @@ export function ForcesPage({
   transportEmbarkTargets?: readonly TransportEmbarkTargetView[];
   pendingTransportEmbarkRequests?: readonly TransportEmbarkRequestView[];
   turnPhase?: TurnState["phase"];
+  section: ForcesSection;
+  onSectionChange(section: ForcesSection): void;
+  focusArmyId?: string;
   onAction(command: UiCommand): void;
 }) {
-  const [section, setSection] = useState<ForcesSection>("ARMIES");
 
   return (
     <section className="forces-center" aria-label="Войска">
@@ -51,6 +56,7 @@ export function ForcesPage({
       {section === "ARMIES" ? (
         <ArmiesPage
           armies={armies}
+          focusArmyId={focusArmyId}
           sides={sides}
           role={role}
           playerId={playerId}
