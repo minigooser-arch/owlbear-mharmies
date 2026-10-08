@@ -15,7 +15,7 @@ function fixture(options: { conflictingAW?: boolean; failOnSecond?: boolean; spe
     const value = cells[row][col === 41 ? "ao" : "aw"];
     if (value.formula === "=100" || value.formula === "=60") value.value = Number(value.formula.slice(1));
     if (value.formula.includes('"LR_V2"')) {
-      value.value = Math.max(0, Number(cells[row].aw.value) - (row === 9 ? options.spent ?? 0 : 0));
+      value.value = Math.max(0, Number(cells[row]!.aw.value) - (row === 9 ? options.spent ?? 0 : 0));
     }
   };
   const sheet = {
@@ -69,9 +69,9 @@ describe("Apps Script LR V2 formula migration", () => {
   it("preflights all countries and never overwrites an occupied AW cell", () => {
     const test = fixture({ conflictingAW: true });
     expect(() => test.run()).toThrow(/LR_V2_CAPACITY_CONFLICT:bulgaria/);
-    expect(test.cells[9].ao.formula).toBe("=100");
-    expect(test.cells[9].aw.formula).toBe("");
-    expect(test.cells[13].aw.value).toBe("reserved");
+    expect(test.cells[9]!.ao.formula).toBe("=100");
+    expect(test.cells[9]!.aw.formula).toBe("");
+    expect(test.cells[13]!.aw.value).toBe("reserved");
     expect(test.enabled).toBe(false);
   });
 
@@ -80,20 +80,20 @@ describe("Apps Script LR V2 formula migration", () => {
     test.run();
     expect(test.enabled).toBe(true);
     expect(test.hidden).toBe(true);
-    expect(test.cells[9].aw.formula).toBe("=100");
-    expect(test.cells[9].ao.value).toBe(75);
-    expect(test.cells[13].ao.value).toBe(60);
+    expect(test.cells[9]!.aw.formula).toBe("=100");
+    expect(test.cells[9]!.ao.value).toBe(75);
+    expect(test.cells[13]!.ao.value).toBe(60);
     expect(() => test.run()).not.toThrow();
-    expect(test.cells[9].ao.value).toBe(75);
+    expect(test.cells[9]!.ao.value).toBe(75);
   });
 
   it("reverts partial migration if a write fails", () => {
     const test = fixture({ failOnSecond: true });
     expect(() => test.run()).toThrow("INJECTED_WRITE_FAILURE");
-    expect(test.cells[9].ao.formula).toBe("=100");
-    expect(test.cells[9].aw.formula).toBe("");
-    expect(test.cells[13].ao.formula).toBe("=60");
-    expect(test.cells[13].aw.value).toBe("");
+    expect(test.cells[9]!.ao.formula).toBe("=100");
+    expect(test.cells[9]!.aw.formula).toBe("");
+    expect(test.cells[13]!.ao.formula).toBe("=60");
+    expect(test.cells[13]!.aw.value).toBe("");
     expect(test.enabled).toBe(false);
   });
 });
