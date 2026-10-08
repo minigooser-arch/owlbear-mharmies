@@ -26,6 +26,12 @@ export function semanticValueEqual(left: unknown, right: unknown): boolean {
   }
   if (left instanceof Set || right instanceof Set) {
     if (!(left instanceof Set) || !(right instanceof Set)) return false;
+    // Sets of IDs and other primitives use linear membership checks, not
+    // quadratic deep matching. Preserve structural matching for object sets.
+    if ([...left].every((value) => value === null || typeof value !== "object")) {
+      for (const value of left) if (!right.has(value)) return false;
+      return true;
+    }
     return unorderedValuesEqual([...left], [...right]);
   }
   if (left instanceof Map || right instanceof Map) {
@@ -34,10 +40,10 @@ export function semanticValueEqual(left: unknown, right: unknown): boolean {
   }
   const leftRecord = left as Record<string, unknown>;
   const rightRecord = right as Record<string, unknown>;
-  const leftKeys = Object.keys(leftRecord).sort();
-  const rightKeys = Object.keys(rightRecord).sort();
-  if (!semanticValueEqual(leftKeys, rightKeys)) return false;
-  return leftKeys.every((key) => semanticValueEqual(leftRecord[key], rightRecord[key]));
+  const leftKeys = Object.keys(leftRecord);
+  if (leftKeys.length !== Object.keys(rightRecord).length) return false;
+  return leftKeys.every((key) => Object.prototype.hasOwnProperty.call(rightRecord, key) &&
+    semanticValueEqual(leftRecord[key], rightRecord[key]));
 }
 
 function entityCollectionEqual<T>(left: readonly T[], right: readonly T[], id: (value: T) => string, equal: (leftValue: T, rightValue: T) => boolean): boolean {
