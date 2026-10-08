@@ -5,6 +5,7 @@ import type { ArmyView, TransportEmbarkRequestView, UiCommand } from "../state/u
 
 interface ArmiesPageProps {
   armies: readonly ArmyView[];
+  focusArmyId?: string;
   sides: readonly Side[];
   role: "GM" | "PLAYER";
   playerId: string;
@@ -16,6 +17,7 @@ interface ArmiesPageProps {
 
 export function ArmiesPage({
   armies,
+  focusArmyId,
   sides,
   role,
   leaderSideIds,
