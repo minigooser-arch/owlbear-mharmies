@@ -39,7 +39,7 @@ export function ForcesPage({
   turnPhase?: TurnState["phase"];
   section: ForcesSection;
   onSectionChange(section: ForcesSection): void;
-  focusArmyId?: string;
+  focusArmyId?: string | undefined;
   onAction(command: UiCommand): void;
 }) {
 
