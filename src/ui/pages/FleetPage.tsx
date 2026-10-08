@@ -150,7 +150,7 @@ export function FleetPage({
 
       <div className="army-toolbar fleet-toolbar" role="search" aria-label="Поиск и фильтры флота">
         <div className="filters fleet-filters">
-          <input aria-label="Поиск кораблей" placeholder="Найти корабль" value={query} onChange={(event) => setQuery(event.target.value)} />
+          <input type="search" aria-label="Поиск кораблей" placeholder="Найти корабль" value={query} onChange={(event) => setQuery(event.target.value)} />
           <select aria-label="Фильтр флота по стороне" value={selectedFilterSideId} onChange={(event) => setFilterSideId(event.target.value)}>
             <option value="ALL">Все стороны</option>
             {sides.map((side) => <option key={side.id} value={side.id}>{side.name}</option>)}
