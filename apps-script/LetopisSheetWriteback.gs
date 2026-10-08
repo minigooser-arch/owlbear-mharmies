@@ -182,7 +182,7 @@ function stateContext_(country, backendRow) {
   if (!sheet) throw new Error("STATE_SHEET_MISSING");
   const stateRow = backendRow.stateRow;
   const stateName = String(sheet.getRange(stateRow, 10).getDisplayValue() || country).trim();
-  const humanResource = Number(sheet.getRange(stateRow, 44).getValue());
+  const humanResource = Number(sheet.getRange(stateRow, 41).getValue());
   if (!Number.isFinite(humanResource)) throw new Error("STATE_LR_INVALID:" + country);
   const category = String(sheet.getRange(stateRow + 1, 41).getDisplayValue() || "").trim();
   return {
@@ -202,11 +202,13 @@ function conscriptionRate_(category) {
     .trim();
   const rates = {
     "ДЕМИЛИТАРИЗАЦИЯ": 0,
+    "ДЕМИЛИТАРИЗОВАННАЯ НАЦИЯ": 0,
     "КОНТРАКТНАЯ СЛУЖБА": 0.02,
     "СРОЧНЫЙ ПРИЗЫВ": 0.04,
     "ЧАСТИЧНАЯ МОБИЛИЗАЦИЯ": 0.08,
     "МАССОВАЯ МОБИЛИЗАЦИЯ": 0.18,
-    "ВСЕОБЩАЯ МОБИЛИЗАЦИЯ": 0.24
+    "ВСЕОБЩАЯ МОБИЛИЗАЦИЯ": 0.24,
+    "ВСЕХ ПОД РУЖЬЁ!": 0.24
   };
   return Object.prototype.hasOwnProperty.call(rates, normalized) ? rates[normalized] : undefined;
 }
@@ -247,6 +249,8 @@ function existingLRRequests_(schema) {
     if (!requestId) continue;
     result.set(requestId, {
       requestId,
+      reasonCode: String(cell_(row, indexes, "reasonCode") || ""),
+      status: String(cell_(row, indexes, "status") || ""),
       batchRequestId: String(cell_(row, indexes, "batchRequestId") || ""),
       kind: String(cell_(row, indexes, "kind") || ""),
       country: String(cell_(row, indexes, "country") || ""),
@@ -323,79 +327,61 @@ function halfUp_(value) {
 }
 
 function spendLRBatch_(operations, batchRequestId) {
+  if (PropertiesService.getScriptProperties().getProperty("LR_V2_ENABLED") !== "true") throw new Error("LR_V2_NOT_ENABLED");
   if (!Array.isArray(operations) || operations.length === 0 || operations.length > 64) throw new Error("INVALID_SPEND_BATCH");
-  const backend = backendSheet_();
   const schema = lrLogSheet_();
   const index = backendIndex_();
   const existing = existingLRRequests_(schema);
   const normalized = [];
   const seen = new Set();
-
   for (const raw of operations) {
     const op = validateSpendOperation_(raw, index);
     if (seen.has(op.requestId)) throw new Error("DUPLICATE_BATCH_REQUEST_ID:" + op.requestId);
     seen.add(op.requestId);
     const old = existing.get(op.requestId);
     if (old) {
-      if (!sameDuplicateRequest_(old, op)) throw new Error("REQUEST_ID_CONFLICT:" + op.requestId);
+      if (old.reasonCode !== "LR_V2" || old.status !== "APPLIED" || !sameDuplicateRequest_(old, op)) throw new Error("REQUEST_ID_CONFLICT:" + op.requestId);
       normalized.push({ op, duplicate: old });
     } else normalized.push({ op, duplicate: null });
   }
-
-  const newOperations = normalized.filter(function(entry) { return entry.duplicate === null; });
-  const touched = new Map();
-  const results = normalized.filter(function(entry) { return entry.duplicate !== null; }).map(function(entry) { return entry.duplicate; });
+  const reservations = new Map();
+  const results = normalized.filter(function(item) { return item.duplicate !== null; }).map(function(item) { return item.duplicate; });
   const records = [];
-  let appendedLogStartRow = 0;
-
-  try {
-    for (const entry of newOperations) {
-      const op = entry.op;
-      const rowInfo = index.get(op.country);
-      if (!touched.has(rowInfo.row)) touched.set(rowInfo.row, Number(backend.getRange(rowInfo.row, 3).getValue()));
-      const populationBefore = Number(backend.getRange(rowInfo.row, 3).getValue());
-      const contextBefore = stateContext_(op.country, rowInfo);
-      if (!Number.isFinite(populationBefore) || populationBefore < 0) throw new Error("POPULATION_INVALID:" + op.country);
-      if (contextBefore.humanResource + 1e-9 < op.amount) throw new Error("INSUFFICIENT_LR:" + op.requestId);
-      if (populationBefore + 1e-9 < op.amount) throw new Error("INSUFFICIENT_POPULATION:" + op.requestId);
-      const populationAfter = halfUp_(populationBefore - op.amount);
-      if (populationAfter < 0) throw new Error("POPULATION_NEGATIVE:" + op.requestId);
-      backend.getRange(rowInfo.row, 3).setValue(populationAfter);
-      SpreadsheetApp.flush();
-      const contextAfter = stateContext_(op.country, rowInfo);
-      results.push({ requestId: op.requestId, populationBefore, populationAfter,
-        humanResourceBefore: contextBefore.humanResource, humanResourceAfter: contextAfter.humanResource,
-        stateName: contextAfter.stateName });
-      records.push({
-        operationType: "LR", requestId: op.requestId, createdAt: new Date().toISOString(),
-        country: op.country, stateId: "", stateName: contextAfter.stateName, kind: op.kind,
-        hp: op.hp, ratePerHp: op.ratePerHp, amount: op.amount, amountPeople: Math.round(op.amount * 1000),
-        populationBefore, populationAfter, humanResourceBefore: contextBefore.humanResource,
-        humanResourceAfter: contextAfter.humanResource, armyId: op.armyId, armyName: op.armyName,
-        cityId: op.cityId, cityName: op.cityName, actorPlayerId: op.actorPlayerId, turnNumber: op.turnNumber,
-        batchRequestId: String(batchRequestId || ""), status: "APPLIED"
-      });
-    }
-    if (records.length > 0) {
-      const rows = records.map(function(record) {
-        return schema.headers.map(function(name) { return record[name] === undefined || record[name] === null ? "" : record[name]; });
-      });
-      appendedLogStartRow = schema.sheet.getLastRow() + 1;
-      schema.sheet.getRange(appendedLogStartRow, 1, rows.length, schema.headers.length).setValues(rows);
-    }
-    SpreadsheetApp.flush();
-    const states = [...new Set(normalized.map(function(entry) { return entry.op.country; }))].map(function(country) {
-      return snapshotForCountry_(country, index);
-    });
-    return { operations: results, states };
-  } catch (error) {
-    if (appendedLogStartRow > 0) {
-      try { schema.sheet.deleteRows(appendedLogStartRow, records.length); } catch (rollbackError) { console.error(rollbackError); }
-    }
-    for (const [row, oldPopulation] of touched.entries()) backend.getRange(row, 3).setValue(oldPopulation);
-    SpreadsheetApp.flush();
-    throw error;
+  for (const item of normalized) {
+    if (item.duplicate) continue;
+    const op = item.op;
+    const info = index.get(op.country);
+    const population = Number(backendSheet_().getRange(info.row, 3).getValue());
+    if (!Number.isFinite(population) || population < 0) throw new Error("POPULATION_INVALID:" + op.country);
+    const context = stateContext_(op.country, info);
+    const available = context.humanResource - (reservations.get(op.country) || 0);
+    if (available + 1e-9 < op.amount) throw new Error("INSUFFICIENT_LR:" + op.requestId);
+    const after = Math.max(0, available - op.amount);
+    reservations.set(op.country, (reservations.get(op.country) || 0) + op.amount);
+    results.push({ requestId: op.requestId, populationBefore: population, populationAfter: population,
+      humanResourceBefore: available, humanResourceAfter: after, stateName: context.stateName });
+    records.push({ operationType: "LR", reasonCode: "LR_V2",
+      requestId: op.requestId, createdAt: new Date().toISOString(), country: op.country,
+      stateId: "", stateName: context.stateName, kind: op.kind, hp: op.hp, ratePerHp: op.ratePerHp,
+      amount: op.amount, amountPeople: Math.round(op.amount * 1000), populationBefore: population,
+      populationAfter: population, humanResourceBefore: available, humanResourceAfter: after,
+      armyId: op.armyId, armyName: op.armyName, cityId: op.cityId, cityName: op.cityName,
+      actorPlayerId: op.actorPlayerId, turnNumber: op.turnNumber,
+      batchRequestId: String(batchRequestId || ""), status: "APPLIED" });
   }
+  // Under ScriptLock, validate the whole batch, then append it. Never write backend!C.
+  if (records.length > 0) {
+    const startRow = schema.sheet.getLastRow() + 1;
+    const rows = records.map(function(record) { return schema.headers.map(function(name) {
+      return record[name] === undefined || record[name] === null ? "" : record[name];
+    }); });
+    schema.sheet.getRange(startRow, 1, rows.length, schema.headers.length).setValues(rows);
+    SpreadsheetApp.flush();
+  }
+  const states = [...new Set(normalized.map(function(item) { return item.op.country; }))].map(function(country) {
+    return snapshotForCountry_(country, index);
+  });
+  return { operations: results, states: states };
 }
 
 function normalizeKey_(value) {
