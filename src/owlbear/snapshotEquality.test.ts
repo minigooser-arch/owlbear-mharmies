@@ -234,6 +234,61 @@ describe("semantic snapshot equality", () => {
     )).toBe(true);
   });
 
+  it("refreshes faction influence and token assets", () => {
+    const left = snapshot();
+    expect(semanticSnapshotEqual(left, snapshot({
+      sides: left.sides.map((side) => side.id === "red" ? { ...side, militaryInfluence: 17 } : side)
+    }))).toBe(false);
+    expect(semanticSnapshotEqual(left, snapshot({
+      sides: left.sides.map((side) => side.id === "red" ? { ...side, armyTokenAsset: {
+        name: "Token",
+        image: { width: 64, height: 64, mime: "image/png", url: "https://example.test/t.png" },
+        grid: { dpi: 100, offset: { x: 0, y: 0 } }
+      } } : side)
+    }))).toBe(false);
+  });
+
+  it("refreshes population, conscription laws, audit logs and territorial scores", () => {
+    const left = snapshot();
+    expect(semanticSnapshotEqual(left, snapshot({
+      demographics: [{
+        stateId: "red", population: 100, populationGrowthFactor: 1, humanResource: 10,
+        conscriptionLawId: "LAW", conscriptionRate: 0.1, humanResourceCapacity: 20,
+        lastPopulationCalculationDate: null
+      }]
+    }))).toBe(false);
+    expect(semanticSnapshotEqual(left, snapshot({
+      conscriptionLaws: [{ id: "LAW", name: "Law", rate: 0.1, active: true }]
+    }))).toBe(false);
+    expect(semanticSnapshotEqual(left, snapshot({
+      demographyAudit: [{
+        id: "audit", stateId: "red", actorPlayerId: "gm",
+        reason: "Sync", changes: {}, createdAt: "2026-10-08"
+      }]
+    }))).toBe(false);
+    expect(semanticSnapshotEqual(left, snapshot({
+      territorialScores: [{
+        holderStateId: "red", holderStateName: "Red",
+        opponentStateId: "blue", opponentStateName: "Blue", points: 3, contributingCities: []
+      }]
+    }))).toBe(false);
+  });
+
+  it("refreshes rebellion details and the city cell selection tool", () => {
+    const left = snapshot();
+    expect(semanticSnapshotEqual(left, snapshot({
+      rebellionStatuses: [{
+        id: "rebellion", sourceStateId: "red", sourceStateName: "Red",
+        startedOnTurn: 1, capitalCityId: "city", capitalCityName: "Capital",
+        territoryCellCount: 3, active: true, capitalControllerFactionId: null,
+        capitalControllerFactionName: null, participants: []
+      }]
+    }))).toBe(false);
+    expect(semanticSnapshotEqual(left, snapshot({
+      cityCellPick: { sessionId: "picker", cells: [{ x: 1, y: 2 }] }
+    }))).toBe(false);
+  });
+
   it("treats turn lifecycle changes as semantically meaningful", () => {
     const left = snapshot();
     const right = snapshot({ turn: { ...left.turn, turnNumber: left.turn.turnNumber + 1 } });
