@@ -1,7 +1,7 @@
 import { reconcileForcedExitStates } from "../movement/forcedExitService";
 import { stateForFaction } from "../states/stateRules";
 import { applyEncirclementCheckpoint } from "../supply/encirclementService";
-import { isArmySupplied } from "../supply/supplyService";
+import { createSupplyChecker } from "../supply/supplyService";
 import type { ArmyState, GridCellCoord, SceneState } from "../shared/types";
 import { applyTerritorialScoreCheckpoint } from "../wars/territorialScore";
 import { shipEmbarkedArmyIds } from "../naval/transport/transportRules";
@@ -38,6 +38,7 @@ function applySupplyCheckpoint(
   nextTurnNumber: number
 ): Record<string, ArmyState> {
   const nextArmies = structuredClone(armies) as Record<string, ArmyState>;
+  const checkSupply = createSupplyChecker(scene);
 
   for (const [armyId, army] of Object.entries(nextArmies)) {
     if (army.supply.checkedOnTurn === nextTurnNumber) continue;
@@ -53,7 +54,7 @@ function applySupplyCheckpoint(
       : !factionState
         ? false
         : armyCell
-          ? isArmySupplied(scene, army, armyCell)
+          ? checkSupply(army.sideId, armyCell)
           : army.supply.supplied;
 
     nextArmies[armyId] = {

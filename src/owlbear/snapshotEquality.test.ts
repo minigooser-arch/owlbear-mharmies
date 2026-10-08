@@ -125,6 +125,24 @@ describe("semantic value equality", () => {
     expect(semanticValueEqual([{ x: 1 }, { x: 2 }], [{ x: 1 }, { x: 2 }])).toBe(true);
     expect(semanticValueEqual([{ x: 1 }, { x: 2 }], [{ x: 2 }, { x: 1 }])).toBe(false);
   });
+
+  it("preserves structural equality for object-valued sets", () => {
+    expect(semanticValueEqual(new Set([{ x: 1 }, { x: 2 }]), new Set([{ x: 2 }, { x: 1 }]))).toBe(true);
+    expect(semanticValueEqual(new Set([{ x: 1 }]), new Set([{ x: 2 }]))).toBe(false);
+  });
+
+  it("compares primitive sets independent of insertion order without ignoring different values", () => {
+    expect(semanticValueEqual(new Set(["red", "blue", null]), new Set([null, "blue", "red"]))).toBe(true);
+    expect(semanticValueEqual(new Set(["red", "blue"]), new Set(["red", "green"]))).toBe(false);
+    expect(semanticValueEqual(new Set(["red"]), new Set([{ id: "red" }]))).toBe(false);
+  });
+
+  it("compares record keys independently of insertion order and detects missing or changed keys", () => {
+    expect(semanticValueEqual({ alpha: 1, beta: { gamma: 2 } }, { beta: { gamma: 2 }, alpha: 1 })).toBe(true);
+    expect(semanticValueEqual({ alpha: undefined }, {})).toBe(false);
+    expect(semanticValueEqual({ alpha: 1 }, { alpha: 1, beta: undefined })).toBe(false);
+    expect(semanticValueEqual({ alpha: 1, beta: 2 }, { alpha: 2, beta: 2 })).toBe(false);
+  });
 });
 
 describe("semantic snapshot equality", () => {
