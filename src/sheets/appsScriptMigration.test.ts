@@ -12,7 +12,7 @@ function fixture(options: { conflictingAW?: boolean; failOnSecond?: boolean; spe
   let hidden = false;
   let enabled = false;
   const updateValue = (row: number, col: number) => {
-    const value = cells[row][col === 41 ? "ao" : "aw"];
+    const value = cells[row]![col === 41 ? "ao" : "aw"];
     if (value.formula === "=100" || value.formula === "=60") value.value = Number(value.formula.slice(1));
     if (value.formula.includes('"LR_V2"')) {
       value.value = Math.max(0, Number(cells[row]!.aw.value) - (row === 9 ? options.spent ?? 0 : 0));
@@ -21,7 +21,7 @@ function fixture(options: { conflictingAW?: boolean; failOnSecond?: boolean; spe
   const sheet = {
     getRange(row: number, col: number) {
       if (!cells[row] || (col !== 41 && col !== 49)) throw Error("BAD_CELL");
-      const cell = cells[row][col === 41 ? "ao" : "aw"];
+      const cell = cells[row]![col === 41 ? "ao" : "aw"];
       return {
         getFormula: () => cell.formula,
         getValue: () => cell.value,
