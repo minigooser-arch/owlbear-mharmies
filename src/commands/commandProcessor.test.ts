@@ -117,8 +117,9 @@ describe("CommandProcessor", () => {
     const current = state();
     current.scene.navalBattleRequests = [{ id: "pending", initiatingShipId: "a", targetShipId: "b" }];
     const cancel = command({ type: "REJECT_NAVAL_BATTLE_REQUEST", navalRequestId: "pending" });
-    expect(processor.execute(context("PLAYER", "leader", current), cancel))
-      .toEqual({ status: "REJECTED", reason: "SENDER_MISMATCH" });
+    expect(processor.execute(context("PLAYER", "leader", current),
+      command({ type: "REJECT_NAVAL_BATTLE_REQUEST", navalRequestId: "pending" }, "leader")))
+      .toEqual({ status: "REJECTED", reason: "GM_ONLY" });
     const result = processor.execute(context("GM", "gm", current), cancel);
     expect(result.status).toBe("ACCEPTED");
     if (result.status !== "ACCEPTED") return;
