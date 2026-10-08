@@ -147,13 +147,15 @@ describe("global naval phase commands", () => {
     )).toEqual({ status: "REJECTED", reason: "GM_ONLY" });
   });
 
-  it("blocks ending the global turn while a naval battle is active", () => {
-    expect(execute(
-      "GM",
-      "gm",
-      state("POST_MOVEMENT", activeBattle()),
+  it("queues turn completion until an active naval battle is settled", () => {
+    const result = execute(
+      "GM", "gm", state("POST_MOVEMENT", activeBattle()),
       command("gm", "COMPLETE_TURN_NOW")
-    )).toEqual({ status: "REJECTED", reason: "TURN_BLOCKED:NAVAL_BATTLE_ACTIVE" });
+    );
+    expect(result.status).toBe("ACCEPTED");
+    if (result.status !== "ACCEPTED") return;
+    expect(result.state.scene.turn.turnNumber).toBe(3);
+    expect(result.state.scene.turn.completionPending).toEqual({ source: "MANUAL" });
   });
 
   it("allows naval battle requests only in POST_MOVEMENT", () => {

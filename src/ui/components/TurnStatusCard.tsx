@@ -35,20 +35,12 @@ export function TurnStatusCard({
       {role === "GM" && (
         <div className="turn-admin">
           <div className="turn-actions">
-            {turn.phase === "MOVEMENT" ? (
-              <button className="button primary" type="button" onClick={() => onAction({ type: "COMPLETE_MOVEMENT_PHASE" })}>
-                Завершить фазу перемещения
-              </button>
-            ) : (
-              <>
-                <button className="button primary" type="button" onClick={() => onAction({ type: "COMPLETE_TURN_NOW" })}>
-                  Завершить ход сейчас
-                </button>
-                <button type="button" onClick={() => onAction({ type: "REOPEN_MOVEMENT_PHASE" })}>
-                  Вернуться к перемещению
-                </button>
-              </>
-            )}
+            <button className="button primary" type="button"
+              disabled={Boolean(turn.completionPending)}
+              onClick={() => onAction({ type: "COMPLETE_TURN_NOW" })}>
+              {turn.completionPending ? "Завершение хода выполняется…" : "Завершить ход"}
+            </button>
+            {turn.completionPending && <p role="status">Ожидаем завершения перемещения и обязательных боёв. Новый ход начнётся автоматически.</p>}
             {turn.autoTurnsPaused && <button type="button" onClick={() => onAction({ type: "RESUME_AUTO_TURNS" })}>Возобновить ходы</button>}
           </div>
           <details className="turn-more">

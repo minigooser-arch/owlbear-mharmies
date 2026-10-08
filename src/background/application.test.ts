@@ -491,7 +491,7 @@ describe("ProductionEngine command boundary", () => {
     expect(fixture.sceneItemReads).toBe(1);
   });
 
-  it("starts an army route at movement phase end and clears it on arrival", async () => {
+  it("finishes a turn from one button after the planned army route resolves", async () => {
     const army: ArmyState = {
       version: 3,
       registered: true,
@@ -542,7 +542,7 @@ describe("ProductionEngine command boundary", () => {
         senderPlayerId: "gm",
         senderConnectionId: "gm-connection",
         expectedRevision: fixture.scene.revision,
-        type: "COMPLETE_MOVEMENT_PHASE"
+        type: "COMPLETE_TURN_NOW"
       }
     }, {
       role: "GM",
@@ -556,6 +556,8 @@ describe("ProductionEngine command boundary", () => {
     });
     expect((fixture.items[0]?.metadata[METADATA_KEYS.army] as ArmyState).status).toBe("MOVING");
 
+    expect(fixture.scene.turn.completionPending).toEqual({ source: "MANUAL" });
+
     (engine as unknown as { lastMovementAt: number }).lastMovementAt = performance.now() - 1_000;
     await engine.movementTick();
 
@@ -565,6 +567,12 @@ describe("ProductionEngine command boundary", () => {
       route: [],
       plannedRoute: { cells: [], executeOnTurn: 0 }
     });
+
+    await engine.turnTick();
+    expect(fixture.scene.turn.turnNumber).toBe(2);
+    expect(fixture.scene.turn.completionPending).toBeUndefined();
+    await engine.turnTick();
+    expect(fixture.scene.turn.turnNumber).toBe(2);
   });
 
   it("centres an Image when the GM registers it as an army", async () => {
@@ -757,7 +765,7 @@ describe("ProductionEngine command boundary", () => {
     expect(fixture.items[0]).toMatchObject({ position: { x: 17, y: 29 }, metadata: {} });
   });
 
-  it("completes a due scheduled turn exactly once and restores army movement points", async () => {
+  it("completes a due scheduled turn directly from movement phase exactly once", async () => {
     const scheduledArmy: ArmyState = {
       version: 3, registered: true, sideId: "red", status: "READY", overrides: {}, route: [],
       plannedRoute: { startCell: { x: 0, y: 0 }, executeOnTurn: 0, cells: [], totalCostUnits: 0, validatedRevision: 2, requiresReplan: false },
@@ -772,7 +780,7 @@ describe("ProductionEngine command boundary", () => {
       metadata: { [METADATA_KEYS.army]: scheduledArmy }
     }]);
     fixture.scene.version = 6;
-    fixture.scene.turn.phase = "POST_MOVEMENT";
+    fixture.scene.turn.phase = "MOVEMENT";
     fixture.scene.ships = {};
     fixture.scene.navalBattleRequests = [];
     fixture.scene.activeNavalBattle = null;
@@ -789,6 +797,56 @@ describe("ProductionEngine command boundary", () => {
     expect(fixture.scene.turn.lastProcessedBoundaryId).toBe("STANDARD:2026-09-02T15:00:00+03:00");
     expect((fixture.items[0]?.metadata[METADATA_KEYS.army] as ArmyState).movement.remainingUnits).toBe(10);
 
+    await engine.turnTick();
+    expect(fixture.scene.turn.turnNumber).toBe(2);
+  });
+
+  it("resumes scheduled turn after route resolution and never advances twice", async () => {
+    const scheduledArmy: ArmyState = {
+      version: 3, registered: true, sideId: "red", status: "READY",
+      overrides: { speedCellsPerSecond: 2 },
+      route: [{ x: 150, y: 50 }],
+      plannedRoute: { startCell: { x: 0, y: 0 }, executeOnTurn: 2,
+        cells: [{ x: 1, y: 0 }], totalCostUnits: 2, validatedRevision: 2, requiresReplan: false },
+      movement: { maxUnits: 10, remainingUnits: 0, enteredRouteCellCount: 0 },
+      health: { hp: 50, maxHp: 50 }, supply: { supplied: true, checkedOnTurn: 1 },
+      disband: { pending: false, requestedOnTurn: null, requestedByPlayerId: null },
+      currentWaypointIndex: 0, segmentProgressCells: 0,
+      ignoresMovementBarriers: false, ignoresVisionBarriers: false, revision: 1
+    };
+    const fixture = commandPort([{
+      id: "army", type: "IMAGE", position: { x: 50, y: 50 },
+      metadata: { [METADATA_KEYS.army]: scheduledArmy }
+    }], async (from, to) => Math.hypot(to.x - from.x, to.y - from.y) / 100);
+    fixture.scene.turn.phase = "MOVEMENT";
+    fixture.scene.sides.push({
+      id: "red", name: "Red", color: "#f00", playerIds: [], leaderPlayerIds: [], stateId: null
+    });
+    fixture.scene.gridMap.cells = {
+      "0,0": { terrainId: "plain", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null },
+      "1,0": { terrainId: "plain", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null }
+    };
+    const engine = new ProductionEngine(fixture.port, () => new Date("2026-09-02T12:00:01.000Z"));
+    engine.setCoordinator(true, "coordinator");
+
+    await engine.turnTick();
+    expect(fixture.scene.turn.turnNumber).toBe(1);
+    expect(fixture.scene.turn.phase).toBe("POST_MOVEMENT");
+    expect(fixture.scene.turn.completionPending).toEqual({
+      source: "SCHEDULE", boundaryId: "STANDARD:2026-09-02T15:00:00+03:00"
+    });
+    expect((fixture.items[0]?.metadata[METADATA_KEYS.army] as ArmyState).status).toBe("MOVING");
+
+    await engine.turnTick();
+    expect(fixture.scene.turn.turnNumber).toBe(1);
+    (engine as unknown as { lastMovementAt: number }).lastMovementAt = performance.now() - 1_000;
+    await engine.movementTick();
+    expect((fixture.items[0]?.metadata[METADATA_KEYS.army] as ArmyState).status).toBe("READY");
+
+    await engine.turnTick();
+    expect(fixture.scene.turn.turnNumber).toBe(2);
+    expect(fixture.scene.turn.lastCompletedBy).toBe("SCHEDULE");
+    expect(fixture.scene.turn.completionPending).toBeUndefined();
     await engine.turnTick();
     expect(fixture.scene.turn.turnNumber).toBe(2);
   });

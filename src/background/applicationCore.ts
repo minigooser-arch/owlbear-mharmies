@@ -40,6 +40,7 @@ import { hasNavalBattleLineOfSight } from "../naval/battle/navalBattleLineOfSigh
 import { hasNavalLineOfSight } from "../naval/detection/navalLineOfSight";
 import { getDueTurnBoundary } from "../turns/turnSchedule";
 import { completeTurn } from "../turns/turnService";
+import { beginMovementResolution } from "../commands/commandProcessorCore";
 import { getDestinationMovementCostUnits } from "../terrain/terrainRegistry";
 import { GridDistanceService } from "../grid/gridDistance";
 import { StrategicGridAdapter } from "../grid/strategicGrid";
@@ -736,8 +737,12 @@ export class ProductionEngine {
     const barrierRecords = frame.items.barriers;
     const sceneItems = frame.items.items;
     if (!canCommit()) return;
-    const boundary = getDueTurnBoundary(now, scene.turn);
-    if (!boundary) {
+    const pending = scene.turn.completionPending;
+    const boundary = pending ? null : getDueTurnBoundary(now, scene.turn);
+    // An administrator may suspend scheduled completion even after routes
+    // began; explicit manual completion remains independent of auto-turn pause.
+    const scheduledPaused = pending?.source === "SCHEDULE" && scene.turn.autoTurnsPaused;
+    if ((!pending && !boundary) || scheduledPaused) {
       if (scene !== sourceScene) {
         await this.repository.writeScene(
           { ...scene, revision: sourceScene.revision + 1 },
@@ -774,19 +779,53 @@ export class ProductionEngine {
       record.item.id,
       strategicGrid.sceneToCell(record.item.position)
     ]));
-    const shipCells = Object.fromEntries(frame.items.ships.map((record) => [
-      record.item.id,
-      strategicGrid.sceneToCell(record.item.position)
-    ]));
-    const completion = completeTurn(authoritativeScene, armies, {
-      source: "SCHEDULE",
+    const previous: CommandState = {
+      scene: authoritativeScene,
+      armies,
+      barriers: Object.fromEntries(barrierRecords.map((record) => [record.item.id, record.state])),
+      items: Object.fromEntries(sceneItems.map((item) => [item.id, item])),
+      positions: Object.fromEntries(sceneItems.map((item) => [item.id, item.position]))
+    };
+    const next: CommandState = structuredClone(previous);
+    let startedMovement = false;
+    const cellForPosition = (position: Vector2) => strategicGrid.sceneToCell(position);
+    const positionForCell = (cell: GridCellCoord) => strategicGrid.cellToSceneCenter(cell);
+    if (!pending && next.scene.turn.phase === "MOVEMENT") {
+      const failure = beginMovementResolution(next, cellForPosition, positionForCell);
+      if (failure) {
+        this.reportOperationalError(new Error(failure), "scheduled-turn-movement-resolution");
+        return;
+      }
+      if (!boundary) return;
+      next.scene.turn.completionPending = {
+        source: "SCHEDULE",
+        boundaryId: boundary.id
+      };
+      startedMovement = true;
+    }
+    // Planned ship routes have moved their tokens during phase resolution.
+    // New-turn fuel bonuses must use the authoritative new positions.
+    const shipCells = Object.fromEntries(Object.keys(next.scene.ships ?? {}).flatMap((shipId) => {
+      const position = next.positions?.[shipId] ?? next.items[shipId]?.position;
+      return position ? [[shipId, strategicGrid.sceneToCell(position)]] : [];
+    }));
+    const source = pending?.source ?? "SCHEDULE";
+    const boundaryId = pending?.boundaryId ?? boundary?.id;
+    const completion = completeTurn(next.scene, next.armies, {
+      source,
       completedAt: now,
-      boundaryId: boundary.id,
-      positionForCell: (cell) => strategicGrid.cellToSceneCenter(cell),
+      ...(source === "SCHEDULE" && boundaryId ? { boundaryId } : {}),
+      positionForCell,
       armyCells,
       shipCells
     });
-    if (!completion.changed) {
+    if (completion.changed) {
+      next.scene = completion.scene;
+      next.armies = completion.armies;
+    } else if (!startedMovement) {
+      // An active route or battle is still in progress. Preserve the pending
+      // intent and retry on subsequent coordinator ticks, without damage or
+      // a duplicate checkpoint.
       if (scene !== sourceScene) {
         await this.repository.writeScene(
           { ...scene, revision: sourceScene.revision + 1 },
@@ -796,19 +835,7 @@ export class ProductionEngine {
       }
       return;
     }
-
-    const previous: CommandState = {
-      scene: authoritativeScene,
-      armies,
-      barriers: Object.fromEntries(barrierRecords.map((record) => [record.item.id, record.state])),
-      items: Object.fromEntries(sceneItems.map((item) => [item.id, item])),
-      positions: Object.fromEntries(sceneItems.map((item) => [item.id, item.position]))
-    };
-    const next: CommandState = {
-      ...structuredClone(previous),
-      scene: { ...completion.scene, revision: authoritativeScene.revision + 1 },
-      armies: completion.armies
-    };
+    next.scene.revision = authoritativeScene.revision + 1;
     if (!canCommit()) return;
     await this.persistCommandState(next, previous, sceneItems);
   }
@@ -1173,6 +1200,18 @@ export class ProductionEngine {
           (expectedCoordinatorConnectionId === undefined ||
             current.coordinatorLease?.connectionId === expectedCoordinatorConnectionId)
       );
+    }
+    // Finalize a one-click turn as soon as the last moving army stops.
+    // Queue the follow-up only after movement persistence; never await a
+    // nested mutation from inside the serialization queue.
+    if (scene.turn.completionPending) {
+      const updatedStatuses = new Map(frames.map((frame) => [frame.record.item.id, frame.state.status]));
+      const allSettled = armies.every((record) =>
+        (updatedStatuses.get(record.item.id) ?? record.state.status) !== "MOVING"
+      );
+      if (allSettled) void this.turnTick().catch((error: unknown) => {
+        this.reportOperationalError(error, "pending-turn-followup");
+      });
     }
   }
 

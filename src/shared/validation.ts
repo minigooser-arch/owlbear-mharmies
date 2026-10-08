@@ -474,7 +474,17 @@ function normalizeTurn(value: unknown): TurnState {
       : null,
     lastProcessedBoundaryId: value.lastProcessedBoundaryId === null || nonEmptyString(value.lastProcessedBoundaryId)
       ? value.lastProcessedBoundaryId as string | null
-      : null
+      : null,
+    ...(isRecord(value.completionPending) &&
+      enumValue(value.completionPending.source, ["SCHEDULE", "MANUAL"]) &&
+      (value.completionPending.source === "MANUAL" || nonEmptyString(value.completionPending.boundaryId))
+      ? { completionPending: {
+          source: value.completionPending.source,
+          ...(value.completionPending.source === "SCHEDULE"
+            ? { boundaryId: value.completionPending.boundaryId as string }
+            : {})
+        } }
+      : {})
   };
 }
 

@@ -58,13 +58,16 @@ function command(): ArmyCommand {
 }
 
 describe("turn completion command blockers", () => {
-  it("returns the movement-resolution blocker as a reason list", () => {
+  it("completes an idle movement-phase turn with a single command", () => {
     const current = scene();
     current.turn.phase = "MOVEMENT";
-    expect(new CommandProcessor().execute(context(current), command())).toEqual({
-      status: "REJECTED",
-      reason: "TURN_BLOCKED:MOVEMENT_RESOLUTION_PENDING"
-    });
+    const result = new CommandProcessor().execute(context(current), command());
+    expect(result.status).toBe("ACCEPTED");
+    if (result.status !== "ACCEPTED") return;
+    expect(result.state.scene.turn.turnNumber).toBe(4);
+    expect(result.state.scene.turn.phase).toBe("MOVEMENT");
+    expect(result.state.scene.turn.lastCompletedBy).toBe("MANUAL");
+    expect(result.state.scene.turn.completionPending).toBeUndefined();
   });
 
   it("returns all simultaneous battle blockers in deterministic order", () => {
@@ -92,9 +95,15 @@ describe("turn completion command blockers", () => {
       revision: 1
     };
 
-    expect(new CommandProcessor().execute(context(current), command())).toEqual({
-      status: "REJECTED",
-      reason: "TURN_BLOCKED:LAND_BATTLE_ACTIVE,NAVAL_BATTLE_ACTIVE"
-    });
+    const result = new CommandProcessor().execute(context(current), command());
+    expect(result.status).toBe("ACCEPTED");
+    if (result.status !== "ACCEPTED") return;
+    expect(result.state.scene.turn.turnNumber).toBe(3);
+    expect(result.state.scene.turn.completionPending).toEqual({ source: "MANUAL" });
+    const duplicate = new CommandProcessor().execute(
+      { ...context(result.state.scene), state: result.state },
+      { ...command(), expectedRevision: result.state.scene.revision }
+    );
+    expect(duplicate).toEqual({ status: "REJECTED", reason: "TURN_COMPLETION_PENDING" });
   });
 });
