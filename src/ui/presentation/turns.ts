@@ -25,6 +25,9 @@ export function turnStatusPresentation(turn: TurnState, now: Date = new Date()):
   if (turn.autoTurnsPaused) {
     return { title, status: "Автоматические ходы остановлены", kind: "PAUSED" };
   }
+  if (turn.completionPending) {
+    return { title, status: "Завершение хода: ожидание перемещения и боёв", kind: "DUE" };
+  }
   if (turn.deferredUntil) {
     const deferred = new Date(turn.deferredUntil);
     return {
