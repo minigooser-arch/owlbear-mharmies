@@ -5,7 +5,7 @@ import type { ArmyView, TransportEmbarkRequestView, UiCommand } from "../state/u
 
 interface ArmiesPageProps {
   armies: readonly ArmyView[];
-  focusArmyId?: string;
+  focusArmyId?: string | undefined;
   sides: readonly Side[];
   role: "GM" | "PLAYER";
   playerId: string;
