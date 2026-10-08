@@ -1139,6 +1139,10 @@ it("keeps the fixed five-OP budget when a legacy route-distance override is edit
       ? { ...side, stateId: "red-state" }
       : side);
     current.scene.states = [{ id: "red-state", name: "Красное государство", rulingFactionId: "red", active: true }];
+    current.scene.gridMap.cells["1,0"] = {
+      terrainId: null, impassable: false, factionTerritoryIds: [],
+      recognizedStateId: "red-state", deFactoStateId: "red-state"
+    };
     current.scene.strategicCities = [{
       id: "city-red",
       name: "Красный город",
