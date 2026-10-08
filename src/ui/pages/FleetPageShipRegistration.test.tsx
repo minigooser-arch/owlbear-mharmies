@@ -24,6 +24,7 @@ it("sends the selected side, class and facing when GM creates a ship", () => {
     />
   );
 
+  fireEvent.click(screen.getByRole("button", { name: "+ Создать корабль" }));
   fireEvent.change(screen.getByLabelText("Класс нового корабля"), { target: { value: "CRUISER" } });
   fireEvent.change(screen.getByLabelText("Курс нового корабля"), { target: { value: "WEST" } });
   fireEvent.click(screen.getByRole("button", { name: "Сделать кораблём" }));

@@ -65,7 +65,7 @@ it("lets a GM continue from an empty hydrated scene through map, cities and rebe
   const store = mutableServices(emptyGmSnapshot());
   render(<App services={store.services} />);
 
-  fireEvent.click(screen.getByRole("button", { name: "Карта" }));
+  fireEvent.click(screen.getByRole("button", { name: "Мир" }));
   fireEvent.change(screen.getByLabelText("Режим кисти"), { target: { value: "RECOGNIZED_STATE" } });
   expect(screen.getByLabelText("Государство для разметки")).toHaveValue("");
   expect(screen.getByRole("button", { name: "Начать рисовать" })).toBeDisabled();
@@ -132,8 +132,8 @@ it("lets a GM continue from an empty hydrated scene through map, cities and rebe
     })
   }));
 
-  fireEvent.click(screen.getByRole("button", { name: "Управление" }));
-  fireEvent.click(screen.getByRole("button", { name: "Восстания" }));
+  fireEvent.click(screen.getByRole("button", { name: "Ещё" }));
+  fireEvent.change(screen.getByRole("combobox", { name: "Раздел управления" }), { target: { value: "REBELLIONS" } });
 
   expect(screen.getByLabelText("Государство восстания")).toHaveValue("russia");
   expect(screen.getByLabelText("Столица восстания")).toHaveValue("moscow");
@@ -166,6 +166,7 @@ it("keeps city map picking and diplomacy available in the GM workflow", () => {
   });
   render(<App services={store.services} />);
 
+  fireEvent.click(screen.getByRole("button", { name: "Мир" }));
   fireEvent.click(screen.getByRole("button", { name: "Города" }));
   expect(screen.getByRole("searchbox", { name: "Поиск городов" })).toBeInTheDocument();
   expect(screen.getByText("Показать детали города Москва")).toBeInTheDocument();
@@ -180,8 +181,8 @@ it("keeps city map picking and diplomacy available in the GM workflow", () => {
   expect(screen.getByLabelText("Клетки города")).toHaveValue("7,8; 3,4");
   expect(store.send).toHaveBeenCalledWith({ type: "CLOSE_CITY_CELL_PICKER" });
 
-  fireEvent.click(screen.getByRole("button", { name: "Управление" }));
-  fireEvent.click(screen.getByRole("button", { name: "Межгосударственные отношения" }));
+  fireEvent.click(screen.getByRole("button", { name: "Ещё" }));
+  fireEvent.change(screen.getByRole("combobox", { name: "Раздел управления" }), { target: { value: "STATE_DIPLOMACY" } });
   expect(screen.getByRole("heading", { name: "Дипломатия государств" })).toBeInTheDocument();
   expect(screen.getByLabelText("Государство для дипломатии")).toBeInTheDocument();
 });

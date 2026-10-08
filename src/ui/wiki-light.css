@@ -612,3 +612,162 @@ button:disabled { opacity: .48; cursor: not-allowed; }
   .movement-row { grid-template-columns: 1fr; }
   .movement-row-stats { justify-items: start; }
 }
+
+
+/* Command center: a compact hierarchy designed for the 460px Owlbear popover. */
+.world-center { max-width: 720px; margin: 0 auto; }
+.world-center > section { max-width: 100%; }
+.app-shell[data-theme="letopis-wiki-light"] .wiki-nav {
+  justify-content: space-between;
+}
+.app-shell[data-theme="letopis-wiki-light"] .wiki-nav button {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 9px 5px;
+  font-size: 12px;
+  text-align: center;
+}
+.app-shell[data-theme="letopis-wiki-light"] .creation-toggle {
+  display: block;
+  width: 100%;
+  min-height: 40px;
+  margin: 0 0 12px;
+  border: 1px dashed var(--wiki-line-strong);
+  background: var(--wiki-panel-soft);
+  color: var(--wiki-accent-strong);
+  font-weight: 650;
+}
+.app-shell[data-theme="letopis-wiki-light"] .creation-toggle:hover {
+  background: var(--wiki-accent-soft);
+  border-color: var(--wiki-accent);
+}
+.app-shell[data-theme="letopis-wiki-light"] .management-groups {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+  margin-bottom: 10px;
+  padding: 4px;
+  background: var(--wiki-panel-soft);
+  border: 1px solid var(--wiki-line);
+  border-radius: 10px;
+}
+.app-shell[data-theme="letopis-wiki-light"] .management-groups button {
+  min-width: 0;
+  min-height: 38px;
+  padding: 8px 4px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--wiki-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+.app-shell[data-theme="letopis-wiki-light"] .management-groups button.active {
+  background: #fff;
+  color: var(--wiki-accent-strong);
+  font-weight: 700;
+  box-shadow: 0 1px 3px rgba(36, 39, 40, .08);
+}
+.app-shell[data-theme="letopis-wiki-light"] .management-picker {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 14px;
+  color: var(--wiki-muted);
+  font-size: 12px;
+}
+.app-shell[data-theme="letopis-wiki-light"] .management-picker select {
+  width: 100%;
+  min-height: 40px;
+  padding: 7px 10px;
+  border: 1px solid var(--wiki-line-strong);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--wiki-text);
+  font: inherit;
+  font-size: 13px;
+}
+.app-shell[data-theme="letopis-wiki-light"] .attention-list .attention-link {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 3px 10px;
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 11px;
+  border: 1px solid var(--wiki-line);
+  border-radius: 8px;
+  background: var(--wiki-panel-soft);
+  text-align: left;
+  cursor: pointer;
+}
+.app-shell[data-theme="letopis-wiki-light"] .attention-link:hover {
+  background: var(--wiki-accent-soft);
+  border-color: var(--wiki-accent);
+}
+.app-shell[data-theme="letopis-wiki-light"] .attention-link strong {
+  font-size: 13px;
+  color: var(--wiki-text);
+}
+.app-shell[data-theme="letopis-wiki-light"] .attention-link span {
+  color: var(--wiki-accent-strong);
+  font-size: 12px;
+}
+.app-shell[data-theme="letopis-wiki-light"] .overview-main-action {
+  margin-top: 11px;
+}
+.app-shell[data-theme="letopis-wiki-light"] .army-extra-facts {
+  display: grid;
+  gap: 5px;
+  padding: 5px 0 10px;
+  color: var(--wiki-muted);
+  font-size: 12px;
+}
+.app-shell[data-theme="letopis-wiki-light"] .army-extra-facts strong {
+  color: var(--wiki-text);
+}
+.app-shell[data-theme="letopis-wiki-light"] .army-extra-facts button {
+  min-height: 30px;
+  margin-left: 5px;
+  padding: 4px 9px;
+}
+.app-shell[data-theme="letopis-wiki-light"] .army-additional,
+.app-shell[data-theme="letopis-wiki-light"] .ship-additional {
+  margin-top: 11px;
+}
+.app-shell[data-theme="letopis-wiki-light"] .army-additional > summary,
+.app-shell[data-theme="letopis-wiki-light"] .ship-additional > summary {
+  min-height: 32px;
+  padding: 7px 0;
+  font-size: 12px;
+  font-weight: 650;
+}
+.app-shell[data-theme="letopis-wiki-light"] .army-identity p,
+.app-shell[data-theme="letopis-wiki-light"] .ship-identity p,
+.app-shell[data-theme="letopis-wiki-light"] .army-stat span,
+.app-shell[data-theme="letopis-wiki-light"] .overview-metrics span,
+.app-shell[data-theme="letopis-wiki-light"] .ship-facts strong {
+  font-size: 11px;
+}
+.app-shell[data-theme="letopis-wiki-light"] .page-description,
+.app-shell[data-theme="letopis-wiki-light"] .helper-text {
+  font-size: 12px;
+  line-height: 1.5;
+}
+.app-shell[data-theme="letopis-wiki-light"] .attention-link:focus-visible,
+.app-shell[data-theme="letopis-wiki-light"] .management-groups button:focus-visible,
+.app-shell[data-theme="letopis-wiki-light"] .creation-toggle:focus-visible,
+.app-shell[data-theme="letopis-wiki-light"] .wiki-nav button:focus-visible {
+  outline: 2px solid var(--wiki-accent-strong);
+  outline-offset: 2px;
+}
+@media (max-width: 380px) {
+  .app-shell[data-theme="letopis-wiki-light"] .wiki-nav button {
+    font-size: 11px;
+    padding: 8px 3px;
+  }
+  .app-shell[data-theme="letopis-wiki-light"] .attention-link {
+    align-items: flex-start;
+  }
+}

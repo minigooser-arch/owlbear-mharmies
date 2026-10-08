@@ -3,11 +3,14 @@ import { areStatesAtWar } from "../../states/stateRelations";
 import { TurnStatusCard } from "../components/TurnStatusCard";
 import type { ArmyView, UiCommand } from "../state/useExtensionState";
 
-export function OverviewPage({ armies, states, stateRelations, turn, onAction }: {
+export function OverviewPage({ armies, states, stateRelations, turn, navalRequestCount = 0, onOpenArmy, onOpenBattles, onAction }: {
   armies: readonly ArmyView[];
   states: readonly StateEntity[];
   stateRelations: StateRelations;
   turn: TurnState;
+  navalRequestCount?: number;
+  onOpenArmy(armyId: string): void;
+  onOpenBattles(): void;
   onAction(command: UiCommand): void;
 }) {
   const moving = armies.filter((army) => army.status === "MOVING").length;
@@ -36,9 +39,21 @@ export function OverviewPage({ armies, states, stateRelations, turn, onAction }:
       </div>
       <div className="overview-grid">
         <article className="overview-panel">
-          <div className="overview-panel-heading"><h3>Требуют внимания</h3><span>{attention.length}</span></div>
-          {attention.length === 0 ? <p className="muted">Критичных состояний нет.</p> : (
-            <div className="attention-list">{attention.map((army) => <div key={army.id}><strong>{army.name}</strong><span>{!army.supplied ? "Окружена" : army.disbandPending ? "Роспуск на следующий ход" : "Маршрут недействителен"}</span></div>)}</div>
+          <div className="overview-panel-heading"><h3>Требуют внимания</h3><span>{attention.length + navalRequestCount}</span></div>
+          {attention.length === 0 && navalRequestCount === 0 ? <p className="muted">Критичных состояний нет.</p> : (
+            <div className="attention-list">
+              {navalRequestCount > 0 && (
+                <button type="button" className="attention-link" onClick={onOpenBattles}>
+                  <strong>Заявки на морской бой</strong><span>{navalRequestCount} ожидают решения →</span>
+                </button>
+              )}
+              {attention.map((army) => (
+                <button type="button" className="attention-link" key={army.id} onClick={() => onOpenArmy(army.id)}>
+                  <strong>{army.name}</strong>
+                  <span>{!army.supplied ? "Без снабжения" : army.disbandPending ? "Роспуск на следующий ход" : "Маршрут недействителен"} →</span>
+                </button>
+              ))}
+            </div>
           )}
         </article>
         <article className="overview-panel">

@@ -323,15 +323,6 @@ export function ShipCard({
         <div><span>ОП</span><strong>{ship.movementRemaining} / {ship.movementMax} ОП</strong></div>
       </div>
 
-      <div className="ship-facts">
-        <span><strong>Курс</strong>{FACING_LABELS[ship.facing]}</span>
-        <span><strong>Бортовой залп</strong>{broadside}</span>
-        <span><strong>Переход</strong>{route}</span>
-        {ship.embarkedArmyId && <span><strong>На борту</strong>{embarkedArmyName ?? "Перевозимая армия"}</span>}
-        {ship.additionalEmbarkedArmyId && <span><strong>На борту II</strong>{additionalEmbarkedArmyName ?? "Перевозимая армия"}</span>}
-        <span><strong>Опыт</strong>{ship.experience ?? 0}</span>
-      </div>
-
       {canControlTactical && (
         <div className="ship-tactical-panel" aria-label={`Тактическое управление ${ship.name}`}>
           <div className="ship-tactical-status">
@@ -524,7 +515,19 @@ export function ShipCard({
         </div>
       )}
 
+      <details className="army-more ship-additional">
+        <summary>Характеристики и улучшения</summary>
+      <div className="ship-facts">
+        <span><strong>Курс</strong>{FACING_LABELS[ship.facing]}</span>
+        <span><strong>Бортовой залп</strong>{broadside}</span>
+        <span><strong>Переход</strong>{route}</span>
+        {ship.embarkedArmyId && <span><strong>На борту</strong>{embarkedArmyName ?? "Перевозимая армия"}</span>}
+        {ship.additionalEmbarkedArmyId && <span><strong>На борту II</strong>{additionalEmbarkedArmyName ?? "Перевозимая армия"}</span>}
+        <span><strong>Опыт</strong>{ship.experience ?? 0}</span>
+      </div>
+
       <ShipUpgradePanel ship={ship} enabled={canPlanRoute} onAction={onAction} />
+      </details>
 
       {isGM && (
         <details className="army-more ship-management">

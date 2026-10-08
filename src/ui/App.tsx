@@ -3,9 +3,9 @@ import { ConfirmDialog } from "./components/ConfirmDialog";
 import { EntityInspector } from "./components/EntityInspector";
 import { StrategicCityEditor } from "./components/StrategicCityEditor";
 import { BattlesPage } from "./pages/BattlesPage";
-import { ForcesPage } from "./pages/ForcesPage";
-import { ManagementPage } from "./pages/ManagementPage";
-import { MovementPage } from "./pages/MovementPage";
+import { ForcesPage, type ForcesSection } from "./pages/ForcesPage";
+import { PlayerOverviewPage } from "./pages/PlayerOverviewPage";
+import { ManagementPage, type ManagementSection } from "./pages/ManagementPage";
 import { MapEditorPage } from "./pages/MapEditorPage";
 import { OverviewPage } from "./pages/OverviewPage";
 import { SidesPage } from "./pages/SidesPage";
@@ -13,23 +13,27 @@ import { useExtensionState, type ExtensionServices, type UiCommand } from "./sta
 import { syncPopulationFromPublicSheet } from "../population/populationSheetSync";
 import { DEFAULT_CONSCRIPTION_SHEET_CSV_URL, DEFAULT_POPULATION_SHEET_CSV_URL } from "../shared/constants";
 
-type PlayerTab = "ARMIES" | "TURN" | "BATTLES";
-type GmTab = "OVERVIEW" | "ARMIES" | "MAP" | "CITIES" | "BATTLES" | "MANAGEMENT";
+type PlayerTab = "DASHBOARD" | "ARMIES" | "BATTLES";
+type GmTab = "OVERVIEW" | "ARMIES" | "BATTLES" | "WORLD" | "MANAGEMENT";
+type WorldSection = "MAP" | "CITIES";
 type Tab = PlayerTab | GmTab;
 const LABELS: Record<Tab, string> = {
   OVERVIEW: "Обзор",
+  DASHBOARD: "Штаб",
   ARMIES: "Войска",
-  TURN: "Ход",
-  MAP: "Карта",
-  CITIES: "Города",
+  WORLD: "Мир",
   BATTLES: "Бои",
-  MANAGEMENT: "Управление"
+  MANAGEMENT: "Ещё"
 };
 
 export function App({ services }: { services: ExtensionServices }) {
   const state = useExtensionState(services);
-  const [playerTab, setPlayerTab] = useState<PlayerTab>("ARMIES");
+  const [playerTab, setPlayerTab] = useState<PlayerTab>("DASHBOARD");
   const [gmTab, setGmTab] = useState<GmTab>("OVERVIEW");
+  const [worldSection, setWorldSection] = useState<WorldSection>("MAP");
+  const [forcesSection, setForcesSection] = useState<ForcesSection>("ARMIES");
+  const [managementSection, setManagementSection] = useState<ManagementSection>("SIDES");
+  const [focusArmyId, setFocusArmyId] = useState<string | undefined>();
   const [dangerous, setDangerous] = useState<UiCommand | undefined>();
   if (!state.ready) return <main className="state-screen">Загрузка…</main>;
   if (!state.sceneReady) return <main className="state-screen">Откройте сцену Owlbear Rodeo.</main>;
@@ -37,9 +41,15 @@ export function App({ services }: { services: ExtensionServices }) {
 
   const isGM = state.role === "GM";
   const navalRequestCount = isGM ? (state.pendingNavalBattleRequests?.length ?? 0) : 0;
-  const tabs: readonly Tab[] = isGM ? ["OVERVIEW", "ARMIES", "MAP", "CITIES", "BATTLES", "MANAGEMENT"] : ["ARMIES", "TURN", "BATTLES"];
+  const tabs: readonly Tab[] = isGM ? ["OVERVIEW", "ARMIES", "BATTLES", "WORLD", "MANAGEMENT"] : ["DASHBOARD", "ARMIES", "BATTLES"];
   const tab: Tab = isGM ? gmTab : playerTab;
   const selectTab = (next: Tab) => isGM ? setGmTab(next as GmTab) : setPlayerTab(next as PlayerTab);
+  const openForces = () => selectTab("ARMIES");
+  const openArmy = (armyId: string) => {
+    setFocusArmyId(armyId);
+    setForcesSection("ARMIES");
+    openForces();
+  };
 
   const send = (command: UiCommand) => {
     if (["DELETE_SIDE", "DELETE_STATE", "STOP_ALL", "RELEASE_BATTLE_GROUP", "COMPLETE_TURN_NOW", "REQUEST_ARMY_DISBAND", "UNREGISTER_SHIP", "COMPLETE_NAVAL_BATTLE", "START_CIVIL_WAR"].includes(command.type) || (command.type === "SET_ARMY_HP" && command.hp === 0)) setDangerous(command);
@@ -56,7 +66,7 @@ export function App({ services }: { services: ExtensionServices }) {
         <span className="role-badge">{isGM ? "Ведущий" : "Игрок"}</span>
       </header>
       <nav className="tabs tabs-primary wiki-nav" aria-label="Разделы Летописи">
-        {tabs.map((item) => <button type="button" key={item} aria-label={LABELS[item]} className={tab === item ? "active" : ""} onClick={() => selectTab(item)}>{LABELS[item]}{isGM && item === "BATTLES" && navalRequestCount > 0 && <span className="count-pill" aria-hidden="true">{navalRequestCount}</span>}</button>)}
+        {tabs.map((item) => <button type="button" key={item} aria-label={LABELS[item]} className={tab === item ? "active" : ""} aria-current={tab === item ? "page" : undefined} onClick={() => selectTab(item)}>{LABELS[item]}{isGM && item === "BATTLES" && navalRequestCount > 0 && <span className="count-pill" aria-hidden="true">{navalRequestCount}</span>}</button>)}
       </nav>
       <div className="content wiki-content">
         {state.focusedEntity && (
@@ -76,13 +86,21 @@ export function App({ services }: { services: ExtensionServices }) {
           />
         )}
         {isGM && navalRequestCount > 0 && tab !== "BATTLES" && <aside className="registration-card naval-request-notice" role="status" aria-label="Заявки на морской бой"><div className="registration-copy"><strong>Заявки на морской бой: {navalRequestCount}</strong><small>Есть ожидающие решения ведущего заявки. Все они собраны в одном списке.</small></div><button className="button primary" type="button" onClick={() => setGmTab("BATTLES")}>Открыть заявки</button></aside>}
-        {tab === "OVERVIEW" && isGM && <OverviewPage armies={state.armies} states={state.states} stateRelations={state.stateRelations ?? {}} turn={state.turn} onAction={send} />}
-        {tab === "ARMIES" && <><ForcesPage armies={state.armies} ships={state.ships} sides={state.sides} role={state.role} playerId={state.playerId} strategicCities={state.strategicCities} leaderSideIds={state.leaderSideIds} relations={state.relations} navalRequestTargets={state.navalRequestTargets} pendingNavalBattleRequests={state.pendingNavalBattleRequests} transportEmbarkTargets={state.transportEmbarkTargets} pendingTransportEmbarkRequests={state.pendingTransportEmbarkRequests} turnPhase={state.turn.phase} onAction={send} />{!isGM && state.leaderSideIds.size > 0 && <details className="leader-management"><summary>Управление фракцией</summary><SidesPage role="PLAYER" playerId={state.playerId} sides={state.sides.filter((side) => state.leaderSideIds.has(side.id))} players={state.players} leaderSideIds={state.leaderSideIds} onAction={send} /></details>}</>}
-        {tab === "TURN" && !isGM && <MovementPage armies={state.armies} turn={state.turn} isGM={false} leaderSideIds={state.leaderSideIds} onAction={send} />}
-        {tab === "MAP" && isGM && <MapEditorPage terrain={state.terrain} sides={state.sides} states={state.states} onAction={send} />}
-        {tab === "CITIES" && isGM && <StrategicCityEditor role="GM" states={state.states} sides={state.sides} cities={state.strategicCities} onCreate={(city) => void state.sendStrategic({ type: "CREATE_STRATEGIC_CITY", city })} onCreateFromToken={(city) => void state.send({ type: "REGISTER_SELECTED_CITY", city })} onUpdate={(cityId, patch) => void state.sendStrategic({ type: "UPDATE_STRATEGIC_CITY", cityId, patch })} onAddBuilding={(cityId, building) => void state.sendStrategic({ type: "ADD_CITY_BUILDING", cityId, building })} onDelete={(cityId) => void state.sendStrategic({ type: "DELETE_STRATEGIC_CITY", cityId })} onOpenCellPicker={() => void state.send({ type: "OPEN_CITY_CELL_PICKER" })} onCloseCellPicker={() => void state.send({ type: "CLOSE_CITY_CELL_PICKER" })} pickedCells={state.cityCellPick?.cells ?? []} {...(state.cityCellPick ? { pickerSessionId: state.cityCellPick.sessionId } : {})} canPickCells={isGM && state.sceneReady} />}
+        {tab === "OVERVIEW" && isGM && <OverviewPage armies={state.armies} states={state.states} stateRelations={state.stateRelations ?? {}} turn={state.turn} navalRequestCount={navalRequestCount} onOpenArmy={openArmy} onOpenBattles={() => setGmTab("BATTLES")} onAction={send} />}
+        {tab === "DASHBOARD" && !isGM && <PlayerOverviewPage armies={state.armies} turn={state.turn} onOpenForces={openForces} onOpenArmy={openArmy} onAction={send} />}
+        {tab === "ARMIES" && <><ForcesPage section={forcesSection} onSectionChange={setForcesSection} focusArmyId={focusArmyId} armies={state.armies} ships={state.ships} sides={state.sides} role={state.role} playerId={state.playerId} strategicCities={state.strategicCities} leaderSideIds={state.leaderSideIds} relations={state.relations} navalRequestTargets={state.navalRequestTargets} pendingNavalBattleRequests={state.pendingNavalBattleRequests} transportEmbarkTargets={state.transportEmbarkTargets} pendingTransportEmbarkRequests={state.pendingTransportEmbarkRequests} turnPhase={state.turn.phase} onAction={send} />{!isGM && state.leaderSideIds.size > 0 && <details className="leader-management"><summary>Управление фракцией</summary><SidesPage role="PLAYER" playerId={state.playerId} sides={state.sides.filter((side) => state.leaderSideIds.has(side.id))} players={state.players} leaderSideIds={state.leaderSideIds} onAction={send} /></details>}</>}
+        {tab === "WORLD" && isGM && (
+          <section className="world-center" aria-label="Мир и территория">
+            <nav className="forces-subnav" aria-label="Разделы мира">
+              <button type="button" className={worldSection === "MAP" ? "active" : ""} onClick={() => setWorldSection("MAP")}>Карта</button>
+              <button type="button" className={worldSection === "CITIES" ? "active" : ""} onClick={() => setWorldSection("CITIES")}>Города</button>
+            </nav>
+            {worldSection === "MAP" && <MapEditorPage terrain={state.terrain} sides={state.sides} states={state.states} onAction={send} />}
+            {worldSection === "CITIES" && <StrategicCityEditor role="GM" states={state.states} sides={state.sides} cities={state.strategicCities} onCreate={(city) => void state.sendStrategic({ type: "CREATE_STRATEGIC_CITY", city })} onCreateFromToken={(city) => void state.send({ type: "REGISTER_SELECTED_CITY", city })} onUpdate={(cityId, patch) => void state.sendStrategic({ type: "UPDATE_STRATEGIC_CITY", cityId, patch })} onAddBuilding={(cityId, building) => void state.sendStrategic({ type: "ADD_CITY_BUILDING", cityId, building })} onDelete={(cityId) => void state.sendStrategic({ type: "DELETE_STRATEGIC_CITY", cityId })} onOpenCellPicker={() => void state.send({ type: "OPEN_CITY_CELL_PICKER" })} onCloseCellPicker={() => void state.send({ type: "CLOSE_CITY_CELL_PICKER" })} pickedCells={state.cityCellPick?.cells ?? []} {...(state.cityCellPick ? { pickerSessionId: state.cityCellPick.sessionId } : {})} canPickCells={isGM && state.sceneReady} />}
+          </section>
+        )}
         {tab === "BATTLES" && <BattlesPage battles={state.battleGroups} armies={state.armies} ships={state.ships} pendingNavalBattleRequests={state.pendingNavalBattleRequests} territorialScores={state.territorialScores} {...(state.navalBattleAreaDraft ? { navalBattleAreaDraft: state.navalBattleAreaDraft } : {})} {...(state.activeNavalBattle ? { activeNavalBattle: state.activeNavalBattle } : {})} isGM={isGM} onAction={send} />}
-        {tab === "MANAGEMENT" && isGM && <ManagementPage playerId={state.playerId} sides={state.sides} states={state.states} armies={state.armies} strategicCities={state.strategicCities} rebellionStatuses={state.rebellionStatuses} lrTransactions={state.lrTransactions ?? []} demographics={state.demographics ?? []} conscriptionLaws={state.conscriptionLaws ?? []} players={state.players} relations={state.relations} stateRelations={state.stateRelations ?? {}} settings={state.settings} leaderSideIds={state.leaderSideIds} onAction={send} onSyncPopulation={() => syncPopulationFromPublicSheet({ csvUrl: state.settings.populationSheetCsvUrl ?? DEFAULT_POPULATION_SHEET_CSV_URL, conscriptionCsvUrl: state.settings.conscriptionSheetCsvUrl ?? DEFAULT_CONSCRIPTION_SHEET_CSV_URL, states: state.states, demographics: state.demographics ?? [], conscriptionLaws: state.conscriptionLaws ?? [], applyCorrection: async (stateId, patch) => {
+        {tab === "MANAGEMENT" && isGM && <ManagementPage section={managementSection} onSectionChange={setManagementSection} playerId={state.playerId} sides={state.sides} states={state.states} armies={state.armies} strategicCities={state.strategicCities} rebellionStatuses={state.rebellionStatuses} lrTransactions={state.lrTransactions ?? []} demographics={state.demographics ?? []} conscriptionLaws={state.conscriptionLaws ?? []} players={state.players} relations={state.relations} stateRelations={state.stateRelations ?? {}} settings={state.settings} leaderSideIds={state.leaderSideIds} onAction={send} onSyncPopulation={() => syncPopulationFromPublicSheet({ csvUrl: state.settings.populationSheetCsvUrl ?? DEFAULT_POPULATION_SHEET_CSV_URL, conscriptionCsvUrl: state.settings.conscriptionSheetCsvUrl ?? DEFAULT_CONSCRIPTION_SHEET_CSV_URL, states: state.states, demographics: state.demographics ?? [], conscriptionLaws: state.conscriptionLaws ?? [], applyCorrection: async (stateId, patch) => {
             let lastRejection: { status: string; reason?: string; actualRevision?: number } | undefined;
             let missingAcknowledgement = false;
             for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -103,7 +121,7 @@ export function App({ services }: { services: ExtensionServices }) {
             if (missingAcknowledgement) throw new Error("NO_COMMAND_ACK");
           } })} runDiagnostic={state.runDiagnostic} />}
       </div>
-      <ConfirmDialog open={dangerous !== undefined} title="Подтвердите действие" message={dangerous?.type === "REQUEST_ARMY_DISBAND" ? "Армия будет распущена в начале следующего глобального хода. Отменить роспуск после подтверждения невозможно." : dangerous?.type === "UNREGISTER_SHIP" ? "Корабль будет снят с регистрации. Его токен останется на карте как обычный объект." : dangerous?.type === "COMPLETE_NAVAL_BATTLE" ? "Морской бой будет завершён вручную. Зарегистрированные корабли вернутся на стратегические позиции и курсы, сохранённые при начале боя. Продолжить?" : dangerous?.type === "START_CIVIL_WAR" ? "Будет создано новое государство, повстанческая фракция станет его правителем, а подходящие города перейдут к нему. Начать гражданскую войну?" : dangerous?.type === "SET_ARMY_HP" && dangerous.hp === 0 ? "Установка 0 HP уничтожит армию и удалит её с карты. Продолжить?" : "Это действие изменит общее состояние сцены."} onCancel={() => setDangerous(undefined)} onConfirm={() => { if (dangerous) void state.send(dangerous); setDangerous(undefined); }} />
+      <ConfirmDialog open={dangerous !== undefined} title="Подтвердите действие" message={dangerous?.type === "REQUEST_ARMY_DISBAND" ? "Армия будет распущена в начале следующего глобального хода. Отменить роспуск после подтверждения невозможно." : dangerous?.type === "UNREGISTER_SHIP" ? "Корабль будет снят с регистрации. Его токен останется на карте как обычный объект." : dangerous?.type === "COMPLETE_NAVAL_BATTLE" ? "Морской бой будет завершён вручную. Зарегистрированные корабли вернутся на стратегические позиции и курсы, сохранённые при начале боя. Продолжить?" : dangerous?.type === "START_CIVIL_WAR" ? "Будет создано новое государство, повстанческая фракция станет его правителем, а подходящие города перейдут к нему. Начать гражданскую войну?" : dangerous?.type === "SET_ARMY_HP" && dangerous.hp === 0 ? "Установка 0 HP уничтожит армию и удалит её с карты. Продолжить?" : dangerous?.type === "COMPLETE_TURN_NOW" ? "Будут запущены запланированные перемещения. После их окончания и обязательных боёв автоматически рассчитаются снабжение, потери, восстановление ОП и остальные последствия смены хода. Продолжить?" : "Это действие изменит общее состояние сцены."} onCancel={() => setDangerous(undefined)} onConfirm={() => { if (dangerous) void state.send(dangerous); setDangerous(undefined); }} />
     </main>
   );
 }

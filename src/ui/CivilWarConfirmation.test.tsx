@@ -47,8 +47,8 @@ it("requires explicit GM confirmation before sending a civil war split", () => {
   };
 
   render(<App services={services} />);
-  fireEvent.click(screen.getByRole("button", { name: "Управление" }));
-  fireEvent.click(screen.getByRole("button", { name: "Восстания" }));
+  fireEvent.click(screen.getByRole("button", { name: "Ещё" }));
+  fireEvent.change(screen.getByRole("combobox", { name: "Раздел управления" }), { target: { value: "REBELLIONS" } });
   fireEvent.change(screen.getByLabelText("Название нового государства после раскола"), {
     target: { value: "Республика" }
   });

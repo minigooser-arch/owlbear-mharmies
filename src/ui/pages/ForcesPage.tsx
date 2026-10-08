@@ -1,10 +1,9 @@
-import { useState } from "react";
 import type { Side, SideRelation, StrategicCity, TurnState } from "../../shared/types";
 import type { ArmyView, NavalBattleRequestView, NavalRequestTargetView, ShipView, TransportEmbarkRequestView, TransportEmbarkTargetView, UiCommand } from "../state/useExtensionState";
 import { ArmiesPage } from "./ArmiesPage";
 import { FleetPage } from "./FleetPage";
 
-type ForcesSection = "ARMIES" | "FLEET";
+export type ForcesSection = "ARMIES" | "FLEET";
 
 export function ForcesPage({
   armies,
@@ -20,6 +19,9 @@ export function ForcesPage({
   transportEmbarkTargets = [],
   pendingTransportEmbarkRequests = [],
   turnPhase,
+  section,
+  onSectionChange,
+  focusArmyId,
   onAction
 }: {
   armies: readonly ArmyView[];
@@ -35,23 +37,26 @@ export function ForcesPage({
   transportEmbarkTargets?: readonly TransportEmbarkTargetView[];
   pendingTransportEmbarkRequests?: readonly TransportEmbarkRequestView[];
   turnPhase?: TurnState["phase"];
+  section: ForcesSection;
+  onSectionChange(section: ForcesSection): void;
+  focusArmyId?: string | undefined;
   onAction(command: UiCommand): void;
 }) {
-  const [section, setSection] = useState<ForcesSection>("ARMIES");
 
   return (
     <section className="forces-center" aria-label="Войска">
       <nav className="forces-subnav" aria-label="Виды войск">
-        <button type="button" aria-label="Армии" className={section === "ARMIES" ? "active" : ""} onClick={() => setSection("ARMIES")}>
+        <button type="button" aria-label="Армии" className={section === "ARMIES" ? "active" : ""} onClick={() => onSectionChange("ARMIES")}>
           Армии <span aria-hidden="true">{armies.length}</span>
         </button>
-        <button type="button" aria-label="Флот" className={section === "FLEET" ? "active" : ""} onClick={() => setSection("FLEET")}>
+        <button type="button" aria-label="Флот" className={section === "FLEET" ? "active" : ""} onClick={() => onSectionChange("FLEET")}>
           Флот <span aria-hidden="true">{ships.length}</span>
         </button>
       </nav>
       {section === "ARMIES" ? (
         <ArmiesPage
           armies={armies}
+          focusArmyId={focusArmyId}
           sides={sides}
           role={role}
           playerId={playerId}

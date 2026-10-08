@@ -50,6 +50,7 @@ describe("army registration panel", () => {
         onAction={onAction}
       />
     );
+    fireEvent.click(screen.getByRole("button", { name: "+ Создать армию" }));
     fireEvent.click(screen.getByRole("button", { name: "Сделать армией" }));
     expect(onAction).toHaveBeenCalledWith({ type: "REGISTER_SELECTED_ARMY", sideId: "red" });
   });
@@ -67,6 +68,7 @@ describe("army registration panel", () => {
       />
     );
 
+    fireEvent.click(screen.getByRole("button", { name: "+ Создать армию" }));
     const sideSelect = screen.getByRole("combobox", { name: "Сторона новой армии" });
     expect(within(sideSelect).getByRole("option", { name: "Красные" })).toBeInTheDocument();
     expect(within(sideSelect).getByRole("option", { name: "Синие" })).toBeInTheDocument();
@@ -86,6 +88,7 @@ describe("army registration panel", () => {
         onAction={vi.fn()}
       />
     );
+    fireEvent.click(screen.getByRole("button", { name: "+ Создать армию" }));
     expect(screen.getByRole("button", { name: "Сделать армией" })).toBeDisabled();
   });
 });

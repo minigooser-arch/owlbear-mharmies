@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Side, StrategicCity } from "../../shared/types";
 import { ArmyCard } from "../components/ArmyCard";
 import type { ArmyView, TransportEmbarkRequestView, UiCommand } from "../state/useExtensionState";
 
 interface ArmiesPageProps {
   armies: readonly ArmyView[];
+  focusArmyId?: string | undefined;
   sides: readonly Side[];
   role: "GM" | "PLAYER";
   playerId: string;
@@ -16,6 +17,7 @@ interface ArmiesPageProps {
 
 export function ArmiesPage({
   armies,
+  focusArmyId,
   sides,
   role,
   leaderSideIds,
@@ -27,6 +29,15 @@ export function ArmiesPage({
   const [filterSideId, setFilterSideId] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState<"ALL" | "MOVING" | "IN_BATTLE" | "ENCIRCLED">("ALL");
   const [registrationSideId, setRegistrationSideId] = useState(sides[0]?.id ?? "");
+  const [creationOpen, setCreationOpen] = useState(false);
+  useEffect(() => {
+    if (!focusArmyId) return;
+    const army = armies.find((entry) => entry.id === focusArmyId);
+    if (!army) return;
+    setQuery(army.name);
+    setFilterSideId("ALL");
+    setStatusFilter("ALL");
+  }, [focusArmyId, armies]);
   const filterSides = useMemo(() => {
     if (role === "GM") return sides;
     const authorizedSideIds = new Set(armies.map((army) => army.sideId));
@@ -65,7 +76,7 @@ export function ArmiesPage({
 
       <div className="army-toolbar" role="search" aria-label="Поиск и фильтры армий">
         <div className="filters">
-          <input aria-label="Поиск армий" placeholder="Найти армию" value={query} onChange={(event) => setQuery(event.target.value)} />
+          <input type="search" aria-label="Поиск армий" placeholder="Найти армию" value={query} onChange={(event) => setQuery(event.target.value)} />
           <select aria-label="Фильтр по стороне" value={selectedFilterSideId} onChange={(event) => setFilterSideId(event.target.value)}>
             <option value="ALL">Все стороны</option>
             {filterSides.map((side) => <option key={side.id} value={side.id}>{side.name}</option>)}
@@ -78,7 +89,9 @@ export function ArmiesPage({
         </div>
       </div>
 
-      {role === "GM" && (
+      {(role === "GM" || availableCities.length > 0) && <button type="button" className="button subtle creation-toggle" aria-expanded={creationOpen} onClick={() => setCreationOpen((value) => !value)}>{creationOpen ? "Скрыть создание войск" : "+ Создать армию"}</button>}
+
+      {creationOpen && role === "GM" && (
         <section className="registration-card" aria-label="Регистрация армии">
           <div className="registration-copy">
             <span className="registration-kicker">Новая армия</span>
@@ -110,7 +123,7 @@ export function ArmiesPage({
         </section>
       )}
 
-      {availableCities.length > 0 && (
+      {creationOpen && availableCities.length > 0 && (
         <section className="registration-card" aria-label="Создание армии через город">
           <div className="registration-copy">
             <span className="registration-kicker">Городское формирование</span>

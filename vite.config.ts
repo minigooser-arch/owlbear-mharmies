@@ -13,6 +13,15 @@ export default defineConfig({
       input: {
         popover: resolve(rootDir, "index.html"),
         background: resolve(rootDir, "background.html")
+      },
+      output: {
+        // Keep turn scheduling as a shared chunk for both pages. Historical
+        // deployed HTML references this chunk by hash, so the compatibility
+        // alias builder must always have a real implementation to copy.
+        manualChunks(id) {
+          if (id === resolve(rootDir, "src/turns/turnSchedule.ts")) return "turnSchedule";
+          return undefined;
+        }
       }
     }
   },

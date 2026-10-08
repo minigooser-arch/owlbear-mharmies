@@ -104,6 +104,7 @@ it("separates army discovery controls from GM registration", () => {
   expect(screen.getByRole("heading", { name: "Армии" })).toBeInTheDocument();
   expect(screen.getByText("Управление сухопутными соединениями, маршрутами и состоянием войск.")).toBeInTheDocument();
   expect(screen.getByRole("search", { name: "Поиск и фильтры армий" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "+ Создать армию" }));
   expect(screen.getByRole("region", { name: "Регистрация армии" })).toBeInTheDocument();
 });
 
@@ -134,6 +135,7 @@ it("keeps GM ship registration separate from the fleet list", () => {
   render(<App services={services()} />);
   fireEvent.click(screen.getByRole("button", { name: "Войска" }));
   fireEvent.click(screen.getByRole("button", { name: "Флот" }));
+  fireEvent.click(screen.getByRole("button", { name: "+ Создать корабль" }));
   expect(screen.getByRole("region", { name: "Регистрация корабля" })).toBeInTheDocument();
   expect(screen.getByLabelText("Класс нового корабля")).toBeInTheDocument();
   expect(screen.getByLabelText("Курс нового корабля")).toBeInTheDocument();

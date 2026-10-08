@@ -43,6 +43,7 @@ export function FleetPage({
   const [filterSideId, setFilterSideId] = useState("ALL");
   const [classFilter, setClassFilter] = useState<"ALL" | ShipClassId>("ALL");
   const [registrationSideId, setRegistrationSideId] = useState(sides[0]?.id ?? "");
+  const [creationOpen, setCreationOpen] = useState(false);
   const [registrationClassId, setRegistrationClassId] = useState<ShipClassId>("BATTLESHIP");
   const [registrationFacing, setRegistrationFacing] = useState<ShipFacing>("NORTH");
   const [registrationCityId, setRegistrationCityId] = useState("");
@@ -149,7 +150,7 @@ export function FleetPage({
 
       <div className="army-toolbar fleet-toolbar" role="search" aria-label="Поиск и фильтры флота">
         <div className="filters fleet-filters">
-          <input aria-label="Поиск кораблей" placeholder="Найти корабль" value={query} onChange={(event) => setQuery(event.target.value)} />
+          <input type="search" aria-label="Поиск кораблей" placeholder="Найти корабль" value={query} onChange={(event) => setQuery(event.target.value)} />
           <select aria-label="Фильтр флота по стороне" value={selectedFilterSideId} onChange={(event) => setFilterSideId(event.target.value)}>
             <option value="ALL">Все стороны</option>
             {sides.map((side) => <option key={side.id} value={side.id}>{side.name}</option>)}
@@ -279,7 +280,12 @@ export function FleetPage({
         </section>
       )}
 
-      {role === "GM" && (
+      {(role === "GM" || shipyardCities.length > 0) && (
+        <button className="button subtle creation-toggle" type="button" aria-expanded={creationOpen} onClick={() => setCreationOpen((open) => !open)}>
+          {creationOpen ? "Скрыть создание кораблей" : "+ Создать корабль"}
+        </button>
+      )}
+      {creationOpen && role === "GM" && (
         <section className="registration-card fleet-registration" aria-label="Регистрация корабля">
           <div className="registration-copy">
             <span className="registration-kicker">Новый корабль</span>
@@ -321,7 +327,7 @@ export function FleetPage({
         </section>
       )}
 
-      {shipyardCities.length > 0 && (
+      {creationOpen && shipyardCities.length > 0 && (
         <section className="registration-card fleet-registration" aria-label="Регистрация корабля через верфь">
           <div className="registration-copy">
             <span className="registration-kicker">Верфь</span>

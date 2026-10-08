@@ -185,8 +185,6 @@ export function ArmyCard({ army, sideColor = "#687F91", isGM, canEditRoute, canR
         <span>{hasRoute ? `Маршрут: ${formatMovementUnits(army.routeCostUnits)} ОП` : "Маршрут не задан"}</span>
       </div>
       {army.formationActive ? <p className="route-warning">Комплектуется: {army.healthHp} / {army.healthMaxHp} HP. Передвижение недоступно.</p> : null}
-      <p className="helper-text">Опыт: {army.experience ?? 0}</p>
-      {army.cell ? <p className="helper-text">Клетка: {army.cell.x},{army.cell.y} <button type="button" onClick={() => void navigator.clipboard?.writeText(`${army.cell?.x},${army.cell?.y}`)}>Копировать</button></p> : null}
 
       {!army.supplied && <p className="route-warning">В начале следующего хода: −{encirclementDamage} HP. Лечение недоступно.</p>}
       {army.forcedExitStartedOnTurn !== undefined && (
@@ -223,6 +221,14 @@ export function ArmyCard({ army, sideColor = "#687F91", isGM, canEditRoute, canR
         </div>
       ) : null}
 
+      <details className="army-more army-additional">
+        <summary>Подробнее и улучшения</summary>
+        <div className="army-extra-facts">
+          <span>Опыт: <strong>{army.experience ?? 0}</strong></span>
+          {army.cell && <span>Клетка: <strong>{army.cell.x},{army.cell.y}</strong>
+            <button type="button" className="button ghost" onClick={() => void navigator.clipboard?.writeText(`${army.cell?.x},${army.cell?.y}`)}>Копировать</button>
+          </span>}
+        </div>
       <ArmyUpgradePanel army={army} enabled={canEditRoute} onAction={onAction} />
 
       {(isGM || canRequestDisband) && (
@@ -236,6 +242,7 @@ export function ArmyCard({ army, sideColor = "#687F91", isGM, canEditRoute, canR
           </div>
         </details>
       )}
+      </details>
     </article>
   );
 }
