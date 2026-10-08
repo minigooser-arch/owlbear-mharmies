@@ -357,6 +357,7 @@ export class ProductionEngine {
   private clearedSharedMapOverlays = false;
   private sheetWritebackFallback: SheetWritebackEvent | undefined;
   private sheetWritebackRetryAt = 0;
+  private lastVerifiedDailySheetSyncDate: string | undefined;
   private sheetWritebackBackoffMs = 0;
   private sheetWritebackRetryTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -733,10 +734,14 @@ export class ProductionEngine {
 
   private async dailySheetSyncIfDue(): Promise<void> {
     if (!this.coordinator) return;
+    const date = dueDailySheetSyncDate(this.wallClock(), this.lastVerifiedDailySheetSyncDate);
+    if (!date) return;
     const key = `${METADATA_KEYS.scene}/last-daily-sheet-sync-msk`;
     const metadata = await this.port.getSceneMetadata();
-    const date = dueDailySheetSyncDate(this.wallClock(), String(metadata[key] ?? ""));
-    if (!date) return;
+    if (metadata[key] === date) {
+      this.lastVerifiedDailySheetSyncDate = date;
+      return;
+    }
     const guard = this.captureCoordinatorGuard();
     const scene = await this.repository.readScene();
     if (!sheetWritebackRuntimeEnabled(scene.settings) || !guard()) return;
@@ -759,6 +764,7 @@ export class ProductionEngine {
     const after = await this.port.getSceneMetadata();
     if (SheetWritebackClient.readQueue(after) || this.sheetWritebackFallback) return;
     await this.port.patchSceneMetadata({ [key]: date });
+    this.lastVerifiedDailySheetSyncDate = date;
   }
 
   private async turnTickNow(): Promise<void> {
