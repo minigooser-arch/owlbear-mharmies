@@ -110,6 +110,7 @@ it("lets a faction leader plan routes and manage membership without exposing GM 
 it("keeps an ordinary faction member from planning routes or changing faction membership", () => {
   const { api } = services(playerSnapshot(false));
   render(<App services={api} />);
+  fireEvent.click(screen.getByRole("button", { name: "Войска" }));
 
   expect(screen.getByText("1-я армия")).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Проложить маршрут" })).not.toBeInTheDocument();
