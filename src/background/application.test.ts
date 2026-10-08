@@ -491,7 +491,7 @@ describe("ProductionEngine command boundary", () => {
     expect(fixture.sceneItemReads).toBe(1);
   });
 
-  it("starts an army route at movement phase end and clears it on arrival", async () => {
+  it("finishes a turn from one button after the planned army route resolves", async () => {
     const army: ArmyState = {
       version: 3,
       registered: true,
@@ -542,7 +542,7 @@ describe("ProductionEngine command boundary", () => {
         senderPlayerId: "gm",
         senderConnectionId: "gm-connection",
         expectedRevision: fixture.scene.revision,
-        type: "COMPLETE_MOVEMENT_PHASE"
+        type: "COMPLETE_TURN_NOW"
       }
     }, {
       role: "GM",
@@ -556,6 +556,8 @@ describe("ProductionEngine command boundary", () => {
     });
     expect((fixture.items[0]?.metadata[METADATA_KEYS.army] as ArmyState).status).toBe("MOVING");
 
+    expect(fixture.scene.turn.completionPending).toEqual({ source: "MANUAL" });
+
     (engine as unknown as { lastMovementAt: number }).lastMovementAt = performance.now() - 1_000;
     await engine.movementTick();
 
@@ -565,7 +567,7 @@ describe("ProductionEngine command boundary", () => {
       route: [],
       plannedRoute: { cells: [], executeOnTurn: 0 }
     });
-    expect(fixture.scene.turn.completionPending).toEqual({ source: "MANUAL" });
+
     await engine.turnTick();
     expect(fixture.scene.turn.turnNumber).toBe(2);
     expect(fixture.scene.turn.completionPending).toBeUndefined();
