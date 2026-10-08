@@ -44,6 +44,7 @@ function services(overrides: Partial<RawExtensionSnapshot> = {}): ExtensionServi
 
 it("does not render a hidden enemy in cards, filters, or counters", () => {
   render(<App services={services()} />);
+  fireEvent.click(screen.getByRole("button", { name: "Войска" }));
   expect(screen.getByText("Своя армия")).toBeInTheDocument();
   expect(screen.queryByText("Скрытая армия")).not.toBeInTheDocument();
   expect(screen.getByTestId("army-count")).toHaveTextContent("1");
@@ -60,7 +61,7 @@ it("uses the exact Letopis feather in the popover header", () => {
 it("uses a focused player navigation", () => {
   render(<App services={services()} />);
   expect(screen.getByRole("button", { name: "Войска" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Ход" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Штаб" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Бои" })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Стороны" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Диагностика" })).not.toBeInTheDocument();
@@ -70,15 +71,14 @@ it("uses a separate GM operations navigation", () => {
   render(<App services={services({ role: "GM", mapVisibleSourceIds: new Set() })} />);
   expect(screen.getByRole("button", { name: "Обзор" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Войска" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Карта" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Мир" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Бои" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Управление" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Ещё" })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Войны" })).not.toBeInTheDocument();
 });
 
 it("shows turn administration on the turn page only to the GM", () => {
   const { unmount } = render(<App services={services()} />);
-  fireEvent.click(screen.getByRole("button", { name: "Ход" }));
   expect(screen.getByText("Ход №1")).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Остановить ходы" })).not.toBeInTheDocument();
   unmount();
@@ -90,6 +90,7 @@ it("shows turn administration on the turn page only to the GM", () => {
 
 it("keeps leader faction management inside the troops screen", () => {
   render(<App services={services({ playerId: "leader", leaderSideIds: new Set(["A"]), sides: [{ id: "A", name: "Красные", color: "#f00", playerIds: ["leader"], leaderPlayerIds: ["leader"], stateId: null }] })} />);
+  fireEvent.click(screen.getByRole("button", { name: "Войска" }));
   expect(screen.queryByRole("button", { name: "Стороны" })).not.toBeInTheDocument();
   expect(screen.getByText("Управление фракцией")).toBeInTheDocument();
 });
@@ -129,8 +130,42 @@ it("passes detected naval targets from the snapshot into leader fleet controls",
     navalRequestTargets: [{ id: "enemy-visible", name: "Видимый линкор", sideId: "B", sideName: "Синие" }]
   })} />);
 
+  fireEvent.click(screen.getByRole("button", { name: "Войска" }));
   fireEvent.click(screen.getByRole("button", { name: "Флот" }));
   expect(screen.getByRole("option", { name: "Видимый линкор — Синие" })).toBeInTheDocument();
+});
+
+it("keeps the fleet tab selected after visiting the player headquarters", () => {
+  render(<App services={services()} />);
+  fireEvent.click(screen.getByRole("button", { name: "Войска" }));
+  fireEvent.click(screen.getByRole("button", { name: "Флот" }));
+  expect(screen.getByRole("heading", { name: "Флот" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Штаб" }));
+  fireEvent.click(screen.getByRole("button", { name: "Войска" }));
+  expect(screen.getByRole("heading", { name: "Флот" })).toBeInTheDocument();
+});
+
+it("groups GM world tools without hiding map and cities", () => {
+  render(<App services={services({ role: "GM", mapVisibleSourceIds: new Set() })} />);
+  fireEvent.click(screen.getByRole("button", { name: "Мир" }));
+  expect(screen.getByRole("navigation", { name: "Разделы мира" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Города" }));
+  expect(screen.getByRole("heading", { name: /Города/i })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Обзор" }));
+  fireEvent.click(screen.getByRole("button", { name: "Мир" }));
+  expect(screen.getByRole("button", { name: "Города" })).toHaveClass("active");
+});
+
+it("opens a problem army directly from the GM command center", () => {
+  render(<App services={services({ role: "GM", armies: [
+    { id: "isolated", name: "Окружённый корпус", sideId: "A", sideName: "Красные",
+      status: "READY", route: [], movementMaxUnits: 10, movementRemainingUnits: 10,
+      routeCostUnits: 0, routeCellCount: 0, routeRequiresReplan: false, atWar: false,
+      healthHp: 40, healthMaxHp: 50, supplied: false, supplyCheckedOnTurn: 1, disbandPending: false }
+  ] })} />);
+  fireEvent.click(screen.getByRole("button", { name: /Окружённый корпус/i }));
+  expect(screen.getByRole("heading", { name: "Армии" })).toBeInTheDocument();
+  expect(screen.getByRole("searchbox", { name: "Поиск армий" })).toHaveValue("Окружённый корпус");
 });
 
 it("passes pending naval requests from the GM snapshot into the battles page", () => {
