@@ -50,9 +50,11 @@ function applySupplyCheckpoint(
       shipEmbarkedArmyIds(embarkedShip).includes(armyId);
     const supplied = genuinelyEmbarked
       ? true
-      : factionState && armyCell
-        ? isArmySupplied(scene, army, armyCell)
-        : true;
+      : !factionState
+        ? false
+        : armyCell
+          ? isArmySupplied(scene, army, armyCell)
+          : army.supply.supplied;
 
     nextArmies[armyId] = {
       ...army,
