@@ -111,7 +111,8 @@ export interface SnapshotInput {
 }
 
 export async function readCoreSnapshotItemFrame(repository: MetadataRepository) {
-  return repository.readItemFrame();
+  // Grid data is needed for city control, territorial points and lighthouse effects.
+  return repository.readFrame();
 }
 
 export function buildRoleSafeSnapshotFromItemFrame(
@@ -120,9 +121,9 @@ export function buildRoleSafeSnapshotFromItemFrame(
 ): RawExtensionSnapshot {
   return buildRoleSafeSnapshot({
     ...input,
-    scene: frame.baseScene,
-    armies: frame.armies,
-    ships: frame.ships
+    scene: frame.scene,
+    armies: frame.items.armies,
+    ships: frame.items.ships
   });
 }
 
@@ -397,7 +398,8 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
             }))
         : [];
     const shoreBombardmentTargets =
-      input.scene.turn.phase === "POST_MOVEMENT" &&
+      input.scene.turn.phase === "MOVEMENT" &&
+      !input.scene.turn.completionPending &&
       input.scene.activeNavalBattle?.status !== "ACTIVE" &&
       (state.classId === "BATTLESHIP" || state.classId === "CRUISER") &&
       state.hp > 0 &&
