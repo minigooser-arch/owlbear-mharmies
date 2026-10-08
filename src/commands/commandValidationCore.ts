@@ -458,6 +458,10 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
       ? { type: "DISEMBARK_ARMY", shipId: value.shipId, armyId: value.armyId, targetCell }
       : undefined;
   },
+  REJECT_NAVAL_BATTLE_REQUEST: (value) =>
+    boundedString(value.navalRequestId)
+      ? { type: "REJECT_NAVAL_BATTLE_REQUEST", navalRequestId: value.navalRequestId }
+      : undefined,
   REQUEST_NAVAL_BATTLE: (value) =>
     boundedString(value.initiatingShipId) && boundedString(value.targetShipId)
       ? {

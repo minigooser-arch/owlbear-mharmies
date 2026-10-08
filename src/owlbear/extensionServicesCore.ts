@@ -57,7 +57,7 @@ import { shipEmbarkedArmyIds } from "../naval/transport/transportRules";
 import { territorialCityContributions } from "../wars/territorialScore";
 import { isFactionStateAtWar } from "../states/stateRules";
 import { readCell } from "../terrain/gridMap";
-import { MetadataRepository, type ArmyRecord, type MetadataItemFrame, type ShipRecord } from "../storage/metadataRepository";
+import { MetadataRepository, type ArmyRecord, type MetadataReadFrame, type ShipRecord } from "../storage/metadataRepository";
 import type {
   ArmyView,
   ExtensionServices,
@@ -111,18 +111,19 @@ export interface SnapshotInput {
 }
 
 export async function readCoreSnapshotItemFrame(repository: MetadataRepository) {
-  return repository.readItemFrame();
+  // Grid data is needed for city control, territorial points and lighthouse effects.
+  return repository.readFrame();
 }
 
 export function buildRoleSafeSnapshotFromItemFrame(
   input: Omit<SnapshotInput, "scene" | "armies" | "ships">,
-  frame: MetadataItemFrame
+  frame: MetadataReadFrame
 ): RawExtensionSnapshot {
   return buildRoleSafeSnapshot({
     ...input,
-    scene: frame.baseScene,
-    armies: frame.armies,
-    ships: frame.ships
+    scene: frame.scene,
+    armies: frame.items.armies,
+    ships: frame.items.ships
   });
 }
 
@@ -397,7 +398,8 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
             }))
         : [];
     const shoreBombardmentTargets =
-      input.scene.turn.phase === "POST_MOVEMENT" &&
+      input.scene.turn.phase === "MOVEMENT" &&
+      !input.scene.turn.completionPending &&
       input.scene.activeNavalBattle?.status !== "ACTIVE" &&
       (state.classId === "BATTLESHIP" || state.classId === "CRUISER") &&
       state.hp > 0 &&

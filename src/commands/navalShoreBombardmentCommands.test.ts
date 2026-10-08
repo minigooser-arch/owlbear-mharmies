@@ -72,7 +72,7 @@ function scene(): SceneState {
       }
     },
     wars: [],
-    turn: { ...structuredClone(DEFAULT_TURN_STATE), turnNumber: 7, phase: "POST_MOVEMENT" },
+    turn: { ...structuredClone(DEFAULT_TURN_STATE), turnNumber: 7, phase: "MOVEMENT" },
     ships: {
       attacker: createRegisteredShip("red", "BATTLESHIP", "NORTH")
     },

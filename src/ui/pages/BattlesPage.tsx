@@ -256,6 +256,13 @@ function NavalBattleRequestCard({
         >
           Начать морской бой
         </button>
+        <button
+          className="button danger subtle"
+          type="button"
+          onClick={() => onAction({ type: "REJECT_NAVAL_BATTLE_REQUEST", navalRequestId: request.id })}
+        >
+          Отклонить заявку
+        </button>
       </div>
     </div>
   );

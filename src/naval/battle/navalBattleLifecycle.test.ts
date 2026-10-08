@@ -89,7 +89,7 @@ describe("naval battle lifecycle", () => {
       rollD20: rolls(18, 10)
     });
 
-    expect(result.turn.phase).toBe("POST_MOVEMENT");
+    expect(result.turn.phase).toBe("MOVEMENT");
     expect(result.activeNavalBattle).toMatchObject({
       id: "battle-1",
       requestId: "request",
@@ -264,7 +264,7 @@ describe("naval battle lifecycle", () => {
 
     const result = completeNavalBattle(active);
     expect(result.activeNavalBattle).toBeNull();
-    expect(result.turn.phase).toBe("POST_MOVEMENT");
+    expect(result.turn.phase).toBe("MOVEMENT");
     expect(result.ships.red).toMatchObject({ status: "READY", battleId: null, temporaryHp: 0 });
     expect(result.ships.blue).toMatchObject({ status: "READY", battleId: null, temporaryHp: 0 });
     expect(result.navalBattleHistory).toHaveLength(1);

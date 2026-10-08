@@ -3,6 +3,7 @@ import type { ArmyState, SceneState } from "../shared/types";
 export type TurnBlocker =
   | "LAND_BATTLE_ACTIVE"
   | "NAVAL_BATTLE_ACTIVE"
+  | "NAVAL_REQUESTS_PENDING"
   | "MOVEMENT_RESOLUTION_PENDING"
   | "FORCED_EXIT_PENDING"
   | "SUPPLY_CHECK_PENDING"
@@ -17,6 +18,7 @@ export function getTurnCompletionBlockers(
 
   if (scene.battleGroups.length > 0) blockers.push("LAND_BATTLE_ACTIVE");
   if (scene.activeNavalBattle?.status === "ACTIVE") blockers.push("NAVAL_BATTLE_ACTIVE");
+  if ((scene.navalBattleRequests?.length ?? 0) > 0) blockers.push("NAVAL_REQUESTS_PENDING");
   // Forced exits intentionally continue over several turns as their movement budget resets.
   const forcedExitArmyIds = new Set((scene.forcedExitStates ?? []).map((entry) => entry.armyId));
   const hasUnfinishedPlannedMovement = Object.entries(armies).some(([armyId, army]) =>
@@ -45,6 +47,7 @@ export function preCheckpointTurnBlockers(
     (blocker) =>
       blocker === "LAND_BATTLE_ACTIVE" ||
       blocker === "NAVAL_BATTLE_ACTIVE" ||
+      blocker === "NAVAL_REQUESTS_PENDING" ||
       blocker === "MOVEMENT_RESOLUTION_PENDING"
   );
 }

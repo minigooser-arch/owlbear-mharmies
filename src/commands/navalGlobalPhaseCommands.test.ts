@@ -36,7 +36,7 @@ function scene(phase: "MOVEMENT" | "POST_MOVEMENT", activeNavalBattle: NavalBatt
       red: createRegisteredShip("red", "CRUISER", "NORTH"),
       blue: createRegisteredShip("blue", "BATTLESHIP", "SOUTH")
     },
-    navalBattleRequests: [{ id: "naval-request", initiatingShipId: "red", targetShipId: "blue", createdOnTurn: 3 }],
+    navalBattleRequests: [],
     transportEmbarkRequests: [{ id: "embark-request", shipId: "red", armyId: "army" }],
     activeNavalBattle,
     navalBattleHistory: [],
@@ -147,18 +147,15 @@ describe("global naval phase commands", () => {
     )).toEqual({ status: "REJECTED", reason: "GM_ONLY" });
   });
 
-  it("queues turn completion until an active naval battle is settled", () => {
+  it("does not begin next-turn movement while a naval battle is active", () => {
     const result = execute(
-      "GM", "gm", state("POST_MOVEMENT", activeBattle()),
+      "GM", "gm", state("MOVEMENT", activeBattle()),
       command("gm", "COMPLETE_TURN_NOW")
     );
-    expect(result.status).toBe("ACCEPTED");
-    if (result.status !== "ACCEPTED") return;
-    expect(result.state.scene.turn.turnNumber).toBe(3);
-    expect(result.state.scene.turn.completionPending).toEqual({ source: "MANUAL" });
+    expect(result).toEqual({ status: "REJECTED", reason: "NAVAL_BATTLE_ACTIVE" });
   });
 
-  it("allows naval battle requests only in POST_MOVEMENT", () => {
+  it("allows naval battle requests only during the ordinary movement turn", () => {
     const processor = new CommandProcessor(
       () => new Date(),
       undefined,
@@ -177,6 +174,8 @@ describe("global naval phase commands", () => {
       initiatingShipId: "red",
       targetShipId: "blue"
     } as ArmyCommand;
-    expect(processor.execute(context, request)).toEqual({ status: "REJECTED", reason: "NOT_POST_MOVEMENT_PHASE" });
+    expect(processor.execute(context, request).status).toBe("ACCEPTED");
+    context.state = state("POST_MOVEMENT");
+    expect(processor.execute(context, request)).toEqual({ status: "REJECTED", reason: "NOT_MOVEMENT_PHASE" });
   });
 });

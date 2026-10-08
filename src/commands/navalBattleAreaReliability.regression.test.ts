@@ -23,7 +23,7 @@ function commandState(): CommandState {
       "1,0": { terrainId: "sea", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null },
       "2,0": { terrainId: "sea", impassable: false, factionTerritoryIds: [], recognizedStateId: null, deFactoStateId: null }
     } },
-    wars: [], turn: { ...DEFAULT_TURN_STATE, turnNumber: 8, phase: "POST_MOVEMENT" },
+    wars: [], turn: { ...DEFAULT_TURN_STATE, turnNumber: 8, phase: "MOVEMENT" },
     ships: {
       red: createRegisteredShip("red", "CRUISER", "EAST"),
       blue: createRegisteredShip("blue", "BATTLESHIP", "WEST")

@@ -78,6 +78,14 @@ describe("getTurnCompletionBlockers", () => {
     expect(getTurnCompletionBlockers(current)).toEqual(["NAVAL_BATTLE_ACTIVE"]);
   });
 
+  it("protects pending naval requests from the next global turn", () => {
+    const current = scene();
+    current.navalBattleRequests = [{
+      id: "naval-request", initiatingShipId: "ship-a", targetShipId: "ship-b", createdOnTurn: 3
+    }];
+    expect(getTurnCompletionBlockers(current)).toEqual(["NAVAL_REQUESTS_PENDING"]);
+  });
+
   it("reports unresolved movement", () => {
     const current = scene();
     current.turn.phase = "MOVEMENT";

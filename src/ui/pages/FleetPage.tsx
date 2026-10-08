@@ -55,7 +55,6 @@ export function FleetPage({
   // Undefined is kept as a backwards-compatible direct-component-test mode.
   // The real application always supplies the authoritative global phase.
   const movementPhase = turnPhase === undefined || turnPhase === "MOVEMENT";
-  const postMovementPhase = turnPhase === undefined || turnPhase === "POST_MOVEMENT";
   const selectedRegistrationSideId = sides.some((side) => side.id === registrationSideId)
     ? registrationSideId
     : (sides[0]?.id ?? "");
@@ -89,7 +88,7 @@ export function FleetPage({
     request.targetShipId === selectedRequestTargetShipId
   );
   const canRequestNavalBattle =
-    postMovementPhase &&
+    movementPhase &&
     selectedRequestInitiatingShipId !== "" &&
     selectedRequestTargetShipId !== "" &&
     !requestAlreadyPending;
@@ -168,15 +167,15 @@ export function FleetPage({
             <span className="registration-kicker">Флот</span>
             <h3 id="naval-request-title">Запрос морского боя</h3>
             <small>Выберите свой готовый корабль и обнаруженную вражескую цель. Начало боя подтверждает ведущий.</small>
-            {turnPhase === "MOVEMENT" && (
-              <small>Заявка на морской бой доступна после завершения фазы перемещения.</small>
+            {!movementPhase && (
+              <small>Заявка на морской бой доступна в обычный ход корабля.</small>
             )}
           </div>
           <div className="registration-actions fleet-registration-actions">
             <select
               aria-label="Корабль-инициатор"
               value={selectedRequestInitiatingShipId}
-              disabled={!postMovementPhase || requestInitiators.length === 0}
+              disabled={!movementPhase || requestInitiators.length === 0}
               onChange={(event) => setRequestInitiatingShipId(event.target.value)}
             >
               {requestInitiators.length === 0 && <option value="">Нет готовых кораблей</option>}
@@ -185,7 +184,7 @@ export function FleetPage({
             <select
               aria-label="Цель морского боя"
               value={selectedRequestTargetShipId}
-              disabled={!postMovementPhase || navalRequestTargets.length === 0}
+              disabled={!movementPhase || navalRequestTargets.length === 0}
               onChange={(event) => setRequestTargetShipId(event.target.value)}
             >
               {navalRequestTargets.length === 0 && <option value="">Обнаруженных целей нет</option>}

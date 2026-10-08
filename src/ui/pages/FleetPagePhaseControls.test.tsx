@@ -33,7 +33,7 @@ const army: ArmyView = {
 
 afterEach(cleanup);
 
-it("in MOVEMENT keeps transport interaction available but prevents premature naval battle requests", () => {
+it("in MOVEMENT allows both transport interaction and naval battle requests", () => {
   render(
     <FleetPage
       ships={[cruiser, transport]}
@@ -48,11 +48,10 @@ it("in MOVEMENT keeps transport interaction available but prevents premature nav
   );
 
   expect(screen.getByRole("button", { name: "Погрузить армию" })).toBeEnabled();
-  expect(screen.getByRole("button", { name: "Инициировать морской бой" })).toBeDisabled();
-  expect(screen.getByText("Заявка на морской бой доступна после завершения фазы перемещения.")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Инициировать морской бой" })).toBeEnabled();
 });
 
-it("in POST_MOVEMENT enables naval battle requests and removes impossible transport actions", () => {
+it("in POST_MOVEMENT disables new naval requests and transport actions", () => {
   render(
     <FleetPage
       ships={[cruiser, transport]}
@@ -66,7 +65,7 @@ it("in POST_MOVEMENT enables naval battle requests and removes impossible transp
     />
   );
 
-  expect(screen.getByRole("button", { name: "Инициировать морской бой" })).toBeEnabled();
+  expect(screen.getByRole("button", { name: "Инициировать морской бой" })).toBeDisabled();
   expect(screen.queryByRole("button", { name: "Погрузить армию" })).toBeNull();
 });
 

@@ -122,7 +122,7 @@ describe("fleet naval battle request controls", () => {
         leaderSideIds={new Set(["red"])}
         navalRequestTargets={[target, secondTarget]}
         pendingNavalBattleRequests={[pendingRequest]}
-        turnPhase="POST_MOVEMENT"
+        turnPhase="MOVEMENT"
         onAction={onAction}
       />
     );

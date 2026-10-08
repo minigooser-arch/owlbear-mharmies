@@ -135,7 +135,8 @@ export function startNavalBattle(
 
   const activeBattle = startNavalRound(baseBattle, next.ships);
   next.activeNavalBattle = activeBattle;
-  next.turn.phase = "POST_MOVEMENT";
+  // Tactical battles run within the current strategic turn. Starting a battle
+  // must not switch the global phase or unlock new-turn settlement.
   if (input.requestId !== null) {
     next.navalBattleRequests = next.navalBattleRequests.filter(
       (request) => request.id !== input.requestId
@@ -175,7 +176,7 @@ export function completeNavalBattle(scene: NavalSceneState): NavalSceneState {
 
   next.navalBattleHistory.push(completedBattle);
   next.activeNavalBattle = null;
-  next.turn.phase = "POST_MOVEMENT";
+  // Return to the phase in which the battle was initiated.
   next.revision += 1;
   return next;
 }

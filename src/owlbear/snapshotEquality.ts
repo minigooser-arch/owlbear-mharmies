@@ -69,7 +69,11 @@ function playerEqual(left: PartyPlayerView, right: PartyPlayerView): boolean {
 }
 function armyEqual(left: ArmyView, right: ArmyView): boolean { return semanticValueEqual(left, right); }
 function sideEqual(left: Side, right: Side): boolean {
-  return left.id === right.id && left.name === right.name && left.color === right.color && left.stateId === right.stateId && semanticValueEqual(new Set(left.playerIds), new Set(right.playerIds)) && semanticValueEqual(new Set(left.leaderPlayerIds), new Set(right.leaderPlayerIds));
+  return left.id === right.id && left.name === right.name && left.color === right.color && left.stateId === right.stateId &&
+    semanticValueEqual(left.militaryInfluence, right.militaryInfluence) &&
+    semanticValueEqual(left.armyTokenAsset, right.armyTokenAsset) &&
+    semanticValueEqual(new Set(left.playerIds), new Set(right.playerIds)) &&
+    semanticValueEqual(new Set(left.leaderPlayerIds), new Set(right.leaderPlayerIds));
 }
 function stateEqual(left: StateEntity, right: StateEntity): boolean { return semanticValueEqual(left, right); }
 function battleEqual(left: BattleGroup, right: BattleGroup): boolean {
@@ -92,12 +96,18 @@ export function semanticSnapshotEqual(left: RawExtensionSnapshot, right: RawExte
     && optionalEntityCollectionEqual(left.transportEmbarkTargets, right.transportEmbarkTargets, (target) => target.id)
     && optionalEntityCollectionEqual(left.pendingTransportEmbarkRequests, right.pendingTransportEmbarkRequests, (request) => request.id)
     && semanticValueEqual(left.navalBattleAreaDraft, right.navalBattleAreaDraft)
+    && semanticValueEqual(left.cityCellPick, right.cityCellPick)
     && semanticValueEqual(left.activeNavalBattle, right.activeNavalBattle)
     && semanticValueEqual(left.focusedEntity, right.focusedEntity)
     && entityCollectionEqual(left.sides, right.sides, (side) => side.id, sideEqual)
     && entityCollectionEqual(left.states, right.states, (state) => state.id, stateEqual)
     && optionalEntityCollectionEqual(left.strategicCities, right.strategicCities, (city) => city.id)
     && optionalEntityCollectionEqual(left.lrTransactions, right.lrTransactions, (transaction) => transaction.id)
+    && optionalEntityCollectionEqual(left.demographics, right.demographics, (row) => row.stateId)
+    && optionalEntityCollectionEqual(left.conscriptionLaws, right.conscriptionLaws, (law) => law.id)
+    && optionalEntityCollectionEqual(left.demographyAudit, right.demographyAudit, (entry) => entry.id)
+    && optionalEntityCollectionEqual(left.territorialScores, right.territorialScores, (score) => `${score.holderStateId}\u0000${score.opponentStateId}`)
+    && optionalEntityCollectionEqual(left.rebellionStatuses, right.rebellionStatuses, (rebellion) => rebellion.id)
     && semanticValueEqual(left.relations, right.relations)
     && semanticValueEqual(left.stateRelations, right.stateRelations)
     && entityCollectionEqual(left.battleGroups, right.battleGroups, (battle) => battle.battleId, battleEqual)

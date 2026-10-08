@@ -5,7 +5,7 @@ import { DEFAULT_CELL_STATE } from "../terrain/gridMap";
 import { MetadataRepository } from "../storage/metadataRepository";
 import { buildRoleSafeSnapshot, buildRoleSafeSnapshotFromItemFrame, readCoreSnapshotItemFrame } from "./extensionServicesCore";
 
-it("loads army and ship UI snapshot records from one indexed item frame", async () => {
+it("loads army and ship UI snapshot records with their strategic grid", async () => {
   const port = new GridStoragePort();
   const repository = new MetadataRepository(port);
   const scene = await repository.readScene();
@@ -35,8 +35,8 @@ it("loads army and ship UI snapshot records from one indexed item frame", async 
   const getSceneItems = vi.spyOn(port, "getSceneItems");
   const frame = await readCoreSnapshotItemFrame(repository);
   expect(getSceneItems).toHaveBeenCalledTimes(1);
-  expect(frame.armies.map((record) => record.item.id)).toEqual(["army"]);
-  expect(frame.ships.map((record) => record.item.id)).toEqual(["ship"]);
+  expect(frame.items.armies.map((record) => record.item.id)).toEqual(["army"]);
+  expect(frame.items.ships.map((record) => record.item.id)).toEqual(["ship"]);
 });
 
 it("builds authorization from the scene captured with the item frame", async () => {

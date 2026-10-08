@@ -113,6 +113,50 @@ function context(
 
 describe("CommandProcessor", () => {
   const processor = new CommandProcessor();
+  it("lets only the GM reject a pending naval battle request", () => {
+    const current = state();
+    current.scene.navalBattleRequests = [{ id: "pending", initiatingShipId: "a", targetShipId: "b" }];
+    const cancel = command({ type: "REJECT_NAVAL_BATTLE_REQUEST", navalRequestId: "pending" });
+    expect(processor.execute(context("PLAYER", "leader", current),
+      command({ type: "REJECT_NAVAL_BATTLE_REQUEST", navalRequestId: "pending" }, "leader")))
+      .toEqual({ status: "REJECTED", reason: "GM_ONLY" });
+    const result = processor.execute(context("GM", "gm", current), cancel);
+    expect(result.status).toBe("ACCEPTED");
+    if (result.status !== "ACCEPTED") return;
+    expect(result.state.scene.navalBattleRequests).toEqual([]);
+    const missing = processor.execute(context("GM", "gm", current),
+      command({ type: "REJECT_NAVAL_BATTLE_REQUEST", navalRequestId: "missing" }));
+    expect(missing).toEqual({ status: "REJECTED", reason: "NAVAL_BATTLE_REQUEST_NOT_FOUND" });
+  });
+
+  it("accepts naval actions only during the normal global movement turn", () => {
+    const current = state();
+    for (const type of ["REQUEST_NAVAL_BATTLE", "NAVAL_SHORE_BOMBARDMENT"] as const) {
+      const payload = type === "REQUEST_NAVAL_BATTLE"
+        ? command({ type, initiatingShipId: "missing", targetShipId: "target" })
+        : command({ type, shipId: "missing", armyId: "army-red", friendlyFireConfirmed: false });
+      const inTurn = processor.execute(context("GM", "gm", current), payload);
+      expect(inTurn).toEqual({ status: "REJECTED", reason: "SHIP_NOT_FOUND" });
+      const afterTurn = structuredClone(current);
+      afterTurn.scene.turn.phase = "POST_MOVEMENT";
+      expect(processor.execute(context("GM", "gm", afterTurn), payload))
+        .toEqual({ status: "REJECTED", reason: "NOT_MOVEMENT_PHASE" });
+    }
+  });
+
+  it("rejects turn completion while a naval request is unresolved", () => {
+    const current = state();
+    current.scene.navalBattleRequests = [{
+      id: "naval-request", initiatingShipId: "ship-1", targetShipId: "ship-2",
+      createdOnTurn: current.scene.turn.turnNumber
+    }];
+    const result = processor.execute(context("GM", "gm", current), command({ type: "COMPLETE_TURN_NOW" }));
+    expect(result).toEqual({ status: "REJECTED", reason: "NAVAL_REQUESTS_PENDING" });
+    expect(current.scene.turn.phase).toBe("MOVEMENT");
+    expect(current.scene.navalBattleRequests).toHaveLength(1);
+  });
+
+
 
   it("applies and audits a military influence operation for a faction", () => {
     const current = state();

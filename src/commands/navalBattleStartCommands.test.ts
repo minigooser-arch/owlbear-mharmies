@@ -34,7 +34,7 @@ function sceneFixture(): NavalSceneState {
     },
     gridMap: { version: 1, revision: 0, cells: {} },
     wars: [],
-    turn: { ...structuredClone(DEFAULT_TURN_STATE), turnNumber: 3, phase: "POST_MOVEMENT" },
+    turn: { ...structuredClone(DEFAULT_TURN_STATE), turnNumber: 3, phase: "MOVEMENT" },
     ships: {
       "red-ship": { ...createRegisteredShip("red", "CRUISER", "EAST") },
       "blue-ship": { ...createRegisteredShip("blue", "BATTLESHIP", "WEST") }
@@ -98,7 +98,7 @@ it("starts a request-backed naval battle after authoritative request validation"
   expect(result.status).toBe("ACCEPTED");
   if (result.status !== "ACCEPTED") return;
   expect(result.state.scene.revision).toBe(5);
-  expect(result.state.scene.turn.phase).toBe("POST_MOVEMENT");
+  expect(result.state.scene.turn.phase).toBe("MOVEMENT");
   expect(result.state.scene.navalBattleRequests).toEqual([]);
   expect(result.state.scene.ships?.["red-ship"]).toMatchObject({ status: "IN_NAVAL_BATTLE", battleId: "naval-1" });
   expect(result.state.scene.ships?.["blue-ship"]).toMatchObject({ status: "IN_NAVAL_BATTLE", battleId: "naval-1" });
