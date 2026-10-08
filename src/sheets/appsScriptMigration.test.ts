@@ -4,6 +4,11 @@ import { describe, expect, it } from "vitest";
 
 type Cell = { formula: string; value: number | string };
 type Row = { ao: Cell; aw: Cell };
+function rowAt(cells: Record<number, Row>, row: number): Row {
+  const candidate = cells[row];
+  if (!candidate) throw new Error(`BAD_ROW:${row}`);
+  return candidate;
+}
 function fixture(options: { conflictingAW?: boolean; failOnSecond?: boolean; spent?: number } = {}) {
   const cells: Record<number, Row> = {
     9: { ao: { formula: "=100", value: 100 }, aw: { formula: "", value: "" } },
@@ -12,16 +17,16 @@ function fixture(options: { conflictingAW?: boolean; failOnSecond?: boolean; spe
   let hidden = false;
   let enabled = false;
   const updateValue = (row: number, col: number) => {
-    const value = cells[row]![col === 41 ? "ao" : "aw"];
+    const value = rowAt(cells, row)[col === 41 ? "ao" : "aw"];
     if (value.formula === "=100" || value.formula === "=60") value.value = Number(value.formula.slice(1));
     if (value.formula.includes('"LR_V2"')) {
-      value.value = Math.max(0, Number(cells[row]!.aw.value) - (row === 9 ? options.spent ?? 0 : 0));
+      value.value = Math.max(0, Number(rowAt(cells, row).aw.value) - (row === 9 ? options.spent ?? 0 : 0));
     }
   };
   const sheet = {
     getRange(row: number, col: number) {
       if (!cells[row] || (col !== 41 && col !== 49)) throw Error("BAD_CELL");
-      const cell = cells[row]![col === 41 ? "ao" : "aw"];
+      const cell = rowAt(cells, row)[col === 41 ? "ao" : "aw"];
       return {
         getFormula: () => cell.formula,
         getValue: () => cell.value,
@@ -69,9 +74,9 @@ describe("Apps Script LR V2 formula migration", () => {
   it("preflights all countries and never overwrites an occupied AW cell", () => {
     const test = fixture({ conflictingAW: true });
     expect(() => test.run()).toThrow(/LR_V2_CAPACITY_CONFLICT:bulgaria/);
-    expect(test.cells[9]!.ao.formula).toBe("=100");
-    expect(test.cells[9]!.aw.formula).toBe("");
-    expect(test.cells[13]!.aw.value).toBe("reserved");
+    expect(rowAt(test.cells, 9).ao.formula).toBe("=100");
+    expect(rowAt(test.cells, 9).aw.formula).toBe("");
+    expect(rowAt(test.cells, 13).aw.value).toBe("reserved");
     expect(test.enabled).toBe(false);
   });
 
@@ -80,20 +85,20 @@ describe("Apps Script LR V2 formula migration", () => {
     test.run();
     expect(test.enabled).toBe(true);
     expect(test.hidden).toBe(true);
-    expect(test.cells[9]!.aw.formula).toBe("=100");
-    expect(test.cells[9]!.ao.value).toBe(75);
-    expect(test.cells[13]!.ao.value).toBe(60);
+    expect(rowAt(test.cells, 9).aw.formula).toBe("=100");
+    expect(rowAt(test.cells, 9).ao.value).toBe(75);
+    expect(rowAt(test.cells, 13).ao.value).toBe(60);
     expect(() => test.run()).not.toThrow();
-    expect(test.cells[9]!.ao.value).toBe(75);
+    expect(rowAt(test.cells, 9).ao.value).toBe(75);
   });
 
   it("reverts partial migration if a write fails", () => {
     const test = fixture({ failOnSecond: true });
     expect(() => test.run()).toThrow("INJECTED_WRITE_FAILURE");
-    expect(test.cells[9]!.ao.formula).toBe("=100");
-    expect(test.cells[9]!.aw.formula).toBe("");
-    expect(test.cells[13]!.ao.formula).toBe("=60");
-    expect(test.cells[13]!.aw.value).toBe("");
+    expect(rowAt(test.cells, 9).ao.formula).toBe("=100");
+    expect(rowAt(test.cells, 9).aw.formula).toBe("");
+    expect(rowAt(test.cells, 13).ao.formula).toBe("=60");
+    expect(rowAt(test.cells, 13).aw.value).toBe("");
     expect(test.enabled).toBe(false);
   });
 });
