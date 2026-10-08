@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ArmyState, SceneState } from "../shared/types";
-import { findSupplyPath, isArmySupplied } from "./supplyService";
+import { createSupplyChecker, findSupplyPath, isArmySupplied } from "./supplyService";
 
 const cell = (recognizedStateId: string | null, deFactoStateId: string | null) => ({
   terrainId: null,
@@ -61,6 +61,27 @@ describe("supplyService", () => {
       "2,2": cell("red-state", "red-state")
     });
     expect(findSupplyPath(current, { x: 1, y: 1 }, "red-state")).toBeNull();
+  });
+
+  it("matches individual BFS results for all cells while reusing the state supply network", () => {
+    const cells: Record<string, ReturnType<typeof cell>> = {};
+    for (let x = 0; x < 30; x++) {
+      for (let y = 0; y < 20; y++) {
+        cells[`${x},${y}`] = cell("red-state", x === 12 ? "blue-state" : "red-state");
+      }
+    }
+    const current = scene(cells);
+    const check = createSupplyChecker(current);
+    for (let x = 0; x < 30; x++) {
+      for (let y = 0; y < 20; y++) {
+        const location = { x, y };
+        const expected = findSupplyPath(current, location, "red-state") !== null;
+        expect(check("red", location)).toBe(expected);
+        expect(check("red", location)).toBe(expected);
+      }
+    }
+    expect(check("red", { x: 29, y: 12 })).toBe(false);
+    expect(check("red", { x: 1, y: 0 })).toBe(true);
   });
 
   it("uses the army side state and reports unsupplied after an occupation cuts the route", () => {
