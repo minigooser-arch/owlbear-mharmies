@@ -38,6 +38,7 @@ function applySupplyCheckpoint(
   nextTurnNumber: number
 ): Record<string, ArmyState> {
   const nextArmies = structuredClone(armies) as Record<string, ArmyState>;
+  const checkSupply = createSupplyChecker(scene);
 
   for (const [armyId, army] of Object.entries(nextArmies)) {
     if (army.supply.checkedOnTurn === nextTurnNumber) continue;
