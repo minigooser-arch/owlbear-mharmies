@@ -54,7 +54,7 @@ export function ManagementPage({
   onSyncPopulation(): Promise<PopulationSyncSummary>;
   runDiagnostic(testId: DiagnosticTestId): Promise<unknown>;
 }) {
-  const group = GROUPS.find((entry) => entry.sections.includes(section)) ?? { id: "POLITICS", label: "Политика", sections: ["SIDES"] };
+  const group: { id: string; label: string; sections: readonly ManagementSection[] } = GROUPS.find((entry) => entry.sections.includes(section)) ?? { id: "POLITICS", label: "Политика", sections: ["SIDES"] };
   return (
     <section aria-labelledby="management-title">
       <div className="section-heading wiki-page-heading"><div><p className="eyebrow">Администрирование</p><h2 id="management-title">Управление</h2><p className="page-description">Фракции, государства, дипломатия, восстания и технические настройки сцены.</p></div></div>
