@@ -395,10 +395,6 @@ describe("CommandProcessor", () => {
     };
     current.scene.sides = current.scene.sides.map((side) => side.id === "red" ? { ...side, stateId: "red-state" } : side);
     current.scene.states = [{ id: "red-state", name: "Красное государство", rulingFactionId: "red", active: true }];
-    current.scene.gridMap.cells["1,0"] = {
-      terrainId: null, impassable: false, factionTerritoryIds: [],
-      recognizedStateId: "red-state", deFactoStateId: "red-state"
-    };
     current.scene.strategicCities = [{
       id: "city-red", name: "Красный город", cells: [{ x: 0, y: 0 }], recognizedStateId: "red-state", deFactoStateId: "red-state",
       factionInfluenceId: "red", mayorId: null, isCapital: false, historicalBuildTypeCount: 0,
