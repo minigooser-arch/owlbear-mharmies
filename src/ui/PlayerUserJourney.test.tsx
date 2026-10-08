@@ -83,6 +83,7 @@ function services(snapshot: RawExtensionSnapshot) {
 it("lets a faction leader plan routes and manage membership without exposing GM administration", () => {
   const { api, send } = services(playerSnapshot(true));
   render(<App services={api} />);
+  fireEvent.click(screen.getByRole("button", { name: "Войска" }));
 
   expect(screen.queryByRole("button", { name: "Карта" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Управление" })).not.toBeInTheDocument();
@@ -115,6 +116,6 @@ it("keeps an ordinary faction member from planning routes or changing faction me
   expect(screen.queryByText("Управление фракцией")).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Города" })).not.toBeInTheDocument();
 
-  fireEvent.click(screen.getByRole("button", { name: "Ход" }));
+  fireEvent.click(screen.getByRole("button", { name: "Штаб" }));
   expect(screen.queryByRole("button", { name: "Проложить маршрут" })).not.toBeInTheDocument();
 });
