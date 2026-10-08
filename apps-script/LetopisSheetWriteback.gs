@@ -224,6 +224,12 @@ function snapshotForCountry_(country, index, spentByCountry) {
   const backendRow = index.get(country);
   if (!backendRow) throw new Error("COUNTRY_NOT_FOUND:" + country);
   const context = stateContext_(country, backendRow);
+  if (PropertiesService.getScriptProperties().getProperty("LR_V2_ENABLED") === "true" && spentByCountry) {
+    const expected = Math.max(0, context.humanResourceCapacity - (spentByCountry.get(country) || 0));
+    if (Math.abs(expected - context.humanResource) > 0.000001) {
+      throw new Error("STATE_LR_LEDGER_MISMATCH:" + country);
+    }
+  }
   return {
     country,
     population: Number(backendSheet_().getRange(backendRow.row, 3).getValue()),
@@ -307,6 +313,7 @@ function installLrV2Formulas() {
         throw new Error("LR_V2_MIGRATED_FORMULA_INVALID:" + country);
       }
     }
+    sheet.hideColumns(49); // AW is internal; keep the public state layout unchanged.
     PropertiesService.getScriptProperties().setProperty("LR_V2_ENABLED", "true");
   });
 }
