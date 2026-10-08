@@ -802,7 +802,7 @@ export class ProductionEngine {
       }
       next.scene.turn.completionPending = {
         source: "SCHEDULE",
-        boundaryId: boundary!.id
+        boundaryId: boundary?.id ?? ""
       };
       startedMovement = true;
     }
