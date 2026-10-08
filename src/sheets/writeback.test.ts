@@ -339,7 +339,7 @@ describe("sheet writeback projection", () => {
     expect(JSON.stringify(changed)).not.toContain("private-ship-123");
     const full = buildSheetWritebackSnapshotEvent(next);
     expect(full?.stateShips).toEqual([{ country: "STATE_A", ships: 1 }]);
-    const queue = mergeSheetWritebackQueue(undefined, full!);
+    const queue = mergeSheetWritebackQueue(undefined, full ?? (() => { throw new Error('Missing snapshot'); })());
     expect(queue.pending.stateShips).toEqual([{ country: "STATE_A", ships: 1 }]);
   });
 
