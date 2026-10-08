@@ -2162,9 +2162,14 @@ export class CommandProcessor {
         state.armies = renumbered.armies;
         return undefined;
       }
-      case "COMPLETE_MOVEMENT_PHASE":
+      case "COMPLETE_MOVEMENT_PHASE": {
+        // Backward-compatible protocol action for older clients and tactical
+        // naval workflows. The current UI exposes only COMPLETE_TURN_NOW.
+        if (state.scene.turn.phase !== "MOVEMENT") return "NOT_MOVEMENT_PHASE";
+        return beginMovementResolution(state, this.cellForPosition, this.positionForCell);
+      }
       case "COMPLETE_TURN_NOW": {
-        // Legacy phase-completion commands now mean the same one-click action.
+        // A single action begins movement and finalizes after it settles.
         if (state.scene.turn.completionPending) return "TURN_COMPLETION_PENDING";
         const failure = beginMovementResolution(state, this.cellForPosition, this.positionForCell);
         if (failure) return failure;
