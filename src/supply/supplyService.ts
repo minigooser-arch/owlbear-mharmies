@@ -124,10 +124,42 @@ export function findSupplyPath(
  * capital/port changes must take effect on the next command or checkpoint.
  * Does not change the public deterministic shortest-path algorithm.
  */
+/** All supplied controlled cells for a country, computed once per checkpoint.
+ * Reverse traversal is equivalent to per-army BFS on the undirected strategic
+ * grid. Only use it when the old per-army 100k visit budget cannot truncate a path.
+ */
+function reachableSupplyCells(
+  scene: SceneState,
+  stateId: string,
+  sources: ReadonlySet<string>
+): ReadonlySet<string> {
+  const reached = new Set<string>(sources);
+  const queue: GridCellCoord[] = [...sources].map((key) => {
+    const [x = 0, y = 0] = key.split(",").map(Number);
+    return { x, y };
+  });
+  let head = 0;
+  while (head < queue.length) {
+    const current = queue[head++];
+    if (!current) break;
+    for (const delta of NEIGHBORS) {
+      const next = { x: current.x + delta.x, y: current.y + delta.y };
+      const key = cellKey(next);
+      if (reached.has(key) || !isStateControlledCell(scene, next, stateId)) continue;
+      reached.add(key);
+      queue.push(next);
+    }
+  }
+  return reached;
+}
+
 export function createSupplyChecker(scene: SceneState): (sideId: string, cell: GridCellCoord) => boolean {
   const stateBySide = new Map<string, string | null>();
   const sourcesByState = new Map<string, ReadonlySet<string>>();
   const resultByState = new Map<string, Map<string, boolean>>();
+  // Above this limit, keep the original bounded per-army search semantics.
+  const useReverseSupplyCache = Object.keys(scene.gridMap.cells).length <= 100_000;
+  const reachabilityByState = new Map<string, ReadonlySet<string>>();
   return (sideId, cell) => {
     let stateId = stateBySide.get(sideId);
     if (stateId === undefined) {
@@ -152,7 +184,17 @@ export function createSupplyChecker(scene: SceneState): (sideId: string, cell: G
       sources = supplySourceKeys(scene, stateId);
       sourcesByState.set(stateId, sources);
     }
-    const supplied = traceSupplyPath(scene, cell, stateId, sources, 100_000) !== null;
+    let supplied: boolean;
+    if (useReverseSupplyCache) {
+      let reachable = reachabilityByState.get(stateId);
+      if (!reachable) {
+        reachable = reachableSupplyCells(scene, stateId, sources);
+        reachabilityByState.set(stateId, reachable);
+      }
+      supplied = reachable.has(key);
+    } else {
+      supplied = traceSupplyPath(scene, cell, stateId, sources, 100_000) !== null;
+    }
     results.set(key, supplied);
     return supplied;
   };
