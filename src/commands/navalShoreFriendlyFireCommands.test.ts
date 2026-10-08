@@ -77,7 +77,7 @@ function scene(targetSideId: "red" | "blue", allied = false): SceneState {
       }
     },
     wars: [],
-    turn: { ...structuredClone(DEFAULT_TURN_STATE), turnNumber: 5, phase: "POST_MOVEMENT" },
+    turn: { ...structuredClone(DEFAULT_TURN_STATE), turnNumber: 5, phase: "MOVEMENT" },
     ships: { attacker: createRegisteredShip("red", "BATTLESHIP", "NORTH") },
     transportEmbarkRequests: [],
     navalBattleRequests: [],

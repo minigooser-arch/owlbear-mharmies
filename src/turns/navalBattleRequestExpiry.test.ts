@@ -31,15 +31,12 @@ function scene(): NavalSceneState {
   };
 }
 
-it("advances the global turn and expires unplayed naval battle requests", () => {
+it("does not advance the global turn or discard unanswered naval battle requests", () => {
   const result = completeTurn(scene(), {}, {
     source: "MANUAL",
     completedAt: new Date("2026-09-04T12:00:00.000Z"),
     armyCells: {}
   });
 
-  expect(result.changed).toBe(true);
-  if (!result.changed) return;
-  expect(result.scene.turn.turnNumber).toBe(8);
-  expect(result.scene.navalBattleRequests).toEqual([]);
+  expect(result).toEqual({ changed: false, reason: "NAVAL_REQUESTS_PENDING", blockers: ["NAVAL_REQUESTS_PENDING"] });
 });

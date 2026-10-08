@@ -155,16 +155,16 @@ function processor() {
   );
 }
 
-describe("shore bombardment final global action window", () => {
-  it("rejects shore bombardment during MOVEMENT", () => {
-    expect(processor().execute(context(state("MOVEMENT")), command())).toEqual({
+describe("shore bombardment in the normal global turn", () => {
+  it("rejects shore bombardment after movement resolution has started", () => {
+    expect(processor().execute(context(state("POST_MOVEMENT")), command())).toEqual({
       status: "REJECTED",
-      reason: "NOT_POST_MOVEMENT_PHASE"
+      reason: "NOT_MOVEMENT_PHASE"
     });
   });
 
-  it("allows shore bombardment during POST_MOVEMENT without an active naval battle", () => {
-    const result = processor().execute(context(state("POST_MOVEMENT")), command());
+  it("allows shore bombardment during the normal turn without an active naval battle", () => {
+    const result = processor().execute(context(state("MOVEMENT")), command());
     expect(result.status).toBe("ACCEPTED");
     if (result.status !== "ACCEPTED") return;
     expect(result.state.scene.activeNavalBattle).toBeNull();
@@ -172,7 +172,7 @@ describe("shore bombardment final global action window", () => {
   });
 
   it("rejects shore bombardment while a naval battle is active", () => {
-    expect(processor().execute(context(state("POST_MOVEMENT", battle())), command())).toEqual({
+    expect(processor().execute(context(state("MOVEMENT", battle())), command())).toEqual({
       status: "REJECTED",
       reason: "NAVAL_BATTLE_ACTIVE"
     });

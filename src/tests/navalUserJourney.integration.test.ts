@@ -101,9 +101,8 @@ it("paints sea, registers three factions' ships, requests, fights and completes 
   execute("GM", "gm", { type: "REGISTER_SHIP", itemId: "green", sideId: "green", classId: "IRONCLAD", facing: "WEST" });
   expect(Object.keys(current.scene.ships ?? {})).toEqual(["red", "blue", "green"]);
 
-  // Battle requests become available only after movement is closed.
-  execute("GM", "gm", { type: "COMPLETE_MOVEMENT_PHASE" });
-  expect(current.scene.turn.phase).toBe("POST_MOVEMENT");
+  // Ship requests are available directly during the normal global turn.
+  expect(current.scene.turn.phase).toBe("MOVEMENT");
 
   detected.add("blue");
   const requestResult = execute("PLAYER", "red-leader", {
@@ -149,5 +148,5 @@ it("paints sea, registers three factions' ships, requests, fights and completes 
   expect(current.scene.navalBattleHistory).toHaveLength(1);
   expect(current.scene.ships?.red).toMatchObject({ status: "READY", facing: "EAST" });
   expect(current.positions?.red).toEqual({ x: 50, y: 50 });
-  expect(current.scene.turn.phase).toBe("POST_MOVEMENT");
+  expect(current.scene.turn.phase).toBe("MOVEMENT");
 });
