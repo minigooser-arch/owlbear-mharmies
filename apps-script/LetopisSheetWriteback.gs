@@ -2,8 +2,10 @@
  * Летопись — Owlbear → Google Sheets writeback.
  *
  * IMPORTANT:
- * 1) Put this file into the same Apps Script project that owns the 00:06 population-growth job.
- * 2) Both jobs use the same ScriptLock, so growth and LR spending cannot mutate backend!C concurrently.
+ * 1) Deploy this handler in the existing Owlbear writeback Apps Script project.
+ * 2) The population-growth job lives in a SEPARATE Apps Script project.
+ *    ScriptLock coordinates requests only within this writeback project.
+ *    LR V2 never writes backend!C, so the independent population job remains the sole writer.
  * 3) Set Script Property API_TOKEN to a long random secret. The Owlbear GM stores that secret
  *    only in browser localStorage; it is never written into SceneSettings.
  * 4) Deploy as Web App, Execute as the spreadsheet owner, access according to your project policy.
@@ -182,14 +184,21 @@ function stateContext_(country, backendRow) {
   if (!sheet) throw new Error("STATE_SHEET_MISSING");
   const stateRow = backendRow.stateRow;
   const stateName = String(sheet.getRange(stateRow, 10).getDisplayValue() || country).trim();
-  const humanResource = Number(sheet.getRange(stateRow, 44).getValue());
-  if (!Number.isFinite(humanResource)) throw new Error("STATE_LR_INVALID:" + country);
+  const humanResource = Number(sheet.getRange(stateRow, 41).getValue());
+  const capacityCell = sheet.getRange(stateRow, 49); // AW, reserved for original LR formula
+  const humanResourceCapacity = capacityCell.getFormula()
+    ? Number(capacityCell.getValue())
+    : humanResource; // Before the one-time V2 migration.
+  if (!Number.isFinite(humanResource) || !Number.isFinite(humanResourceCapacity)) {
+    throw new Error("STATE_LR_INVALID:" + country);
+  }
   const category = String(sheet.getRange(stateRow + 1, 41).getDisplayValue() || "").trim();
   return {
     country,
     stateName,
     stateRow,
     humanResource,
+    humanResourceCapacity,
     category,
     conscriptionRate: conscriptionRate_(category)
   };
@@ -202,23 +211,32 @@ function conscriptionRate_(category) {
     .trim();
   const rates = {
     "ДЕМИЛИТАРИЗАЦИЯ": 0,
+    "ДЕМИЛИТАРИЗОВАННАЯ НАЦИЯ": 0,
     "КОНТРАКТНАЯ СЛУЖБА": 0.02,
     "СРОЧНЫЙ ПРИЗЫВ": 0.04,
     "ЧАСТИЧНАЯ МОБИЛИЗАЦИЯ": 0.08,
     "МАССОВАЯ МОБИЛИЗАЦИЯ": 0.18,
-    "ВСЕОБЩАЯ МОБИЛИЗАЦИЯ": 0.24
+    "ВСЕОБЩАЯ МОБИЛИЗАЦИЯ": 0.24,
+    "ВСЕХ ПОД РУЖЬЁ!": 0.24
   };
   return Object.prototype.hasOwnProperty.call(rates, normalized) ? rates[normalized] : undefined;
 }
 
-function snapshotForCountry_(country, index) {
+function snapshotForCountry_(country, index, spentByCountry) {
   const backendRow = index.get(country);
   if (!backendRow) throw new Error("COUNTRY_NOT_FOUND:" + country);
   const context = stateContext_(country, backendRow);
+  if (PropertiesService.getScriptProperties().getProperty("LR_V2_ENABLED") === "true" && spentByCountry) {
+    const expected = Math.max(0, context.humanResourceCapacity - (spentByCountry.get(country) || 0));
+    if (Math.abs(expected - context.humanResource) > 0.000001) {
+      throw new Error("STATE_LR_LEDGER_MISMATCH:" + country);
+    }
+  }
   return {
     country,
     population: Number(backendSheet_().getRange(backendRow.row, 3).getValue()),
     humanResource: context.humanResource,
+    humanResourceCapacity: context.humanResourceCapacity,
     ...(context.conscriptionRate === undefined ? {} : { conscriptionRate: context.conscriptionRate })
   };
 }
@@ -226,11 +244,142 @@ function snapshotForCountry_(country, index) {
 function getStateSnapshots_(countries) {
   if (!Array.isArray(countries)) throw new Error("INVALID_COUNTRIES");
   const index = backendIndex_();
+  const spentByCountry = lrV2SpentByCountry_(lrLogSheet_());
   const unique = [...new Set(countries.map(function(country) {
     return String(country || "").trim();
   }).filter(Boolean))];
   return unique.map(function(country) {
-    return snapshotForCountry_(country, index);
+    return snapshotForCountry_(country, index, spentByCountry);
+  });
+}
+
+const LR_V2_REASON_CODE = "LR_V2";
+
+/** Read only new confirmed army expenses; earlier APPLIED rows do not count. */
+function lrV2SpentByCountry_(schema) {
+  const spent = new Map();
+  const lastRow = schema.sheet.getLastRow();
+  if (lastRow < 2) return spent;
+  const idx = headerIndex_(schema.headers);
+  const rows = schema.sheet.getRange(2, 1, lastRow - 1, schema.headers.length).getValues();
+  for (const row of rows) {
+    if (String(cell_(row, idx, "operationType")).trim() !== "LR" ||
+      String(cell_(row, idx, "status")).trim() !== "APPLIED" ||
+      String(cell_(row, idx, "reasonCode")).trim() !== LR_V2_REASON_CODE) continue;
+    const country = String(cell_(row, idx, "country") || "").trim();
+    const amount = Number(cell_(row, idx, "amount"));
+    if (!country || !Number.isFinite(amount) || amount <= 0) throw new Error("LR_V2_LEDGER_INVALID");
+    spent.set(country, (spent.get(country) || 0) + amount);
+  }
+  return spent;
+}
+
+/**
+ * One-time migration: preserves the ORIGINAL AO formula and subtracts only
+ * LR_V2 operations. Install in the existing writeback Apps Script project.
+ * Safe to rerun: migrated formulas are skipped.
+ */
+function installLrV2Formulas() {
+  return withScriptLock_(function() {
+    const index = backendIndex_();
+    const sheet = stateSheet_();
+    const schema = lrLogSheet_(); // Confirm ledger columns before touching formulas.
+    const spent = lrV2SpentByCountry_(schema);
+    const plan = [];
+
+    // Preflight EVERY country. In particular, do not overwrite an occupied AW
+    // helper cell: the previous installer only checked its formula, not a value.
+    for (const [country, entry] of index.entries()) {
+      const row = entry.stateRow;
+      const availableCell = sheet.getRange(row, 41); // AO
+      const potentialCell = sheet.getRange(row, 49); // AW
+      const formula = availableCell.getFormula();
+      const original = potentialCell.getFormula();
+      const occupied = potentialCell.getValue();
+      if (formula.indexOf('"LR_V2"') >= 0) {
+        if (!original) throw new Error("LR_V2_CAPACITY_FORMULA_MISSING:" + country);
+        plan.push({ country, row, migrated: true, original });
+        continue;
+      }
+      if (!formula || formula[0] !== "=") throw new Error("LR_V2_SOURCE_FORMULA_MISSING:" + country);
+      if (original && original !== formula || (!original && occupied !== "" && occupied !== null)) {
+        throw new Error("LR_V2_CAPACITY_CONFLICT:" + country);
+      }
+      plan.push({ country, row, migrated: false, source: formula, original });
+    }
+
+    const applied = [];
+    try {
+      for (const item of plan) {
+        if (item.migrated) continue;
+        const availableCell = sheet.getRange(item.row, 41);
+        const potentialCell = sheet.getRange(item.row, 49);
+        const originalAW = potentialCell.getFormula();
+        const originalAWValue = potentialCell.getValue();
+        applied.push({ row: item.row, originalAO: item.source,
+          originalAW, originalAWValue });
+        potentialCell.setFormula(item.source);
+        const safeCountry = item.country.replace(/"/g, '""');
+        const r = "'ЛР_ОПЕРАЦИИ'!";
+        const sum = 'SUMIFS(' + r + '$I$2:$I;' + r + '$C$2:$C;"' + safeCountry +
+          '";' + r + '$V$2:$V;"APPLIED";' + r + '$W$2:$W;"LR";' +
+          r + '$AC$2:$AC;"LR_V2")';
+        availableCell.setFormula('=MAX(0;AW' + item.row + '-' + sum + ')');
+      }
+      SpreadsheetApp.flush();
+      for (const item of plan) {
+        const available = sheet.getRange(item.row, 41).getValue();
+        const potential = sheet.getRange(item.row, 49).getValue();
+        if (typeof available !== "number" || !Number.isFinite(available) ||
+            typeof potential !== "number" || !Number.isFinite(potential) ||
+            Math.abs(available - Math.max(0, potential - (spent.get(item.country) || 0))) > 0.000001) {
+          throw new Error("LR_V2_MIGRATED_FORMULA_INVALID:" + item.country);
+        }
+      }
+      sheet.hideColumns(49);
+      PropertiesService.getScriptProperties().setProperty("LR_V2_ENABLED", "true");
+    } catch (error) {
+      // Google Sheets writes are not transactional. Undo every row touched
+      // by this invocation so a bad formula or a partial failure never leaves
+      // production in a half-migrated state.
+      for (const item of applied.reverse()) {
+        try {
+          sheet.getRange(item.row, 41).setFormula(item.originalAO);
+          const potentialCell = sheet.getRange(item.row, 49);
+          if (item.originalAW) potentialCell.setFormula(item.originalAW);
+          else potentialCell.setValue(item.originalAWValue);
+        } catch (restoreError) {
+          console.error("LR_V2_ROLLBACK_FAILED:" + item.row, restoreError);
+        }
+      }
+      SpreadsheetApp.flush();
+      throw error;
+    }
+  });
+}
+
+/** Google time triggers are approximate, not exactly 01:00:00. */
+function installDailySheetSyncTrigger() {
+  const handler = "dailySheetSyncAtOneMsk";
+  for (const trigger of ScriptApp.getProjectTriggers()) {
+    if (trigger.getHandlerFunction() === handler) ScriptApp.deleteTrigger(trigger);
+  }
+  ScriptApp.newTrigger(handler).timeBased().atHour(1).nearMinute(0).everyDays(1)
+    .inTimezone("Europe/Moscow").create();
+}
+
+/** Independent sheet health/check job; scene HP/ships require a live GM. */
+function dailySheetSyncAtOneMsk() {
+  return withScriptLock_(function() {
+    if (PropertiesService.getScriptProperties().getProperty("LR_V2_ENABLED") !== "true") return;
+    const index = backendIndex_();
+    const spent = lrV2SpentByCountry_(lrLogSheet_());
+    for (const country of index.keys()) snapshotForCountry_(country, index, spent);
+    SpreadsheetApp.flush();
+    PropertiesService.getScriptProperties().setProperty(
+      "LR_V2_LAST_SHEET_CHECK_MSK",
+      Utilities.formatDate(new Date(), "Europe/Moscow", "yyyy-MM-dd'T'HH:mm:ss")
+    );
   });
 }
 
@@ -247,6 +396,8 @@ function existingLRRequests_(schema) {
     if (!requestId) continue;
     result.set(requestId, {
       requestId,
+      reasonCode: String(cell_(row, indexes, "reasonCode") || ""),
+      status: String(cell_(row, indexes, "status") || ""),
       batchRequestId: String(cell_(row, indexes, "batchRequestId") || ""),
       kind: String(cell_(row, indexes, "kind") || ""),
       country: String(cell_(row, indexes, "country") || ""),
@@ -323,79 +474,62 @@ function halfUp_(value) {
 }
 
 function spendLRBatch_(operations, batchRequestId) {
+  if (PropertiesService.getScriptProperties().getProperty("LR_V2_ENABLED") !== "true") throw new Error("LR_V2_NOT_ENABLED");
   if (!Array.isArray(operations) || operations.length === 0 || operations.length > 64) throw new Error("INVALID_SPEND_BATCH");
-  const backend = backendSheet_();
   const schema = lrLogSheet_();
   const index = backendIndex_();
   const existing = existingLRRequests_(schema);
   const normalized = [];
   const seen = new Set();
-
   for (const raw of operations) {
     const op = validateSpendOperation_(raw, index);
     if (seen.has(op.requestId)) throw new Error("DUPLICATE_BATCH_REQUEST_ID:" + op.requestId);
     seen.add(op.requestId);
     const old = existing.get(op.requestId);
     if (old) {
-      if (!sameDuplicateRequest_(old, op)) throw new Error("REQUEST_ID_CONFLICT:" + op.requestId);
+      if (old.reasonCode !== "LR_V2" || old.status !== "APPLIED" || !sameDuplicateRequest_(old, op)) throw new Error("REQUEST_ID_CONFLICT:" + op.requestId);
       normalized.push({ op, duplicate: old });
     } else normalized.push({ op, duplicate: null });
   }
-
-  const newOperations = normalized.filter(function(entry) { return entry.duplicate === null; });
-  const touched = new Map();
-  const results = normalized.filter(function(entry) { return entry.duplicate !== null; }).map(function(entry) { return entry.duplicate; });
+  const reservations = new Map();
+  const results = normalized.filter(function(item) { return item.duplicate !== null; }).map(function(item) { return item.duplicate; });
   const records = [];
-  let appendedLogStartRow = 0;
-
-  try {
-    for (const entry of newOperations) {
-      const op = entry.op;
-      const rowInfo = index.get(op.country);
-      if (!touched.has(rowInfo.row)) touched.set(rowInfo.row, Number(backend.getRange(rowInfo.row, 3).getValue()));
-      const populationBefore = Number(backend.getRange(rowInfo.row, 3).getValue());
-      const contextBefore = stateContext_(op.country, rowInfo);
-      if (!Number.isFinite(populationBefore) || populationBefore < 0) throw new Error("POPULATION_INVALID:" + op.country);
-      if (contextBefore.humanResource + 1e-9 < op.amount) throw new Error("INSUFFICIENT_LR:" + op.requestId);
-      if (populationBefore + 1e-9 < op.amount) throw new Error("INSUFFICIENT_POPULATION:" + op.requestId);
-      const populationAfter = halfUp_(populationBefore - op.amount);
-      if (populationAfter < 0) throw new Error("POPULATION_NEGATIVE:" + op.requestId);
-      backend.getRange(rowInfo.row, 3).setValue(populationAfter);
-      SpreadsheetApp.flush();
-      const contextAfter = stateContext_(op.country, rowInfo);
-      results.push({ requestId: op.requestId, populationBefore, populationAfter,
-        humanResourceBefore: contextBefore.humanResource, humanResourceAfter: contextAfter.humanResource,
-        stateName: contextAfter.stateName });
-      records.push({
-        operationType: "LR", requestId: op.requestId, createdAt: new Date().toISOString(),
-        country: op.country, stateId: "", stateName: contextAfter.stateName, kind: op.kind,
-        hp: op.hp, ratePerHp: op.ratePerHp, amount: op.amount, amountPeople: Math.round(op.amount * 1000),
-        populationBefore, populationAfter, humanResourceBefore: contextBefore.humanResource,
-        humanResourceAfter: contextAfter.humanResource, armyId: op.armyId, armyName: op.armyName,
-        cityId: op.cityId, cityName: op.cityName, actorPlayerId: op.actorPlayerId, turnNumber: op.turnNumber,
-        batchRequestId: String(batchRequestId || ""), status: "APPLIED"
-      });
-    }
-    if (records.length > 0) {
-      const rows = records.map(function(record) {
-        return schema.headers.map(function(name) { return record[name] === undefined || record[name] === null ? "" : record[name]; });
-      });
-      appendedLogStartRow = schema.sheet.getLastRow() + 1;
-      schema.sheet.getRange(appendedLogStartRow, 1, rows.length, schema.headers.length).setValues(rows);
-    }
-    SpreadsheetApp.flush();
-    const states = [...new Set(normalized.map(function(entry) { return entry.op.country; }))].map(function(country) {
-      return snapshotForCountry_(country, index);
-    });
-    return { operations: results, states };
-  } catch (error) {
-    if (appendedLogStartRow > 0) {
-      try { schema.sheet.deleteRows(appendedLogStartRow, records.length); } catch (rollbackError) { console.error(rollbackError); }
-    }
-    for (const [row, oldPopulation] of touched.entries()) backend.getRange(row, 3).setValue(oldPopulation);
-    SpreadsheetApp.flush();
-    throw error;
+  for (const item of normalized) {
+    if (item.duplicate) continue;
+    const op = item.op;
+    const info = index.get(op.country);
+    const population = Number(backendSheet_().getRange(info.row, 3).getValue());
+    if (!Number.isFinite(population) || population < 0) throw new Error("POPULATION_INVALID:" + op.country);
+    const context = stateContext_(op.country, info);
+    const available = context.humanResource - (reservations.get(op.country) || 0);
+    if (available + 1e-9 < op.amount) throw new Error("INSUFFICIENT_LR:" + op.requestId);
+    const after = Math.max(0, available - op.amount);
+    reservations.set(op.country, (reservations.get(op.country) || 0) + op.amount);
+    results.push({ requestId: op.requestId, populationBefore: population, populationAfter: population,
+      humanResourceBefore: available, humanResourceAfter: after, stateName: context.stateName });
+    records.push({ operationType: "LR", reasonCode: "LR_V2",
+      requestId: op.requestId, createdAt: new Date().toISOString(), country: op.country,
+      stateId: "", stateName: context.stateName, kind: op.kind, hp: op.hp, ratePerHp: op.ratePerHp,
+      amount: op.amount, amountPeople: Math.round(op.amount * 1000), populationBefore: population,
+      populationAfter: population, humanResourceBefore: available, humanResourceAfter: after,
+      armyId: op.armyId, armyName: op.armyName, cityId: op.cityId, cityName: op.cityName,
+      actorPlayerId: op.actorPlayerId, turnNumber: op.turnNumber,
+      batchRequestId: String(batchRequestId || ""), status: "APPLIED" });
   }
+  // Under ScriptLock, validate the whole batch, then append it. Never write backend!C.
+  if (records.length > 0) {
+    const startRow = schema.sheet.getLastRow() + 1;
+    const rows = records.map(function(record) { return schema.headers.map(function(name) {
+      return record[name] === undefined || record[name] === null ? "" : record[name];
+    }); });
+    schema.sheet.getRange(startRow, 1, rows.length, schema.headers.length).setValues(rows);
+    SpreadsheetApp.flush();
+  }
+  const spentByCountry = lrV2SpentByCountry_(schema);
+  const states = [...new Set(normalized.map(function(item) { return item.op.country; }))].map(function(country) {
+    return snapshotForCountry_(country, index, spentByCountry);
+  });
+  return { operations: results, states: states };
 }
 
 function normalizeKey_(value) {
@@ -608,12 +742,42 @@ function adjustMilitaryInfluenceBatch_(operations) {
   }
 }
 
+function applyStateShipCounts_(event, index) {
+  const ships = Array.isArray(event.stateShips) ? event.stateShips : [];
+  if (ships.length === 0) return;
+  const backend = backendSheet_();
+  const previous = new Map();
+  const changed = [];
+  const seen = new Set();
+  for (const item of ships) {
+    const country = String(item && item.country || "").trim();
+    const count = Number(item && item.ships);
+    if (!country || !index.has(country) || seen.has(country) || !Number.isInteger(count) || count < 0) {
+      throw new Error("INVALID_STATE_SHIPS_SYNC");
+    }
+    seen.add(country);
+    changed.push({ row: index.get(country).row, count: count });
+  }
+  try {
+    for (const item of changed) {
+      previous.set(item.row, backend.getRange(item.row, 8).getValue());
+      backend.getRange(item.row, 8).setValue(item.count);
+    }
+    SpreadsheetApp.flush();
+  } catch (error) {
+    for (const [row, value] of previous.entries()) backend.getRange(row, 8).setValue(value);
+    SpreadsheetApp.flush();
+    throw error;
+  }
+}
+
 function syncState_(event) {
   if (!event || typeof event !== "object") throw new Error("INVALID_SYNC_EVENT");
   // Individual army state remains private to Owlbear. Aggregate faction/state
   // HP is public and is written to the existing ЖИЗНИ columns.
   const index = backendIndex_();
   applyFactionAndStateArmy_(event, index);
+  applyStateShipCounts_(event, index);
   const operations = Array.isArray(event.militaryInfluenceOperations)
     ? event.militaryInfluenceOperations
     : [];

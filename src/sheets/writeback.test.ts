@@ -320,5 +320,28 @@ describe("sheet writeback projection", () => {
     const pending = pendingLRTransactions(previous, next);
     expect(pending[0]?.country).toBe("STATE_A");
   });
+
+  it("keeps potential LR independent from available LR", () => {
+    const updated = applySheetStateSnapshots(makeState().scene, [{
+      country: "STATE_A", population: 1000, humanResource: 15,
+      humanResourceCapacity: 40, conscriptionRate: 0.04
+    }]);
+    expect(updated.demographics?.[0]).toMatchObject({
+      population: 1000, humanResource: 15, humanResourceCapacity: 40
+    });
+  });
+
+  it("exports ship totals without revealing individual ship IDs", () => {
+    const previous = makeState();
+    const next = makeState({ scene: { ships: { "private-ship-123": ship } } as never });
+    const changed = buildSheetWritebackEvent(previous, next);
+    expect(changed?.stateShips).toEqual([{ country: "STATE_A", ships: 1 }]);
+    expect(JSON.stringify(changed)).not.toContain("private-ship-123");
+    const full = buildSheetWritebackSnapshotEvent(next);
+    expect(full?.stateShips).toEqual([{ country: "STATE_A", ships: 1 }]);
+    const queue = mergeSheetWritebackQueue(undefined, full ?? (() => { throw new Error('Missing snapshot'); })());
+    expect(queue.pending.stateShips).toEqual([{ country: "STATE_A", ships: 1 }]);
+  });
+
 });
 

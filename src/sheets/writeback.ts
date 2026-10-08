@@ -14,6 +14,8 @@ export interface SheetStateSnapshot {
   country: string;
   population: number;
   humanResource: number;
+  /** Potential LR before permanent LR_V2 expenses. */
+  humanResourceCapacity?: number;
   conscriptionRate?: number;
 }
 
@@ -36,6 +38,11 @@ export interface SheetStateArmySnapshot {
   maxHp: number;
 }
 
+export interface SheetStateShipSnapshot {
+  country: string;
+  ships: number;
+}
+
 export type SheetMilitaryInfluenceOperation = MilitaryInfluenceAuditEntry;
 
 export interface SheetWritebackEvent {
@@ -47,6 +54,7 @@ export interface SheetWritebackEvent {
   states: SheetStateWriteback[];
   factions?: SheetFactionSnapshot[];
   stateArmies?: SheetStateArmySnapshot[];
+  stateShips?: SheetStateShipSnapshot[];
   militaryInfluenceOperations?: SheetMilitaryInfluenceOperation[];
 }
 
@@ -108,6 +116,7 @@ function compactEvent(event: SheetWritebackEvent): SheetWritebackEvent {
     states: [],
     factions: [...(event.factions ?? [])].sort((a, b) => a.factionId.localeCompare(b.factionId)),
     stateArmies: [...(event.stateArmies ?? [])].sort((a, b) => a.country.localeCompare(b.country)),
+    stateShips: [...(event.stateShips ?? [])].sort((a, b) => a.country.localeCompare(b.country)),
     militaryInfluenceOperations: [...(event.militaryInfluenceOperations ?? [])].sort((a, b) => a.requestId.localeCompare(b.requestId))
   };
 }
@@ -155,6 +164,23 @@ function stateHpSnapshots(state: CommandState["scene"], armies: CommandState["ar
   });
 }
 
+/** Public ship totals only; individual ship identities never reach Sheets. */
+function stateShipSnapshots(state: CommandState["scene"]): SheetStateShipSnapshot[] {
+  const countryBySide = new Map(state.sides.map((side) => {
+    const country = state.states.find((candidate) => candidate.id === side.stateId)?.backendCountry?.trim();
+    return [side.id, country] as const;
+  }));
+  const counts = new Map<string, number>();
+  for (const target of state.states) {
+    if (target.backendCountry?.trim()) counts.set(target.backendCountry.trim(), 0);
+  }
+  for (const ship of Object.values(state.ships ?? {})) {
+    const country = countryBySide.get(ship.sideId);
+    if (country) counts.set(country, (counts.get(country) ?? 0) + 1);
+  }
+  return [...counts].map(([country, ships]) => ({ country, ships }));
+}
+
 function changedAggregates<T extends { hp: number; maxHp: number }>(
   previous: readonly T[],
   next: readonly T[],
@@ -183,10 +209,13 @@ export function buildSheetWritebackEvent(
   const nextFactions = factionHpSnapshots(next.scene, next.armies);
   const previousStates = stateHpSnapshots(previous.scene, previous.armies);
   const nextStates = stateHpSnapshots(next.scene, next.armies);
+  const previousShips = stateShipSnapshots(previous.scene);
+  const nextShips = stateShipSnapshots(next.scene);
   const factions = changedAggregates(previousFactions, nextFactions, (value) => value.factionId);
   const stateArmies = changedAggregates(previousStates, nextStates, (value) => value.country);
+  const stateShips = nextShips.filter((item) => previousShips.find((old) => old.country === item.country)?.ships !== item.ships);
 
-  if (militaryInfluenceOperations.length === 0 && factions.length === 0 && stateArmies.length === 0) return undefined;
+  if (militaryInfluenceOperations.length === 0 && factions.length === 0 && stateArmies.length === 0 && stateShips.length === 0) return undefined;
 
   return compactEvent({
     version: 1,
@@ -197,6 +226,7 @@ export function buildSheetWritebackEvent(
     states: [],
     factions,
     stateArmies,
+    stateShips,
     militaryInfluenceOperations
   });
 }
@@ -211,7 +241,8 @@ export function buildSheetWritebackSnapshotEvent(
 ): SheetWritebackEvent | undefined {
   const factions = factionHpSnapshots(next.scene, next.armies);
   const stateArmies = stateHpSnapshots(next.scene, next.armies);
-  if (factions.length === 0 && stateArmies.length === 0) return undefined;
+  const stateShips = stateShipSnapshots(next.scene);
+  if (factions.length === 0 && stateArmies.length === 0 && stateShips.length === 0) return undefined;
 
   return compactEvent({
     version: 1,
@@ -222,6 +253,7 @@ export function buildSheetWritebackSnapshotEvent(
     states: [],
     factions,
     stateArmies,
+    stateShips,
     militaryInfluenceOperations: []
   });
 }
@@ -239,14 +271,17 @@ export function mergeSheetWritebackQueue(
   const militaryInfluenceOperations = new Map<string, SheetMilitaryInfluenceOperation>();
   const factions = new Map<string, SheetFactionSnapshot>();
   const stateArmies = new Map<string, SheetStateArmySnapshot>();
+  const stateShips = new Map<string, SheetStateShipSnapshot>();
 
   for (const operation of pending?.militaryInfluenceOperations ?? []) militaryInfluenceOperations.set(operation.requestId, operation);
   for (const faction of pending?.factions ?? []) factions.set(faction.factionId, faction);
   for (const state of pending?.stateArmies ?? []) stateArmies.set(state.country, state);
+  for (const state of pending?.stateShips ?? []) stateShips.set(state.country, state);
 
   for (const operation of incoming.militaryInfluenceOperations ?? []) militaryInfluenceOperations.set(operation.requestId, operation);
   for (const faction of incoming.factions ?? []) factions.set(faction.factionId, faction);
   for (const state of incoming.stateArmies ?? []) stateArmies.set(state.country, state);
+  for (const state of incoming.stateShips ?? []) stateShips.set(state.country, state);
 
   return {
     version: 1,
@@ -261,6 +296,7 @@ export function mergeSheetWritebackQueue(
       states: [],
       factions: [...factions.values()],
       stateArmies: [...stateArmies.values()],
+      stateShips: [...stateShips.values()],
       militaryInfluenceOperations: [...militaryInfluenceOperations.values()]
     })
   };
@@ -284,6 +320,7 @@ export function readSheetWritebackQueue(metadata: Record<string, unknown>, key: 
       states: [],
       factions: Array.isArray(pending.factions) ? pending.factions as SheetFactionSnapshot[] : [],
       stateArmies: Array.isArray(pending.stateArmies) ? pending.stateArmies as SheetStateArmySnapshot[] : [],
+      stateShips: Array.isArray(pending.stateShips) ? pending.stateShips as SheetStateShipSnapshot[] : [],
       militaryInfluenceOperations: Array.isArray(pending.militaryInfluenceOperations)
         ? pending.militaryInfluenceOperations as SheetMilitaryInfluenceOperation[]
         : []
@@ -308,9 +345,8 @@ export function applySheetStateSnapshots(
       ...record,
       population: snapshot.population,
       humanResource: snapshot.humanResource,
-      // In the Sheets-authoritative mode AR is the available LR and therefore
-      // also the current capacity. The local nonlinear formula is not used.
-      humanResourceCapacity: snapshot.humanResource,
+      // AO is the available LR, distinct from potential recruitment capacity.
+      humanResourceCapacity: snapshot.humanResourceCapacity ?? snapshot.humanResource,
       ...(snapshot.conscriptionRate !== undefined
         ? { conscriptionRate: snapshot.conscriptionRate }
         : {})
