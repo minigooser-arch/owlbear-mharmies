@@ -674,12 +674,42 @@ function adjustMilitaryInfluenceBatch_(operations) {
   }
 }
 
+function applyStateShipCounts_(event, index) {
+  const ships = Array.isArray(event.stateShips) ? event.stateShips : [];
+  if (ships.length === 0) return;
+  const backend = backendSheet_();
+  const previous = new Map();
+  const changed = [];
+  const seen = new Set();
+  for (const item of ships) {
+    const country = String(item && item.country || "").trim();
+    const count = Number(item && item.ships);
+    if (!country || !index.has(country) || seen.has(country) || !Number.isInteger(count) || count < 0) {
+      throw new Error("INVALID_STATE_SHIPS_SYNC");
+    }
+    seen.add(country);
+    changed.push({ row: index.get(country).row, count: count });
+  }
+  try {
+    for (const item of changed) {
+      previous.set(item.row, backend.getRange(item.row, 8).getValue());
+      backend.getRange(item.row, 8).setValue(item.count);
+    }
+    SpreadsheetApp.flush();
+  } catch (error) {
+    for (const [row, value] of previous.entries()) backend.getRange(row, 8).setValue(value);
+    SpreadsheetApp.flush();
+    throw error;
+  }
+}
+
 function syncState_(event) {
   if (!event || typeof event !== "object") throw new Error("INVALID_SYNC_EVENT");
   // Individual army state remains private to Owlbear. Aggregate faction/state
   // HP is public and is written to the existing ЖИЗНИ columns.
   const index = backendIndex_();
   applyFactionAndStateArmy_(event, index);
+  applyStateShipCounts_(event, index);
   const operations = Array.isArray(event.militaryInfluenceOperations)
     ? event.militaryInfluenceOperations
     : [];
