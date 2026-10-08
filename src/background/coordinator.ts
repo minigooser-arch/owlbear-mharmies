@@ -1,4 +1,5 @@
-export const COORDINATOR_HEARTBEAT_INTERVAL_MS = 1_000;
+// The 20-second lease permits fewer metadata writes without sacrificing fencing.
+export const COORDINATOR_HEARTBEAT_INTERVAL_MS = 5_000;
 export const COORDINATOR_LEASE_DURATION_MS = 20_000;
 
 export interface CoordinatorParticipant {
