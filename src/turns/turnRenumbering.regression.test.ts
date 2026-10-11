@@ -28,6 +28,12 @@ function sceneFixture(): SceneState {
     gridMap: { version: 1, revision: 0, cells: {} },
     wars: [],
     turn: { ...DEFAULT_TURN_STATE, turnNumber: 26, phase: "MOVEMENT" },
+    strategicCities: [{
+      id: "paris", name: "Paris", cells: [{ x: 0, y: 0 }],
+      recognizedStateId: "FR", deFactoStateId: "FR", factionInfluenceId: null,
+      mayorId: null, isCapital: true, historicalBuildTypeCount: 0,
+      nextArmyCreationTurn: 28
+    }],
     ships: {
       ship: {
         version: 1,
@@ -91,6 +97,7 @@ describe("safe manual turn renumbering", () => {
     const result = renumberSceneTurn(sceneFixture(), { army: armyFixture() }, 1);
 
     expect(result.scene.turn.turnNumber).toBe(1);
+    expect(result.scene.strategicCities?.[0]?.nextArmyCreationTurn).toBe(3);
     expect(result.armies.army?.plannedRoute.executeOnTurn).toBe(2);
     expect(result.armies.army?.plannedRoute.requiresReplan).toBe(false);
     expect(result.armies.army?.supply.checkedOnTurn).toBe(1);

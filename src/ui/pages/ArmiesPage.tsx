@@ -11,6 +11,7 @@ interface ArmiesPageProps {
   playerId: string;
   leaderSideIds: ReadonlySet<string>;
   strategicCities?: readonly StrategicCity[];
+  turnNumber?: number;
   pendingTransportEmbarkRequests?: readonly TransportEmbarkRequestView[];
   onAction(command: UiCommand): void;
 }
@@ -22,6 +23,7 @@ export function ArmiesPage({
   role,
   leaderSideIds,
   strategicCities = [],
+  turnNumber = 1,
   pendingTransportEmbarkRequests = [],
   onAction
 }: ArmiesPageProps) {
@@ -30,6 +32,7 @@ export function ArmiesPage({
   const [statusFilter, setStatusFilter] = useState<"ALL" | "MOVING" | "IN_BATTLE" | "ENCIRCLED">("ALL");
   const [registrationSideId, setRegistrationSideId] = useState(sides[0]?.id ?? "");
   const [creationOpen, setCreationOpen] = useState(false);
+  const [creationCityId, setCreationCityId] = useState("");
   useEffect(() => {
     if (!focusArmyId) return;
     const army = armies.find((entry) => entry.id === focusArmyId);
@@ -54,6 +57,9 @@ export function ArmiesPage({
     (role === "GM" || (city.factionInfluenceId !== null && leaderSideIds.has(city.factionInfluenceId))) &&
     (city.buildings ?? []).some((building) => building.type === "MILITARY_DEPARTMENT")
   );
+  const selectedCreationCity = availableCities.find((city) => city.id === creationCityId) ?? availableCities[0];
+  const nextCreationTurn = selectedCreationCity?.nextArmyCreationTurn ?? 0;
+  const creationOnCooldown = turnNumber < nextCreationTurn;
   const filtered = useMemo(
     () => armies.filter((army) =>
       (selectedFilterSideId === "ALL" || army.sideId === selectedFilterSideId) &&
@@ -129,19 +135,27 @@ export function ArmiesPage({
             <span className="registration-kicker">Городское формирование</span>
             <strong>Создать армию из ассета фракции</strong>
             <small>Выберите город с действующим Военным ведомством. Токен армии появится в центре города.</small>
+            <small role="status" aria-live="polite">
+              {creationOnCooldown
+                ? `Кулдаун Военного ведомства: в ${selectedCreationCity?.name ?? "этом городе"} новую армию можно создать с хода №${nextCreationTurn}. Текущий ход: №${turnNumber}.`
+                : "Военное ведомство готово к созданию армии."}
+            </small>
           </div>
           <div className="registration-actions">
-            <select aria-label="Город формирования армии" defaultValue={availableCities[0]?.id}>
+            <select aria-label="Город формирования армии" value={selectedCreationCity?.id ?? ""} onChange={(event) => setCreationCityId(event.target.value)}>
               {availableCities.map((city) => <option key={city.id} value={city.id}>{city.name}</option>)}
             </select>
             <button
               className="button primary"
               type="button"
-              onClick={(event) => {
-                const select = event.currentTarget.previousElementSibling as HTMLSelectElement | null;
-                const cityId = select?.value ?? availableCities[0]?.id;
-                const city = availableCities.find((candidate) => candidate.id === cityId);
-                if (city?.factionInfluenceId) onAction({ type: "CREATE_SELECTED_CITY_ARMY", cityId: city.id, sideId: city.factionInfluenceId });
+              onClick={() => {
+                // Let the coordinator reject cooldown attempts so Owlbear shows
+                // the player's warning with the authoritative unlock turn.
+                if (selectedCreationCity?.factionInfluenceId) onAction({
+                  type: "CREATE_SELECTED_CITY_ARMY",
+                  cityId: selectedCreationCity.id,
+                  sideId: selectedCreationCity.factionInfluenceId
+                });
               }}
             >
               Создать армию

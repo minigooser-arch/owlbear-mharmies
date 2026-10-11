@@ -226,6 +226,8 @@ export interface StrategicCity {
   mayorId: string | null;
   isCapital: boolean;
   historicalBuildTypeCount: number;
+  /** Earliest global turn when another army may be created in this city. */
+  nextArmyCreationTurn?: number;
   markerItemId?: string | null;
   buildings?: CityBuilding[];
 }

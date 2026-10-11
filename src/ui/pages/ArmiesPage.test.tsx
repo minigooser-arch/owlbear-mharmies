@@ -93,6 +93,30 @@ describe("army registration panel", () => {
   });
 });
 
+describe("city army creation cooldown", () => {
+  const city = (id: string, name: string, nextArmyCreationTurn?: number) => ({
+    id, name, cells: [{ x: 0, y: 0 }], recognizedStateId: "red-state", deFactoStateId: "red-state",
+    factionInfluenceId: "red", mayorId: null, isCapital: false, historicalBuildTypeCount: 0,
+    buildings: [{ id: `department-${id}`, type: "MILITARY_DEPARTMENT" as const, cell: { x: 0, y: 0 } }],
+    ...(nextArmyCreationTurn !== undefined ? { nextArmyCreationTurn } : {})
+  });
+
+  it("shows the unlock turn and still sends blocked attempts for an Owlbear warning", () => {
+    const onAction = vi.fn();
+    render(<ArmiesPage armies={[]} sides={[redSide]} role="PLAYER" playerId="leader"
+      leaderSideIds={new Set(["red"])} turnNumber={11}
+      strategicCities={[city("paris", "Париж", 13), city("lyon", "Лион")]} onAction={onAction} />);
+    fireEvent.click(screen.getByRole("button", { name: "+ Создать армию" }));
+    expect(screen.getByText(/Кулдаун Военного ведомства: в Париж новую армию можно создать с хода №13/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Создать армию" }));
+    expect(onAction).toHaveBeenCalledWith({ type: "CREATE_SELECTED_CITY_ARMY", cityId: "paris", sideId: "red" });
+    fireEvent.change(screen.getByRole("combobox", { name: "Город формирования армии" }), { target: { value: "lyon" } });
+    expect(screen.getByText("Военное ведомство готово к созданию армии.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Создать армию" }));
+    expect(onAction).toHaveBeenLastCalledWith({ type: "CREATE_SELECTED_CITY_ARMY", cityId: "lyon", sideId: "red" });
+  });
+});
+
 describe("army side filter", () => {
   it("offers players only sides represented by their authorized armies", () => {
     render(

@@ -12,6 +12,7 @@ export function ForcesPage({
   role,
   playerId,
   strategicCities = [],
+  turnNumber = 1,
   leaderSideIds,
   relations = {},
   navalRequestTargets = [],
@@ -30,6 +31,7 @@ export function ForcesPage({
   role: "GM" | "PLAYER";
   playerId: string;
   strategicCities?: readonly StrategicCity[];
+  turnNumber?: number;
   leaderSideIds: ReadonlySet<string>;
   relations?: Readonly<Record<string, Readonly<Record<string, SideRelation>>>>;
   navalRequestTargets?: readonly NavalRequestTargetView[];
@@ -62,6 +64,7 @@ export function ForcesPage({
           playerId={playerId}
           leaderSideIds={leaderSideIds}
           strategicCities={strategicCities}
+          turnNumber={turnNumber}
           pendingTransportEmbarkRequests={pendingTransportEmbarkRequests}
           onAction={onAction}
         />

@@ -207,6 +207,7 @@ function normalizeStrategicCities(value: unknown, stateIds: ReadonlySet<string>)
       mayorId: raw.mayorId === null || nonEmptyString(raw.mayorId) ? raw.mayorId as string | null : null,
       isCapital: raw.isCapital === true,
       historicalBuildTypeCount: raw.historicalBuildTypeCount,
+      ...(nonNegativeInteger(raw.nextArmyCreationTurn) ? { nextArmyCreationTurn: raw.nextArmyCreationTurn } : {}),
       ...(raw.markerItemId === null || nonEmptyString(raw.markerItemId) ? { markerItemId: raw.markerItemId as string | null } : {}),
       ...(Array.isArray(raw.buildings) ? { buildings } : {})
     });

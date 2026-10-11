@@ -453,6 +453,10 @@ export class CommandProcessor {
         }
         const side = state.scene.sides.find((candidate) => candidate.id === command.sideId);
         if (!side) return "SIDE_NOT_FOUND";
+        const currentTurn = state.scene.turn.turnNumber;
+        if (currentTurn < (city.nextArmyCreationTurn ?? 0)) {
+          return `ARMY_CREATION_COOLDOWN:${city.nextArmyCreationTurn}`;
+        }
         const existingItem = command.itemId ? state.items[command.itemId] : undefined;
         if (command.itemId && (!existingItem || existingItem.type !== "IMAGE")) return existingItem ? "IMAGE_REQUIRED" : "ITEM_NOT_FOUND";
         const armyId = command.itemId ?? `army-${command.requestId}`;
@@ -502,6 +506,9 @@ export class CommandProcessor {
           state.items[armyId] = { ...existingItem, position: itemPosition };
         }
         state.items[armyId] = { ...state.items[armyId], metadata: { ...state.items[armyId]?.metadata, [METADATA_KEYS.army]: army } } as SceneItemRecord;
+        // Creation at turn N blocks turns N+1 and N+2; N+3 is available.
+        // Keep this on the city, not the army or building, so deletion cannot reset it.
+        city.nextArmyCreationTurn = currentTurn + 3;
         return undefined;
       }
       case "FORM_ARMY": {
