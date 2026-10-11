@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ArmyView, UiCommand } from "../state/useExtensionState";
-import type { ArmyUpgradeBranch, UpgradeLevel, UpgradeVariant } from "../../shared/types";
+import type { ArmyUpgradeBranch, GridCellCoord, UpgradeLevel, UpgradeVariant } from "../../shared/types";
 import { formatMovementUnits, movementDenialMessage } from "../presentation/movement";
 
 const STATUS: Record<ArmyView["status"], string> = {
@@ -156,6 +156,34 @@ function ArmyHealthEditor({ army, onAction }: { army: ArmyView; onAction(command
   );
 }
 
+function ArmyImmediateMoveEditor({ army, onAction }: { army: ArmyView; onAction(command: UiCommand): void }) {
+  const [xDraft, setXDraft] = useState(String(army.cell?.x ?? 0));
+  const [yDraft, setYDraft] = useState(String(army.cell?.y ?? 0));
+  useEffect(() => {
+    setXDraft(String(army.cell?.x ?? 0));
+    setYDraft(String(army.cell?.y ?? 0));
+  }, [army.cell?.x, army.cell?.y]);
+  const x = Number(xDraft);
+  const y = Number(yDraft);
+  const validCell = Number.isSafeInteger(x) && Number.isSafeInteger(y);
+  const target: GridCellCoord = { x, y };
+  return (
+    <div className="hp-editor" aria-label="Перемещение армии без завершения хода">
+      <strong>Переместить сейчас</strong>
+      <p className="helper-text">Для исправления пропущенного движения. Старый маршрут будет очищен.</p>
+      <label>Клетка X
+        <input aria-label={`Клетка X ${army.name}`} type="number" step="1" value={xDraft} onChange={(event) => setXDraft(event.target.value)} />
+      </label>
+      <label>Клетка Y
+        <input aria-label={`Клетка Y ${army.name}`} type="number" step="1" value={yDraft} onChange={(event) => setYDraft(event.target.value)} />
+      </label>
+      <button className="button subtle wide" type="button" disabled={!validCell || army.status === "IN_BATTLE"} title={army.status === "IN_BATTLE" ? "Армию в бою нельзя переместить вручную" : undefined} onClick={() => onAction({ type: "MOVE_ARMY_TO_CELL", armyId: army.id, cell: target })}>
+        Переместить
+      </button>
+    </div>
+  );
+}
+
 export function ArmyCard({ army, sideColor = "#687F91", isGM, canEditRoute, canRequestDisband, onAction }: ArmyCardProps) {
   const canChangeRoute = canEditRoute && army.status === "READY" && !army.formationActive;
   const invalidMessage = movementDenialMessage(army.routeInvalidReason);
@@ -236,6 +264,7 @@ export function ArmyCard({ army, sideColor = "#687F91", isGM, canEditRoute, canR
           <summary>Управление</summary>
           <div className="army-control-groups">
             {isGM && <ArmyHealthEditor army={army} onAction={onAction} />}
+            {isGM && <ArmyImmediateMoveEditor army={army} onAction={onAction} />}
             {isGM && (army.status === "MOVING" || army.status === "PAUSED") && <div className="card-actions" aria-label="Движение армии">{army.status === "MOVING" && <button type="button" onClick={() => onAction({ type: "PAUSE_ARMY", armyId: army.id })}>Пауза</button>}<button type="button" onClick={() => onAction({ type: "STOP_ARMY", armyId: army.id })}>Стоп</button></div>}
             {canRequestDisband && !army.disbandPending && <div className="card-actions"><button className="button danger subtle" type="button" onClick={() => onAction({ type: "REQUEST_ARMY_DISBAND", armyId: army.id })}>Распустить армию</button></div>}
             {isGM && <div className="card-actions"><button className="button ghost" type="button" onClick={() => onAction({ type: "UNREGISTER_ARMY", armyId: army.id })}>Снять регистрацию</button></div>}

@@ -256,6 +256,37 @@ describe("CommandProcessor", () => {
     });
   });
 
+  it("lets the GM relocate an army immediately and clears its stale route", () => {
+    const current = state();
+    const armyRed = current.armies["army-red"];
+    if (!armyRed) throw new Error("army missing");
+    current.armies["army-red"] = { ...armyRed, route: [{ x: 100, y: 0 }], plannedRoute: { startCell: { x: 0, y: 0 }, executeOnTurn: 5, cells: [{ x: 1, y: 0 }], totalCostUnits: 1, validatedRevision: current.scene.revision, requiresReplan: false } };
+    const positioned = new CommandProcessor(() => new Date(), ({ x, y }) => ({ x: Math.floor(x / 100), y: Math.floor(y / 100) }));
+    const result = positioned.execute(context("GM", "gm", current), command({ type: "MOVE_ARMY", armyId: "army-red", position: { x: 250, y: 50 } }));
+    expect(result.status).toBe("ACCEPTED");
+    if (result.status !== "ACCEPTED") return;
+    expect(result.state.positions?.["army-red"]).toEqual({ x: 250, y: 50 });
+    expect(result.state.armies["army-red"]).toMatchObject({ status: "READY", route: [], plannedRoute: { startCell: { x: 2, y: 0 }, executeOnTurn: 0, cells: [], totalCostUnits: 0, requiresReplan: false } });
+  });
+
+  it("recalculates supply after an immediate relocation to a railway station", () => {
+    const current = state();
+    current.scene.sides = current.scene.sides.map((side) => side.id === "red" ? { ...side, stateId: "red-state" } : side);
+    current.scene.states = [{ id: "red-state", name: "Красное государство", rulingFactionId: "red", active: true }];
+    current.scene.gridMap.cells["0,0"] = { terrainId: "plain", impassable: false, factionTerritoryIds: ["red"], recognizedStateId: "red-state", deFactoStateId: "red-state" };
+    current.scene.gridMap.cells["2,0"] = { terrainId: "plain", impassable: false, factionTerritoryIds: ["red"], recognizedStateId: "red-state", deFactoStateId: "red-state" };
+    current.scene.strategicCities = [{ id: "city-red", name: "Красный город", cells: [{ x: 2, y: 0 }], recognizedStateId: "red-state", deFactoStateId: "red-state", factionInfluenceId: "red", mayorId: null, isCapital: false, historicalBuildTypeCount: 0, buildings: [{ id: "railway-red", type: "RAILWAY_STATION", cell: { x: 2, y: 0 } }] }];
+    const armyRed = current.armies["army-red"];
+    if (!armyRed) throw new Error("army missing");
+    current.armies["army-red"] = { ...armyRed, supply: { supplied: false, checkedOnTurn: current.scene.turn.turnNumber, unsuppliedSinceTurn: current.scene.turn.turnNumber } };
+    const positioned = new CommandProcessor(() => new Date(), ({ x, y }) => ({ x: Math.floor(x / 100), y: Math.floor(y / 100) }));
+    const result = positioned.execute(context("GM", "gm", current), command({ type: "MOVE_ARMY", armyId: "army-red", position: { x: 250, y: 50 } }));
+    expect(result.status).toBe("ACCEPTED");
+    if (result.status !== "ACCEPTED") return;
+    expect(result.state.armies["army-red"]?.supply).toEqual({ supplied: true, checkedOnTurn: current.scene.turn.turnNumber });
+  });
+
+
   it("invalidates existing routes when recognized borders change", () => {
     const current = state();
     current.scene.version = 7;

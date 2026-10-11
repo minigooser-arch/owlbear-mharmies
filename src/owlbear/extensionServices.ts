@@ -776,7 +776,19 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
         return undefined;
       }
       let payload: ArmyCommandPayload;
-      if (command.type === "START_NAVAL_BATTLE_FROM_REQUEST") {
+      if (command.type === "MOVE_ARMY_TO_CELL") {
+        if (snapshot.role !== "GM") {
+          await notifyRussian(adapter, "GM_ONLY");
+          return undefined;
+        }
+        const dpi = await adapter.getGridDpi();
+        if (dpi === undefined) throw new Error("ARMY_POSITION_UNAVAILABLE");
+        payload = {
+          type: "MOVE_ARMY",
+          armyId: command.armyId,
+          position: new StrategicGridAdapter({ dpi, offset: { x: 0, y: 0 } }).cellToSceneCenter(command.cell)
+        };
+      } else if (command.type === "START_NAVAL_BATTLE_FROM_REQUEST") {
         payload = buildRequestBackedNavalBattleStart({
           battleId: crypto.randomUUID(),
           requestId: command.requestId,
