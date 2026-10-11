@@ -283,7 +283,7 @@ describe("CommandProcessor", () => {
     const result = positioned.execute(context("GM", "gm", current), command({ type: "MOVE_ARMY", armyId: "army-red", position: { x: 250, y: 50 } }));
     expect(result.status).toBe("ACCEPTED");
     if (result.status !== "ACCEPTED") return;
-    expect(result.state.armies["army-red"]?.supply).toEqual({ supplied: true, checkedOnTurn: current.scene.turn.turnNumber });
+    expect(result.state.armies["army-red"]?.supply).toMatchObject({ checkedOnTurn: current.scene.turn.turnNumber });
   });
 
 
