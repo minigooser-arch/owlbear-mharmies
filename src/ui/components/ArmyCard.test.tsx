@@ -61,6 +61,17 @@ describe("ArmyCard capabilities", () => {
     expect(screen.getByRole("button", { name: "Снять регистрацию" })).toBeInTheDocument();
   });
 
+  it("lets the GM relocate an army to a cell without completing the turn", () => {
+    const onAction = vi.fn();
+    render(<ArmyCard army={{ ...redArmy, cell: { x: 1, y: 2 } }} isGM canEditRoute canRequestDisband onAction={onAction} />);
+    fireEvent.click(screen.getByText("Управление"));
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Клетка X Первая армия" }), { target: { value: "7" } });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Клетка Y Первая армия" }), { target: { value: "-3" } });
+    fireEvent.click(screen.getByRole("button", { name: "Переместить" }));
+    expect(onAction).toHaveBeenCalledWith({ type: "MOVE_ARMY_TO_CELL", armyId: "army-red", cell: { x: 7, y: -3 } });
+  });
+
+
   it.each(["MOVING", "PAUSED"] as const)("hides route mutation controls while an army is %s", (status) => {
     render(
       <ArmyCard

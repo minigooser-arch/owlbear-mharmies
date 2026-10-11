@@ -193,6 +193,7 @@ export type UiCommand =
   | { type: "REGISTER_SELECTED_SHIP"; sideId: string; classId: ShipClassId; facing: ShipFacing }
   | { type: "REGISTER_SELECTED_CITY_SHIP"; cityId: string; sideId: string; classId: ShipClassId; facing: ShipFacing }
   | { type: "EDIT_ROUTE"; armyId: string }
+  | { type: "MOVE_ARMY_TO_CELL"; armyId: string; cell: GridCellCoord }
   | { type: "EDIT_SHIP_ROUTE"; shipId: string }
   | { type: "OPEN_TRANSPORT_LANDING"; shipId: string; armyId: string }
   | { type: "OPEN_MAP_BRUSH"; settings: MapBrushUiSettings }

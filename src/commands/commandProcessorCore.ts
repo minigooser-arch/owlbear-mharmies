@@ -18,6 +18,7 @@ import { validatePlannedRoute } from "../movement/movementRules";
 import { applyDiplomacyForEnteredCells, politicalRouteGate } from "../movement/authoritativeStateMovement";
 import { forcedExitRouteGate, reconcileForcedExitStates, validateForcedExitRoute } from "../movement/forcedExitService";
 import { unenteredRouteCells } from "../movement/strategicProgress";
+import { recalculateArmySupply } from "../supply/supplyService";
 import { createRegisteredShip, destroyShip } from "../naval/ships/shipLifecycle";
 import { resolvePlannedShipRoutes } from "../naval/ships/shipMovementPhase";
 import { occupiedByOtherLiveShip } from "../naval/ships/shipCellOccupancy";
@@ -1748,8 +1749,10 @@ export class CommandProcessor {
       case "MOVE_ARMY": {
         const army = state.armies[command.armyId];
         if (!army) return "ARMY_NOT_FOUND";
+        if (army.status === "IN_BATTLE") return "ARMY_STATE_BLOCKS_MOVEMENT";
+        const targetCell = this.cellForPosition?.(command.position);
         if (this.cellForPosition) {
-          const targetCell = this.cellForPosition(command.position);
+          if (!targetCell) return "ARMY_POSITION_UNAVAILABLE";
           const position = commandPosition(state, command.armyId);
           const withdrawal = position ? forcedExitRouteGate(state.scene, command.armyId, army, this.cellForPosition(position), [targetCell]) : null;
           const political = withdrawal ?? politicalRouteGate({
@@ -1774,6 +1777,20 @@ export class CommandProcessor {
         }
         state.positions ??= {};
         state.positions[command.armyId] = { ...command.position };
+        const relocated = bumpArmy(army, {
+          status: "READY", route: [], plannedRoute: emptyPlannedRoute(targetCell ?? army.plannedRoute.startCell),
+          movement: { ...army.movement, enteredRouteCellCount: 0 }, currentWaypointIndex: 0, segmentProgressCells: 0
+        });
+        delete relocated.stopReason;
+        state.armies[command.armyId] = relocated;
+        if (this.cellForPosition) {
+          const cellForPosition = this.cellForPosition;
+          const armyCells = Object.fromEntries(Object.entries(state.armies).flatMap(([armyId]) => {
+            const position = state.positions?.[armyId] ?? state.items[armyId]?.position;
+            return position ? [[armyId, cellForPosition(position)]] : [];
+          }));
+          state.armies = recalculateArmySupply(state.scene, state.armies, armyCells);
+        }
         return undefined;
       }
       case "START_ARMY":
