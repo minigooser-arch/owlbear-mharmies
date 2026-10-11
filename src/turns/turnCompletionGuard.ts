@@ -22,7 +22,10 @@ export function getTurnCompletionBlockers(
   // Forced exits intentionally continue over several turns as their movement budget resets.
   const forcedExitArmyIds = new Set((scene.forcedExitStates ?? []).map((entry) => entry.armyId));
   const hasUnfinishedPlannedMovement = Object.entries(armies).some(([armyId, army]) =>
-    army.status === "MOVING" && !forcedExitArmyIds.has(armyId)
+    !forcedExitArmyIds.has(armyId) && (
+      army.status === "MOVING" ||
+      (army.status === "PAUSED" && army.stopReason === "COORDINATOR_GAP")
+    )
   );
   if (scene.turn.phase === "MOVEMENT" || hasUnfinishedPlannedMovement) {
     blockers.push("MOVEMENT_RESOLUTION_PENDING");
