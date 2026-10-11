@@ -28,6 +28,7 @@ export type NotificationCode =
   | "ARMY_TOKEN_NOT_SELECTED"
   | "CITY_NOT_FOUND"
   | "MILITARY_DEPARTMENT_REQUIRED"
+  | "ARMY_CREATION_COOLDOWN"
   | "CITY_POSITION_UNAVAILABLE"
   | "ARMY_MUST_BE_IN_CITY"
   | "STATE_REQUIRED"
@@ -123,6 +124,7 @@ const RUSSIAN_MESSAGES: Readonly<Record<NotificationCode, string>> = {
   ARMY_TOKEN_NOT_SELECTED: "В Assets Manager не выбран токен армии.",
   CITY_NOT_FOUND: "Выбранный город не найден в состоянии сцены.",
   MILITARY_DEPARTMENT_REQUIRED: "Военное ведомство отсутствует, не принадлежит влияющей фракции или не действует на этой клетке.",
+  ARMY_CREATION_COOLDOWN: "В этом городе действует кулдаун Военного ведомства. Создание новой армии временно недоступно.",
   CITY_POSITION_UNAVAILABLE: "Не удалось определить клетку города для размещения армии.",
   ARMY_MUST_BE_IN_CITY: "Выбранный токен армии должен находиться внутри клетки города.",
   STATE_REQUIRED: "Для фракции не указано государство. Сначала привяжите фракцию к государству.",
@@ -196,6 +198,10 @@ export interface NotificationPort {
 }
 
 export function notificationMessage(code: string): string {
+  const cooldown = /^ARMY_CREATION_COOLDOWN:(\d+)$/.exec(code);
+  if (cooldown) {
+    return `В этом городе действует кулдаун Военного ведомства. Создание армии доступно с хода №${cooldown[1]}.`;
+  }
   return RUSSIAN_MESSAGES[code as NotificationCode] ?? (
     /^[A-Z][A-Z0-9_]*$/.test(code)
       ? `Не удалось выполнить действие (код: ${code}).`

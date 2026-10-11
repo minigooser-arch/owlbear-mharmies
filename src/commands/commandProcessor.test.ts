@@ -625,6 +625,74 @@ describe("CommandProcessor", () => {
     }
   });
 
+  it("enforces a two-full-turn cooldown per city without spending LR on rejected creations", () => {
+    const current = state();
+    const asset = {
+      name: "Токен",
+      image: { width: 64, height: 64, mime: "image/png", url: "https://example.test/token.png" },
+      grid: { dpi: 100, offset: { x: 0, y: 0 } }
+    };
+    current.scene.sides = current.scene.sides.map((side) =>
+      side.id === "red" ? { ...side, stateId: "red-state", armyTokenAsset: asset } : side
+    );
+    current.scene.states = [{ id: "red-state", name: "Государство", rulingFactionId: "red", active: true }];
+    for (const x of [0, 1]) {
+      current.scene.gridMap.cells[`${x},0`] = {
+        terrainId: "plain", impassable: false, factionTerritoryIds: ["red"],
+        recognizedStateId: "red-state", deFactoStateId: "red-state"
+      };
+    }
+    current.scene.strategicCities = [0, 1].map((x) => ({
+      id: `city-${x}`, name: `Город ${x}`, cells: [{ x, y: 0 }],
+      recognizedStateId: "red-state", deFactoStateId: "red-state", factionInfluenceId: "red",
+      mayorId: null, isCapital: false, historicalBuildTypeCount: 0,
+      buildings: [{ id: `department-${x}`, type: "MILITARY_DEPARTMENT" as const, cell: { x, y: 0 } }]
+    }));
+    const creator = new CommandProcessor(
+      () => new Date("2026-10-11T12:00:00.000Z"),
+      (position) => ({ x: Math.floor(position.x / 100), y: Math.floor(position.y / 100) }),
+      (cell) => ({ x: cell.x * 100 + 50, y: cell.y * 100 + 50 })
+    );
+    const createIn = (source: CommandState, cityId: string, requestId: string) =>
+      creator.execute(
+        context("PLAYER", "leader", source),
+        command({
+          type: "CREATE_CITY_ARMY", cityId, sideId: "red",
+          requestId, expectedRevision: source.scene.revision
+        }, "leader")
+      );
+
+    const first = createIn(current, "city-0", "first");
+    expect(first.status).toBe("ACCEPTED");
+    if (first.status !== "ACCEPTED") return;
+    const turn = first.state.scene.turn.turnNumber;
+    expect(first.state.scene.strategicCities?.[0]?.nextArmyCreationTurn).toBe(turn + 3);
+    expect(first.state.scene.lrTransactions ?? []).toEqual([]);
+
+    expect(createIn(first.state, "city-0", "repeat")).toEqual({
+      status: "REJECTED", reason: `ARMY_CREATION_COOLDOWN:${turn + 3}`
+    });
+    const secondCity = createIn(first.state, "city-1", "another-city");
+    expect(secondCity.status).toBe("ACCEPTED");
+
+    for (const increment of [1, 2]) {
+      const duringCooldown = structuredClone(first.state);
+      duringCooldown.scene.turn.turnNumber = turn + increment;
+      expect(createIn(duringCooldown, "city-0", `blocked-${increment}`)).toEqual({
+        status: "REJECTED", reason: `ARMY_CREATION_COOLDOWN:${turn + 3}`
+      });
+      expect(duringCooldown.scene.lrTransactions ?? []).toEqual([]);
+    }
+
+    const unlocked = structuredClone(first.state);
+    unlocked.scene.turn.turnNumber = turn + 3;
+    const afterCooldown = createIn(unlocked, "city-0", "unlocked");
+    expect(afterCooldown.status).toBe("ACCEPTED");
+    if (afterCooldown.status === "ACCEPTED") {
+      expect(afterCooldown.state.scene.strategicCities?.[0]?.nextArmyCreationTurn).toBe(turn + 6);
+    }
+  });
+
   it("schedules treatment up to the amount affordable from human resources", () => {
     const current = state();
     current.scene.sides = current.scene.sides.map((side) =>

@@ -291,6 +291,11 @@ export function renumberSceneTurn(
   const nextScene = structuredClone(scene);
   const nextArmies = structuredClone(armies) as Record<string, ArmyState>;
   nextScene.turn = nextTurn;
+  nextScene.strategicCities = (nextScene.strategicCities ?? []).map((city) =>
+    city.nextArmyCreationTurn === undefined
+      ? city
+      : { ...city, nextArmyCreationTurn: Math.max(0, city.nextArmyCreationTurn + delta) }
+  );
 
   for (const [armyId, army] of Object.entries(nextArmies)) {
     nextArmies[armyId] = {

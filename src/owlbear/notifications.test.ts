@@ -59,6 +59,13 @@ describe("notificationMessage", () => {
     expect(notificationMessage(code)).toBe(message);
   });
 
+  it("displays the authoritative unlock turn for a blocked army creation", () => {
+    expect(notificationMessage("ARMY_CREATION_COOLDOWN:13")).toBe(
+      "В этом городе действует кулдаун Военного ведомства. Создание армии доступно с хода №13."
+    );
+    expect(notificationMessage("ARMY_CREATION_COOLDOWN")).toMatch(/кулдаун/);
+  });
+
   it("uses a Russian fallback for an unknown rejection reason", () => {
     expect(notificationMessage("UNEXPECTED_REASON")).toBe("Не удалось выполнить действие (код: UNEXPECTED_REASON).");
     expect(notificationMessage("unexpected reason")).toBe("Не удалось выполнить действие.");

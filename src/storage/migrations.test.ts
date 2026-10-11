@@ -3,6 +3,27 @@ import { DEFAULT_SETTINGS } from "../shared/constants";
 import { migrateArmyState, migrateBarrierState, migrateSceneState } from "./migrations";
 
 describe("metadata migrations", () => {
+  it("preserves army-creation cooldowns when restoring cities from saved scene metadata", () => {
+    const city = {
+      id: "paris", name: "Париж", cells: [{ x: 0, y: 0 }],
+      recognizedStateId: "france", deFactoStateId: "france",
+      factionInfluenceId: null, mayorId: null, isCapital: true,
+      historicalBuildTypeCount: 1, buildings: [], nextArmyCreationTurn: 13
+    };
+    const result = migrateSceneState({
+      version: 9,
+      states: [{ id: "france", name: "Франция", active: true, rulingFactionId: null }],
+      strategicCities: [city, { ...city, id: "lyon", nextArmyCreationTurn: -1 }]
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      value: { strategicCities: [{ id: "paris", nextArmyCreationTurn: 13 }, { id: "lyon" }] }
+    });
+    if (result.ok) {
+      expect(result.value.strategicCities?.[1]?.nextArmyCreationTurn).toBeUndefined();
+    }
+  });
+
   it("migrates a v0 army through the current v4 schema and fills barrier exceptions", () => {
     const result = migrateArmyState({
       version: 0,
