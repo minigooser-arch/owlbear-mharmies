@@ -167,3 +167,4 @@ it("shows treatment in progress to both player and GM views", () => {
   );
   expect(screen.getByRole("button", { name: "В процессе лечения" })).toBeDisabled();
 });
+
