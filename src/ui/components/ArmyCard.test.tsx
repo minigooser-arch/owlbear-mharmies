@@ -45,6 +45,17 @@ describe("ArmyCard capabilities", () => {
     expect(screen.getByText(/−5 HP/)).toBeInTheDocument();
   });
 
+  it("lets a leader activate forced march and hides treatment while it is active", () => {
+    const onAction = vi.fn();
+    const army = { ...redArmy, supplied: true };
+    const { rerender } = render(<ArmyCard army={army} isGM={false} canEditRoute canRequestDisband onAction={onAction} />);
+    fireEvent.click(screen.getByRole("button", { name: /Форсированный марш/ }));
+    expect(onAction).toHaveBeenCalledWith({ type: "FORCE_MARCH", armyId: "army-red" });
+    rerender(<ArmyCard army={{ ...army, forcedMarchState: "PENDING" }} isGM={false} canEditRoute canRequestDisband onAction={onAction} />);
+    expect(screen.getByText(/Форсированный марш/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Лечиться" })).not.toBeInTheDocument();
+  });
+
   it("gives a leader only route controls", () => {
     render(<ArmyCard army={redArmy} isGM={false} canEditRoute canRequestDisband onAction={vi.fn()} />);
     expect(screen.getByRole("button", { name: "Изменить маршрут" })).toBeInTheDocument();
