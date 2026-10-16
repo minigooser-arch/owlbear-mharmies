@@ -3,6 +3,7 @@ import type { ArmyState, ShipState } from "../shared/types";
 import {
   armyEffectiveDetectionRange,
   armyEffectiveMovementUnits,
+  armyMovementUnitsForTurn,
   armyRecoveryHpCap,
   armyTerrainMovementCostUnits,
   hospitalSupportDice,
@@ -101,6 +102,12 @@ describe("unit upgrades", () => {
     expect(armyTerrainMovementCostUnits(value, "road", 1)).toBe(1);
   });
 
+  it("adds five displayed OP only during the forced march turn", () => {
+    const value = { ...army(), forcedMarchOnTurn: 4 };
+    expect(armyMovementUnitsForTurn(value, 3)).toBe(10);
+    expect(armyMovementUnitsForTurn(value, 4)).toBe(20);
+  });
+
   it("applies recovery bonuses in order and floors military medicine", () => {
     let value = army();
     value = buyArmy(value, "recovery", 1, "B");
@@ -184,3 +191,4 @@ describe("unit upgrades", () => {
     expect(transportLoadingIsFree(freeShip)).toBe(true);
   });
 });
+
