@@ -952,6 +952,7 @@ export function normalizeArmyState(raw: unknown): ValidationResult<ArmyState> {
   if (enumValue(raw.stopReason, ["BARRIER", "COORDINATOR_GAP", "MANUAL", "ARRIVED", "INVALID_ROUTE", "BATTLE"])) {
     value.stopReason = raw.stopReason;
   }
+  if (nonNegativeInteger(raw.forcedMarchOnTurn)) value.forcedMarchOnTurn = raw.forcedMarchOnTurn;
   return { ok: true, value };
 }
 
@@ -976,3 +977,4 @@ export function normalizeBarrierState(raw: unknown): ValidationResult<BarrierSta
     }
   };
 }
+
