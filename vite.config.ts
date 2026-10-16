@@ -19,7 +19,11 @@ export default defineConfig({
         // deployed HTML references this chunk by hash, so the compatibility
         // alias builder must always have a real implementation to copy.
         manualChunks(id) {
-          if (id === resolve(rootDir, "src/turns/turnSchedule.ts")) return "turnSchedule";
+          // Rollup may provide POSIX or Windows separators depending on the
+          // host. Normalize before matching so the chunk is emitted on both.
+          if (id.replaceAll("\\", "/").endsWith("/src/turns/turnSchedule.ts")) {
+            return "turnSchedule";
+          }
           return undefined;
         }
       }
@@ -31,3 +35,4 @@ export default defineConfig({
     setupFiles: ["./src/tests/setup.ts"]
   }
 });
+
