@@ -269,6 +269,11 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
     });
   const armies: ArmyView[] = authorizedRecords.map(({ item, state }) => {
     const forcedExit = input.scene.forcedExitStates?.find((entry) => entry.armyId === item.id);
+    const forcedMarchState = state.forcedMarchOnTurn === input.scene.turn.turnNumber
+      ? "ACTIVE" as const
+      : state.forcedMarchOnTurn === input.scene.turn.turnNumber + 1
+        ? "PENDING" as const
+        : undefined;
     const strategicCell = input.gridDpi
       ? new StrategicGridAdapter({ dpi: input.gridDpi, offset: { x: 0, y: 0 } }).sceneToCell(item.position)
       : undefined;
@@ -319,6 +324,7 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
       healingHpHealedThisTurn: state.healing?.hpHealedThisTurn ?? 0,
       ...(input.gridDpi ? { healingRemainingThisTurn } : {}),
       healingPending: state.healing?.pending ?? false,
+      ...(forcedMarchState ? { forcedMarchState } : {}),
       supplied: state.supply.supplied,
       supplyCheckedOnTurn: state.supply.checkedOnTurn,
       disbandPending: state.disband.pending,
