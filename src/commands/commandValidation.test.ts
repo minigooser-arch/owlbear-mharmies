@@ -165,6 +165,7 @@ describe("validateArmyCommand", () => {
     { type: "UPDATE_TERRAIN_TYPE", terrainId: "forest", patch: { movementCostUnits: 5 } },
     { type: "DELETE_TERRAIN_TYPE", terrainId: "swamp", replacementTerrainId: "plain" },
     { type: "CLEAR_ROUTE", armyId: "army" },
+    { type: "FORCE_MARCH", armyId: "army" },
     { type: "START_ARMY", armyId: "army" },
     { type: "PAUSE_ARMY", armyId: "army" },
     { type: "RESUME_ARMY", armyId: "army" },
@@ -243,3 +244,4 @@ describe("validateArmyCommand", () => {
     });
   });
 });
+
