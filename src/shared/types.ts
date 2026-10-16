@@ -560,6 +560,8 @@ export interface ArmyState {
   upgrades?: ArmyUpgrades;
   formation?: ArmyFormationState;
   healing?: ArmyHealingState;
+  /** Effective movement turn receiving the one-time forced-march bonus. */
+  forcedMarchOnTurn?: number;
 }
 
 export interface BarrierState {
@@ -740,6 +742,7 @@ export type ArmyCommandPayload =
     | { type: "SET_DEFACTO_STATE_CELLS"; cells: GridCellCoord[]; stateId: string | null }
     | { type: "SET_ARMY_HP"; armyId: string; hp: number; maxHp?: number }
     | { type: "HEAL_ARMY"; armyId: string; amount: number; hospitalCityId?: string }
+    | { type: "FORCE_MARCH"; armyId: string }
     | { type: "REQUEST_ARMY_DISBAND"; armyId: string }
     | { type: "DEFER_TURN"; until: string }
     | { type: "CANCEL_TURN_DEFERRAL" }
@@ -760,4 +763,5 @@ export interface ValidationIssue {
 export type ValidationResult<T> =
   | { ok: true; value: T }
   | { ok: false; issue: ValidationIssue };
+
 
