@@ -113,6 +113,37 @@ function context(
 
 describe("CommandProcessor", () => {
   const processor = new CommandProcessor();
+  it("applies a five-OP forced march once and blocks healing for the effective turn", () => {
+    const current = state();
+    current.scene.turn.turnNumber = 4;
+    const forced = processor.execute(
+      context("PLAYER", "leader", current),
+      command({ type: "FORCE_MARCH", armyId: "army-red" }, "leader")
+    );
+    expect(forced.status).toBe("ACCEPTED");
+    if (forced.status !== "ACCEPTED") return;
+    expect(forced.state.armies["army-red"]?.movement).toMatchObject({ maxUnits: 20, remainingUnits: 20 });
+    expect(forced.state.armies["army-red"]?.forcedMarchOnTurn).toBe(5);
+
+    const healing = processor.execute(
+      context("PLAYER", "leader", forced.state),
+      command({ type: "HEAL_ARMY", armyId: "army-red", amount: 1, expectedRevision: forced.state.scene.revision }, "leader")
+    );
+    expect(healing).toMatchObject({ status: "REJECTED", reason: "FORCED_MARCH_ACTIVE" });
+  });
+
+  it("rejects a second forced march in the same turn", () => {
+    const current = state();
+    current.scene.turn.turnNumber = 4;
+    const redArmy = current.armies["army-red"];
+    if (!redArmy) throw new Error("army fixture missing");
+    current.armies["army-red"] = { ...redArmy, forcedMarchOnTurn: 5, movement: { maxUnits: 20, remainingUnits: 20, enteredRouteCellCount: 0 } };
+    const result = processor.execute(
+      context("PLAYER", "leader", current),
+      command({ type: "FORCE_MARCH", armyId: "army-red" }, "leader")
+    );
+    expect(result).toMatchObject({ status: "REJECTED", reason: "FORCED_MARCH_ALREADY_USED" });
+  });
   it("lets only the GM reject a pending naval battle request", () => {
     const current = state();
     current.scene.navalBattleRequests = [{ id: "pending", initiatingShipId: "a", targetShipId: "b" }];
