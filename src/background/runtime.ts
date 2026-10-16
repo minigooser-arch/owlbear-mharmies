@@ -151,7 +151,13 @@ export class BackgroundRuntime {
       );
       this.sceneSubscriptions.add(this.port.onLocalItemsChange(() => undefined));
       this.sceneSubscriptions.add(
-        this.port.onSceneMetadataChange(() => this.requestVisibilityTick())
+        this.port.onSceneMetadataChange(() => {
+          this.requestVisibilityTick();
+          // A manual turn completion is persisted in scene metadata. Reconcile
+          // it immediately so an idle scene does not wait for the 30-second
+          // scheduler tick to finish the turn.
+          this.requestTurnTick();
+        })
       );
       this.sceneSubscriptions.add(this.port.onGridChange(() => this.requestVisibilityTick()));
       this.sceneSubscriptions.add(this.port.onPlayerChange(() => this.requestVisibilityTick()));

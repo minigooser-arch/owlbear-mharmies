@@ -8,6 +8,7 @@ class RuntimePort implements BackgroundRuntimePort {
   sceneReady: ((ready: boolean) => void) | undefined;
   coordinator: ((active: boolean) => void) | undefined;
   sceneItemsChange: (() => void) | undefined;
+  sceneMetadataChange: (() => void) | undefined;
   ready = true;
   opened = 0;
   closed = 0;
@@ -40,7 +41,9 @@ class RuntimePort implements BackgroundRuntimePort {
     return this.subscribe((value) => { this.sceneItemsChange = value; }, callback as never);
   }
   onLocalItemsChange(callback: () => void) { void callback; return this.subscribe(() => undefined, (() => undefined) as never); }
-  onSceneMetadataChange(callback: () => void) { void callback; return this.subscribe(() => undefined, (() => undefined) as never); }
+  onSceneMetadataChange(callback: () => void) {
+    return this.subscribe((value) => { this.sceneMetadataChange = value; }, callback as never);
+  }
   onGridChange(callback: () => void) { void callback; return this.subscribe(() => undefined, (() => undefined) as never); }
   onPlayerChange(callback: () => void) { void callback; return this.subscribe(() => undefined, (() => undefined) as never); }
   onPartyChange(callback: () => void) { void callback; return this.subscribe(() => undefined, (() => undefined) as never); }
@@ -76,6 +79,20 @@ describe("BackgroundRuntime", () => {
       await runtime.stop();
       vi.useRealTimers();
     }
+  });
+
+  it("requests turn reconciliation when scene metadata changes", async () => {
+    const port = new RuntimePort();
+    const runtime = new BackgroundRuntime(port);
+    runtime.start();
+    await runtime.whenIdle();
+    port.turns.mockClear();
+
+    port.sceneMetadataChange?.();
+    await runtime.whenIdle();
+
+    expect(port.turns).toHaveBeenCalledTimes(1);
+    await runtime.stop();
   });
 
   it("notifies on failed map hydration without clearing existing overlays", async () => {
