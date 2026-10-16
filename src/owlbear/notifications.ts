@@ -57,8 +57,10 @@ export type NotificationCode =
   | "NOT_FACTION_MEMBER"
   | "ARMY_TRANSFER_FORBIDDEN"
   | "ARMY_ENCIRCLED"
-    | "HEALING_UNAVAILABLE"
+  | "HEALING_UNAVAILABLE"
   | "HEALING_ALREADY_REQUESTED"
+  | "FORCED_MARCH_ACTIVE"
+  | "FORCED_MARCH_ALREADY_USED"
   | "DISBAND_ALREADY_REQUESTED"
   | "MOVEMENT_CONSUMED_FOR_TURN"
   | "ROUTE_NOT_ACTIVE_TURN"
@@ -153,8 +155,10 @@ const RUSSIAN_MESSAGES: Readonly<Record<NotificationCode, string>> = {
   NOT_FACTION_MEMBER: "Эта армия принадлежит другой фракции.",
   ARMY_TRANSFER_FORBIDDEN: "Сухопутную армию нельзя передать другой фракции.",
   ARMY_ENCIRCLED: "Окружённую армию нельзя лечить.",
-    HEALING_UNAVAILABLE: "Лечение на этот ход недоступно: лимит уже исчерпан или армия полностью восстановлена.",
+  HEALING_UNAVAILABLE: "Лечение на этот ход недоступно: лимит уже исчерпан или армия полностью восстановлена.",
   HEALING_ALREADY_REQUESTED: "Армия уже проходит лечение в этом ходу.",
+  FORCED_MARCH_ACTIVE: "Армия совершает форсированный марш: лечение до конца хода недоступно.",
+  FORCED_MARCH_ALREADY_USED: "Форсированный марш для этой армии уже назначен на этот ход.",
   DISBAND_ALREADY_REQUESTED: "Роспуск этой армии уже объявлен и не может быть отменён.",
   MOVEMENT_CONSUMED_FOR_TURN: "После начала боя армия потеряла всё движение этого хода.",
   ROUTE_NOT_ACTIVE_TURN: "Этот маршрут назначен на другой глобальный ход.",
@@ -216,3 +220,4 @@ export async function notifyRussian(
 ): Promise<void> {
   await port.show(notificationMessage(code), variant);
 }
+
