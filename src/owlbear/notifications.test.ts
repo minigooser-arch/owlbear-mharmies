@@ -32,6 +32,8 @@ describe("notificationMessage", () => {
     ["NOT_FACTION_MEMBER", "Эта армия принадлежит другой фракции."],
     ["ARMY_TRANSFER_FORBIDDEN", "Сухопутную армию нельзя передать другой фракции."],
     ["ARMY_ENCIRCLED", "Окружённую армию нельзя лечить."],
+    ["FORCED_MARCH_ACTIVE", "Армия совершает форсированный марш: лечение до конца хода недоступно."],
+    ["FORCED_MARCH_ALREADY_USED", "Форсированный марш для этой армии уже назначен на этот ход."],
     ["DISBAND_ALREADY_REQUESTED", "Роспуск этой армии уже объявлен и не может быть отменён."],
     ["MOVEMENT_CONSUMED_FOR_TURN", "После начала боя армия потеряла всё движение этого хода."],
     ["ROUTE_NOT_ACTIVE_TURN", "Этот маршрут назначен на другой глобальный ход."],
@@ -71,3 +73,4 @@ describe("notificationMessage", () => {
     expect(notificationMessage("unexpected reason")).toBe("Не удалось выполнить действие.");
   });
 });
+

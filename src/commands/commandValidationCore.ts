@@ -668,6 +668,10 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
         ...(value.hospitalCityId === undefined ? {} : boundedString(value.hospitalCityId) ? { hospitalCityId: value.hospitalCityId } : {})
       }
     : undefined,
+  FORCE_MARCH: (value) => {
+    const armyId = armyIdOnly(value);
+    return armyId ? { type: "FORCE_MARCH", armyId } : undefined;
+  },
   REQUEST_ARMY_DISBAND: (value) => { const armyId = armyIdOnly(value); return armyId ? { type: "REQUEST_ARMY_DISBAND", armyId } : undefined; },
   DEFER_TURN: (value) => {
     if (!boundedString(value.until, 64) || !Number.isFinite(Date.parse(value.until))) return undefined;
@@ -710,4 +714,5 @@ export function validateArmyCommand(value: unknown): CommandValidationResult {
     }
   };
 }
+
 

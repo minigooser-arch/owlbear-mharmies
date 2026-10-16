@@ -192,6 +192,11 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
     });
   const armies: ArmyView[] = authorizedRecords.map(({ item, state }) => {
     const forcedExit = input.scene.forcedExitStates?.find((entry) => entry.armyId === item.id);
+    const forcedMarchState = state.forcedMarchOnTurn === input.scene.turn.turnNumber
+      ? "ACTIVE" as const
+      : state.forcedMarchOnTurn === input.scene.turn.turnNumber + 1
+        ? "PENDING" as const
+        : undefined;
     return {
       id: item.id,
       name: item.name ?? "Безымянная армия",
@@ -214,6 +219,7 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
       supplied: state.supply.supplied,
       supplyCheckedOnTurn: state.supply.checkedOnTurn,
       disbandPending: state.disband.pending,
+      ...(forcedMarchState ? { forcedMarchState } : {}),
       ...(forcedExit ? { forcedExitStartedOnTurn: forcedExit.startedOnTurn } : {}),
       embarkedOnShipId: state.embarkedOnShipId ?? null
     };

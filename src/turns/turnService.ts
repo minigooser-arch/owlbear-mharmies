@@ -10,7 +10,7 @@ import { applyAutomaticArmyFormation } from "./formationCheckpoint";
 import { applyPendingTurnHealing } from "../health/armyHealth";
 import { preCheckpointTurnBlockers, type TurnBlocker } from "./turnCompletionGuard";
 import { deferredBoundary, getLatestStandardTurnBoundary, getNextStandardTurnBoundary } from "./turnSchedule";
-import { armyEffectiveMovementUnits, shipEffectiveMovement, terrainRegistryForArmy } from "../upgrades/unitUpgrades";
+import { armyMovementUnitsForTurn, shipEffectiveMovement, terrainRegistryForArmy } from "../upgrades/unitUpgrades";
 
 export type TurnCompletionSource = "SCHEDULE" | "MANUAL";
 
@@ -44,7 +44,7 @@ function prepareArmyForNewTurn(
   nextTurn: number,
   positionForCell?: (cell: GridCellCoord) => Vector2
 ): ArmyState {
-  const movementUnits = armyEffectiveMovementUnits(army);
+  const movementUnits = armyMovementUnitsForTurn(army, nextTurn);
   const healing = army.healing ? { ...army.healing } : undefined;
   if (healing) delete healing.pendingHp;
   let next: ArmyState = {
@@ -54,6 +54,7 @@ function prepareArmyForNewTurn(
     ...(healing ? { healing: { ...healing, pending: false, requestedOnTurn: null, requestedByPlayerId: null, hpHealedThisTurn: 0, checkedOnTurn: nextTurn, hospitalCityId: null } } : {}),
     revision: army.revision + 1
   };
+  if (next.forcedMarchOnTurn !== nextTurn) delete next.forcedMarchOnTurn;
 
   if (armyCell && positionForCell && next.status !== "IN_BATTLE" &&
       scene.forcedExitStates?.some((entry) => entry.armyId === armyId && entry.startedOnTurn <= nextTurn)) {
@@ -379,4 +380,5 @@ export function deferredBoundaryId(turn: TurnState): string | undefined {
   const date = new Date(turn.deferredUntil);
   return Number.isFinite(date.getTime()) ? deferredBoundary(date).id : undefined;
 }
+
 

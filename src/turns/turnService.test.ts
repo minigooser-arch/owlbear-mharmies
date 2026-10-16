@@ -43,6 +43,32 @@ it("starts a new turn with exactly five OP and starts only routes due on that tu
   expect(result.armies.a?.status).toBe("MOVING");
 });
 
+it("carries a forced march bonus into its effective movement turn and clears it after that turn", () => {
+  const current = scene();
+  current.turn.turnNumber = 1;
+  const forced: ArmyState = { ...army(10), forcedMarchOnTurn: 2, movement: { maxUnits: 20, remainingUnits: 20, enteredRouteCellCount: 0 } };
+  const active = completeTurn(current, { a: forced }, {
+    source: "MANUAL",
+    completedAt: new Date("2026-09-06T12:00:00.000Z"),
+    armyCells: { a: { x: 0, y: 0 } }
+  });
+  expect(active.changed).toBe(true);
+  if (!active.changed) return;
+  expect(active.armies.a?.movement).toMatchObject({ maxUnits: 20, remainingUnits: 20 });
+  expect(active.armies.a?.forcedMarchOnTurn).toBe(2);
+
+  active.scene.turn.phase = "POST_MOVEMENT";
+  const expired = completeTurn(active.scene, active.armies, {
+    source: "MANUAL",
+    completedAt: new Date("2026-09-07T12:00:00.000Z"),
+    armyCells: { a: { x: 0, y: 0 } }
+  });
+  expect(expired.changed).toBe(true);
+  if (!expired.changed) return;
+  expect(expired.armies.a?.movement).toMatchObject({ maxUnits: 10, remainingUnits: 10 });
+  expect(expired.armies.a?.forcedMarchOnTurn).toBeUndefined();
+});
+
 it("applies a treatment request at the start of the next global turn", () => {
   const damaged = {
     ...army(17),
@@ -350,4 +376,5 @@ it("exposes land battle and movement blockers before running a checkpoint", () =
     blockers: ["LAND_BATTLE_ACTIVE"]
   });
 });
+
 

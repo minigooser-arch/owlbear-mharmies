@@ -38,6 +38,7 @@ describe("metadata validation", () => {
         validatedRevision: 0, requiresReplan: false
       },
       movement: { maxUnits: 10, remainingUnits: 10, enteredRouteCellCount: 0 },
+      forcedMarchOnTurn: 4,
       health: { hp: 50, maxHp: 50 },
       supply: { supplied: true, checkedOnTurn: 0 },
       disband: { pending: false, requestedOnTurn: null, requestedByPlayerId: null },
@@ -52,6 +53,7 @@ describe("metadata validation", () => {
     if (army.ok) {
       expect(army.value.overrides.speedCellsPerSecond).toBeUndefined();
       expect(army.value.overrides.maxRouteDistanceCells).toBe(9);
+      expect(army.value.forcedMarchOnTurn).toBe(4);
     }
   });
 
@@ -166,3 +168,4 @@ describe("metadata validation", () => {
     });
   });
 });
+

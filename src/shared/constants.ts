@@ -48,6 +48,8 @@ export const NAVAL_BATTLE_AREA_SESSION_ID_KEY = `${NAVAL_BATTLE_AREA_TOOL_ID}/se
 export const NAVAL_BATTLE_AREA_DRAFT_CHANNEL = `${NAVAL_BATTLE_AREA_TOOL_ID}/draft`;
 
 export const MOVEMENT_UNITS_PER_OP = 2;
+/** Five displayed movement points, stored internally as half-OP units. */
+export const FORCED_MARCH_BONUS_UNITS = 5 * MOVEMENT_UNITS_PER_OP;
 export const STRATEGIC_CELL_CHUNKS = 10;
 export const MINECRAFT_BLOCKS_PER_CHUNK = 16;
 export const STRATEGIC_CELL_BLOCKS = STRATEGIC_CELL_CHUNKS * MINECRAFT_BLOCKS_PER_CHUNK;
@@ -145,4 +147,5 @@ export const DEFAULT_TURN_STATE: TurnState & { phase: "MOVEMENT" } = {
   lastCompletedBy: null,
   lastProcessedBoundaryId: null
 };
+
 
