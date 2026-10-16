@@ -24,7 +24,7 @@ import { resolvePlannedShipRoutes } from "../naval/ships/shipMovementPhase";
 import { occupiedByOtherLiveShip } from "../naval/ships/shipCellOccupancy";
 import { cellSupportsDomain } from "../terrain/movementDomains";
 import { authorizeArmyCommand } from "../shared/permissions";
-import { METADATA_KEYS } from "../shared/constants";
+import { FORCED_MARCH_BONUS_UNITS, METADATA_KEYS } from "../shared/constants";
 import type {
   ArmyCommand,
   ArmyState,
@@ -69,7 +69,7 @@ import {
   shipEffectiveArmor,
   shipEffectiveMaxHp,
   shipEffectiveMovement,
-  armyEffectiveMovementUnits,
+  armyMovementUnitsForTurn,
   terrainRegistryForArmy,
   transportLoadingIsFree
 } from "../upgrades/unitUpgrades";
@@ -194,7 +194,7 @@ function revalidateArmyRoute(state: CommandState, armyId: string): void {
     terrain: terrainRegistryForArmy(army, state.scene.terrain),
     wars: state.scene.wars,
     remainingUnits: army.plannedRoute.executeOnTurn > state.scene.turn.turnNumber
-      ? armyEffectiveMovementUnits(army)
+      ? armyMovementUnitsForTurn(army, army.plannedRoute.executeOnTurn)
       : army.movement.remainingUnits,
     readCell: (cell) => readCell(state.scene.gridMap, cell),
     armyStateAllowsMovement: !army.formation?.active && (army.status === "READY" || army.status === "PAUSED" || army.status === "MOVING")
@@ -1712,7 +1712,7 @@ export class CommandProcessor {
           sideId: army.sideId,
           terrain: routeTerrain,
           wars: state.scene.wars,
-          remainingUnits: armyEffectiveMovementUnits(army),
+          remainingUnits: armyMovementUnitsForTurn(army, state.scene.turn.turnNumber + 1),
           readCell: (cell) => readCell(state.scene.gridMap, cell),
           armyStateAllowsMovement: true
         });
@@ -2074,6 +2074,9 @@ export class CommandProcessor {
       case "HEAL_ARMY": {
         const army = state.armies[command.armyId];
         if (!army) return "ARMY_NOT_FOUND";
+        if (army.forcedMarchOnTurn === state.scene.turn.turnNumber || army.forcedMarchOnTurn === state.scene.turn.turnNumber + 1) {
+          return "FORCED_MARCH_ACTIVE";
+        }
         // The command request is idempotent. If its LR transaction is already present,
         // the request and its reserved HP have already been accepted.
         if ((state.scene.lrTransactions ?? []).some((transaction) => transaction.requestId === command.requestId)) return undefined;
@@ -2160,6 +2163,26 @@ export class CommandProcessor {
             amount
           });
         }
+        return undefined;
+      }
+      case "FORCE_MARCH": {
+        const army = state.armies[command.armyId];
+        if (!army) return "ARMY_NOT_FOUND";
+        if (army.status === "IN_BATTLE") return "ARMY_STATE_BLOCKS_MOVEMENT";
+        if (army.formation?.active) return "ARMY_FORMING";
+        if (army.forcedMarchOnTurn === state.scene.turn.turnNumber || army.forcedMarchOnTurn === state.scene.turn.turnNumber + 1) {
+          return "FORCED_MARCH_ALREADY_USED";
+        }
+        if (army.healing?.pending) return "HEALING_ALREADY_REQUESTED";
+        if (state.scene.turn.phase !== "MOVEMENT") return "NOT_MOVEMENT_PHASE";
+        state.armies[command.armyId] = bumpArmy(army, {
+          movement: {
+            ...army.movement,
+            maxUnits: army.movement.maxUnits + FORCED_MARCH_BONUS_UNITS,
+            remainingUnits: army.movement.remainingUnits + FORCED_MARCH_BONUS_UNITS
+          },
+          forcedMarchOnTurn: state.scene.turn.turnNumber + 1
+        });
         return undefined;
       }
       case "REQUEST_ARMY_DISBAND": {
