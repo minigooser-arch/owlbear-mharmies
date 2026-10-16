@@ -186,6 +186,7 @@ function ArmyImmediateMoveEditor({ army, onAction }: { army: ArmyView; onAction(
 
 export function ArmyCard({ army, sideColor = "#687F91", isGM, canEditRoute, canRequestDisband, onAction }: ArmyCardProps) {
   const canChangeRoute = canEditRoute && army.status === "READY" && !army.formationActive;
+  const canForceMarch = canEditRoute && army.status === "READY" && !army.formationActive && !army.forcedMarchState && !army.healingPending;
   const invalidMessage = movementDenialMessage(army.routeInvalidReason);
   const encirclementDamage = Math.ceil(army.healthMaxHp * 0.1);
   const hasRoute = army.routeCellCount > 0;
@@ -221,11 +222,21 @@ export function ArmyCard({ army, sideColor = "#687F91", isGM, canEditRoute, canR
       {army.disbandPending && <p className="route-warning">⚠ Будет распущена в начале следующего хода. Отменить роспуск нельзя.</p>}
       {army.routeRequiresReplan && <p className="route-warning">⚠ Старый маршрут нужно проложить заново по стратегической сетке.</p>}
       {invalidMessage && <p className="route-warning">⚠ {invalidMessage}</p>}
+      {army.forcedMarchState === "PENDING" && <p className="route-warning">⚡ Форсированный марш назначен на следующий ход: +5 ОП. Лечение недоступно.</p>}
+      {army.forcedMarchState === "ACTIVE" && <p className="route-warning">⚡ Форсированный марш действует: +5 ОП. Лечение недоступно до конца хода.</p>}
 
       {canChangeRoute && (
         <div className="card-actions primary-card-action" aria-label="Маршрут армии">
           <button className="button primary wide" type="button" onClick={() => onAction({ type: "EDIT_ROUTE", armyId: army.id })}>{hasRoute ? "Изменить маршрут" : "Проложить маршрут"}</button>
           {army.route.length > 0 && <button className="button ghost" type="button" onClick={() => onAction({ type: "CLEAR_ROUTE", armyId: army.id })}>Очистить</button>}
+        </div>
+      )}
+
+      {canForceMarch && (
+        <div className="card-actions">
+          <button className="button subtle wide" type="button" onClick={() => onAction({ type: "FORCE_MARCH", armyId: army.id })}>
+            Форсированный марш (+5 ОП)
+          </button>
         </div>
       )}
 
@@ -235,7 +246,7 @@ export function ArmyCard({ army, sideColor = "#687F91", isGM, canEditRoute, canR
             В процессе лечения
           </button>
         </div>
-      ) : canEditRoute && army.supplied && army.status !== "IN_BATTLE" && !army.formationActive && army.healthHp < army.healthMaxHp ? (
+      ) : !army.forcedMarchState && canEditRoute && army.supplied && army.status !== "IN_BATTLE" && !army.formationActive && army.healthHp < army.healthMaxHp ? (
         <div className="card-actions">
           <button
             className="button subtle"
