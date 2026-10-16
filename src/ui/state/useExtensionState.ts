@@ -53,6 +53,7 @@ export interface ArmyView {
   healingHpHealedThisTurn?: number;
   healingRemainingThisTurn?: number;
   healingPending?: boolean;
+  forcedMarchState?: "PENDING" | "ACTIVE";
   supplied: boolean;
   supplyCheckedOnTurn: number;
   disbandPending: boolean;
