@@ -636,7 +636,10 @@ export class ProductionEngine {
     }
 
     if (duplicateProxyIds.length > 0) {
-      await this.port.deleteSceneItems(duplicateProxyIds);
+      // A proxy can disappear between the scene snapshot and this write.
+      // Proxies are only an interaction affordance, so a stale delete must
+      // not fail the whole visibility tick or block command processing.
+      await this.port.deleteSceneItems(duplicateProxyIds).catch(() => undefined);
     }
 
     const writes: Promise<void>[] = [];
@@ -645,7 +648,7 @@ export class ProductionEngine {
     for (const [sourceId, proxy] of proxyBySourceId) {
       const source = sourceById.get(sourceId);
       if (!source) {
-        writes.push(this.port.deleteSceneItems([proxy.id]));
+        writes.push(this.port.deleteSceneItems([proxy.id]).catch(() => undefined));
         continue;
       }
       if (!entityInteractionProxyMatchesSource(proxy, source)) {
@@ -667,7 +670,7 @@ export class ProductionEngine {
           height: desired.height,
           shapeType: desired.shapeType,
           style: desired.style
-        }));
+        }).catch(() => undefined));
       }
     }
 
@@ -677,9 +680,9 @@ export class ProductionEngine {
       }
     }
 
-    await Promise.all(writes);
+    await Promise.allSettled(writes);
     if (creates.length > 0) {
-      await this.port.addSceneItems(creates);
+      await this.port.addSceneItems(creates).catch(() => undefined);
     }
   }
 
@@ -2268,6 +2271,18 @@ export interface BackgroundApplication {
   stop(): Promise<void>;
 }
 
+/** Tool previews are cosmetic and must not hold the scene lifecycle hostage. */
+async function settleSceneToolCleanup(
+  cleanups: readonly Promise<unknown>[],
+  timeoutMs = 2_000
+): Promise<void> {
+  const all = Promise.allSettled(cleanups);
+  await Promise.race([
+    all,
+    new Promise<void>((resolve) => setTimeout(resolve, timeoutMs))
+  ]);
+}
+
 export async function startBackgroundApplication(): Promise<BackgroundApplication> {
   const [{ default: OBR }, { createOwlbearAdapter }] = await Promise.all([
     import("@owlbear-rodeo/sdk"),
@@ -2445,18 +2460,16 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
       } catch {
         // Retired local fog is cosmetic; a cleanup failure must not block the scene.
       }
-      try {
-        await Promise.all([
-          removeRouteTool.cancelSession(),
-          removeShipRouteTool.cancelSession(),
-          removeTransportLandingTool.cancelSession(),
-          removeMapBrushTool.cancelSession(),
-          removeCellCoordinateTool.cancelSession()
-        ]);
-      } catch {
-        // A stale preview must not disable command delivery or coordinator heartbeats.
-      }
+      // A stale tool queue must not make every command return
+      // BACKGROUND_NOT_READY. The cleanup remains best effort and is bounded.
       commandReady = true;
+      await settleSceneToolCleanup([
+        removeRouteTool.cancelSession(),
+        removeShipRouteTool.cancelSession(),
+        removeTransportLandingTool.cancelSession(),
+        removeMapBrushTool.cancelSession(),
+        removeCellCoordinateTool.cancelSession()
+      ]);
     },
     onSceneClose: async () => {
       cellTerrainLookup.invalidate();
@@ -2465,17 +2478,13 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
       await lease.stop();
       await sceneWork.drain();
       await engine.whenIdle();
-      try {
-        await Promise.all([
-          removeRouteTool.cancelSession(),
-          removeShipRouteTool.cancelSession(),
-          removeTransportLandingTool.cancelSession(),
-          removeMapBrushTool.cancelSession(),
-          removeCellCoordinateTool.cancelSession()
-        ]);
-      } catch {
-        // Scene teardown continues so subscriptions and overlays can still be cleaned up.
-      }
+      await settleSceneToolCleanup([
+        removeRouteTool.cancelSession(),
+        removeShipRouteTool.cancelSession(),
+        removeTransportLandingTool.cancelSession(),
+        removeMapBrushTool.cancelSession(),
+        removeCellCoordinateTool.cancelSession()
+      ]);
     },
     onCoordinatorChange: (callback) => {
       coordinatorListeners.add(callback);
@@ -2556,4 +2565,5 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
     }
   };
 }
+
 
