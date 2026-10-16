@@ -8,6 +8,7 @@ import type {
   UpgradeVariant,
   TerrainRegistryState
 } from "../shared/types";
+import { FORCED_MARCH_BONUS_UNITS } from "../shared/constants";
 import { SHIP_CLASSES } from "../naval/ships/shipClasses";
 import type { LandBattleOutcome } from "../shared/types";
 
@@ -186,6 +187,13 @@ export function armyEffectiveMovementUnits(army: Pick<ArmyState, "upgrades">): n
   return units;
 }
 
+export function armyMovementUnitsForTurn(
+  army: Pick<ArmyState, "upgrades" | "forcedMarchOnTurn">,
+  turnNumber: number
+): number {
+  return armyEffectiveMovementUnits(army) + (army.forcedMarchOnTurn === turnNumber ? FORCED_MARCH_BONUS_UNITS : 0);
+}
+
 const ROUGH_TERRAIN = new Set(["mountains", "hills", "forest_hills", "swamp"]);
 
 export function armyTerrainMovementCostUnits(
@@ -345,3 +353,4 @@ export function terrainRegistryForArmy(
     )
   };
 }
+
