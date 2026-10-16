@@ -275,3 +275,4 @@ export function ArmyCard({ army, sideColor = "#687F91", isGM, canEditRoute, canR
     </article>
   );
 }
+
