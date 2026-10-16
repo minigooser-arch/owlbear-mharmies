@@ -935,3 +935,4 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
     }
   };
 }
+

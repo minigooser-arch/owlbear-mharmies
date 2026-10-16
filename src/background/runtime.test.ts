@@ -338,3 +338,4 @@ describe("BackgroundRuntime", () => {
     await runtime.stop();
   });
 });
+

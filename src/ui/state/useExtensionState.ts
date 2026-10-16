@@ -258,3 +258,4 @@ export function useExtensionState(services: ExtensionServices): ExtensionViewMod
     };
   }, [services, snapshot]);
 }
+
