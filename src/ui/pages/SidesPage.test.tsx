@@ -60,6 +60,58 @@ describe("SidesPage", () => {
     });
   });
 
+  it("accepts Cyrillic dynastic names with a hyphen", async () => {
+    const onAction = vi.fn().mockResolvedValue({ status: "ACCEPTED" });
+    render(
+      <SidesPage
+        role="GM"
+        playerId="gm"
+        sides={[]}
+        players={[]}
+        leaderSideIds={new Set()}
+        createId={() => "side-uuid"}
+        onAction={onAction}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText("Название стороны"), {
+      target: { value: "Дом Габсбургских-Лотарингских" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Добавить сторону" }));
+
+    expect(onAction).toHaveBeenCalledWith(expect.objectContaining({
+      type: "CREATE_SIDE",
+      side: expect.objectContaining({ name: "Дом Габсбургских-Лотарингских" })
+    }));
+  });
+
+  it("keeps the name and blocks duplicate submits while creation is pending", async () => {
+    let resolve: ((value: unknown) => void) | undefined;
+    const onAction = vi.fn(() => new Promise((nextResolve) => { resolve = nextResolve; }));
+    render(
+      <SidesPage
+        role="GM"
+        playerId="gm"
+        sides={[]}
+        players={[]}
+        leaderSideIds={new Set()}
+        createId={() => "side-uuid"}
+        onAction={onAction}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText("Название стороны"), {
+      target: { value: "Дом Габсбургских-Лотарингских" }
+    });
+    const submit = screen.getByRole("button", { name: "Добавить сторону" });
+    fireEvent.click(submit);
+    fireEvent.click(submit);
+
+    expect(onAction).toHaveBeenCalledTimes(1);
+    expect(screen.getByLabelText("Название стороны")).toHaveValue("Дом Габсбургских-Лотарингских");
+    resolve?.({ status: "REJECTED", reason: "COMMAND_TIMEOUT" });
+  });
+
   it("uses internal ids for players with identical display names", () => {
     const onAction = vi.fn();
     render(
@@ -166,3 +218,4 @@ describe("SidesPage", () => {
     });
   });
 });
+

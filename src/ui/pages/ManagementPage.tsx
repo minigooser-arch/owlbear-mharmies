@@ -50,7 +50,7 @@ export function ManagementPage({
   leaderSideIds: ReadonlySet<string>;
   section: ManagementSection;
   onSectionChange(next: ManagementSection): void;
-  onAction(command: UiCommand): void;
+  onAction(command: UiCommand): Promise<unknown>;
   onSyncPopulation(): Promise<PopulationSyncSummary>;
   runDiagnostic(testId: DiagnosticTestId): Promise<unknown>;
 }) {
@@ -84,3 +84,4 @@ export function ManagementPage({
     </section>
   );
 }
+
