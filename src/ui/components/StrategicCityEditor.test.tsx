@@ -51,6 +51,17 @@ describe("StrategicCityEditor", () => {
     expect(onUpdate).toHaveBeenCalledWith("moscow", expect.objectContaining({ factionInfluenceId: "black" }));
   });
 
+  it("offers a watchtower in the GM building menu", () => {
+    const onAddBuilding = vi.fn();
+    render(<StrategicCityEditor role="GM" states={states} sides={sides} cities={[city]} onCreate={vi.fn()} onUpdate={vi.fn()} onDelete={vi.fn()} onAddBuilding={onAddBuilding} />);
+    fireEvent.click(screen.getByText("Показать детали города Москва"));
+    expect(within(screen.getByLabelText("Добавить постройку в Москва")).getByRole("option", { name: "WATCHTOWER" })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Тип новой постройки Москва"), { target: { value: "WATCHTOWER" } });
+    fireEvent.change(screen.getByLabelText("Клетка новой постройки Москва"), { target: { value: "1,2" } });
+    fireEvent.click(screen.getByRole("button", { name: "Добавить постройку" }));
+    expect(onAddBuilding).toHaveBeenCalledWith("moscow", { id: "moscow-watchtower-1-2", type: "WATCHTOWER", cell: { x: 1, y: 2 } });
+  });
+
   it("shows concise city summaries and expandable city details", () => {
     render(<StrategicCityEditor role="GM" states={states} cities={[city]} onCreate={vi.fn()} onUpdate={vi.fn()} onDelete={vi.fn()} />);
     const cityCard = screen.getByText("Показать детали города Москва").closest("details");
@@ -270,3 +281,4 @@ it("refreshes an edit form from the latest city data when editing is reopened", 
   expect(screen.getByLabelText("Редактировать название Москва обновлённая")).toHaveValue("Москва обновлённая");
   expect(screen.getByLabelText("Редактировать исторические типы построек Москва обновлённая")).toHaveValue(9);
 });
+
