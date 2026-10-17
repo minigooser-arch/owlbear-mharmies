@@ -10,7 +10,7 @@ interface SidesPageProps {
   armies?: readonly ArmyView[];
   players: readonly PartyPlayerView[];
   leaderSideIds: ReadonlySet<string>;
-  onAction(command: UiCommand): void;
+  onAction(command: UiCommand): void | Promise<unknown>;
   createId?: () => string;
 }
 
@@ -44,25 +44,33 @@ export function SidesPage({
 }: SidesPageProps) {
   const [name, setName] = useState("");
   const [color, setColor] = useState("#b3261e");
+  const [creating, setCreating] = useState(false);
   const [influenceReasons, setInfluenceReasons] = useState<Record<string, string>>({});
   const [influenceCodes, setInfluenceCodes] = useState<Record<string, MilitaryInfluenceReasonCode>>({});
 
-  const createSide = (event: FormEvent<HTMLFormElement>) => {
+  const createSide = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (creating) return;
     const trimmedName = name.trim();
     if (!trimmedName) return;
-    onAction({
-      type: "CREATE_SIDE",
-      side: {
-        id: createId(),
-        name: trimmedName,
-        color,
-        playerIds: [],
-        leaderPlayerIds: [],
-        stateId: null
-      }
-    });
-    setName("");
+    setCreating(true);
+    try {
+      const result = await onAction({
+        type: "CREATE_SIDE",
+        side: {
+          id: createId(),
+          name: trimmedName,
+          color,
+          playerIds: [],
+          leaderPlayerIds: [],
+          stateId: null
+        }
+      });
+      if (!result || (typeof result === "object" && "status" in result && result.status !== "ACCEPTED")) return;
+      setName("");
+    } finally {
+      setCreating(false);
+    }
   };
 
   return (
@@ -90,8 +98,8 @@ export function SidesPage({
               onChange={(event) => setColor(event.target.value)}
             />
           </label>
-          <button className="button primary" type="submit" disabled={!name.trim()}>
-            Добавить сторону
+          <button className="button primary" type="submit" disabled={!name.trim() || creating}>
+            {creating ? "Создание…" : "Добавить сторону"}
           </button>
         </form>
       )}
@@ -257,3 +265,4 @@ export function SidesPage({
     </section>
   );
 }
+
