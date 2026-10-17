@@ -40,7 +40,6 @@ import { hasNavalBattleLineOfSight } from "../naval/battle/navalBattleLineOfSigh
 import { hasNavalLineOfSight } from "../naval/detection/navalLineOfSight";
 import { getDueTurnBoundary } from "../turns/turnSchedule";
 import { completeTurn } from "../turns/turnService";
-import { beginMovementResolution } from "../commands/commandProcessorCore";
 import { getDestinationMovementCostUnits } from "../terrain/terrainRegistry";
 import { GridDistanceService } from "../grid/gridDistance";
 import { StrategicGridAdapter } from "../grid/strategicGrid";
@@ -85,11 +84,9 @@ import {
 import { MetadataRepository, RevisionConflict, type ArmyRecord, type BarrierRecord, type MetadataItemFrame } from "../storage/metadataRepository";
 import { GridStorageError } from "../storage/gridChunkCodec";
 import { markLRTransactionRecorded } from "../finance/lrLedger";
-import { dueDailySheetSyncDate } from "../sheets/dailySyncSchedule";
 import {
   applySheetStateSnapshots,
   buildSheetWritebackEvent,
-  buildSheetWritebackSnapshotEvent,
   mergeSheetWritebackQueue,
   pendingLRTransactions,
   type SheetWritebackEvent
@@ -98,8 +95,7 @@ import {
   readSheetWritebackToken,
   SheetWritebackClient,
   SheetWritebackError,
-  sheetWritebackConfigured,
-  sheetWritebackRuntimeEnabled
+  sheetWritebackConfigured
 } from "../sheets/writebackClient";
 import { buildDetectionGraph } from "../visibility/detectionGraph";
 import { buildSceneDetectionGraph, detectedShipIdsForSide } from "../visibility/sceneDetectionGraph";
@@ -113,6 +109,7 @@ import { VisionLightService } from "../visibility/visionLightService";
 import { visibleArmyIdsForPlayer } from "../visibility/visibilityEngine";
 import { shipEmbarkedArmyIds } from "../naval/transport/transportRules";
 import { applyPopulationCalendarToScene } from "../population/populationRules";
+import { watchtowerDetectionBonusAtCell } from "../cities/cityEffects";
 import type { OwlbearPort } from "../owlbear/sdkAdapter";
 import {
   CoordinatorLease,
@@ -357,7 +354,6 @@ export class ProductionEngine {
   private clearedSharedMapOverlays = false;
   private sheetWritebackFallback: SheetWritebackEvent | undefined;
   private sheetWritebackRetryAt = 0;
-  private lastVerifiedDailySheetSyncDate: string | undefined;
   private sheetWritebackBackoffMs = 0;
   private sheetWritebackRetryTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -390,72 +386,10 @@ export class ProductionEngine {
           this.coordinator &&
           this.coordinatorGeneration === generation
         ) {
-          void this.enqueueMutation(async () => {
-            await this.queueSheetWritebackSnapshot();
-            await this.flushSheetWriteback();
-          });
+          void this.enqueueMutation(() => this.flushSheetWriteback());
         }
       });
     }
-  }
-
-  private async queueSheetWritebackSnapshot(): Promise<void> {
-    if (!this.coordinator) return;
-    const metadata = await this.port.getSceneMetadata();
-    const rawScene = metadata[METADATA_KEYS.scene] as Partial<SceneState> | undefined;
-    if (!rawScene?.settings || !sheetWritebackRuntimeEnabled(rawScene.settings)) return;
-    const frame = await this.repository.readItemFrame();
-    const items = Object.fromEntries(frame.items.map((item) => [item.id, item]));
-    const state: CommandState = {
-      scene: frame.baseScene,
-      armies: Object.fromEntries(frame.armies.map((record) => [record.item.id, record.state])),
-      barriers: Object.fromEntries(frame.barriers.map((record) => [record.item.id, record.state])),
-      items,
-      positions: Object.fromEntries(frame.items.map((item) => [item.id, item.position]))
-    };
-    let hydratedState = state;
-    try {
-      hydratedState = await this.hydrateMilitaryInfluenceFromSheet(state);
-    } catch (error) {
-      this.reportOperationalError(error, "sheet-influence-bootstrap");
-    }
-    const event = buildSheetWritebackSnapshotEvent(hydratedState, this.wallClock().toISOString());
-    if (!event) return;
-    const writebackQueue = SheetWritebackClient.mergeQueue(metadata, event);
-    await this.port.patchSceneMetadata({ [METADATA_KEYS.sheetWritebackQueue]: writebackQueue });
-  }
-
-  private async hydrateMilitaryInfluenceFromSheet(state: CommandState): Promise<CommandState> {
-    const token = readSheetWritebackToken();
-    const url = state.scene.settings.sheetWritebackUrl?.trim();
-    if (!token || !url) return state;
-    const inputs = state.scene.sides.flatMap((side) => {
-      const country = side.stateId
-        ? state.scene.states.find((candidate) => candidate.id === side.stateId)?.backendCountry?.trim()
-        : undefined;
-      return country
-        ? [{ factionId: side.id, factionName: side.name, country }]
-        : [];
-    });
-    if (inputs.length === 0) return state;
-    const snapshots = await new SheetWritebackClient(url, token).getFactionMilitaryInfluence(inputs);
-    const balances = new Map(snapshots.map((snapshot) => [snapshot.factionId, snapshot.militaryInfluence]));
-    const sides = state.scene.sides.map((side) => {
-      const balance = balances.get(side.id);
-      return balance === undefined || balance === side.militaryInfluence
-        ? side
-        : { ...side, militaryInfluence: balance };
-    });
-    if (sides.every((side, index) => side === state.scene.sides[index])) return state;
-    const expectedRevision = state.scene.revision;
-    const nextScene = { ...state.scene, sides, revision: expectedRevision + 1 };
-    const canCommit = this.captureCoordinatorGuard();
-    await this.repository.writeScene(
-      nextScene,
-      expectedRevision,
-      (current) => canCommit() && current.revision === expectedRevision
-    );
-    return { ...state, scene: nextScene };
   }
 
   async normalizeCityBuildingLocations(): Promise<void> {
@@ -514,6 +448,13 @@ export class ProductionEngine {
       return ship && shipEmbarkedArmyIds(ship).includes(item.id) ? [item.id] : [];
     }));
     const activeLandArmies = armies.filter(({ item }) => !reciprocallyEmbarkedArmyIds.has(item.id));
+    let armyCellForPosition: ((position: Vector2) => GridCellCoord) | undefined;
+    try {
+      const detectionGrid = new StrategicGridAdapter({ dpi: await this.grid.getDpi(), offset: { x: 0, y: 0 } });
+      armyCellForPosition = (position) => detectionGrid.sceneToCell(position);
+    } catch {
+      // A missing grid calibration disables the city range bonus but must not disable visibility.
+    }
     const armyDetectionUnits = activeLandArmies.map(({ item, state }) => ({
       id: item.id,
       sideId: state.sideId,
@@ -521,7 +462,7 @@ export class ProductionEngine {
       detectionRangeCells: armyEffectiveDetectionRange(
         state,
         state.overrides.detectionRangeCells ?? scene.settings.defaultDetectionRangeCells
-      ),
+      ) + (armyCellForPosition ? watchtowerDetectionBonusAtCell(scene, armyCellForPosition(item.position)) : 0),
       concealmentCells: armyConcealmentCells(state),
       ignoresVisionBarriers: state.ignoresVisionBarriers
     }));
@@ -636,10 +577,7 @@ export class ProductionEngine {
     }
 
     if (duplicateProxyIds.length > 0) {
-      // A proxy can disappear between the scene snapshot and this write.
-      // Proxies are only an interaction affordance, so a stale delete must
-      // not fail the whole visibility tick or block command processing.
-      await this.port.deleteSceneItems(duplicateProxyIds).catch(() => undefined);
+      await this.port.deleteSceneItems(duplicateProxyIds);
     }
 
     const writes: Promise<void>[] = [];
@@ -648,7 +586,7 @@ export class ProductionEngine {
     for (const [sourceId, proxy] of proxyBySourceId) {
       const source = sourceById.get(sourceId);
       if (!source) {
-        writes.push(this.port.deleteSceneItems([proxy.id]).catch(() => undefined));
+        writes.push(this.port.deleteSceneItems([proxy.id]));
         continue;
       }
       if (!entityInteractionProxyMatchesSource(proxy, source)) {
@@ -670,7 +608,7 @@ export class ProductionEngine {
           height: desired.height,
           shapeType: desired.shapeType,
           style: desired.style
-        }).catch(() => undefined));
+        }));
       }
     }
 
@@ -680,9 +618,9 @@ export class ProductionEngine {
       }
     }
 
-    await Promise.allSettled(writes);
+    await Promise.all(writes);
     if (creates.length > 0) {
-      await this.port.addSceneItems(creates).catch(() => undefined);
+      await this.port.addSceneItems(creates);
     }
   }
 
@@ -725,49 +663,7 @@ export class ProductionEngine {
   }
 
   turnTick(): Promise<void> {
-    return this.enqueueMutation(async () => {
-      try {
-        await this.dailySheetSyncIfDue();
-      } catch (error) {
-        this.reportOperationalError(error, "daily-sheet-sync");
-      }
-      await this.turnTickNow();
-    });
-  }
-
-  private async dailySheetSyncIfDue(): Promise<void> {
-    if (!this.coordinator) return;
-    const date = dueDailySheetSyncDate(this.wallClock(), this.lastVerifiedDailySheetSyncDate);
-    if (!date) return;
-    const key = `${METADATA_KEYS.scene}/last-daily-sheet-sync-msk`;
-    const metadata = await this.port.getSceneMetadata();
-    if (metadata[key] === date) {
-      this.lastVerifiedDailySheetSyncDate = date;
-      return;
-    }
-    const guard = this.captureCoordinatorGuard();
-    const scene = await this.repository.readScene();
-    if (!sheetWritebackRuntimeEnabled(scene.settings) || !guard()) return;
-
-    const countries = scene.states
-      .map((state) => state.backendCountry?.trim())
-      .filter((country): country is string => Boolean(country));
-    const refreshed = await this.refreshDemographyForCountries(scene, countries);
-    if (!guard()) return;
-    if (JSON.stringify(scene.demographics) !== JSON.stringify(refreshed.demographics)) {
-      await this.repository.writeScene(
-        { ...refreshed, revision: scene.revision + 1 },
-        scene.revision,
-        (current) => guard() && current.revision === scene.revision
-      );
-    }
-    await this.queueSheetWritebackSnapshot();
-    await this.flushSheetWriteback();
-    if (!guard()) return;
-    const after = await this.port.getSceneMetadata();
-    if (SheetWritebackClient.readQueue(after) || this.sheetWritebackFallback) return;
-    await this.port.patchSceneMetadata({ [key]: date });
-    this.lastVerifiedDailySheetSyncDate = date;
+    return this.enqueueMutation(() => this.turnTickNow());
   }
 
   private async turnTickNow(): Promise<void> {
@@ -777,19 +673,15 @@ export class ProductionEngine {
     const now = this.wallClock();
     const frame = await this.repository.readFrame();
     const sourceScene = frame.scene;
-    const scene = sheetWritebackRuntimeEnabled(sourceScene.settings)
+    const scene = sheetWritebackConfigured(sourceScene.settings)
       ? sourceScene
       : applyPopulationCalendarToScene(sourceScene, now);
     const armyRecords = frame.items.armies;
     const barrierRecords = frame.items.barriers;
     const sceneItems = frame.items.items;
     if (!canCommit()) return;
-    const pending = scene.turn.completionPending;
-    const boundary = pending ? null : getDueTurnBoundary(now, scene.turn);
-    // An administrator may suspend scheduled completion even after routes
-    // began; explicit manual completion remains independent of auto-turn pause.
-    const scheduledPaused = pending?.source === "SCHEDULE" && scene.turn.autoTurnsPaused;
-    if ((!pending && !boundary) || scheduledPaused) {
+    const boundary = getDueTurnBoundary(now, scene.turn);
+    if (!boundary) {
       if (scene !== sourceScene) {
         await this.repository.writeScene(
           { ...scene, revision: sourceScene.revision + 1 },
@@ -800,7 +692,7 @@ export class ProductionEngine {
       return;
     }
     let authoritativeScene = scene;
-    if (sheetWritebackRuntimeEnabled(scene.settings)) {
+    if (sheetWritebackConfigured(scene.settings)) {
       try {
         const countries = scene.states
           .map((state) => state.backendCountry?.trim())
@@ -826,53 +718,19 @@ export class ProductionEngine {
       record.item.id,
       strategicGrid.sceneToCell(record.item.position)
     ]));
-    const previous: CommandState = {
-      scene: authoritativeScene,
-      armies,
-      barriers: Object.fromEntries(barrierRecords.map((record) => [record.item.id, record.state])),
-      items: Object.fromEntries(sceneItems.map((item) => [item.id, item])),
-      positions: Object.fromEntries(sceneItems.map((item) => [item.id, item.position]))
-    };
-    const next: CommandState = structuredClone(previous);
-    let startedMovement = false;
-    const cellForPosition = (position: Vector2) => strategicGrid.sceneToCell(position);
-    const positionForCell = (cell: GridCellCoord) => strategicGrid.cellToSceneCenter(cell);
-    if (!pending && next.scene.turn.phase === "MOVEMENT") {
-      const failure = beginMovementResolution(next, cellForPosition, positionForCell);
-      if (failure) {
-        this.reportOperationalError(new Error(failure), "scheduled-turn-movement-resolution");
-        return;
-      }
-      if (!boundary) return;
-      next.scene.turn.completionPending = {
-        source: "SCHEDULE",
-        boundaryId: boundary.id
-      };
-      startedMovement = true;
-    }
-    // Planned ship routes have moved their tokens during phase resolution.
-    // New-turn fuel bonuses must use the authoritative new positions.
-    const shipCells = Object.fromEntries(Object.keys(next.scene.ships ?? {}).flatMap((shipId) => {
-      const position = next.positions?.[shipId] ?? next.items[shipId]?.position;
-      return position ? [[shipId, strategicGrid.sceneToCell(position)]] : [];
-    }));
-    const source = pending?.source ?? "SCHEDULE";
-    const boundaryId = pending?.boundaryId ?? boundary?.id;
-    const completion = completeTurn(next.scene, next.armies, {
-      source,
+    const shipCells = Object.fromEntries(frame.items.ships.map((record) => [
+      record.item.id,
+      strategicGrid.sceneToCell(record.item.position)
+    ]));
+    const completion = completeTurn(authoritativeScene, armies, {
+      source: "SCHEDULE",
       completedAt: now,
-      ...(source === "SCHEDULE" && boundaryId ? { boundaryId } : {}),
-      positionForCell,
+      boundaryId: boundary.id,
+      positionForCell: (cell) => strategicGrid.cellToSceneCenter(cell),
       armyCells,
       shipCells
     });
-    if (completion.changed) {
-      next.scene = completion.scene;
-      next.armies = completion.armies;
-    } else if (!startedMovement) {
-      // An active route or battle is still in progress. Preserve the pending
-      // intent and retry on subsequent coordinator ticks, without damage or
-      // a duplicate checkpoint.
+    if (!completion.changed) {
       if (scene !== sourceScene) {
         await this.repository.writeScene(
           { ...scene, revision: sourceScene.revision + 1 },
@@ -882,7 +740,19 @@ export class ProductionEngine {
       }
       return;
     }
-    next.scene.revision = authoritativeScene.revision + 1;
+
+    const previous: CommandState = {
+      scene: authoritativeScene,
+      armies,
+      barriers: Object.fromEntries(barrierRecords.map((record) => [record.item.id, record.state])),
+      items: Object.fromEntries(sceneItems.map((item) => [item.id, item])),
+      positions: Object.fromEntries(sceneItems.map((item) => [item.id, item.position]))
+    };
+    const next: CommandState = {
+      ...structuredClone(previous),
+      scene: { ...completion.scene, revision: authoritativeScene.revision + 1 },
+      armies: completion.armies
+    };
     if (!canCommit()) return;
     await this.persistCommandState(next, previous, sceneItems);
   }
@@ -1248,18 +1118,6 @@ export class ProductionEngine {
             current.coordinatorLease?.connectionId === expectedCoordinatorConnectionId)
       );
     }
-    // Finalize a one-click turn as soon as the last moving army stops.
-    // Queue the follow-up only after movement persistence; never await a
-    // nested mutation from inside the serialization queue.
-    if (scene.turn.completionPending) {
-      const updatedStatuses = new Map(frames.map((frame) => [frame.record.item.id, frame.state.status]));
-      const allSettled = armies.every((record) =>
-        (updatedStatuses.get(record.item.id) ?? record.state.status) !== "MOVING"
-      );
-      if (allSettled) void this.turnTick().catch((error: unknown) => {
-        this.reportOperationalError(error, "pending-turn-followup");
-      });
-    }
   }
 
   pauseMovingArmies(): Promise<void> {
@@ -1304,13 +1162,13 @@ export class ProductionEngine {
     }
     const command = validation.command;
     const frame = await this.repository.readFrame();
-    let scene = sheetWritebackRuntimeEnabled(frame.scene.settings)
+    let scene = sheetWritebackConfigured(frame.scene.settings)
       ? frame.scene
       : applyPopulationCalendarToScene(frame.scene, this.wallClock());
     const armyRecords = frame.items.armies;
     const barrierRecords = frame.items.barriers;
     const sceneItems = frame.items.items;
-    if (sheetWritebackRuntimeEnabled(scene.settings) &&
+    if (sheetWritebackConfigured(scene.settings) &&
       (command.type === "HEAL_ARMY" || command.type === "COMPLETE_TURN_NOW")) {
       try {
         const targetCountries = this.countriesNeedingAuthoritativeDemography(
@@ -1354,13 +1212,7 @@ export class ProductionEngine {
       command.type === "ACCEPT_EMBARK_ARMY" ||
       command.type === "DISEMBARK_ARMY" ||
       command.type === "HEAL_ARMY" ||
-      command.type === "CREATE_CITY_ARMY" ||
-      command.type === "ADD_CITY_BUILDING" ||
-      command.type === "REMOVE_CITY_BUILDING" ||
-      command.type === "CREATE_STRATEGIC_CITY" ||
-      command.type === "CREATE_STRATEGIC_CITY_FROM_TOKEN" ||
-      command.type === "UPDATE_STRATEGIC_CITY" ||
-      command.type === "DELETE_STRATEGIC_CITY"
+      command.type === "CREATE_CITY_ARMY"
     ) {
       try {
         const grid = new StrategicGridAdapter({ dpi: await this.grid.getDpi(), offset: { x: 0, y: 0 } });
@@ -1383,7 +1235,8 @@ export class ProductionEngine {
           armies: armyRecords,
           sceneItems,
           distancePort: this.grid,
-          visionBarriers: extractBarrierSegments(barrierRecords, "vision")
+          visionBarriers: extractBarrierSegments(barrierRecords, "vision"),
+          ...(commandCellForPosition ? { positionToCell: commandCellForPosition } : {})
         });
         detectedNavalTargetsForSide = (sideId) =>
           detectedShipIdsForSide(detectionGraph, scene.ships ?? {}, sideId);
@@ -1653,7 +1506,7 @@ export class ProductionEngine {
     scene: SceneState,
     countries: readonly string[]
   ): Promise<SceneState> {
-    if (!sheetWritebackRuntimeEnabled(scene.settings)) return scene;
+    if (!sheetWritebackConfigured(scene.settings)) return scene;
     const token = readSheetWritebackToken();
     if (!token) throw new SheetWritebackError("SHEET_WRITEBACK_TOKEN_MISSING");
     const url = scene.settings.sheetWritebackUrl?.trim();
@@ -1744,15 +1597,14 @@ export class ProductionEngine {
         : undefined;
     if (!merged) return;
     const event = {
-        ...merged.pending,
-        // Individual army HP and ship counts are private to Owlbear. Keep only
-        // aggregate faction/state HP projections and military influence.
-        armies: [],
-        removedArmyIds: [],
-        states: [],
-        factions: [...(merged.pending.factions ?? [])],
-        stateArmies: [...(merged.pending.stateArmies ?? [])]
-      };
+      ...merged.pending,
+      // Army HP and per-faction/state army projections are private to Owlbear.
+      // Strip legacy queued values before any request reaches Google Sheets.
+      armies: [],
+      removedArmyIds: [],
+      factions: [],
+      stateArmies: []
+    };
     if (event.armies.length === 0 && event.removedArmyIds.length === 0 && event.states.length === 0 &&
       (event.factions?.length ?? 0) === 0 && (event.stateArmies?.length ?? 0) === 0 &&
       (event.militaryInfluenceOperations?.length ?? 0) === 0) {
@@ -2080,6 +1932,7 @@ export class ProductionEngine {
     };
     const sideColors = new Map(scene.sides.map((side) => [side.id, side.color]));
     try {
+      const detectionGrid = new StrategicGridAdapter({ dpi: await this.grid.getDpi(), offset: { x: 0, y: 0 } });
       await new VisionLightService(overlayPort).reconcile(
         armies.map(({ item, state }) => ({
           sourceItemId: item.id,
@@ -2088,7 +1941,7 @@ export class ProductionEngine {
           rangeCells: armyEffectiveDetectionRange(
             state,
             state.overrides.detectionRangeCells ?? scene.settings.defaultDetectionRangeCells
-          )
+          ) + watchtowerDetectionBonusAtCell(scene, detectionGrid.sceneToCell(item.position))
         })),
         { isGM: role === "GM", memberSideIds: new Set(memberSideIds) },
         await this.grid.getDpi()
@@ -2271,18 +2124,6 @@ export interface BackgroundApplication {
   stop(): Promise<void>;
 }
 
-/** Tool previews are cosmetic and must not hold the scene lifecycle hostage. */
-async function settleSceneToolCleanup(
-  cleanups: readonly Promise<unknown>[],
-  timeoutMs = 2_000
-): Promise<void> {
-  const all = Promise.allSettled(cleanups);
-  await Promise.race([
-    all,
-    new Promise<void>((resolve) => setTimeout(resolve, timeoutMs))
-  ]);
-}
-
 export async function startBackgroundApplication(): Promise<BackgroundApplication> {
   const [{ default: OBR }, { createOwlbearAdapter }] = await Promise.all([
     import("@owlbear-rodeo/sdk"),
@@ -2460,16 +2301,18 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
       } catch {
         // Retired local fog is cosmetic; a cleanup failure must not block the scene.
       }
-      // A stale tool queue must not make every command return
-      // BACKGROUND_NOT_READY. The cleanup remains best effort and is bounded.
+      try {
+        await Promise.all([
+          removeRouteTool.cancelSession(),
+          removeShipRouteTool.cancelSession(),
+          removeTransportLandingTool.cancelSession(),
+          removeMapBrushTool.cancelSession(),
+          removeCellCoordinateTool.cancelSession()
+        ]);
+      } catch {
+        // A stale preview must not disable command delivery or coordinator heartbeats.
+      }
       commandReady = true;
-      await settleSceneToolCleanup([
-        removeRouteTool.cancelSession(),
-        removeShipRouteTool.cancelSession(),
-        removeTransportLandingTool.cancelSession(),
-        removeMapBrushTool.cancelSession(),
-        removeCellCoordinateTool.cancelSession()
-      ]);
     },
     onSceneClose: async () => {
       cellTerrainLookup.invalidate();
@@ -2478,13 +2321,17 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
       await lease.stop();
       await sceneWork.drain();
       await engine.whenIdle();
-      await settleSceneToolCleanup([
-        removeRouteTool.cancelSession(),
-        removeShipRouteTool.cancelSession(),
-        removeTransportLandingTool.cancelSession(),
-        removeMapBrushTool.cancelSession(),
-        removeCellCoordinateTool.cancelSession()
-      ]);
+      try {
+        await Promise.all([
+          removeRouteTool.cancelSession(),
+          removeShipRouteTool.cancelSession(),
+          removeTransportLandingTool.cancelSession(),
+          removeMapBrushTool.cancelSession(),
+          removeCellCoordinateTool.cancelSession()
+        ]);
+      } catch {
+        // Scene teardown continues so subscriptions and overlays can still be cleaned up.
+      }
     },
     onCoordinatorChange: (callback) => {
       coordinatorListeners.add(callback);
@@ -2565,5 +2412,4 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
     }
   };
 }
-
 
