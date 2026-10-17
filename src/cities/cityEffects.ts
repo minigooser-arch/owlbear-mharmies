@@ -85,6 +85,16 @@ export function lighthouseDetectionBonusAtCell(scene: SceneState, shipCell: Grid
   return (scene.strategicCities ?? []).some((city) => lighthouseDetectionBonus(scene, city.id, shipCell) > 0) ? 1 : 0;
 }
 
+export function watchtowerDetectionBonus(scene: SceneState, cityId: string | null, armyCell: GridCellCoord): number {
+  const city = cityId ? (scene.strategicCities ?? []).find((candidate) => candidate.id === cityId) : undefined;
+  const watchtower = city ? activeBuilding(scene, city, "WATCHTOWER") : undefined;
+  return watchtower && cellKey(watchtower.cell) === cellKey(armyCell) ? 1 : 0;
+}
+
+export function watchtowerDetectionBonusAtCell(scene: SceneState, armyCell: GridCellCoord): number {
+  return (scene.strategicCities ?? []).some((city) => watchtowerDetectionBonus(scene, city.id, armyCell) > 0) ? 1 : 0;
+}
+
 export function seaFortBlocksDisembark(scene: SceneState, targetCell: GridCellCoord, isEnemyTransport: boolean): boolean {
   if (!isEnemyTransport) return false;
   return (scene.strategicCities ?? []).some((city) =>
