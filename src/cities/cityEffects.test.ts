@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { armyFormationCap, portTransportMovementCost, shipBunkeringBonus } from "./cityEffects";
+import { armyFormationCap, portTransportMovementCost, shipBunkeringBonus, watchtowerDetectionBonusAtCell } from "./cityEffects";
 import type { SceneState } from "../shared/types";
 
 const scene = {
@@ -16,4 +16,27 @@ describe("city effects", () => {
     expect(portTransportMovementCost(scene, "c", { x: 1, y: 1 })).toBe(3);
     expect(shipBunkeringBonus(scene, "c", { x: 0, y: 0 })).toBe(2);
   });
+
+  it("gives a controlled army one detection cell from a watchtower", () => {
+    const withWatchtower = structuredClone(scene) as SceneState;
+    const city = withWatchtower.strategicCities?.[0];
+    if (!city) throw new Error("test city is missing");
+    city.buildings = [
+      ...(city.buildings ?? []),
+      { id: "w", type: "WATCHTOWER", cell: { x: 0, y: 0 } }
+    ];
+    expect(watchtowerDetectionBonusAtCell(withWatchtower, { x: 0, y: 0 })).toBe(1);
+    expect(watchtowerDetectionBonusAtCell(withWatchtower, { x: 1, y: 0 })).toBe(0);
+  });
+
+  it("does not give a bonus when the city is no longer controlled by the influenced state", () => {
+    const withoutControl = structuredClone(scene) as SceneState;
+    const city = withoutControl.strategicCities?.[0];
+    const cell = withoutControl.gridMap.cells["0,0"];
+    if (!city || !cell) throw new Error("test city or cell is missing");
+    city.buildings = [{ id: "w", type: "WATCHTOWER", cell: { x: 0, y: 0 } }];
+    cell.deFactoStateId = "other-state";
+    expect(watchtowerDetectionBonusAtCell(withoutControl, { x: 0, y: 0 })).toBe(0);
+  });
 });
+
