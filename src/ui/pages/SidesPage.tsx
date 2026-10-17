@@ -10,7 +10,7 @@ interface SidesPageProps {
   armies?: readonly ArmyView[];
   players: readonly PartyPlayerView[];
   leaderSideIds: ReadonlySet<string>;
-  onAction(command: UiCommand): void | Promise<unknown>;
+  onAction(command: UiCommand): Promise<unknown>;
   createId?: () => string;
 }
 
@@ -66,7 +66,7 @@ export function SidesPage({
           stateId: null
         }
       });
-      if (!result || (typeof result === "object" && "status" in result && result.status !== "ACCEPTED")) return;
+      if (!result || (typeof result === "object" && result !== null && "status" in result && result.status !== "ACCEPTED")) return;
       setName("");
     } finally {
       setCreating(false);
