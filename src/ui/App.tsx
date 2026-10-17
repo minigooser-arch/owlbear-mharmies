@@ -51,9 +51,12 @@ export function App({ services }: { services: ExtensionServices }) {
     openForces();
   };
 
-  const send = (command: UiCommand) => {
-    if (["DELETE_SIDE", "DELETE_STATE", "STOP_ALL", "RELEASE_BATTLE_GROUP", "COMPLETE_TURN_NOW", "REQUEST_ARMY_DISBAND", "UNREGISTER_SHIP", "COMPLETE_NAVAL_BATTLE", "REJECT_NAVAL_BATTLE_REQUEST", "START_CIVIL_WAR"].includes(command.type) || (command.type === "SET_ARMY_HP" && command.hp === 0)) setDangerous(command);
-    else void state.send(command);
+  const send = (command: UiCommand): Promise<unknown> => {
+    if (["DELETE_SIDE", "DELETE_STATE", "STOP_ALL", "RELEASE_BATTLE_GROUP", "COMPLETE_TURN_NOW", "REQUEST_ARMY_DISBAND", "UNREGISTER_SHIP", "COMPLETE_NAVAL_BATTLE", "REJECT_NAVAL_BATTLE_REQUEST", "START_CIVIL_WAR"].includes(command.type) || (command.type === "SET_ARMY_HP" && command.hp === 0)) {
+      setDangerous(command);
+      return Promise.resolve(undefined);
+    }
+    return state.send(command);
   };
 
   return (
@@ -125,4 +128,5 @@ export function App({ services }: { services: ExtensionServices }) {
     </main>
   );
 }
+
 
