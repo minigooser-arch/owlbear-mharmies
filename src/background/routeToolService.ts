@@ -22,7 +22,7 @@ import type {
   Vector2
 } from "../shared/types";
 import { COMMAND_PROTOCOL_VERSION } from "../shared/types";
-import { armyEffectiveMovementUnits, terrainRegistryForArmy } from "../upgrades/unitUpgrades";
+import { armyMovementUnitsForTurn, terrainRegistryForArmy } from "../upgrades/unitUpgrades";
 import {
   MetadataRepository,
   type ArmyRecord,
@@ -165,8 +165,8 @@ export class RouteToolService implements RouteToolIntegrationPort {
       gridDpi,
       sideId: authorized.army.state.sideId,
       // Route planning is for the next global turn with this army's effective OP budget.
-      movementUnits: armyEffectiveMovementUnits(authorized.army.state),
-      maxUnits: armyEffectiveMovementUnits(authorized.army.state),
+      movementUnits: armyMovementUnitsForTurn(authorized.army.state, authorized.scene.turn.turnNumber + 1),
+      maxUnits: armyMovementUnitsForTurn(authorized.army.state, authorized.scene.turn.turnNumber + 1),
       terrain: terrainRegistryForArmy(authorized.army.state, authorized.scene.terrain),
       gridMap: structuredClone(authorized.scene.gridMap),
       wars: structuredClone(authorized.scene.wars),
@@ -371,3 +371,4 @@ export class RouteToolService implements RouteToolIntegrationPort {
     };
   }
 }
+
