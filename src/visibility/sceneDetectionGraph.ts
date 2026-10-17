@@ -1,6 +1,7 @@
 import type { BarrierSegment } from "../barriers/barrierGeometry";
 import type { GridDistancePort } from "../routes/routeMath";
-import type { ArmyState, SceneItemRecord, SceneState, ShipState } from "../shared/types";
+import type { ArmyState, GridCellCoord, SceneItemRecord, SceneState, ShipState, Vector2 } from "../shared/types";
+import { watchtowerDetectionBonusAtCell } from "../cities/cityEffects";
 import { buildDetectionGraph, type DetectionGraph } from "./detectionGraph";
 import { armyConcealmentCells, armyEffectiveDetectionRange, shipDetectionBonus } from "../upgrades/unitUpgrades";
 
@@ -15,16 +16,21 @@ export async function buildSceneDetectionGraph(input: {
   sceneItems: readonly SceneItemRecord[];
   distancePort: GridDistancePort;
   visionBarriers: readonly BarrierSegment[];
+  positionToCell?: (position: Vector2) => GridCellCoord;
 }): Promise<DetectionGraph> {
   const sceneItemById = new Map(input.sceneItems.map((item) => [item.id, item]));
   const armyDetectionUnits = input.armies.map(({ item, state }) => ({
     id: item.id,
     sideId: state.sideId,
     position: item.position,
-    detectionRangeCells: armyEffectiveDetectionRange(
-      state,
-      state.overrides.detectionRangeCells ?? input.scene.settings.defaultDetectionRangeCells
-    ),
+    detectionRangeCells:
+      armyEffectiveDetectionRange(
+        state,
+        state.overrides.detectionRangeCells ?? input.scene.settings.defaultDetectionRangeCells
+      ) +
+      (input.positionToCell
+        ? watchtowerDetectionBonusAtCell(input.scene, input.positionToCell(item.position))
+        : 0),
     concealmentCells: armyConcealmentCells(state),
     ignoresVisionBarriers: state.ignoresVisionBarriers
   }));
@@ -60,3 +66,4 @@ export function detectedShipIdsForSide(
       .filter((unitId) => ships[unitId] !== undefined)
   );
 }
+
