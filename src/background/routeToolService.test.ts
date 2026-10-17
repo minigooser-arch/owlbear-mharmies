@@ -139,6 +139,19 @@ describe("RouteToolService", () => {
     });
   });
 
+  it("loads the forced-march budget for the next movement turn", async () => {
+    const port = new MemoryPort();
+    port.scene.turn.turnNumber = 6;
+    const state = port.items[0]?.metadata[METADATA_KEYS.army] as ArmyState;
+    state.forcedMarchOnTurn = 7;
+    const service = new RouteToolService(port, { send: async (command) => accepted(command) });
+
+    await expect(service.loadSession("army-a")).resolves.toMatchObject({
+      movementUnits: 20,
+      maxUnits: 20
+    });
+  });
+
   it("rejects an ordinary member", async () => {
     const port = new MemoryPort();
     port.playerId = "member";
@@ -229,3 +242,4 @@ describe("RouteToolService", () => {
     expect(port.localItems.map((item) => item.id)).toEqual(["keep"]);
   });
 });
+
