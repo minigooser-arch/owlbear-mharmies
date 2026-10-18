@@ -276,7 +276,7 @@ export function ArmyCard({ army, sideColor = "#687F91", isGM, canEditRoute, canR
           <div className="army-control-groups">
             {isGM && <ArmyHealthEditor army={army} onAction={onAction} />}
             {isGM && <ArmyImmediateMoveEditor army={army} onAction={onAction} />}
-            {isGM && (army.status === "MOVING" || army.status === "PAUSED") && <div className="card-actions" aria-label="Движение армии">{army.status === "MOVING" && <button type="button" onClick={() => onAction({ type: "PAUSE_ARMY", armyId: army.id })}>Пауза</button>}<button type="button" onClick={() => onAction({ type: "STOP_ARMY", armyId: army.id })}>Стоп</button></div>}
+            {isGM && (army.status === "MOVING" || army.status === "PAUSED") && <div className="card-actions" aria-label="Движение армии">{army.status === "MOVING" ? <button type="button" onClick={() => onAction({ type: "PAUSE_ARMY", armyId: army.id })}>Пауза</button> : army.route.length > 0 ? <button type="button" onClick={() => onAction({ type: "RESUME_ARMY", armyId: army.id })}>Продолжить</button> : null}<button type="button" onClick={() => onAction({ type: "STOP_ARMY", armyId: army.id })}>Стоп</button></div>}
             {canRequestDisband && !army.disbandPending && <div className="card-actions"><button className="button danger subtle" type="button" onClick={() => onAction({ type: "REQUEST_ARMY_DISBAND", armyId: army.id })}>Распустить армию</button></div>}
             {isGM && <div className="card-actions"><button className="button ghost" type="button" onClick={() => onAction({ type: "UNREGISTER_ARMY", armyId: army.id })}>Снять регистрацию</button></div>}
           </div>
