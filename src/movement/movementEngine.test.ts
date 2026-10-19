@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { GridDistancePort } from "../routes/routeMath";
 import type { Vector2 } from "../shared/types";
-import { advanceArmy } from "./movementEngine";
+import { advanceArmy, resolveArmyRoute } from "./movementEngine";
 
 const distancePort: GridDistancePort = {
   distance: async (from: Vector2, to: Vector2) => Math.hypot(to.x - from.x, to.y - from.y)
@@ -82,4 +82,43 @@ describe("movement engine", () => {
       stopReason: "ARRIVED"
     });
   });
+
+  it("resolves the complete route in one result without animation steps", async () => {
+    const result = await resolveArmyRoute({
+      position: { x: 0, y: 0 },
+      waypoints: [{ x: 2, y: 0 }, { x: 2, y: 3 }, { x: 5, y: 3 }],
+      currentWaypointIndex: 0,
+      segmentProgressCells: 0,
+      distancePort,
+      movementBarriers: [],
+      ignoresMovementBarriers: false
+    });
+
+    expect(result).toMatchObject({
+      position: { x: 5, y: 3 },
+      currentWaypointIndex: 3,
+      segmentProgressCells: 0,
+      status: "READY",
+      stopReason: "ARRIVED"
+    });
+  });
+
+  it("resolves to the last safe point when a route crosses a barrier", async () => {
+    const result = await resolveArmyRoute({
+      position: { x: 0, y: 0 },
+      waypoints: [{ x: 2, y: 0 }, { x: 10, y: 0 }],
+      currentWaypointIndex: 0,
+      segmentProgressCells: 0,
+      distancePort,
+      movementBarriers: [{ barrierId: "wall", from: { x: 4, y: -2 }, to: { x: 4, y: 2 } }],
+      ignoresMovementBarriers: false
+    });
+
+    expect(result.status).toBe("PAUSED");
+    expect(result.stopReason).toBe("BARRIER");
+    expect(result.position.x).toBeGreaterThan(3.99);
+    expect(result.position.x).toBeLessThan(4);
+    expect(result.currentWaypointIndex).toBe(1);
+  });
 });
+

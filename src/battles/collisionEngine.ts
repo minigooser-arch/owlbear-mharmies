@@ -12,6 +12,8 @@ export interface CollisionArmy {
   to: Vector2;
   collisionRangeCells: number;
   broadPhaseRadiusPixels?: number;
+  /** Full planned polyline, including `from` and `to`, when available. */
+  path?: readonly Vector2[];
 }
 
 export interface CollisionInput {
@@ -31,12 +33,38 @@ export interface EnemyCollision {
 function sweptBounds(army: CollisionArmy) {
   const radius = army.broadPhaseRadiusPixels;
   if (radius === undefined) return undefined;
+  const points = army.path && army.path.length >= 2 ? army.path : [army.from, army.to];
   return {
-    minX: Math.min(army.from.x, army.to.x) - radius,
-    minY: Math.min(army.from.y, army.to.y) - radius,
-    maxX: Math.max(army.from.x, army.to.x) + radius,
-    maxY: Math.max(army.from.y, army.to.y) + radius
+    minX: Math.min(...points.map((point) => point.x)) - radius,
+    minY: Math.min(...points.map((point) => point.y)) - radius,
+    maxX: Math.max(...points.map((point) => point.x)) + radius,
+    maxY: Math.max(...points.map((point) => point.y)) + radius
   };
+}
+
+function pathPointAt(army: CollisionArmy, time: number): Vector2 {
+  const points = army.path && army.path.length >= 2 ? army.path : [army.from, army.to];
+  const clampedTime = Math.max(0, Math.min(1, time));
+  const lengths = points.slice(1).map((point, index) => {
+    const from = points[index] ?? point;
+    return Math.hypot(point.x - from.x, point.y - from.y);
+  });
+  const total = lengths.reduce((sum, length) => sum + length, 0);
+  if (total <= Number.EPSILON) return { ...(points[points.length - 1] ?? army.to) };
+
+  let distance = total * clampedTime;
+  for (let index = 0; index < lengths.length; index += 1) {
+    const segmentLength = lengths[index] ?? 0;
+    const from = points[index];
+    const to = points[index + 1];
+    if (!from || !to) continue;
+    if (distance <= segmentLength || index === lengths.length - 1) {
+      const progress = segmentLength <= Number.EPSILON ? 1 : distance / segmentLength;
+      return interpolatePosition(from, to, progress);
+    }
+    distance -= segmentLength;
+  }
+  return { ...(points[points.length - 1] ?? army.to) };
 }
 
 function broadPhaseCouldContact(left: CollisionArmy, right: CollisionArmy): boolean {
@@ -59,8 +87,8 @@ async function bisectContact(
   for (let index = 0; index < BINARY_STEPS; index += 1) {
     const middle = (outside + inside) / 2;
     const distance = await distancePort.distance(
-      interpolatePosition(left.from, left.to, middle),
-      interpolatePosition(right.from, right.to, middle)
+      pathPointAt(left, middle),
+      pathPointAt(right, middle)
     );
     if (distance <= threshold) inside = middle;
     else outside = middle;
@@ -80,10 +108,10 @@ async function searchInterval(
   depth: number
 ): Promise<number | undefined> {
   if (startDistance <= threshold) return startTime;
-  const startLeft = interpolatePosition(left.from, left.to, startTime);
-  const endLeft = interpolatePosition(left.from, left.to, endTime);
-  const startRight = interpolatePosition(right.from, right.to, startTime);
-  const endRight = interpolatePosition(right.from, right.to, endTime);
+  const startLeft = pathPointAt(left, startTime);
+  const endLeft = pathPointAt(left, endTime);
+  const startRight = pathPointAt(right, startTime);
+  const endRight = pathPointAt(right, endTime);
   const possibleClosingDistance =
     (await distancePort.distance(startLeft, endLeft)) +
     (await distancePort.distance(startRight, endRight));
@@ -91,8 +119,8 @@ async function searchInterval(
 
   const middleTime = (startTime + endTime) / 2;
   const middleDistance = await distancePort.distance(
-    interpolatePosition(left.from, left.to, middleTime),
-    interpolatePosition(right.from, right.to, middleTime)
+    pathPointAt(left, middleTime),
+    pathPointAt(right, middleTime)
   );
   if (depth === 0) {
     if (middleDistance <= threshold) {
@@ -135,9 +163,9 @@ async function collisionTime(
   distancePort: GridDistancePort
 ): Promise<number | undefined> {
   const threshold = Math.max(left.collisionRangeCells, right.collisionRangeCells);
-  const startDistance = await distancePort.distance(left.from, right.from);
+  const startDistance = await distancePort.distance(pathPointAt(left, 0), pathPointAt(right, 0));
   if (startDistance <= threshold) return 0;
-  const endDistance = await distancePort.distance(left.to, right.to);
+  const endDistance = await distancePort.distance(pathPointAt(left, 1), pathPointAt(right, 1));
   return searchInterval(
     left,
     right,
@@ -176,8 +204,8 @@ export async function findEarliestEnemyCollisions(
         armyAId: left.id,
         armyBId: right.id,
         time,
-        positionA: interpolatePosition(left.from, left.to, time),
-        positionB: interpolatePosition(right.from, right.to, time)
+        positionA: pathPointAt(left, time),
+        positionB: pathPointAt(right, time)
       });
     }
   }
@@ -195,3 +223,4 @@ export async function findEarliestEnemyCollision(
 ): Promise<EnemyCollision | undefined> {
   return (await findEarliestEnemyCollisions(input))[0];
 }
+

@@ -13,7 +13,7 @@ import {
 } from "../commands/commandGateway";
 import { CommandProcessor, type CommandState } from "../commands/commandProcessor";
 import { validateArmyCommand } from "../commands/commandValidation";
-import { advanceArmy } from "../movement/movementEngine";
+import { resolveArmyRoute } from "../movement/movementEngine";
 import { validatePlannedRoute } from "../movement/movementRules";
 import {
   applyDiplomacyForEnteredCells,
@@ -350,7 +350,6 @@ export class ProductionEngine {
   private coordinator = false;
   private coordinatorGeneration = 0;
   private activeCoordinatorConnectionId: string | undefined;
-  private lastMovementAt = performance.now();
   private mutationTail: Promise<void> = Promise.resolve();
   private lastMapOverlaySignature: string | undefined;
   private clearedLegacyMapOverlays = false;
@@ -380,7 +379,6 @@ export class ProductionEngine {
       this.sheetWritebackRetryTimer = undefined;
     }
     if (active) {
-      this.lastMovementAt = performance.now();
       const generation = this.coordinatorGeneration;
       // Let work already requested in the current turn enter the serialized queue
       // before the startup writeback probe. A scene with no pending queue then
@@ -891,9 +889,10 @@ export class ProductionEngine {
     if (!this.coordinator) return;
     const expectedCoordinatorConnectionId = this.activeCoordinatorConnectionId;
     const canCommit = this.captureCoordinatorGuard(expectedCoordinatorConnectionId);
-    const now = performance.now();
-    const deltaSeconds = Math.max(0, (now - this.lastMovementAt) / 1_000);
-    this.lastMovementAt = now;
+    // Strategic movement is resolved atomically. The old implementation used
+    // this timer to animate every segment and persisted intermediate positions;
+    // that made a coordinator gap leave armies halfway through a route. Keep
+    // the heartbeat for recovery, but calculate the complete route in one pass.
     const itemFrame = initialItemFrame ?? await this.repository.readItemFrame();
     if (!hasEligibleArmyMovement(itemFrame.armies, itemFrame.baseScene)) return;
     const frame = await this.repository.readFrame(itemFrame);
@@ -917,6 +916,7 @@ export class ProductionEngine {
       record: ArmyRecord;
       from: Vector2;
       to: Vector2;
+      path?: Vector2[];
       state: ArmyState;
       reachedRouteCell?: GridCellCoord | undefined;
     }> = [];
@@ -1045,14 +1045,11 @@ export class ProductionEngine {
       const waypoints = political.blockedReason
         ? record.state.route.slice(0, maxWaypointExclusive)
         : record.state.route;
-      const result = await advanceArmy({
+      const result = await resolveArmyRoute({
         position: record.item.position,
         waypoints,
         currentWaypointIndex: record.state.currentWaypointIndex,
         segmentProgressCells: record.state.segmentProgressCells,
-        speedCellsPerSecond:
-          record.state.overrides.speedCellsPerSecond ?? scene.settings.defaultSpeedCellsPerSecond,
-        deltaSeconds,
         distancePort: this.grid,
         movementBarriers,
         ignoresMovementBarriers: record.state.ignoresMovementBarriers
@@ -1068,10 +1065,20 @@ export class ProductionEngine {
           : result.stopReason ? { stopReason: result.stopReason } : {})
       });
       if (!reachedClosedBorder && !result.stopReason) delete nextArmyState.stopReason;
+      const lastReachedWaypoint = waypoints[result.currentWaypointIndex - 1];
       frames.push({
         record,
         from: { ...record.item.position },
         to: result.position,
+        path: [
+          record.item.position,
+          ...waypoints.slice(record.state.currentWaypointIndex, result.currentWaypointIndex),
+          ...(lastReachedWaypoint &&
+          lastReachedWaypoint.x === result.position.x &&
+          lastReachedWaypoint.y === result.position.y
+            ? []
+            : [result.position])
+        ],
         state: nextArmyState
       });
     }
@@ -1082,6 +1089,7 @@ export class ProductionEngine {
         sideId: frame.record.state.sideId,
         from: frame.from,
         to: frame.to,
+        ...(frame.path ? { path: frame.path } : {}),
         collisionRangeCells:
           frame.record.state.overrides.collisionRangeCells ?? scene.settings.defaultCollisionRangeCells
       })),
