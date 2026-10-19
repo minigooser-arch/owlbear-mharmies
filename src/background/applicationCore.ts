@@ -1054,7 +1054,6 @@ export class ProductionEngine {
         movementBarriers,
         ignoresMovementBarriers: record.state.ignoresMovementBarriers
       });
-      const lastReachedWaypoint = waypoints[result.currentWaypointIndex - 1];
       const reachedClosedBorder = Boolean(political.blockedReason) && result.status === "READY";
       const nextArmyState = cloneArmyState(record.state, {
         status: reachedClosedBorder ? "PAUSED" : result.status,
@@ -1066,6 +1065,7 @@ export class ProductionEngine {
           : result.stopReason ? { stopReason: result.stopReason } : {})
       });
       if (!reachedClosedBorder && !result.stopReason) delete nextArmyState.stopReason;
+      const lastReachedWaypoint = waypoints[result.currentWaypointIndex - 1];
       frames.push({
         record,
         from: { ...record.item.position },
@@ -2573,6 +2573,5 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
     }
   };
 }
-
 
 
