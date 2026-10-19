@@ -916,6 +916,7 @@ export class ProductionEngine {
       record: ArmyRecord;
       from: Vector2;
       to: Vector2;
+      path?: Vector2[];
       state: ArmyState;
       reachedRouteCell?: GridCellCoord | undefined;
     }> = [];
@@ -1053,6 +1054,7 @@ export class ProductionEngine {
         movementBarriers,
         ignoresMovementBarriers: record.state.ignoresMovementBarriers
       });
+      const lastReachedWaypoint = waypoints[result.currentWaypointIndex - 1];
       const reachedClosedBorder = Boolean(political.blockedReason) && result.status === "READY";
       const nextArmyState = cloneArmyState(record.state, {
         status: reachedClosedBorder ? "PAUSED" : result.status,
@@ -1068,6 +1070,15 @@ export class ProductionEngine {
         record,
         from: { ...record.item.position },
         to: result.position,
+        path: [
+          record.item.position,
+          ...waypoints.slice(record.state.currentWaypointIndex, result.currentWaypointIndex),
+          ...(lastReachedWaypoint &&
+          lastReachedWaypoint.x === result.position.x &&
+          lastReachedWaypoint.y === result.position.y
+            ? []
+            : [result.position])
+        ],
         state: nextArmyState
       });
     }
@@ -1078,6 +1089,7 @@ export class ProductionEngine {
         sideId: frame.record.state.sideId,
         from: frame.from,
         to: frame.to,
+        ...(frame.path ? { path: frame.path } : {}),
         collisionRangeCells:
           frame.record.state.overrides.collisionRangeCells ?? scene.settings.defaultCollisionRangeCells
       })),
