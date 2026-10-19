@@ -27,6 +27,8 @@ export interface MovementResult {
   stopReason?: "BARRIER" | "COORDINATOR_GAP" | "ARRIVED";
 }
 
+export type AtomicMovementInput = Omit<MovementInput, "speedCellsPerSecond" | "deltaSeconds">;
+
 function pausedForGap(input: MovementInput): MovementResult {
   return {
     position: { ...input.position },
@@ -105,8 +107,67 @@ export async function advanceArmy(input: MovementInput): Promise<MovementResult>
   return { position, currentWaypointIndex, segmentProgressCells, status: "MOVING" };
 }
 
+/**
+ * Resolves a planned route as a single authoritative movement operation.
+ *
+ * Strategic movement is not an animation: every waypoint is checked in order,
+ * barriers are tested for every segment, and the caller receives one final
+ * position to persist. This keeps all route side effects deterministic while
+ * preventing a slow coordinator heartbeat from leaving tokens halfway through
+ * a cell.
+ */
+export async function resolveArmyRoute(input: AtomicMovementInput): Promise<MovementResult> {
+  let position = { ...input.position };
+  let currentWaypointIndex = Math.max(0, input.currentWaypointIndex);
+  let segmentProgressCells = Math.max(0, input.segmentProgressCells);
+
+  while (currentWaypointIndex < input.waypoints.length) {
+    const target = input.waypoints[currentWaypointIndex];
+    if (!target) break;
+    const distanceCells = await input.distancePort.distance(position, target);
+    if (distanceCells <= DISTANCE_EPSILON) {
+      position = { ...target };
+      currentWaypointIndex += 1;
+      segmentProgressCells = 0;
+      continue;
+    }
+
+    if (!input.ignoresMovementBarriers) {
+      const hit = firstBarrierIntersection(
+        { from: position, to: target },
+        input.movementBarriers
+      );
+      if (hit) {
+        const safeProgress = Math.max(0, hit.t - BARRIER_BACKOFF);
+        position = interpolatePosition(position, target, safeProgress);
+        segmentProgressCells += distanceCells * safeProgress;
+        return {
+          position,
+          currentWaypointIndex,
+          segmentProgressCells,
+          status: "PAUSED",
+          stopReason: "BARRIER"
+        };
+      }
+    }
+
+    position = { ...target };
+    currentWaypointIndex += 1;
+    segmentProgressCells = 0;
+  }
+
+  return {
+    position,
+    currentWaypointIndex,
+    segmentProgressCells: 0,
+    status: "READY",
+    stopReason: "ARRIVED"
+  };
+}
+
 export async function advanceMovingArmies(
   inputs: readonly MovementInput[]
 ): Promise<MovementResult[]> {
   return Promise.all(inputs.map(advanceArmy));
 }
+
