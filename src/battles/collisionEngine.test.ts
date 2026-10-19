@@ -69,4 +69,34 @@ describe("swept collisions", () => {
     expect(hit?.armyBId).toBe("c");
     expect(hit?.time).toBeCloseTo(0.35, 2);
   });
+
+  it("checks the complete planned polyline instead of only its endpoints", async () => {
+    const hit = await findEarliestEnemyCollision({
+      armies: [
+        {
+          id: "a",
+          sideId: "A",
+          from: { x: 0, y: 0 },
+          to: { x: 10, y: 10 },
+          path: [{ x: 0, y: 0 }, { x: 0, y: 10 }, { x: 10, y: 10 }],
+          collisionRangeCells: 0.5
+        },
+        {
+          id: "b",
+          sideId: "B",
+          from: { x: 0, y: 5 },
+          to: { x: 0, y: 5 },
+          collisionRangeCells: 0.5
+        }
+      ],
+      relationForSides: () => "ENEMY",
+      distancePort
+    });
+
+    expect(hit?.armyAId).toBe("a");
+    expect(hit?.time).toBeCloseTo(0.225, 2);
+    expect(hit?.positionA.x).toBeCloseTo(0, 2);
+    expect(hit?.positionA.y).toBeCloseTo(4.5, 2);
+  });
 });
+
