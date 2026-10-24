@@ -105,6 +105,13 @@ describe("command authorization", () => {
         command("FORCE_MARCH", "leader", { armyId: "army-red" })
       )
     ).toEqual({ allowed: true });
+
+    expect(
+      authorizeArmyCommand(
+        playerContext("leader"),
+        command("CANCEL_FORCE_MARCH", "leader", { armyId: "army-red" })
+      )
+    ).toEqual({ allowed: true });
   });
 
   it("lets a leader manage ordinary members only on a led side", () => {
@@ -192,4 +199,5 @@ it("allows a leader who is also a faction member to request disband", () => {
   }, command("REQUEST_ARMY_DISBAND", "leader", { armyId:"army" }));
   expect(result).toEqual({ allowed: true });
 });
+
 
