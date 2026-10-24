@@ -2185,6 +2185,31 @@ export class CommandProcessor {
         });
         return undefined;
       }
+      case "CANCEL_FORCE_MARCH": {
+        const army = state.armies[command.armyId];
+        if (!army) return "ARMY_NOT_FOUND";
+        if (army.status !== "READY") return "ARMY_NOT_READY";
+        if (army.formation?.active) return "ARMY_FORMING";
+        if (army.forcedMarchOnTurn !== state.scene.turn.turnNumber && army.forcedMarchOnTurn !== state.scene.turn.turnNumber + 1) {
+          return "FORCED_MARCH_NOT_ACTIVE";
+        }
+        if (state.scene.turn.phase !== "MOVEMENT") return "NOT_MOVEMENT_PHASE";
+        const cancelled = bumpArmy(army, {
+          route: [],
+          plannedRoute: emptyPlannedRoute(army.plannedRoute.startCell),
+          movement: {
+            ...army.movement,
+            maxUnits: Math.max(0, army.movement.maxUnits - FORCED_MARCH_BONUS_UNITS),
+            remainingUnits: Math.max(0, army.movement.remainingUnits - FORCED_MARCH_BONUS_UNITS),
+            enteredRouteCellCount: 0
+          },
+          currentWaypointIndex: 0,
+          segmentProgressCells: 0
+        });
+        delete cancelled.forcedMarchOnTurn;
+        state.armies[command.armyId] = cancelled;
+        return undefined;
+      }
       case "REQUEST_ARMY_DISBAND": {
         const army = state.armies[command.armyId];
         if (!army) return "ARMY_NOT_FOUND";
@@ -2268,5 +2293,6 @@ export class CommandProcessor {
     }
   }
 }
+
 
 
