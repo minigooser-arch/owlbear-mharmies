@@ -56,6 +56,13 @@ describe("ArmyCard capabilities", () => {
     expect(screen.queryByRole("button", { name: "Лечиться" })).not.toBeInTheDocument();
   });
 
+  it("lets a leader cancel forced march", () => {
+    const onAction = vi.fn();
+    render(<ArmyCard army={{ ...redArmy, supplied: true, forcedMarchState: "PENDING" }} isGM={false} canEditRoute canRequestDisband onAction={onAction} />);
+    fireEvent.click(screen.getByRole("button", { name: "Отменить форсированный марш" }));
+    expect(onAction).toHaveBeenCalledWith({ type: "CANCEL_FORCE_MARCH", armyId: "army-red" });
+  });
+
   it("gives a leader only route controls", () => {
     render(<ArmyCard army={redArmy} isGM={false} canEditRoute canRequestDisband onAction={vi.fn()} />);
     expect(screen.getByRole("button", { name: "Изменить маршрут" })).toBeInTheDocument();
@@ -178,4 +185,5 @@ it("shows treatment in progress to both player and GM views", () => {
   );
   expect(screen.getByRole("button", { name: "В процессе лечения" })).toBeDisabled();
 });
+
 
