@@ -144,6 +144,53 @@ describe("CommandProcessor", () => {
     );
     expect(result).toMatchObject({ status: "REJECTED", reason: "FORCED_MARCH_ALREADY_USED" });
   });
+
+  it("cancels a forced march, clears its route, and removes only the +5 OP bonus", () => {
+    const current = state();
+    current.scene.turn.turnNumber = 4;
+    const forced = processor.execute(
+      context("PLAYER", "leader", current),
+      command({ type: "FORCE_MARCH", armyId: "army-red" }, "leader")
+    );
+    expect(forced.status).toBe("ACCEPTED");
+    if (forced.status !== "ACCEPTED") return;
+    const army = forced.state.armies["army-red"];
+    if (!army) throw new Error("army fixture missing");
+    army.route = [{ x: 10, y: 0 }];
+    army.plannedRoute = {
+      ...army.plannedRoute,
+      startCell: { x: 0, y: 0 },
+      executeOnTurn: 5,
+      cells: [{ x: 1, y: 0 }],
+      totalCostUnits: 2
+    };
+
+    const cancelled = processor.execute(
+      context("PLAYER", "leader", forced.state),
+      command({ type: "CANCEL_FORCE_MARCH", armyId: "army-red", expectedRevision: forced.state.scene.revision }, "leader")
+    );
+    expect(cancelled.status).toBe("ACCEPTED");
+    if (cancelled.status !== "ACCEPTED") return;
+    expect(cancelled.state.armies["army-red"]).toMatchObject({
+      route: [],
+      plannedRoute: {
+        executeOnTurn: 0,
+        cells: [],
+        totalCostUnits: 0,
+        requiresReplan: false
+      },
+      movement: { maxUnits: 10, remainingUnits: 10, enteredRouteCellCount: 0 }
+    });
+    expect(cancelled.state.armies["army-red"]?.forcedMarchOnTurn).toBeUndefined();
+  });
+
+  it("rejects cancellation when a forced march is not pending or active", () => {
+    const result = processor.execute(
+      context("PLAYER", "leader", state()),
+      command({ type: "CANCEL_FORCE_MARCH", armyId: "army-red" }, "leader")
+    );
+    expect(result).toMatchObject({ status: "REJECTED", reason: "FORCED_MARCH_NOT_ACTIVE" });
+  });
   it("lets only the GM reject a pending naval battle request", () => {
     const current = state();
     current.scene.navalBattleRequests = [{ id: "pending", initiatingShipId: "a", targetShipId: "b" }];
@@ -1358,4 +1405,5 @@ it("keeps the fixed five-OP budget when a legacy route-distance override is edit
       });
     }
   });
+
 
