@@ -113,6 +113,7 @@ import { VisionLightService } from "../visibility/visionLightService";
 import { visibleArmyIdsForPlayer } from "../visibility/visibilityEngine";
 import { shipEmbarkedArmyIds } from "../naval/transport/transportRules";
 import { applyPopulationCalendarToScene } from "../population/populationRules";
+import { watchtowerDetectionBonusAtCell } from "../cities/cityEffects";
 import type { OwlbearPort } from "../owlbear/sdkAdapter";
 import {
   CoordinatorLease,
@@ -512,6 +513,13 @@ export class ProductionEngine {
       return ship && shipEmbarkedArmyIds(ship).includes(item.id) ? [item.id] : [];
     }));
     const activeLandArmies = armies.filter(({ item }) => !reciprocallyEmbarkedArmyIds.has(item.id));
+    let armyCellForPosition: ((position: Vector2) => GridCellCoord) | undefined;
+    try {
+      const detectionGrid = new StrategicGridAdapter({ dpi: await this.grid.getDpi(), offset: { x: 0, y: 0 } });
+      armyCellForPosition = (position) => detectionGrid.sceneToCell(position);
+    } catch {
+      // A missing grid calibration disables the city range bonus but must not disable visibility.
+    }
     const armyDetectionUnits = activeLandArmies.map(({ item, state }) => ({
       id: item.id,
       sideId: state.sideId,
@@ -519,7 +527,7 @@ export class ProductionEngine {
       detectionRangeCells: armyEffectiveDetectionRange(
         state,
         state.overrides.detectionRangeCells ?? scene.settings.defaultDetectionRangeCells
-      ),
+      ) + (armyCellForPosition ? watchtowerDetectionBonusAtCell(scene, armyCellForPosition(item.position)) : 0),
       concealmentCells: armyConcealmentCells(state),
       ignoresVisionBarriers: state.ignoresVisionBarriers
     }));
@@ -1391,7 +1399,8 @@ export class ProductionEngine {
           armies: armyRecords,
           sceneItems,
           distancePort: this.grid,
-          visionBarriers: extractBarrierSegments(barrierRecords, "vision")
+          visionBarriers: extractBarrierSegments(barrierRecords, "vision"),
+          ...(commandCellForPosition ? { positionToCell: commandCellForPosition } : {})
         });
         detectedNavalTargetsForSide = (sideId) =>
           detectedShipIdsForSide(detectionGraph, scene.ships ?? {}, sideId);
@@ -2088,6 +2097,7 @@ export class ProductionEngine {
     };
     const sideColors = new Map(scene.sides.map((side) => [side.id, side.color]));
     try {
+      const detectionGrid = new StrategicGridAdapter({ dpi: await this.grid.getDpi(), offset: { x: 0, y: 0 } });
       await new VisionLightService(overlayPort).reconcile(
         armies.map(({ item, state }) => ({
           sourceItemId: item.id,
@@ -2096,7 +2106,7 @@ export class ProductionEngine {
           rangeCells: armyEffectiveDetectionRange(
             state,
             state.overrides.detectionRangeCells ?? scene.settings.defaultDetectionRangeCells
-          )
+          ) + watchtowerDetectionBonusAtCell(scene, detectionGrid.sceneToCell(item.position))
         })),
         { isGM: role === "GM", memberSideIds: new Set(memberSideIds) },
         await this.grid.getDpi()
