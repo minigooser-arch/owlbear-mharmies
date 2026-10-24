@@ -21,6 +21,8 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - run: npm audit --audit-level=high
+      # Audit shipped dependencies; Vite/Vitest are CI-only and are not part of the extension bundle.
+      - run: npm audit --audit-level=high --omit=dev
       - run: node --check < apps-script/LetopisSheetWriteback.gs
       - run: npm run check
+
