@@ -61,6 +61,7 @@ export type NotificationCode =
   | "HEALING_ALREADY_REQUESTED"
   | "FORCED_MARCH_ACTIVE"
   | "FORCED_MARCH_ALREADY_USED"
+  | "FORCED_MARCH_NOT_ACTIVE"
   | "DISBAND_ALREADY_REQUESTED"
   | "MOVEMENT_CONSUMED_FOR_TURN"
   | "ROUTE_NOT_ACTIVE_TURN"
@@ -159,6 +160,7 @@ const RUSSIAN_MESSAGES: Readonly<Record<NotificationCode, string>> = {
   HEALING_ALREADY_REQUESTED: "Армия уже проходит лечение в этом ходу.",
   FORCED_MARCH_ACTIVE: "Армия совершает форсированный марш: лечение до конца хода недоступно.",
   FORCED_MARCH_ALREADY_USED: "Форсированный марш для этой армии уже назначен на этот ход.",
+  FORCED_MARCH_NOT_ACTIVE: "Для этой армии нет активного или назначенного форсированного марша.",
   DISBAND_ALREADY_REQUESTED: "Роспуск этой армии уже объявлен и не может быть отменён.",
   MOVEMENT_CONSUMED_FOR_TURN: "После начала боя армия потеряла всё движение этого хода.",
   ROUTE_NOT_ACTIVE_TURN: "Этот маршрут назначен на другой глобальный ход.",
@@ -220,4 +222,5 @@ export async function notifyRussian(
 ): Promise<void> {
   await port.show(notificationMessage(code), variant);
 }
+
 

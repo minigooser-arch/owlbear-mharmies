@@ -187,6 +187,7 @@ function ArmyImmediateMoveEditor({ army, onAction }: { army: ArmyView; onAction(
 export function ArmyCard({ army, sideColor = "#687F91", isGM, canEditRoute, canRequestDisband, onAction }: ArmyCardProps) {
   const canChangeRoute = canEditRoute && army.status === "READY" && !army.formationActive;
   const canForceMarch = canEditRoute && army.status === "READY" && !army.formationActive && !army.forcedMarchState && !army.healingPending;
+  const canCancelForceMarch = canEditRoute && army.status === "READY" && !army.formationActive && Boolean(army.forcedMarchState);
   const invalidMessage = movementDenialMessage(army.routeInvalidReason);
   const encirclementDamage = Math.ceil(army.healthMaxHp * 0.1);
   const hasRoute = army.routeCellCount > 0;
@@ -240,6 +241,14 @@ export function ArmyCard({ army, sideColor = "#687F91", isGM, canEditRoute, canR
         </div>
       )}
 
+      {canCancelForceMarch && (
+        <div className="card-actions">
+          <button className="button danger subtle wide" type="button" onClick={() => onAction({ type: "CANCEL_FORCE_MARCH", armyId: army.id })}>
+            Отменить форсированный марш
+          </button>
+        </div>
+      )}
+
       {army.healingPending ? (
         <div className="card-actions">
           <button className="button subtle" type="button" disabled>
@@ -286,4 +295,5 @@ export function ArmyCard({ army, sideColor = "#687F91", isGM, canEditRoute, canR
     </article>
   );
 }
+
 

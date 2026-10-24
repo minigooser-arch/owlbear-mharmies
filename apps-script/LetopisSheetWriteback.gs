@@ -6,7 +6,7 @@
  * 2) The population-growth job lives in a SEPARATE Apps Script project.
  *    ScriptLock coordinates requests only within this writeback project.
  *    LR V2 never writes backend!C, so the independent population job remains the sole writer.
- * 3) Set Script Property API_TOKEN to a long random secret. The Owlbear GM stores that secret
+ * 3) Set Script Property WRITEBACK_TOKEN to a long random secret. The Owlbear GM stores that secret
  *    only in browser localStorage; it is never written into SceneSettings.
  * 4) Deploy as Web App, Execute as the spreadsheet owner, access according to your project policy.
  */
@@ -18,7 +18,7 @@ const WRITEBACK_CONFIG = Object.freeze({
   FACTION_SHEET: "ФРАКЦИИ(РАЗРАБОТКА) [1910]",
   LR_LOG_SHEET: "ЛР_ОПЕРАЦИИ",
   ARMIES_SHEET: "АРМИИ",
-  TOKEN_PROPERTY: "API_TOKEN"
+  TOKEN_PROPERTY: "WRITEBACK_TOKEN"
 });
 
 const LR_LOG_HEADERS = [
@@ -81,7 +81,6 @@ function initializeWritebackToken() {
     token = Utilities.getUuid() + "-" + Utilities.getUuid();
     props.setProperty(WRITEBACK_CONFIG.TOKEN_PROPERTY, token);
   }
-  Logger.log("API_TOKEN=" + token);
   return token;
 }
 
@@ -183,7 +182,7 @@ function stateContext_(country, backendRow) {
   const sheet = stateSheet_();
   if (!sheet) throw new Error("STATE_SHEET_MISSING");
   const stateRow = backendRow.stateRow;
-  const stateName = String(sheet.getRange(stateRow, 10).getDisplayValue() || country).trim();
+  const stateName = String(sheet.getRange(stateRow, 11).getDisplayValue() || country).trim();
   const humanResource = Number(sheet.getRange(stateRow, 41).getValue());
   const capacityCell = sheet.getRange(stateRow, 49); // AW, reserved for original LR formula
   const humanResourceCapacity = capacityCell.getFormula()
@@ -816,4 +815,5 @@ function errorCode_(error) {
   if (error && error.message) return String(error.message).slice(0, 200);
   return String(error).slice(0, 200);
 }
+
 
