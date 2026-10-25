@@ -35,8 +35,10 @@ describe("bounded grid chunk decode cache", () => {
 
     const first = await repository.readScene();
     const initiallyDecoded = performanceSnapshot().find(x => x.name === "storage.grid.chunkDecode")?.calls ?? 0;
-    first.gridMap.cells["0,0"]!.terrainId = "mountains";
-    first.gridMap.cells["0,0"]!.factionTerritoryIds.push("intruder");
+    const firstCell = first.gridMap.cells["0,0"];
+    if (!firstCell) throw new Error("Missing cell in cached map");
+    firstCell.terrainId = "mountains";
+    firstCell.factionTerritoryIds.push("intruder");
 
     const second = await repository.readFrame();
     expect(second.scene.gridMap.cells["0,0"]).toMatchObject(cell("plain"));
@@ -56,11 +58,13 @@ describe("bounded grid chunk decode cache", () => {
     const chunk = item.metadata[METADATA_KEYS.gridChunk] as {
       cells: Array<[number, string | null, boolean, string[], string | null, string | null]>
     };
-    chunk.cells[0]![1] = "mountains";
+    const packed = chunk.cells[0];
+    if (!packed) throw new Error("Missing packed cell");
+    packed[1] = "mountains";
     const latest = await repository.readScene();
     expect(latest.gridMap.cells["0,0"]?.terrainId).toBe("mountains");
 
-    chunk.cells[0]![2] = "false" as unknown as boolean;
+    packed[2] = "false" as unknown as boolean;
     await expect(repository.readScene()).rejects.toThrow("GRID_CHUNK_INVALID");
   });
 
