@@ -98,6 +98,15 @@ export class GridChunkDecodeCache {
     this.entries.clear();
   }
 
+  /** Avoid pathological full-cache churn on scenes larger than capacity. */
+  canCacheAll(chunkCount: number): boolean {
+    if (chunkCount > GridChunkDecodeCache.MAX_ENTRIES) {
+      this.clear();
+      return false;
+    }
+    return true;
+  }
+
   decode(id: string, chunk: GridChunk, manifestRevision: number): GridMapState["cells"] {
     const signature = JSON.stringify(chunk);
     const cached = this.entries.get(id);
@@ -166,7 +175,9 @@ export class GridChunkRepository {
       chunks.push(chunk);
     }
     // Standalone callers preserve the original codec path.
-    if (!this.decodeCache) return decodeGridChunks(chunks, manifest.revision);
+    if (!this.decodeCache || !this.decodeCache.canCacheAll(chunks.length)) {
+      return decodeGridChunks(chunks, manifest.revision);
+    }
 
     const cells: GridMapState["cells"] = {};
     for (const [index, id] of Object.values(chunkIds).entries()) {
