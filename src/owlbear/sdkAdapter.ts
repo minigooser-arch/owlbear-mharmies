@@ -432,7 +432,8 @@ export function createOwlbearAdapter(
   const updateLocalItems = async (items: readonly SceneItemRecord[]): Promise<void> => {
     if (items.length === 0) return;
     const updateById = new Map(items.map((item) => [item.id, item]));
-    const existing = new Map((await sdk.scene.local.getItems()).map(asRecord).map(item => [item.id, item]));
+    const existing = new Map((await sdk.scene.local.getItems(items.map(item => item.id)))
+      .map(asRecord).map(item => [item.id, item]));
     const rendered = items.map(item => {
       const previous = existing.get(item.id);
       if (!previous) return createSdkLocalItem(item, overlayBuilders);
