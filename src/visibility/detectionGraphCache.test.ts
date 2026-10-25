@@ -92,16 +92,16 @@ describe("detection graph cache", () => {
     const cache = new DetectionGraphCache();
     const input = fixture();
     let release: (() => void) | undefined;
+    const gate = new Promise<void>(resolve => { release = resolve; });
     input.distancePort.distance.mockImplementation(async () => {
-      await new Promise<void>(resolve => { release = resolve; });
+      await gate;
       return 2;
     });
     const pending = cache.resolve(input);
     await Promise.resolve();
     cache.invalidate();
     release?.();
-    // Concurrent distance calls use up to eight workers; release all without
-    // depending on worker scheduling.
+    // Concurrent workers share the same gate so they all settle together.
     input.distancePort.distance.mockImplementation(async () => 2);
     await pending;
     const calls = input.distancePort.distance.mock.calls.length;
