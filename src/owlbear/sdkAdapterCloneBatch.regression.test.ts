@@ -70,6 +70,22 @@ describe("batched local clone SDK patches", () => {
     });
   });
 
+  it("requests only touched local IDs when normalizing an overlay batch", async () => {
+    const fixture = createFixture();
+    await fixture.adapter.updateLocalItems([{
+      id: "a",
+      type: "IMAGE",
+      position: { x: 99, y: 10 },
+      metadata: { keep: 1 }
+    }]);
+
+    expect(fixture.getItems).toHaveBeenCalledTimes(1);
+    expect(fixture.getItems).toHaveBeenCalledWith(["a"]);
+    expect(fixture.updateItems).toHaveBeenCalledTimes(1);
+    expect(fixture.items[0]?.position).toEqual({ x: 99, y: 10 });
+    expect(fixture.items[1]?.position).toEqual({ x: 0, y: 0 });
+  });
+
   it("rejects ambiguous duplicate patches before making SDK calls", async () => {
     const fixture = createFixture();
     await expect(fixture.adapter.updateLocalItemPatches?.([
