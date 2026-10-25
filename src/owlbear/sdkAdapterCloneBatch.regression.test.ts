@@ -86,6 +86,28 @@ describe("batched local clone SDK patches", () => {
     expect(fixture.items[1]?.position).toEqual({ x: 0, y: 0 });
   });
 
+  it("updates multiple shared interaction proxies without scanning the scene", async () => {
+    const fixture = createFixture();
+    await fixture.adapter.updateSceneItemPatches?.([
+      { id: "a", update: { position: { x: 12, y: 24 }, layer: "CHARACTER" } },
+      { id: "b", update: { position: { x: 35, y: 50 }, visible: true } }
+    ]);
+
+    expect(fixture.getItems).not.toHaveBeenCalled();
+    expect(fixture.updateItems).toHaveBeenCalledTimes(1);
+    expect(fixture.updateItems).toHaveBeenCalledWith(
+      ["a", "b"], expect.any(Function)
+    );
+    expect(fixture.items[0]).toMatchObject({
+      name: "First", position: { x: 12, y: 24 }, layer: "CHARACTER",
+      metadata: { keep: 1 }
+    });
+    expect(fixture.items[1]).toMatchObject({
+      name: "Second", position: { x: 35, y: 50 }, visible: true,
+      metadata: { keep: 2 }
+    });
+  });
+
   it("rejects ambiguous duplicate patches before making SDK calls", async () => {
     const fixture = createFixture();
     await expect(fixture.adapter.updateLocalItemPatches?.([
