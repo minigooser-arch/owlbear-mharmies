@@ -17,6 +17,7 @@ const LR_LEDGER_MANIFEST_KEY = `${EXTENSION_ID}/lr-ledger-manifest`;
 class MemoryPort implements MetadataPort {
   sceneMetadata: Record<string, unknown> = {};
   items: SceneItemRecord[] = [];
+  getSceneItem?: (id: string) => Promise<SceneItemRecord | undefined>;
 
   async getSceneMetadata(): Promise<Record<string, unknown>> {
     return structuredClone(this.sceneMetadata);
