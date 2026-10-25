@@ -605,9 +605,9 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
     getSelectedSource: async () => {
       const selected = await OBR.player.getSelection();
       if (!selected?.[0]) return undefined;
-      return (await adapter.getSceneItems()).find((item) => item.id === selected[0]);
+      return adapter.getSceneItem ? adapter.getSceneItem(selected[0]) : (await adapter.getSceneItems()).find((item) => item.id === selected[0]);
     },
-    getSource: async (id) => (await adapter.getSceneItems()).find((item) => item.id === id),
+    getSource: async (id) => adapter.getSceneItem ? adapter.getSceneItem(id) : (await adapter.getSceneItems()).find((item) => item.id === id),
     createTemporaryLocal: async (source) => {
       const clone = adapter.createClone(source);
       await adapter.addLocalItem(clone);
