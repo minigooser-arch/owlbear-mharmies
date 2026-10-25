@@ -1,6 +1,7 @@
 import { firstBarrierIntersection, type BarrierSegment } from "../barriers/barrierGeometry";
 import type { GridDistancePort } from "../routes/routeMath";
 import type { DetectionMode, Vector2 } from "../shared/types";
+import { squareGridCandidates } from "./spatialCandidates";
 
 export interface DetectionUnit {
   id: string;
@@ -21,6 +22,8 @@ export interface DetectionGraphInput {
   units: readonly DetectionUnit[];
   distancePort: GridDistancePort;
   visionBarriers: readonly BarrierSegment[];
+  /** Opt-in only after confirming the live scene grid type is SQUARE. */
+  squareGridDpi?: number;
 }
 
 function ensureSide(graph: DetectionGraph, sideId: string): void {
@@ -51,9 +54,15 @@ export async function buildDetectionGraph(input: DetectionGraphInput): Promise<D
     observersBySide: new Map()
   };
   for (const unit of input.units) ensureSide(graph, unit.sideId);
-  const pairs = input.units.flatMap((observer) => input.units.flatMap((target) =>
-    observer.id === target.id || observer.sideId === target.sideId ? [] : [{ observer, target }]
-  ));
+  const pairs: Array<{ observer: DetectionUnit; target: DetectionUnit }> = [];
+  const candidateIndices = squareGridCandidates(input.units, input.squareGridDpi ?? Number.NaN);
+  for (const observer of input.units) {
+    for (const index of candidateIndices(observer)) {
+      const target = input.units[index];
+      if (!target || observer.id === target.id || observer.sideId === target.sideId) continue;
+      pairs.push({ observer, target });
+    }
+  }
   const detected = new Uint8Array(pairs.length);
   let nextPair = 0;
   const worker = async () => {
