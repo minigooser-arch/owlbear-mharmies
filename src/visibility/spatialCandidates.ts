@@ -28,8 +28,12 @@ export function squareGridCandidates<T extends SpatialUnit>(
   }
   const cellSize = dpi * 8;
   const bins = new Map<string, number[]>();
-  const minConcealment = Math.min(0, ...units.map(unit => unit.concealmentCells ?? 0));
-  if (!Number.isFinite(minConcealment)) return () => all;
+  let minConcealment = 0;
+  for (const unit of units) {
+    const concealment = unit.concealmentCells ?? 0;
+    if (!Number.isFinite(concealment)) return () => all;
+    minConcealment = Math.min(minConcealment, concealment);
+  }
   for (const [index, unit] of units.entries()) {
     const x = Math.floor(unit.position.x / cellSize);
     const y = Math.floor(unit.position.y / cellSize);
