@@ -3,6 +3,7 @@ import { METADATA_KEYS } from "../shared/constants";
 import type { StateRelations, StrategicCity } from "../shared/types";
 import { migrateSceneState } from "../storage/migrations";
 import { semanticValueEqual } from "./snapshotEquality";
+import { uiMetadataSignature } from "./uiMetadataSignature";
 import type { RawExtensionSnapshot } from "../ui/state/useExtensionState";
 import {
   buildRoleSafeSnapshot as buildCoreRoleSafeSnapshot,
@@ -97,7 +98,11 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
   });
 
   let overlayRefreshGeneration = 0;
-  const unsubscribeMetadata = OBR.scene.onMetadataChange(() => {
+  let lastMetadataSignature: string | undefined;
+  const unsubscribeMetadata = OBR.scene.onMetadataChange((metadata) => {
+    const nextSignature = uiMetadataSignature(metadata);
+    if (nextSignature === lastMetadataSignature) return;
+    lastMetadataSignature = nextSignature;
     const generation = ++overlayRefreshGeneration;
     void readStrategicOverlay(OBR).then((next) => {
       if (generation !== overlayRefreshGeneration || semanticValueEqual(overlay, next)) return;
