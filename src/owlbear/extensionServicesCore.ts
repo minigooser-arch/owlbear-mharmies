@@ -77,6 +77,7 @@ import { notifyRussian } from "./notifications";
 import { GridStorageError } from "../storage/gridChunkCodec";
 import { createRefreshCoordinator } from "./refreshCoordinator";
 import { uiMetadataSignature } from "./uiMetadataSignature";
+import { SceneItemChangeGate } from "../background/sceneItemChangeGate";
 import { measureOperation } from "../performance/metrics";
 import {
   buildSelectedShipRegistrationPayload,
@@ -761,6 +762,7 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
     semanticSnapshotEqual
   );
 
+  const sceneItemChangeGate = new SceneItemChangeGate();
   const triggerRefresh = () => refreshCoordinator.request();
   const triggerMetadataRefresh = (metadata: Record<string, unknown>) => {
     const nextSignature = uiMetadataSignature(metadata);
@@ -775,8 +777,13 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
     refreshCoordinator.request();
   };
   unsubscribers.push(
-    OBR.scene.onReadyChange(triggerRefresh),
-    OBR.scene.items.onChange(triggerRefresh),
+    OBR.scene.onReadyChange(() => {
+      sceneItemChangeGate.reset();
+      triggerRefresh();
+    }),
+    OBR.scene.items.onChange((items) => {
+      if (sceneItemChangeGate.shouldRefresh(items)) triggerRefresh();
+    }),
     OBR.scene.local.onChange(triggerLocalRefresh),
     OBR.scene.onMetadataChange(triggerMetadataRefresh),
     OBR.player.onChange(triggerRefresh),
