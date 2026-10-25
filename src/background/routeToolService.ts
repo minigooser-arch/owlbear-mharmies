@@ -212,7 +212,10 @@ export class RouteToolService implements RouteToolIntegrationPort {
   }
 
   private async sendRouteCommandWhenReady(command: ArmyCommand): Promise<CommandAck> {
-    const retryDelaysMs = [100, 200, 400, 800];
+    // GM coordination may briefly be unavailable while a scene or lease is
+    // restored. Retry only explicit NOT_READY replies (never ambiguous timeouts),
+    // with new request IDs; an accepted command is never sent twice.
+    const retryDelaysMs = [100, 200, 400, 600, 800, 1_000, 1_200, 1_400, 1_600, 1_800];
     let current = command;
     for (let attempt = 0; ; attempt += 1) {
       const ack = await this.gateway.send(current);
