@@ -179,7 +179,7 @@ export class BackgroundRuntime {
       this.turnTimer = setInterval(() => this.requestTurnTick(), 30_000);
       await this.port.onSceneOpen();
       this.requestVisibilityTick();
-      this.requestMovementTick();
+      // Coordinator acquisition is the authoritative trigger for movement recovery.
       this.requestTurnTick();
     } catch (error) {
       this.stopSceneWork();
