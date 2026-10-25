@@ -76,6 +76,8 @@ import { DiagnosticsService, type DiagnosticsPort } from "./diagnostics";
 import { notifyRussian } from "./notifications";
 import { GridStorageError } from "../storage/gridChunkCodec";
 import { createRefreshCoordinator } from "./refreshCoordinator";
+import { uiMetadataSignature } from "./uiMetadataSignature";
+import { measureOperation } from "../performance/metrics";
 import {
   buildSelectedShipRegistrationPayload,
   RegistrationError,
@@ -676,6 +678,7 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
   cityCellPicker.start();
 
   let observedLocalCloneSourceIds = new Set<string>();
+  let observedMetadataSignature: string | undefined;
   const loadSnapshot = async (): Promise<RawExtensionSnapshot> => {
     const [sceneReady, role, playerId, playerName, playerColor, party, playerMetadata] = await Promise.all([
       OBR.scene.isReady(),
@@ -702,6 +705,7 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
       return { ...LOADING_SNAPSHOT, ready: true, role, playerId, players };
     }
     const metadata = await adapter.getSceneMetadata();
+    observedMetadataSignature = uiMetadataSignature(metadata);
     const rawScene = metadata[METADATA_KEYS.scene] ?? { version: 3 };
     const migrated = migrateSceneState(rawScene);
     if (!migrated.ok) {
@@ -758,6 +762,12 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
   );
 
   const triggerRefresh = () => refreshCoordinator.request();
+  const triggerMetadataRefresh = (metadata: Record<string, unknown>) => {
+    const nextSignature = uiMetadataSignature(metadata);
+    if (observedMetadataSignature === nextSignature) return;
+    observedMetadataSignature = nextSignature;
+    refreshCoordinator.request();
+  };
   const triggerLocalRefresh = (items: readonly Pick<SceneItemRecord, "metadata">[]) => {
     const nextSourceIds = localCloneSourceIds(items);
     if (semanticValueEqual(observedLocalCloneSourceIds, nextSourceIds)) return;
@@ -768,7 +778,7 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
     OBR.scene.onReadyChange(triggerRefresh),
     OBR.scene.items.onChange(triggerRefresh),
     OBR.scene.local.onChange(triggerLocalRefresh),
-    OBR.scene.onMetadataChange(triggerRefresh),
+    OBR.scene.onMetadataChange(triggerMetadataRefresh),
     OBR.player.onChange(triggerRefresh),
     OBR.party.onChange(triggerRefresh),
     adapter.on(NAVAL_BATTLE_AREA_DRAFT_CHANNEL, (event) => {
