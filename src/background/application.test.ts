@@ -338,8 +338,12 @@ describe("ProductionEngine overlay performance", () => {
 
     await engine.visibilityTick("GM", "gm");
 
-    // One read may belong to visibility clones, and one shared read serves every overlay type.
+    // The first frame may reload once after cleaning up obsolete map overlays.
     expect(localReads).toBeLessThanOrEqual(2);
+    const firstFrameReads = localReads;
+    await engine.visibilityTick("GM", "gm");
+    // Every steady visibility frame shares one local snapshot across all services.
+    expect(localReads - firstFrameReads).toBe(1);
   });
 
   it("removes local terrain after a GM-to-PLAYER role switch without adding impassable emoji", async () => {
