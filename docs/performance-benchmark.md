@@ -23,6 +23,14 @@
 - `sdk.scene.items.getItems`, `sdk.scene.local.getItems` — дорогие полные чтения.
 - `background.movementTick`, `background.visibilityTick`, `background.turnTick`.
 - `ui.loadSnapshot` — подготовка нового снимка панели.
+- `background.commandNotReady.sceneInitializing` — число команд, пришедших до готовности обработчика.
+- `background.commandNotReady.coordinatorInactive` — число команд, для которых выбранный GM ещё не получил активные полномочия.
+  У этих двух счётчиков `averageMs = 0`: они считают отказы, а не задержку.
+
+Heartbeat обновляется **без** чтения grid/ledger/audit items и без обновления манифестов.
+Проверка ревизии и действующего владельца lease остаётся обязательной.
+Маршрут повторно отправляется только при явном `BACKGROUND_NOT_READY` (до 9,1 секунды ожидания);
+таймауты с неизвестным результатом не повторяются автоматически.
 
 В статистике: `calls` — число вызовов; `averageMs` — среднее; `p95Ms` —
 95-й процентиль последних 128 вызовов; `maxMs` — максимум за всю сессию.
