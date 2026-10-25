@@ -81,6 +81,55 @@ describe("BackgroundRuntime", () => {
     }
   });
 
+  it("runs atomic movement on scene events instead of polling five times per second", async () => {
+    vi.useFakeTimers();
+    const port = new RuntimePort();
+    const runtime = new BackgroundRuntime(port);
+
+    try {
+      runtime.start();
+      await runtime.whenIdle();
+      expect(port.movement).toHaveBeenCalledTimes(1);
+
+      // The old 200 ms timer would have performed 45 unnecessary reads here.
+      await vi.advanceTimersByTimeAsync(9_000);
+      await runtime.whenIdle();
+      expect(port.movement).toHaveBeenCalledTimes(1);
+
+      port.sceneItemsChange?.();
+      await runtime.whenIdle();
+      expect(port.movement).toHaveBeenCalledTimes(2);
+
+      port.sceneMetadataChange?.();
+      await runtime.whenIdle();
+      expect(port.movement).toHaveBeenCalledTimes(3);
+
+      // A missed notification is still recovered by the slow timer.
+      await vi.advanceTimersByTimeAsync(1_000);
+      await runtime.whenIdle();
+      expect(port.movement).toHaveBeenCalledTimes(4);
+    } finally {
+      await runtime.stop();
+      vi.useRealTimers();
+    }
+  });
+
+  it("checks movement immediately when taking over GM coordination", async () => {
+    const port = new RuntimePort();
+    const runtime = new BackgroundRuntime(port);
+    try {
+      runtime.start();
+      await runtime.whenIdle();
+      port.movement.mockClear();
+
+      port.coordinator?.(true);
+      await runtime.whenIdle();
+      expect(port.movement).toHaveBeenCalledTimes(1);
+    } finally {
+      await runtime.stop();
+    }
+  });
+
   it("requests turn reconciliation when scene metadata changes", async () => {
     const port = new RuntimePort();
     const runtime = new BackgroundRuntime(port);
