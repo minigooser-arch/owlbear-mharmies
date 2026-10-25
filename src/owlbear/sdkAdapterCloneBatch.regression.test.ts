@@ -108,6 +108,17 @@ describe("batched local clone SDK patches", () => {
     });
   });
 
+  it("fetches a single scene source by ID, including a missing ID", async () => {
+    const fixture = createFixture();
+    await expect(fixture.adapter.getSceneItem?.("a")).resolves.toMatchObject({
+      id: "a", name: "First"
+    });
+    await expect(fixture.adapter.getSceneItem?.("missing")).resolves.toBeUndefined();
+    expect(fixture.getItems).toHaveBeenNthCalledWith(1, ["a"]);
+    expect(fixture.getItems).toHaveBeenNthCalledWith(2, ["missing"]);
+    expect(fixture.getItems).toHaveBeenCalledTimes(2);
+  });
+
   it("rejects ambiguous duplicate patches before making SDK calls", async () => {
     const fixture = createFixture();
     await expect(fixture.adapter.updateLocalItemPatches?.([
