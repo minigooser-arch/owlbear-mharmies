@@ -647,6 +647,7 @@ export class ProductionEngine {
 
     const writes: Promise<void>[] = [];
     const creates: SceneItemRecord[] = [];
+    const proxyPatches: Array<{ id: string; update: import("../shared/types").ItemUpdate }> = [];
 
     for (const [sourceId, proxy] of proxyBySourceId) {
       const source = sourceById.get(sourceId);
@@ -656,7 +657,7 @@ export class ProductionEngine {
       }
       if (!entityInteractionProxyMatchesSource(proxy, source)) {
         const desired = createEntityInteractionProxy(source, () => proxy.id);
-        writes.push(this.port.updateSceneItem(proxy.id, {
+        proxyPatches.push({ id: proxy.id, update: {
           position: desired.position,
           rotation: desired.rotation,
           scale: desired.scale,
@@ -673,7 +674,7 @@ export class ProductionEngine {
           height: desired.height,
           shapeType: desired.shapeType,
           style: desired.style
-        }).catch(() => undefined));
+        } });
       }
     }
 
@@ -683,6 +684,16 @@ export class ProductionEngine {
       }
     }
 
+    if (proxyPatches.length) {
+      if (this.port.updateSceneItemPatches) {
+        // One bounded SDK request per batch instead of one request per proxy.
+        writes.push(this.port.updateSceneItemPatches(proxyPatches).catch(() => undefined));
+      } else {
+        for (const { id, update } of proxyPatches) {
+          writes.push(this.port.updateSceneItem(id, update).catch(() => undefined));
+        }
+      }
+    }
     await Promise.allSettled(writes);
     if (creates.length > 0) {
       await this.port.addSceneItems(creates).catch(() => undefined);
