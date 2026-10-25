@@ -1,4 +1,5 @@
 import { METADATA_KEYS } from "../shared/constants";
+import { recordPerformance } from "../performance/metrics";
 import type { GridMapState, SceneItemRecord } from "../shared/types";
 import type { MetadataPort } from "./metadataRepository";
 import {
@@ -104,11 +105,18 @@ export class GridChunkDecodeCache {
       Number.isSafeInteger(chunk.revision) && chunk.revision <= manifestRevision) {
       this.entries.delete(id);
       this.entries.set(id, cached);
+      recordPerformance("storage.grid.chunkCacheHit", 0);
       return cached.cells;
     }
     // Validation on every miss is identical to the original codec (including
     // chunk size, cell types, range, indices and revision checks).
-    const cells = decodeGridChunks([chunk], manifestRevision).cells;
+    const started = performance.now();
+    let cells: GridMapState["cells"];
+    try {
+      cells = decodeGridChunks([chunk], manifestRevision).cells;
+    } finally {
+      recordPerformance("storage.grid.chunkDecode", performance.now() - started);
+    }
     this.entries.delete(id);
     this.entries.set(id, { signature, cells });
     if (this.entries.size > GridChunkDecodeCache.MAX_ENTRIES) {
