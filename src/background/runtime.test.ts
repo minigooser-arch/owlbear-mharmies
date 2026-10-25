@@ -89,25 +89,25 @@ describe("BackgroundRuntime", () => {
     try {
       runtime.start();
       await runtime.whenIdle();
-      expect(port.movement).toHaveBeenCalledTimes(1);
+      expect(port.movement).toHaveBeenCalledTimes(0);
 
       // The old 200 ms timer would have performed 45 unnecessary reads here.
       await vi.advanceTimersByTimeAsync(9_000);
       await runtime.whenIdle();
-      expect(port.movement).toHaveBeenCalledTimes(1);
+      expect(port.movement).toHaveBeenCalledTimes(0);
 
       port.sceneItemsChange?.();
       await runtime.whenIdle();
-      expect(port.movement).toHaveBeenCalledTimes(2);
+      expect(port.movement).toHaveBeenCalledTimes(1);
 
       port.sceneMetadataChange?.();
       await runtime.whenIdle();
-      expect(port.movement).toHaveBeenCalledTimes(3);
+      expect(port.movement).toHaveBeenCalledTimes(2);
 
       // A missed notification is still recovered by the slow timer.
       await vi.advanceTimersByTimeAsync(1_000);
       await runtime.whenIdle();
-      expect(port.movement).toHaveBeenCalledTimes(4);
+      expect(port.movement).toHaveBeenCalledTimes(3);
     } finally {
       await runtime.stop();
       vi.useRealTimers();
