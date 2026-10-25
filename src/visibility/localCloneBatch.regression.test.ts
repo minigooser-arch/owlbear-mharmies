@@ -106,7 +106,7 @@ describe("batched local clone reconciliation", () => {
       id: "local-army-1-z"
     });
     port.localItems.push({
-      ...structuredClone(port.localItems[0]!),
+      ...structuredClone(port.localItems[0] ?? source("army-1")),
       id: "local-hidden",
       metadata: { [METADATA_KEYS.localClone]: { sourceItemId: "hidden" } }
     });
