@@ -72,6 +72,7 @@ import { registerCellCoordinateTool, type CellCoordinateToolRegistration } from 
 import { registerNavalBattleAreaTool, type NavalBattleAreaToolRegistration } from "../owlbear/navalBattleAreaTool";
 import { METADATA_KEYS } from "../shared/constants";
 import { uiMetadataSignature } from "../owlbear/uiMetadataSignature";
+import { SceneItemChangeGate } from "./sceneItemChangeGate";
 import { recordPerformance } from "../performance/metrics";
 import {
   COMMAND_PROTOCOL_VERSION,
@@ -2465,10 +2466,12 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
     }
   });
 
+  const sceneItemChangeGate = new SceneItemChangeGate();
   const runtimePort: BackgroundRuntimePort = {
     isSceneReady: () => OBR.scene.isReady(),
     onSceneReady: (callback) => OBR.scene.onReadyChange(callback),
     onSceneOpen: async () => {
+      sceneItemChangeGate.reset();
       cellTerrainLookup.invalidate();
       gridErrors.reset();
       engine.invalidateOverlayCaches();
@@ -2495,6 +2498,7 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
       ]);
     },
     onSceneClose: async () => {
+      sceneItemChangeGate.reset();
       cellTerrainLookup.invalidate();
       commandReady = false;
       engine.invalidateOverlayCaches();
@@ -2513,7 +2517,8 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
       coordinatorListeners.add(callback);
       return () => coordinatorListeners.delete(callback);
     },
-    onSceneItemsChange: (callback) => OBR.scene.items.onChange(() => {
+    onSceneItemsChange: (callback) => OBR.scene.items.onChange((items) => {
+      if (!sceneItemChangeGate.shouldRefresh(items)) return;
       cellTerrainLookup.invalidate();
       callback();
     }),
