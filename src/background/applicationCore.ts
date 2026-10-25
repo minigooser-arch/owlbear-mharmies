@@ -541,11 +541,13 @@ export class ProductionEngine {
         ignoresVisionBarriers: false
       }];
     });
+    const squareGridDpi = await this.grid.getSquareGridDpi();
     const graph = await buildDetectionGraph({
       mode: scene.settings.detectionMode,
       units: [...armyDetectionUnits, ...shipDetectionUnits],
       distancePort: this.grid,
-      visionBarriers: extractBarrierSegments(barriers, "vision")
+      visionBarriers: extractBarrierSegments(barriers, "vision"),
+      ...(squareGridDpi !== undefined ? { squareGridDpi } : {})
     });
     const memberSideIds = scene.sides
       .filter((side) => side.playerIds.includes(playerId))
@@ -1402,12 +1404,14 @@ export class ProductionEngine {
       (command.type === "START_NAVAL_BATTLE" && command.navalRequestId !== null)
     ) {
       try {
+        const squareGridDpi = await this.grid.getSquareGridDpi();
         const detectionGraph = await buildSceneDetectionGraph({
           scene,
           armies: armyRecords,
           sceneItems,
           distancePort: this.grid,
-          visionBarriers: extractBarrierSegments(barrierRecords, "vision")
+          visionBarriers: extractBarrierSegments(barrierRecords, "vision"),
+          ...(squareGridDpi !== undefined ? { squareGridDpi } : {})
         });
         detectedNavalTargetsForSide = (sideId) =>
           detectedShipIdsForSide(detectionGraph, scene.ships ?? {}, sideId);
