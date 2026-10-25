@@ -143,11 +143,12 @@ export class LocalCloneReconciler {
   async reconcile(
     visibleSourceIds: ReadonlySet<string>,
     sources: readonly SceneItemRecord[],
-    viewer: LocalCloneViewer = { isGM: false, leaderSideIds: new Set() }
+    viewer: LocalCloneViewer = { isGM: false, leaderSideIds: new Set() },
+    localItemSnapshot?: readonly SceneItemRecord[]
   ): Promise<void> {
     const sourceById = new Map(sources.map((source) => [source.id, source]));
     const clonesBySource = new Map<string, SceneItemRecord[]>();
-    for (const item of await this.port.getLocalItems()) {
+    for (const item of localItemSnapshot ?? await this.port.getLocalItems()) {
       const sourceItemId = cloneSourceId(item);
       if (!sourceItemId) continue;
       const clones = clonesBySource.get(sourceItemId) ?? [];
