@@ -607,9 +607,14 @@ export class ProductionEngine {
       }
     }
     const visibleSourceIds = new Set([...visible, ...visibleShips]);
+    // Clone reconciliation and overlays use disjoint local metadata keys.
+    // One snapshot can serve both without holding it across scene/role changes.
+    const localItemFrame = await this.port.getLocalItems();
     await this.cloneReconciler.reconcile(
       visibleSourceIds,
-      unitSources
+      unitSources,
+      undefined,
+      localItemFrame
     );
     await this.reconcileOverlays(
       scene,
@@ -621,7 +626,8 @@ export class ProductionEngine {
       visible,
       hpVisibleArmyIds,
       sceneItems,
-      visibleShips
+      visibleShips,
+      localItemFrame
     );
   }
 
@@ -2079,17 +2085,14 @@ export class ProductionEngine {
     visibleArmyIds: ReadonlySet<string>,
     hpVisibleArmyIds: ReadonlySet<string>,
     sceneItems: readonly SceneItemRecord[],
-    visibleShipIds: ReadonlySet<string>
+    visibleShipIds: ReadonlySet<string>,
+    localItemFrame: readonly SceneItemRecord[]
   ): Promise<void> {
-    let localItemsSnapshot: Promise<SceneItemRecord[]> | undefined;
+    let localItemsSnapshot: Promise<SceneItemRecord[]> = Promise.resolve([...localItemFrame]);
     const overlayPort = {
-      // Overlay types use disjoint metadata keys. A single immutable snapshot is enough
-      // for all reconciliation passes in this visibility frame and avoids repeatedly
-      // transferring a potentially huge scene.local collection through the SDK.
-      getLocalItems: () => {
-        localItemsSnapshot ??= this.port.getLocalItems();
-        return localItemsSnapshot;
-      },
+      // Overlay types use disjoint metadata keys; share the snapshot already
+      // loaded for clones. Refresh only after one-time legacy map cleanup.
+      getLocalItems: () => localItemsSnapshot,
       addLocalItems: (items: readonly SceneItemRecord[]) => this.port.addLocalItems(items),
       updateLocalItems: (items: readonly SceneItemRecord[]) => this.port.updateLocalItems(items),
       deleteLocalItems: (ids: readonly string[]) => this.port.deleteLocalItems(ids),
@@ -2251,6 +2254,9 @@ export class ProductionEngine {
       // Remove legacy local overlays before rebuilding them for this client.
       await new MapOverlayService(overlayPort).reconcile(undefined);
       this.clearedLegacyMapOverlays = true;
+      // The old map overlays are now deleted: do not feed their stale IDs to
+      // the subsequent map rebuild, which may otherwise try to update deleted items.
+      localItemsSnapshot = this.port.getLocalItems();
     }
     const mapOverlayService = new MapOverlayService(overlayPort);
     try {
