@@ -342,6 +342,32 @@ describe("MetadataRepository", () => {
     expect(port.sceneMetadata[METADATA_KEYS.scene]).toEqual(scene(3));
   });
 
+  it("uses targeted item lookup for writes and refuses to replace a stale army revision", async () => {
+    const port = new MemoryPort();
+    port.items.push({
+      id: "army-a", type: "IMAGE", position: { x: 0, y: 0 },
+      metadata: { [METADATA_KEYS.army]: army(3) }
+    });
+    let targetedReads = 0;
+    port.getSceneItem = async (id) => {
+      targetedReads += 1;
+      return structuredClone(port.items.find(item => item.id === id));
+    };
+    port.getSceneItems = async () => {
+      throw new Error("Full scene read is not allowed for a single army");
+    };
+    const repository = new MetadataRepository(port);
+
+    await expect(repository.writeArmy("army-a", army(4), 2))
+      .rejects.toBeInstanceOf(RevisionConflict);
+    expect(port.items[0]?.metadata[METADATA_KEYS.army]).toMatchObject({ revision: 3 });
+
+    await repository.writeArmy("army-a", army(4), 3);
+    expect(targetedReads).toBe(2);
+    expect(port.items[0]?.metadata[METADATA_KEYS.army]).toMatchObject({ revision: 4 });
+    await expect(repository.clearArmy("missing")).rejects.toThrow("item:missing");
+  });
+
   it("never overwrites an unknown future army schema", async () => {
     const port = new MemoryPort();
     port.items.push({
