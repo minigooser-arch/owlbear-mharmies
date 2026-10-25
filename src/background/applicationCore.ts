@@ -104,7 +104,7 @@ import {
   sheetWritebackConfigured,
   sheetWritebackRuntimeEnabled
 } from "../sheets/writebackClient";
-import { buildDetectionGraph } from "../visibility/detectionGraph";
+import { DetectionGraphCache } from "../visibility/detectionGraphCache";
 import { buildSceneDetectionGraph, detectedShipIdsForSide } from "../visibility/sceneDetectionGraph";
 import { LocalCloneReconciler, UpdateOriginGuard } from "../visibility/localCloneReconciler";
 import {
@@ -353,6 +353,7 @@ export class ProductionEngine {
   private readonly repository: MetadataRepository;
   private readonly grid: GridDistanceService;
   private readonly cloneReconciler: LocalCloneReconciler;
+  private readonly detectionCache = new DetectionGraphCache();
   private coordinator = false;
   private coordinatorGeneration = 0;
   private activeCoordinatorConnectionId: string | undefined;
@@ -378,6 +379,7 @@ export class ProductionEngine {
 
   setCoordinator(active: boolean, connectionId?: string): void {
     this.coordinatorGeneration += 1;
+    this.detectionCache.invalidate();
     this.coordinator = active;
     this.activeCoordinatorConnectionId = active ? connectionId : undefined;
     if (!active && this.sheetWritebackRetryTimer !== undefined) {
@@ -487,10 +489,15 @@ export class ProductionEngine {
   }
 
   invalidateOverlayCaches(): void {
+    this.detectionCache.invalidate();
     this.repository.clearReadCaches();
     this.lastMapOverlaySignature = undefined;
     this.clearedLegacyMapOverlays = false;
     this.clearedSharedMapOverlays = false;
+  }
+
+  invalidateDetectionCache(): void {
+    this.detectionCache.invalidate();
   }
 
   readSceneRevision(): Promise<number> {
@@ -548,7 +555,7 @@ export class ProductionEngine {
       }];
     });
     const squareGridDpi = await this.grid.getSquareGridDpi();
-    const graph = await buildDetectionGraph({
+    const graph = await this.detectionCache.resolve({
       mode: scene.settings.detectionMode,
       units: [...armyDetectionUnits, ...shipDetectionUnits],
       distancePort: this.grid,
@@ -2535,6 +2542,7 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
       });
     },
     onGridChange: (callback) => OBR.scene.grid.onChange(() => {
+      engine.invalidateDetectionCache();
       cellTerrainLookup.invalidate();
       callback();
     }),
