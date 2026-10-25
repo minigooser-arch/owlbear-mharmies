@@ -1,10 +1,12 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { performanceSnapshot, resetPerformance } from "../performance/metrics";
 import { METADATA_KEYS } from "../shared/constants";
 import type { GridMapState, SceneState } from "../shared/types";
 import { DEFAULT_CELL_STATE } from "../terrain/gridMap";
 import { GridStoragePort } from "../tests/helpers/gridStoragePort";
 import { GridChunkDecodeCache } from "./gridChunkRepository";
+import { LRLedgerRepository } from "./lrLedgerRepository";
+import { DemographyAuditRepository } from "./demographyAuditRepository";
 import { MetadataRepository } from "./metadataRepository";
 
 function cell(terrainId: string) {
@@ -93,6 +95,20 @@ describe("bounded grid chunk decode cache", () => {
     };
     expect(cache.decode("same-id", chunk, 5)["0,0"]?.terrainId).toBe("plain");
     expect(() => cache.decode("same-id", chunk, 4)).toThrow("GRID_CHUNK_INVALID");
+  });
+
+  it("hydrates each journal once rather than twice while constructing a frame", async () => {
+    const { repository } = await prepare();
+    const lrSpy = vi.spyOn(LRLedgerRepository.prototype, "read");
+    const auditSpy = vi.spyOn(DemographyAuditRepository.prototype, "read");
+    try {
+      await repository.readFrame();
+      expect(lrSpy).toHaveBeenCalledTimes(1);
+      expect(auditSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      lrSpy.mockRestore();
+      auditSpy.mockRestore();
+    }
   });
 
   it("reads scene revision without decoding a broken manifest or fetching scene items", async () => {
