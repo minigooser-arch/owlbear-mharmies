@@ -203,7 +203,8 @@ describe("per-layer map overlay geometry cache", () => {
 
     const cell = map.cells["-2,1"];
     if (!cell) throw new Error("Missing territory cell");
-    cell.deFactoStateId = "b";
+    // y=1 initially belongs to B; transfer it to A to change the perimeter.
+    cell.deFactoStateId = "a";
     const terrainBuildsBefore = metric("map.geometry.terrainBuild");
     const recognizedBuildsBefore = metric("map.geometry.recognizedBuild");
     const boundaryBuildsBefore = metric("map.geometry.boundariesBuild");
