@@ -27,6 +27,7 @@ import { findStrategicConflictEdges } from "../movement/movementIntent";
 import { applyCellPatchBatch, readCell, type CellPatchOperation } from "../terrain/gridMap";
 import { annexingStateForEntry } from "../annexation/annexationRules";
 import { MapOverlayService } from "../terrain/mapOverlayService";
+import { MapOverlayGeometryCache, mapOverlayRenderSignature } from "../terrain/mapOverlayGeometryCache";
 import { CachedCellTerrainLookup } from "../terrain/cellTerrainLookup";
 import { HealthOverlayService } from "../health/healthOverlayService";
 import { NavalShipOverlayService } from "../naval/ships/navalShipOverlayService";
@@ -359,6 +360,7 @@ export class ProductionEngine {
   private activeCoordinatorConnectionId: string | undefined;
   private mutationTail: Promise<void> = Promise.resolve();
   private lastMapOverlaySignature: string | undefined;
+  private readonly mapOverlayGeometryCache = new MapOverlayGeometryCache();
   private clearedLegacyMapOverlays = false;
   private clearedSharedMapOverlays = false;
   private sheetWritebackFallback: SheetWritebackEvent | undefined;
@@ -492,6 +494,7 @@ export class ProductionEngine {
     this.detectionCache.invalidate();
     this.repository.clearReadCaches();
     this.lastMapOverlaySignature = undefined;
+    this.mapOverlayGeometryCache.clear();
     this.clearedLegacyMapOverlays = false;
     this.clearedSharedMapOverlays = false;
   }
@@ -2266,21 +2269,17 @@ export class ProductionEngine {
       // the subsequent map rebuild, which may otherwise try to update deleted items.
       localItemsSnapshot = this.port.getLocalItems();
     }
-    const mapOverlayService = new MapOverlayService(overlayPort);
+    const mapOverlayService = new MapOverlayService(overlayPort, this.mapOverlayGeometryCache);
     try {
       const dpi = await this.grid.getDpi();
-      const signature = JSON.stringify([
-        role,
+      const signature = mapOverlayRenderSignature({
+        viewerRole: role,
         dpi,
-        scene.gridMap.revision,
-        Object.values(scene.terrain.types)
-          .map((terrain) => [terrain.id, terrain.enabled, terrain.color ?? null])
-          .sort(([left], [right]) => String(left).localeCompare(String(right))),
-        scene.states
-          .map((state) => [state.id, state.name, state.color ?? null])
-          .sort(([left], [right]) => String(left).localeCompare(String(right)))
-      ]);
-      if (this.lastMapOverlaySignature !== signature) {
+        gridMap: scene.gridMap,
+        terrain: scene.terrain,
+        states: scene.states
+      });
+      if (signature === undefined || this.lastMapOverlaySignature !== signature) {
         await mapOverlayService.reconcile({
           viewerRole: role,
           dpi,
