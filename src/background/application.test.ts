@@ -370,6 +370,9 @@ describe("ProductionEngine overlay performance", () => {
       Math.hypot(to.x - from.x, to.y - from.y) / 100);
     const fixture = commandPort(items, measured);
     fixture.port.getGridType = async () => "SQUARE";
+    // Cosmetic overlay SDK batches are irrelevant to graph-cache behavior.
+    fixture.port.addLocalItems = async () => undefined;
+    fixture.port.updateLocalItems = async () => undefined;
     // Test detection without the generic fixture's unimplemented clone builder.
     fixture.port.createClone = source => ({
       ...structuredClone(source),
