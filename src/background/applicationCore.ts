@@ -72,6 +72,7 @@ import { registerCellCoordinateTool, type CellCoordinateToolRegistration } from 
 import { registerNavalBattleAreaTool, type NavalBattleAreaToolRegistration } from "../owlbear/navalBattleAreaTool";
 import { METADATA_KEYS } from "../shared/constants";
 import { uiMetadataSignature } from "../owlbear/uiMetadataSignature";
+import { recordPerformance } from "../performance/metrics";
 import {
   COMMAND_PROTOCOL_VERSION,
   type ArmyState,
@@ -203,6 +204,9 @@ export async function dispatchBackgroundCommand(
     return;
   }
   if (!input.ready || !input.active) {
+    recordPerformance(input.ready
+      ? "background.commandNotReady.coordinatorInactive"
+      : "background.commandNotReady.sceneInitializing", 0);
     await input.sendAck({
       requestId,
       status: "REJECTED",
