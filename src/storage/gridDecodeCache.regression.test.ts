@@ -4,7 +4,7 @@ import { METADATA_KEYS } from "../shared/constants";
 import type { GridMapState, SceneState } from "../shared/types";
 import { DEFAULT_CELL_STATE } from "../terrain/gridMap";
 import { GridStoragePort } from "../tests/helpers/gridStoragePort";
-import { GridChunkDecodeCache } from "./gridChunkRepository";
+import { GridChunkDecodeCache, GridChunkRepository } from "./gridChunkRepository";
 import { LRLedgerRepository } from "./lrLedgerRepository";
 import { DemographyAuditRepository } from "./demographyAuditRepository";
 import { MetadataRepository } from "./metadataRepository";
@@ -95,6 +95,36 @@ describe("bounded grid chunk decode cache", () => {
     };
     expect(cache.decode("same-id", chunk, 5)["0,0"]?.terrainId).toBe("plain");
     expect(() => cache.decode("same-id", chunk, 4)).toThrow("GRID_CHUNK_INVALID");
+  });
+
+  it("uses the original bulk validator instead of thrashing LRU on 193 chunks", async () => {
+    const port = new GridStoragePort();
+    const chunks: Record<string, string> = {};
+    for (let x = 0; x < 193; x += 1) {
+      const id = `chunk-${x}`;
+      chunks[`${x},0`] = id;
+      port.items.push({
+        id,
+        type: "LABEL",
+        position: { x: 0, y: 0 },
+        metadata: {
+          [METADATA_KEYS.gridChunk]: {
+            version: 1, revision: 1, x, y: 0,
+            cells: [[0, "plain", false, [], null, null]]
+          }
+        }
+      });
+    }
+    const metadata = {
+      [METADATA_KEYS.gridManifest]: { version: 1, revision: 1, chunks }
+    };
+    const repository = new GridChunkRepository(port, new GridChunkDecodeCache());
+    expect(Object.keys((await repository.read(metadata))?.cells ?? {})).toHaveLength(193);
+    expect(Object.keys((await repository.read(metadata))?.cells ?? {})).toHaveLength(193);
+    expect(performanceSnapshot().find(x => x.name === "storage.grid.chunkCacheHit")).toBeUndefined();
+    expect(performanceSnapshot().find(x => x.name === "storage.grid.chunkDecode")).toBeUndefined();
+    port.items.pop();
+    await expect(repository.read(metadata)).rejects.toThrow("GRID_CHUNK_MISSING");
   });
 
   it("hydrates each journal once rather than twice while constructing a frame", async () => {
