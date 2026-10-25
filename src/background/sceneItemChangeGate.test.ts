@@ -3,12 +3,13 @@ import { performanceSnapshot, resetPerformance } from "../performance/metrics";
 import { METADATA_KEYS } from "../shared/constants";
 import type { SceneItemRecord } from "../shared/types";
 import { SceneItemChangeGate } from "./sceneItemChangeGate";
+import { createEntityInteractionProxy } from "./entityInteractionProxy";
 
 function item(id: string, metadata: Record<string, unknown> = {}, type = "IMAGE"): SceneItemRecord {
   return { id, type, position: { x: 0, y: 0 }, metadata };
 }
-const proxy = (id: string, sourceItemId = "army"): SceneItemRecord =>
-  item(id, { [METADATA_KEYS.entityInteractionProxy]: { sourceItemId } }, "SHAPE");
+const proxy = (id: string, sourceItem = item("army", { [METADATA_KEYS.army]: { revision: 1 } })): SceneItemRecord =>
+  createEntityInteractionProxy(sourceItem, () => id);
 const legacyOverlay = (id: string): SceneItemRecord =>
   item(id, { [METADATA_KEYS.mapOverlay]: { key: id } }, "CURVE");
 
@@ -41,7 +42,27 @@ describe("scene item change gate", () => {
     expect(gate.shouldRefresh([source, { ...proxy("proxy-1"), position: { x: 300, y: 100 } }])).toBe(false);
     expect(gate.shouldRefresh([source, proxy("proxy-2"), legacyOverlay("old-overlay")])).toBe(false);
     expect(gate.shouldRefresh([source])).toBe(false);
-    expect(performanceSnapshot().find(row => row.name === "background.sceneItems.cosmeticOnlySkipped")?.calls).toBe(4);
+    expect(performanceSnapshot().find(row => row.name === "scene.items.cosmeticOnlySkipped")?.calls).toBe(4);
+  });
+
+  it("repairs deleted, displaced and duplicate proxies instead of suppressing the event", () => {
+    const gate = new SceneItemChangeGate();
+    const army = item("army", { [METADATA_KEYS.army]: { revision: 1 } });
+    const healthy = proxy("healthy", army);
+    expect(gate.shouldRefresh([army, healthy])).toBe(true);
+    expect(gate.shouldRefresh([army, healthy])).toBe(false);
+
+    // A manually deleted hitbox must be recreated by reconciliation.
+    expect(gate.shouldRefresh([army])).toBe(true);
+    expect(gate.shouldRefresh([army, healthy])).toBe(false);
+
+    const dragged = { ...healthy, position: { x: 1000, y: 1000 } };
+    expect(gate.shouldRefresh([army, dragged])).toBe(true);
+    expect(gate.shouldRefresh([army, healthy])).toBe(true);
+
+    // A second proxy for the same source is not a valid cosmetic-only event.
+    expect(gate.shouldRefresh([army, healthy, proxy("duplicate", army)])).toBe(true);
+    expect(gate.shouldRefresh([army, healthy])).toBe(true);
   });
 
   it("keeps all untagged scene images because ship registration is stored separately", () => {
