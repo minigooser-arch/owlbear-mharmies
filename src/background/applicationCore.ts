@@ -486,9 +486,14 @@ export class ProductionEngine {
   }
 
   invalidateOverlayCaches(): void {
+    this.repository.clearReadCaches();
     this.lastMapOverlaySignature = undefined;
     this.clearedLegacyMapOverlays = false;
     this.clearedSharedMapOverlays = false;
+  }
+
+  readSceneRevision(): Promise<number> {
+    return this.repository.readSceneRevision();
   }
 
   async readCoordinatorLease(): Promise<HeartbeatLease | undefined> {
@@ -2338,7 +2343,7 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
       ]);
       return { id, role, connectionId: currentConnectionId };
     },
-    getSceneRevision: async () => (await new MetadataRepository(port).readScene()).revision,
+    getSceneRevision: () => engine.readSceneRevision(),
     describeCell: (cell: GridCellCoord) => cellTerrainLookup.describeCell(cell),
     createId: () => crypto.randomUUID(),
     activateTool: (toolId: string) => OBR.tool.activateTool(toolId)
