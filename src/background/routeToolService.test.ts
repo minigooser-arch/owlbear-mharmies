@@ -195,6 +195,40 @@ describe("RouteToolService", () => {
     expect(requestIds[1]).not.toBe(requestIds[0]);
   });
 
+  it("returns a bounded not-ready failure after repeated transient acknowledgements", async () => {
+    vi.useFakeTimers();
+    try {
+      const port = new MemoryPort();
+      const requestIds: string[] = [];
+      const send = vi.fn(async (command: ArmyCommand): Promise<CommandAck> => {
+        requestIds.push(command.requestId);
+        return {
+          protocolVersion: COMMAND_PROTOCOL_VERSION,
+          requestId: command.requestId,
+          status: "REJECTED",
+          reason: "BACKGROUND_NOT_READY",
+          coordinatorConnectionId: "coordinator",
+          recipientConnectionId: command.senderConnectionId
+        };
+      });
+      const service = new RouteToolService(port, { send });
+
+      const save = service.commitRoute(
+        "army-a", [{ x: 150, y: 50 }], { x: 0, y: 0 }, [{ x: 1, y: 0 }]
+      );
+      const outcome = expect(save).rejects.toEqual(
+        expect.objectContaining({ code: "BACKGROUND_NOT_READY" })
+      );
+      await vi.runAllTimersAsync();
+      await outcome;
+
+      expect(send).toHaveBeenCalledTimes(11);
+      expect(new Set(requestIds).size).toBe(requestIds.length);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("rejects unsnapped scene coordinates before broadcasting", async () => {
     const port = new MemoryPort();
     const send = vi.fn(async (command: ArmyCommand) => accepted(command));
