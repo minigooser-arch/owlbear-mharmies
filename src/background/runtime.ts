@@ -52,7 +52,7 @@ export class BackgroundRuntime {
 
   constructor(
     private readonly port: BackgroundRuntimePort,
-    private readonly rates: RuntimeRates = { movementHz: 5 },
+    private readonly rates: RuntimeRates = { movementHz: 0.1 },
     private readonly reportError: RuntimeErrorReporter = defaultRuntimeErrorReporter
   ) {}
 
@@ -142,17 +142,24 @@ export class BackgroundRuntime {
           // sources. Refresh immediately after lease acquisition so a scene
           // opened before this client became coordinator cannot leak them.
           this.requestVisibilityTick();
+          this.requestMovementTick();
           this.requestTurnTick();
         }
         if (lost) this.trackLifecycle(() => this.port.pauseMovingArmies());
       }));
       this.sceneSubscriptions.add(
-        this.port.onSceneItemsChange(() => this.requestVisibilityTick())
+        this.port.onSceneItemsChange(() => {
+          this.requestVisibilityTick();
+          // Movement commands mutate scene items; wake the atomic movement engine immediately.
+          this.requestMovementTick();
+        })
       );
       this.sceneSubscriptions.add(this.port.onLocalItemsChange(() => undefined));
       this.sceneSubscriptions.add(
         this.port.onSceneMetadataChange(() => {
           this.requestVisibilityTick();
+          // Catch newly started or resumed movement without waiting for recovery polling.
+          this.requestMovementTick();
           // A manual turn completion is persisted in scene metadata. Reconcile
           // it immediately so an idle scene does not wait for the 30-second
           // scheduler tick to finish the turn.
@@ -162,6 +169,8 @@ export class BackgroundRuntime {
       this.sceneSubscriptions.add(this.port.onGridChange(() => this.requestVisibilityTick()));
       this.sceneSubscriptions.add(this.port.onPlayerChange(() => this.requestVisibilityTick()));
       this.sceneSubscriptions.add(this.port.onPartyChange(() => this.requestVisibilityTick()));
+      // Strategic movement is atomic, not animated. Keep only a slow recovery poll
+      // for missed events and coordinator failover; normal updates are event-driven.
       this.movementTimer = setInterval(
         () => this.requestMovementTick(),
         1_000 / this.rates.movementHz
@@ -169,6 +178,7 @@ export class BackgroundRuntime {
       this.turnTimer = setInterval(() => this.requestTurnTick(), 30_000);
       await this.port.onSceneOpen();
       this.requestVisibilityTick();
+      this.requestMovementTick();
       this.requestTurnTick();
     } catch (error) {
       this.stopSceneWork();
