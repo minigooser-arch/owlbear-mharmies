@@ -71,6 +71,7 @@ import { registerMapBrushTool, type MapBrushToolRegistration } from "../owlbear/
 import { registerCellCoordinateTool, type CellCoordinateToolRegistration } from "../owlbear/cellCoordinateTool";
 import { registerNavalBattleAreaTool, type NavalBattleAreaToolRegistration } from "../owlbear/navalBattleAreaTool";
 import { METADATA_KEYS } from "../shared/constants";
+import { uiMetadataSignature } from "../owlbear/uiMetadataSignature";
 import {
   COMMAND_PROTOCOL_VERSION,
   type ArmyState,
@@ -2503,10 +2504,17 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
       callback();
     }),
     onLocalItemsChange: (callback) => OBR.scene.local.onChange(callback),
-    onSceneMetadataChange: (callback) => OBR.scene.onMetadataChange(() => {
-      cellTerrainLookup.invalidate();
-      callback();
-    }),
+    onSceneMetadataChange: (callback) => {
+      let lastSignature: string | undefined;
+      return OBR.scene.onMetadataChange((metadata) => {
+        // Lease heartbeats should not rehydrate the entire world every five seconds.
+        const signature = uiMetadataSignature(metadata);
+        if (signature === lastSignature) return;
+        lastSignature = signature;
+        cellTerrainLookup.invalidate();
+        callback();
+      });
+    },
     onGridChange: (callback) => OBR.scene.grid.onChange(() => {
       cellTerrainLookup.invalidate();
       callback();
