@@ -21,7 +21,8 @@ export class DetectionGraphCache {
     // Unknown grid metrics can hide non-square measurement rules; always
     // recalculate those scenes rather than risking a stale visibility result.
     if (input.squareGridDpi === undefined ||
-        !Number.isFinite(input.squareGridDpi) || input.squareGridDpi <= 0) return undefined;
+        !Number.isFinite(input.squareGridDpi) || input.squareGridDpi <= 0 ||
+        input.units.length > 300 || input.visionBarriers.length > 2_000) return undefined;
 
     for (const unit of input.units) {
       if (!Number.isFinite(unit.position.x) || !Number.isFinite(unit.position.y) ||
