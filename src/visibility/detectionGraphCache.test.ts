@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DetectionGraphInput, DetectionUnit } from "./detectionGraph";
 import { DetectionGraphCache } from "./detectionGraphCache";
 import { performanceSnapshot, resetPerformance } from "../performance/metrics";
+import { visibleArmyIdsForPlayer } from "./visibilityEngine";
 
 const units: DetectionUnit[] = [
   {
@@ -75,6 +76,27 @@ describe("detection graph cache", () => {
       expect(input.distancePort.distance.mock.calls.length).toBeGreaterThan(previous);
       previous = input.distancePort.distance.mock.calls.length;
     }
+  });
+
+  it("recalculates player-specific permissions even when the same graph is reused", async () => {
+    const cache = new DetectionGraphCache();
+    const input = fixture();
+    const armies = [
+      { id: "observer", sideId: "red" },
+      { id: "target", sideId: "blue" }
+    ];
+    const red = visibleArmyIdsForPlayer({
+      isGM: false, playerSideIds: ["red"], armies,
+      detectionGraph: await cache.resolve(input), battleGroups: []
+    });
+    const blue = visibleArmyIdsForPlayer({
+      isGM: false, playerSideIds: ["blue"], armies,
+      detectionGraph: await cache.resolve(input), battleGroups: []
+    });
+
+    expect(red).toEqual(new Set(["observer", "target"]));
+    expect(blue).toEqual(new Set(["target"]));
+    expect(input.distancePort.distance).toHaveBeenCalledTimes(2);
   });
 
   it("invalidates on lifecycle or grid change even if inputs appear identical", async () => {
