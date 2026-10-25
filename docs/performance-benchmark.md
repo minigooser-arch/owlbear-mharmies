@@ -23,6 +23,13 @@
 - `sdk.scene.items.getItems`, `sdk.scene.local.getItems` — дорогие полные чтения.
 - `background.movementTick`, `background.visibilityTick`, `background.turnTick`.
 - `ui.loadSnapshot` — подготовка нового снимка панели.
+- `sdk.scene.local.updateClonePatches` — пакетная запись частичных изменений локальных копий армий и кораблей.
+- `sdk.scene.items.updateProxyPatches` — пакетная запись общих интерактивных маркеров GM.
+
+В пакетных обновлениях используется ограничение `splitBatches` на размер/число элементов.
+Для проверки эффекта сравните количество `updateItems` SDK при перемещении 30 армий
+до/после: ожидается уменьшение числа отдельных вызовов, но конкретные значения
+нужно подтвердить по результатам реального профилирования.
 - `background.commandNotReady.sceneInitializing` — число команд, пришедших до готовности обработчика.
 - `background.commandNotReady.coordinatorInactive` — число команд, для которых выбранный GM ещё не получил активные полномочия.
   У этих двух счётчиков `averageMs = 0`: они считают отказы, а не задержку.
