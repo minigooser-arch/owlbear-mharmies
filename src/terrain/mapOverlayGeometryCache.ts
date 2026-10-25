@@ -1,11 +1,44 @@
 import { recordPerformance } from "../performance/metrics";
-import type { GridMapState, StateEntity } from "../shared/types";
+import type { GridMapState, StateEntity, TerrainRegistryState } from "../shared/types";
 import {
   buildStateBoundarySegmentsForFields,
   compactBoundarySegments,
   type StateBoundarySegment
 } from "../states/stateBoundaryOverlay";
 import { compactCellRectangles, type CellRectangle, type StyledCell } from "./compactOverlayGeometry";
+
+
+/**
+ * Render-specific fingerprint. Unlike a grid revision, it notices external
+ * same-revision edits, but HP, faction influence and administrative metadata
+ * do not spuriously force a redraw. Uncacheably large inputs always redraw.
+ */
+export function mapOverlayRenderSignature(input: {
+  viewerRole: "GM" | "PLAYER";
+  dpi: number;
+  gridMap: GridMapState;
+  terrain: TerrainRegistryState;
+  states: readonly StateEntity[];
+}): string | undefined {
+  if (!Number.isFinite(input.dpi) || input.dpi <= 0) return undefined;
+  const cells = Object.entries(input.gridMap.cells);
+  if (cells.length > 10_000) return undefined;
+  const signature = JSON.stringify([
+    input.viewerRole,
+    input.dpi,
+    cells.sort(([a], [b]) => a.localeCompare(b)).map(([key, cell]) => [
+      key, input.viewerRole === "GM" ? cell.terrainId : null,
+      cell.recognizedStateId, cell.deFactoStateId
+    ]),
+    input.viewerRole === "GM"
+      ? Object.entries(input.terrain.types)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([id, terrain]) => [id, terrain.enabled, terrain.color ?? null])
+      : null,
+    input.states.map(state => [state.id, state.color ?? null])
+  ]);
+  return signature.length <= 2_000_000 ? signature : undefined;
+}
 
 interface RectangleEntry {
   signature: string;
