@@ -39,9 +39,9 @@ describe("scene item change gate", () => {
     const source = item("army", { [METADATA_KEYS.army]: { revision: 1 } });
     expect(gate.shouldRefresh([source])).toBe(true);
     expect(gate.shouldRefresh([source, proxy("proxy-1")])).toBe(false);
-    expect(gate.shouldRefresh([source, { ...proxy("proxy-1"), position: { x: 300, y: 100 } }])).toBe(false);
-    expect(gate.shouldRefresh([source, proxy("proxy-2"), legacyOverlay("old-overlay")])).toBe(false);
-    expect(gate.shouldRefresh([source])).toBe(false);
+    expect(gate.shouldRefresh([source, { ...proxy("proxy-1"), name: "Cosmetic label" }])).toBe(false);
+    expect(gate.shouldRefresh([source, proxy("proxy-1"), legacyOverlay("old-overlay")])).toBe(false);
+    expect(gate.shouldRefresh([source, proxy("proxy-1")])).toBe(false);
     expect(performanceSnapshot().find(row => row.name === "scene.items.cosmeticOnlySkipped")?.calls).toBe(4);
   });
 
