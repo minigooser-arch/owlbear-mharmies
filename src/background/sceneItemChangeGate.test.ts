@@ -21,10 +21,14 @@ describe("scene item change gate", () => {
     expect(gate.shouldRefresh(original)).toBe(true);
     expect(gate.shouldRefresh(structuredClone(original))).toBe(false);
     const moved = structuredClone(original);
-    moved[0]!.position.x = 100;
+    const moving = moved[0];
+    if (!moving) throw new Error("Missing moving army");
+    moving.position.x = 100;
     expect(gate.shouldRefresh(moved)).toBe(true);
     const edited = structuredClone(moved);
-    edited[0]!.metadata[METADATA_KEYS.army] = { revision: 2 };
+    const changing = edited[0];
+    if (!changing) throw new Error("Missing edited army");
+    changing.metadata[METADATA_KEYS.army] = { revision: 2 };
     expect(gate.shouldRefresh(edited)).toBe(true);
     expect(gate.shouldRefresh([])).toBe(true);
   });
