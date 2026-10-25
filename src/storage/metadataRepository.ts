@@ -9,7 +9,7 @@ import type {
   ValidationResult
 } from "../shared/types";
 import { migrateArmyState, migrateBarrierState, migrateSceneState, migrateShipState } from "./migrations";
-import { GridChunkRepository, readGridManifest, type StagedGrid } from "./gridChunkRepository";
+import { GridChunkDecodeCache, GridChunkRepository, readGridManifest, type StagedGrid } from "./gridChunkRepository";
 import { GridStorageError, utf8Size } from "./gridChunkCodec";
 import { compactDefaultTerrain } from "../terrain/gridMap";
 import { sendBatches } from "../owlbear/boundedBatches";
@@ -120,7 +120,21 @@ function sameSceneAndManifest(left: Record<string, unknown>, right: Record<strin
 }
 
 export class MetadataRepository {
+  private readonly gridDecodeCache = new GridChunkDecodeCache();
   constructor(private readonly port: MetadataPort) {}
+
+  clearReadCaches(): void {
+    this.gridDecodeCache.clear();
+  }
+
+  /** Read scene revision without hydrating any grid, ledger, or audit item. */
+  async readSceneRevision(): Promise<number> {
+    const metadata = await this.port.getSceneMetadata();
+    return requireValid(
+      migrateSceneState(metadata[METADATA_KEYS.scene] ?? { version: 5 }),
+      METADATA_KEYS.scene
+    ).revision;
+  }
 
   async readScene(): Promise<SceneState> {
     return (await this.readSnapshot()).state;
@@ -210,7 +224,7 @@ export class MetadataRepository {
       let lrTransactions: SceneState["lrTransactions"] | undefined;
       let demographyAudit: SceneState["demographyAudit"] | undefined;
       try {
-        grid = await new GridChunkRepository(this.port).read(metadata, sceneItems);
+        grid = await new GridChunkRepository(this.port, this.gridDecodeCache).read(metadata, sceneItems);
         lrTransactions = await new LRLedgerRepository(this.port).read(metadata, sceneItems);
         demographyAudit = await new DemographyAuditRepository(this.port).read(metadata, sceneItems);
       } catch (error) { failure = error; }
@@ -289,7 +303,7 @@ export class MetadataRepository {
       let grid: SceneState["gridMap"] | undefined;
       let failure: unknown;
       try {
-        grid = await new GridChunkRepository(this.port).read(
+        grid = await new GridChunkRepository(this.port, this.gridDecodeCache).read(
           items.sceneMetadata as Record<string, unknown>, items.items
         );
       } catch (error) { failure = error; }
@@ -303,18 +317,13 @@ export class MetadataRepository {
         (!grid || grid.revision !== items.baseScene.gridMap.revision)) {
         throw new GridStorageError("GRID_CHUNK_INVALID");
       }
-      const lrTransactions = await new LRLedgerRepository(this.port).read(
-        items.sceneMetadata as Record<string, unknown>, items.items
-      );
-      const demographyAudit = await new DemographyAuditRepository(this.port).read(
-        items.sceneMetadata as Record<string, unknown>, items.items
-      );
+      // readItemFrame() has already decoded the LR and demography data from
+      // this very item snapshot. The metadata stability check above covers
+      // their manifests; decoding them again only duplicates CPU work.
       return {
         items,
         scene: {
-          ...(grid ? { ...items.baseScene, gridMap: grid } : items.baseScene),
-          ...(lrTransactions !== undefined ? { lrTransactions } : {}),
-          ...(demographyAudit !== undefined ? { demographyAudit } : {})
+          ...(grid ? { ...items.baseScene, gridMap: grid } : items.baseScene)
         }
       };
     }
