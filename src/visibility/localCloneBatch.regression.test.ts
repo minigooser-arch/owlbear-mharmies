@@ -35,8 +35,8 @@ class BatchPort implements LocalClonePort {
     throw new Error(`Unbatched creation: ${item.id}`);
   }
 
-  async updateLocalItem(id: string, _update: ItemUpdate): Promise<void> {
-    throw new Error(`Unbatched update: ${id}`);
+  async updateLocalItem(id: string, update: ItemUpdate): Promise<void> {
+    throw new Error(`Unbatched update: ${id} ${JSON.stringify(update)}`);
   }
 
   async addLocalItems(items: readonly SceneItemRecord[]): Promise<void> {
@@ -102,7 +102,7 @@ describe("batched local clone reconciliation", () => {
     );
     port.addBatches.length = 0;
     port.localItems.push({
-      ...structuredClone(port.localItems[0]!),
+      ...structuredClone(port.localItems[0] ?? source("army-1")),
       id: "local-army-1-z"
     });
     port.localItems.push({
