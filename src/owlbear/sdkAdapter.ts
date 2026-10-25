@@ -502,6 +502,8 @@ export function createOwlbearAdapter(
     getSceneMetadata: () => measureOperation("sdk.scene.getMetadata", () => sdk.scene.getMetadata()),
     patchSceneMetadata: (update) => measureOperation("sdk.scene.setMetadata", () => sdk.scene.setMetadata(update)),
     getSceneItems: allSceneItems,
+    getSceneItem: (id) => measureOperation("sdk.scene.items.getItemById", async () =>
+      (await sdk.scene.items.getItems([id])).map(asRecord).find((item) => item.id === id)),
     updateSceneItemPatches,
     addSceneItems: async (items) => {
       await sendBatches(items.map(item => createSdkLocalItem(item, overlayBuilders)), batch => sdk.scene.items.addItems(batch));
