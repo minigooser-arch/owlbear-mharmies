@@ -179,6 +179,13 @@ describe("per-layer map overlay geometry cache", () => {
     firstColor.color = "#123456";
     expect(mapOverlayRenderSignature({ ...source, states: colors })).not.toBe(mapOverlayRenderSignature(source));
     expect(mapOverlayRenderSignature({ ...source, viewerRole: "PLAYER" })).not.toBe(mapOverlayRenderSignature(source));
+    const renamedTerrain = structuredClone(source.terrain);
+    const road = renamedTerrain.types.road;
+    if (!road) throw new Error("Missing road terrain");
+    road.id = "new-road-style";
+    expect(mapOverlayRenderSignature({ ...source, terrain: renamedTerrain })).not.toBe(
+      mapOverlayRenderSignature(source)
+    );
   });
 
   it("renders identical map overlays and reuses unaffected layers across consecutive reconciliations", async () => {
