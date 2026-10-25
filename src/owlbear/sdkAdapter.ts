@@ -19,6 +19,7 @@ import {
 } from "../visibility/localCloneReconciler";
 import type { NotificationPort } from "./notifications";
 import { sendBatches, splitBatches } from "./boundedBatches";
+import { measureOperation } from "../performance/metrics";
 
 export interface OwlbearPort
   extends MetadataPort,
@@ -41,7 +42,7 @@ export interface OwlbearPort
 }
 
 interface SceneCollectionLike {
-  getItems(): Promise<unknown[]>;
+  getItems(ids?: string[]): Promise<unknown[]>;
   updateItems(items: unknown[], update: (drafts: SceneItemRecord[]) => void): Promise<void>;
   addItems(items: unknown[]): Promise<void>;
   deleteItems(ids: string[]): Promise<void>;
@@ -366,17 +367,17 @@ export function createOwlbearAdapter(
   sdk: OwlbearSdkLike = OBR as unknown as OwlbearSdkLike,
   overlayBuilders: LocalOverlayBuilderFactory = DEFAULT_OVERLAY_BUILDERS
 ): OwlbearPort {
-  const allSceneItems = async () => (await sdk.scene.items.getItems()).map(asRecord);
-  const allLocalItems = async () => (await sdk.scene.local.getItems())
-    .map(asRecord)
-    .map(normalizeSdkLocalItem);
+  const allSceneItems = () => measureOperation("sdk.scene.items.getItems", async () =>
+    (await sdk.scene.items.getItems()).map(asRecord));
+  const allLocalItems = () => measureOperation("sdk.scene.local.getItems", async () =>
+    (await sdk.scene.local.getItems()).map(asRecord).map(normalizeSdkLocalItem));
 
   const updateCollectionItem = async (
     collection: SceneCollectionLike,
     id: string,
     update: ItemUpdate
   ): Promise<void> => {
-    const item = (await collection.getItems()).map(asRecord).find((candidate) => candidate.id === id);
+    const item = (await collection.getItems([id])).map(asRecord).find((candidate) => candidate.id === id);
     if (!item) throw new Error(`Item not found: ${id}`);
     await collection.updateItems([item], (drafts) => {
       const draft = drafts[0];
@@ -449,8 +450,8 @@ export function createOwlbearAdapter(
   };
 
   return {
-    getSceneMetadata: () => sdk.scene.getMetadata(),
-    patchSceneMetadata: (update) => sdk.scene.setMetadata(update),
+    getSceneMetadata: () => measureOperation("sdk.scene.getMetadata", () => sdk.scene.getMetadata()),
+    patchSceneMetadata: (update) => measureOperation("sdk.scene.setMetadata", () => sdk.scene.setMetadata(update)),
     getSceneItems: allSceneItems,
     addSceneItems: async (items) => {
       await sendBatches(items.map(item => createSdkLocalItem(item, overlayBuilders)), batch => sdk.scene.items.addItems(batch));
