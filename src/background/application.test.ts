@@ -370,6 +370,12 @@ describe("ProductionEngine overlay performance", () => {
       Math.hypot(to.x - from.x, to.y - from.y) / 100);
     const fixture = commandPort(items, measured);
     fixture.port.getGridType = async () => "SQUARE";
+    // Test detection without the generic fixture's unimplemented clone builder.
+    fixture.port.createClone = source => ({
+      ...structuredClone(source),
+      id: `clone-${source.id}`,
+      metadata: { [METADATA_KEYS.localClone]: { sourceItemId: source.id } }
+    });
     const engine = new ProductionEngine(fixture.port);
 
     await engine.visibilityTick("GM", "gm");
