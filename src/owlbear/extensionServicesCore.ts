@@ -679,7 +679,7 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
 
   let observedLocalCloneSourceIds = new Set<string>();
   let observedMetadataSignature: string | undefined;
-  const loadSnapshot = async (): Promise<RawExtensionSnapshot> => {
+  const loadSnapshot = (): Promise<RawExtensionSnapshot> => measureOperation("ui.loadSnapshot", async () => {
     const [sceneReady, role, playerId, playerName, playerColor, party, playerMetadata] = await Promise.all([
       OBR.scene.isReady(),
       OBR.player.getRole(),
@@ -754,7 +754,7 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
         cityCellPick: { sessionId: cityCellPick.sessionId, cells: cityCellPick.cells.map((cell) => ({ ...cell })) }
       } : {})
     };
-  };
+  });
   const refreshCoordinator = createRefreshCoordinator(
     loadSnapshot,
     publish,
