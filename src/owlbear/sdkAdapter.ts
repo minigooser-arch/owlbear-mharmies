@@ -29,6 +29,7 @@ export interface OwlbearPort
     GridSdkPort,
     NotificationPort {
   addSceneItems(items: readonly SceneItemRecord[]): Promise<void>;
+  updateSceneItemPatches?(patches: readonly { id: string; update: ItemUpdate }[]): Promise<void>;
   deleteSceneItems(ids: readonly string[]): Promise<void>;
   addLocalItems(items: readonly SceneItemRecord[]): Promise<void>;
   updateLocalItems(items: readonly SceneItemRecord[]): Promise<void>;
@@ -473,10 +474,34 @@ export function createOwlbearAdapter(
     }
   };
 
+
+  // Interaction proxies are cosmetic, so they can be updated together without
+  // the single-army revision preconditions used for authoritative metadata.
+  const updateSceneItemPatches = async (
+    patches: readonly { id: string; update: ItemUpdate }[]
+  ): Promise<void> => {
+    if (patches.length === 0) return;
+    if (new Set(patches.map(({ id }) => id)).size !== patches.length) {
+      throw new Error("Duplicate scene item patch ID");
+    }
+    for (const batch of splitBatches(patches)) {
+      const byId = new Map(batch.map(({ id, update }) => [id, update]));
+      await measureOperation("sdk.scene.items.updateProxyPatches", () =>
+        sdk.scene.items.updateItems(batch.map(({ id }) => id), (drafts) => {
+          for (const draft of drafts) {
+            const update = byId.get(draft.id);
+            if (update) Object.assign(draft, structuredClone(update));
+          }
+        })
+      );
+    }
+  };
+
   return {
     getSceneMetadata: () => measureOperation("sdk.scene.getMetadata", () => sdk.scene.getMetadata()),
     patchSceneMetadata: (update) => measureOperation("sdk.scene.setMetadata", () => sdk.scene.setMetadata(update)),
     getSceneItems: allSceneItems,
+    updateSceneItemPatches,
     addSceneItems: async (items) => {
       await sendBatches(items.map(item => createSdkLocalItem(item, overlayBuilders)), batch => sdk.scene.items.addItems(batch));
     },
