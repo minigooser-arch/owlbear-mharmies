@@ -7,7 +7,7 @@ import { recordPerformance } from "../performance/metrics";
  * never ignored: a ship may be represented solely by its ID in scene metadata,
  * without a ship metadata key on the item.
  */
-function isGeneratedCosmetic(item: SceneItemRecord): boolean {
+function isGeneratedCosmetic(item: Pick<SceneItemRecord, "type" | "metadata">): boolean {
   const metadata = item.metadata;
   if (!metadata || typeof metadata !== "object") return false;
   const keys = Object.keys(metadata);
