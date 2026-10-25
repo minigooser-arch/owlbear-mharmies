@@ -126,6 +126,20 @@ describe("detection graph cache", () => {
     expect(input.distancePort.distance).toHaveBeenCalledTimes(8);
   });
 
+  it("avoids retaining oversized graphs in memory", async () => {
+    const cache = new DetectionGraphCache();
+    const input = fixture();
+    input.units = Array.from({ length: 301 }, (_, index) => ({
+      ...structuredClone(units[0]),
+      id: `unit-${index}`,
+      sideId: "same-side"
+    })).filter((unit): unit is DetectionUnit => unit !== null);
+    await cache.resolve(input);
+    await cache.resolve(input);
+    expect(performanceSnapshot().find(x => x.name === "visibility.detectionGraphBuild")?.calls).toBe(2);
+    expect(performanceSnapshot().find(x => x.name === "visibility.detectionGraphCacheHit")).toBeUndefined();
+  });
+
   it("does not cache SDK failures and retries with the next valid event", async () => {
     const cache = new DetectionGraphCache();
     const input = fixture();
