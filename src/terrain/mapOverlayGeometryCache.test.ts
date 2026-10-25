@@ -174,7 +174,9 @@ describe("per-layer map overlay geometry cache", () => {
     change.terrainId = "road";
     expect(mapOverlayRenderSignature(source)).not.toBe(second);
     const colors = structuredClone(states);
-    colors[0]!.color = "#123456";
+    const firstColor = colors[0];
+    if (!firstColor) throw new Error("Missing state color");
+    firstColor.color = "#123456";
     expect(mapOverlayRenderSignature({ ...source, states: colors })).not.toBe(mapOverlayRenderSignature(source));
     expect(mapOverlayRenderSignature({ ...source, viewerRole: "PLAYER" })).not.toBe(mapOverlayRenderSignature(source));
   });
@@ -202,14 +204,17 @@ describe("per-layer map overlay geometry cache", () => {
     const cell = map.cells["-2,1"];
     if (!cell) throw new Error("Missing territory cell");
     cell.deFactoStateId = "b";
+    const terrainBuildsBefore = metric("map.geometry.terrainBuild");
+    const recognizedBuildsBefore = metric("map.geometry.recognizedBuild");
+    const boundaryBuildsBefore = metric("map.geometry.boundariesBuild");
     await cachedService.reconcile(source);
-    await referenceService.reconcile(source);
-    expect(withCache.items()).toEqual(reference.items());
-    expect(metric("map.geometry.terrainBuild")).toBe(2);
-    expect(metric("map.geometry.recognizedBuild")).toBe(2);
-    expect(metric("map.geometry.boundariesBuild")).toBe(3);
+    expect(metric("map.geometry.terrainBuild")).toBe(terrainBuildsBefore);
+    expect(metric("map.geometry.recognizedBuild")).toBe(recognizedBuildsBefore);
+    expect(metric("map.geometry.boundariesBuild")).toBe(boundaryBuildsBefore + 1);
     expect(metric("map.geometry.terrainHit")).toBe(2);
     expect(metric("map.geometry.recognizedHit")).toBe(2);
+    await referenceService.reconcile(source);
+    expect(withCache.items()).toEqual(reference.items());
 
     // A state color change updates all relevant styled boundary/fill tokens.
     const changedStates = structuredClone(states);
