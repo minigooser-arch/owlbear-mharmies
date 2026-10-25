@@ -2022,29 +2022,13 @@ export class ProductionEngine {
       const claimIsCurrent = () =>
         this.coordinatorGeneration === generation &&
         (!this.coordinator || this.activeCoordinatorConnectionId === heartbeat.connectionId);
-      const leaseIsClaimable = (current: SceneState) => {
-        const lease = current.coordinatorLease;
-        return lease === undefined ||
-          lease.connectionId === heartbeat.connectionId ||
-          lease.expiresAt <= this.wallClock().getTime();
-      };
-
-      if (!claimIsCurrent()) return;
-      const scene = await this.repository.readScene();
-      if (!claimIsCurrent()) return;
-      if (!leaseIsClaimable(scene)) {
-        throw new Error("Coordinator lease is held by another live connection");
-      }
-      try {
-        await this.repository.writeScene(
-          { ...scene, coordinatorLease: heartbeat },
-          scene.revision,
-          (current) => claimIsCurrent() && leaseIsClaimable(current)
-        );
-      } catch (error) {
-        if (!claimIsCurrent()) return;
-        throw error;
-      }
+      // Lease renewal is transport-level metadata, not a world state mutation.
+      // No grid/ledger item loading or re-staging is required.
+      await this.repository.writeCoordinatorLease(
+        heartbeat,
+        this.wallClock().getTime(),
+        claimIsCurrent
+      );
     });
   }
 
