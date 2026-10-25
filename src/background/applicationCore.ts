@@ -2272,13 +2272,26 @@ export class ProductionEngine {
     const mapOverlayService = new MapOverlayService(overlayPort, this.mapOverlayGeometryCache);
     try {
       const dpi = await this.grid.getDpi();
-      const signature = mapOverlayRenderSignature({
+      const contentSignature = mapOverlayRenderSignature({
         viewerRole: role,
         dpi,
         gridMap: scene.gridMap,
         terrain: scene.terrain,
         states: scene.states
       });
+      // For extremely large scenes, keep the previous bounded-revision
+      // behavior rather than triggering a costly full redraw every tick.
+      // Ordinary-sized scenes use exact rendered cell content and also catch
+      // same-revision edits made by external integrations.
+      const signature = contentSignature ?? (Number.isFinite(dpi) && dpi > 0
+        ? JSON.stringify([
+            "large-grid-revision-fallback", role, dpi, scene.gridMap.revision,
+            Object.values(scene.terrain.types)
+              .map(terrain => [terrain.id, terrain.enabled, terrain.color ?? null])
+              .sort(([left], [right]) => String(left).localeCompare(String(right))),
+            scene.states.map(state => [state.id, state.color ?? null])
+          ])
+        : undefined);
       if (signature === undefined || this.lastMapOverlaySignature !== signature) {
         await mapOverlayService.reconcile({
           viewerRole: role,
