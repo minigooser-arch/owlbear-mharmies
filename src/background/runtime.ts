@@ -1,4 +1,5 @@
 import { SubscriptionManager } from "./subscriptions";
+import { measureOperation } from "../performance/metrics";
 
 export interface BackgroundRuntimePort {
   isSceneReady(): Promise<boolean>;
@@ -227,7 +228,7 @@ export class BackgroundRuntime {
     try {
       do {
         this.movementPending = false;
-        await this.port.movementTick();
+        await measureOperation("background.movementTick", () => this.port.movementTick());
       } while (this.movementPending && this.sceneOpen);
     } finally {
       this.movementRunning = false;
@@ -238,7 +239,7 @@ export class BackgroundRuntime {
     try {
       do {
         this.visibilityPending = false;
-        await this.port.visibilityTick();
+        await measureOperation("background.visibilityTick", () => this.port.visibilityTick());
       } while (this.visibilityPending && this.sceneOpen);
     } finally {
       this.visibilityRunning = false;
@@ -249,7 +250,7 @@ export class BackgroundRuntime {
     try {
       do {
         this.turnPending = false;
-        await this.port.turnTick();
+        await measureOperation("background.turnTick", () => this.port.turnTick());
       } while (this.turnPending && this.sceneOpen);
     } finally {
       this.turnRunning = false;
