@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { vi } from "vitest";
 import { CommandGateway } from "../commands/commandGateway";
+import { performanceSnapshot, resetPerformance } from "../performance/metrics";
 import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE, METADATA_KEYS } from "../shared/constants";
 import {
   COMMAND_PROTOCOL_VERSION,
@@ -146,6 +147,35 @@ describe("background command readiness", () => {
     }
 
     expect(acknowledgements).toEqual([{ current: "b", reason: "BACKGROUND_NOT_READY" }]);
+  });
+
+  it("distinguishes an inactive coordinator from a still-opening scene", async () => {
+    resetPerformance();
+    const sendAck = vi.fn(async () => undefined);
+    await dispatchBackgroundCommand({
+      event,
+      participants,
+      currentConnectionId: "b",
+      lease: { connectionId: "b", epoch: 2, expiresAt: 11_000 },
+      now: 10_000,
+      ready: true,
+      active: false,
+      sendAck,
+      process: async () => undefined
+    });
+
+    expect(sendAck).toHaveBeenCalledWith(expect.objectContaining({
+      reason: "BACKGROUND_NOT_READY"
+    }));
+    expect(performanceSnapshot()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "background.commandNotReady.coordinatorInactive",
+          calls: 1
+        })
+      ])
+    );
+    resetPerformance();
   });
 
   it("lets the next GM take over an expired persisted lease", async () => {
