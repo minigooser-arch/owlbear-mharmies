@@ -21,6 +21,7 @@ export interface MetadataPort {
   getSceneMetadata(): Promise<Record<string, unknown>>;
   patchSceneMetadata(update: Record<string, unknown>): Promise<void>;
   getSceneItems(): Promise<SceneItemRecord[]>;
+  getSceneItem?(id: string): Promise<SceneItemRecord | undefined>;
   addSceneItems?(items: readonly SceneItemRecord[]): Promise<void>;
   deleteSceneItems?(ids: readonly string[]): Promise<void>;
   updateSceneItem(id: string, update: ItemUpdate): Promise<void>;
@@ -546,7 +547,9 @@ export class MetadataRepository {
   }
 
   private async findItem(itemId: string): Promise<SceneItemRecord> {
-    const item = (await this.port.getSceneItems()).find((candidate) => candidate.id === itemId);
+    const item = this.port.getSceneItem
+      ? await this.port.getSceneItem(itemId)
+      : (await this.port.getSceneItems()).find((candidate) => candidate.id === itemId);
     if (!item) throw new InvalidMetadataError(`item:${itemId}`);
     return item;
   }
