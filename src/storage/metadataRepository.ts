@@ -134,6 +134,64 @@ export class MetadataRepository {
     ).coordinatorLease;
   }
 
+  /**
+   * Persist a coordinator heartbeat without loading grid, ledger or audit items.
+   * Re-read metadata to reject a known-stale scene or a competing live lease.
+   * Owlbear metadata has no atomic compare-and-swap: the final narrow race
+   * remains subject to the same fencing limitations as writeScene().
+   */
+  async writeCoordinatorLease(
+    heartbeat: NonNullable<SceneState["coordinatorLease"]>,
+    now: number,
+    canCommit: () => boolean
+  ): Promise<void> {
+    const read = async () => {
+      const metadata = await this.port.getSceneMetadata();
+      const raw = metadata[METADATA_KEYS.scene] ?? { version: 5 };
+      const state = requireValid(migrateSceneState(raw), METADATA_KEYS.scene);
+      return { raw, state };
+    };
+    const claimable = (lease: SceneState["coordinatorLease"]) =>
+      lease === undefined ||
+      lease.connectionId === heartbeat.connectionId ||
+      lease.expiresAt <= now;
+    const withoutLease = (raw: unknown) => {
+      if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return raw;
+      const { coordinatorLease: _ignored, ...gameState } = raw as Record<string, unknown>;
+      void _ignored;
+      return gameState;
+    };
+
+    if (!canCommit()) return;
+    const first = await read();
+    if (!canCommit()) return;
+    if (!claimable(first.state.coordinatorLease)) {
+      throw new Error("Coordinator lease is held by another live connection");
+    }
+
+    const latest = await read();
+    if (!canCommit()) return;
+    assertRevision(latest.state.revision, first.state.revision);
+    if (JSON.stringify(withoutLease(first.raw)) !== JSON.stringify(withoutLease(latest.raw))) {
+      throw new CommitPreconditionFailed();
+    }
+    if (!claimable(latest.state.coordinatorLease)) {
+      throw new Error("Coordinator lease is held by another live connection");
+    }
+
+    // Preserve exactly the current stored state; never re-encode the grid
+    // manifest or normalize unrelated gameplay fields for a mere heartbeat.
+    const stored = typeof latest.raw === "object" && latest.raw !== null && !Array.isArray(latest.raw)
+      ? latest.raw as Record<string, unknown>
+      : latest.state;
+    const update = {
+      [METADATA_KEYS.scene]: { ...stored, coordinatorLease: heartbeat }
+    };
+    if (utf8Size(update) > 48 * 1024) throw new GridStorageError("GRID_METADATA_TOO_LARGE");
+    if (!canCommit()) return;
+    await this.port.patchSceneMetadata(update);
+  }
+
   private async readSnapshot(): Promise<{ state: SceneState; metadata: Record<string, unknown> }> {
     for (let attempt = 0; attempt < 3; attempt++) {
       const metadata = await this.port.getSceneMetadata();
