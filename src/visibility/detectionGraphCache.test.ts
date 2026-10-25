@@ -129,11 +129,13 @@ describe("detection graph cache", () => {
   it("avoids retaining oversized graphs in memory", async () => {
     const cache = new DetectionGraphCache();
     const input = fixture();
+    const baseline = units[0];
+    if (!baseline) throw new Error("Missing fixture unit");
     input.units = Array.from({ length: 301 }, (_, index) => ({
-      ...structuredClone(units[0]),
+      ...structuredClone(baseline),
       id: `unit-${index}`,
       sideId: "same-side"
-    })).filter((unit): unit is DetectionUnit => unit !== null);
+    }));
     await cache.resolve(input);
     await cache.resolve(input);
     expect(performanceSnapshot().find(x => x.name === "visibility.detectionGraphBuild")?.calls).toBe(2);
