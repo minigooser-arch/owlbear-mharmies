@@ -33,7 +33,7 @@ export function mapOverlayRenderSignature(input: {
     input.viewerRole === "GM"
       ? Object.entries(input.terrain.types)
           .sort(([a], [b]) => a.localeCompare(b))
-          .map(([id, terrain]) => [id, terrain.enabled, terrain.color ?? null])
+          .map(([id, terrain]) => [id, terrain.id, terrain.enabled, terrain.color ?? null])
       : null,
     input.states.map(state => [state.id, state.color ?? null])
   ]);
