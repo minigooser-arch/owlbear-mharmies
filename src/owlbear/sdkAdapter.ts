@@ -15,6 +15,7 @@ import type { ItemUpdate, SceneItemRecord, Vector2 } from "../shared/types";
 import type { MetadataPort } from "../storage/metadataRepository";
 import {
   localCloneMetadataForSource,
+  type LocalClonePatch,
   type LocalClonePort
 } from "../visibility/localCloneReconciler";
 import type { NotificationPort } from "./notifications";
@@ -449,6 +450,28 @@ export function createOwlbearAdapter(
     }
   };
 
+
+  // Clone reconciliation already has a current local-item snapshot. Apply only
+  // the changed fields in one SDK callback per bounded batch, avoiding a second
+  // full scene.local.getItems() for every changed clone.
+  const updateLocalItemPatches = async (patches: readonly LocalClonePatch[]): Promise<void> => {
+    if (patches.length === 0) return;
+    if (new Set(patches.map(({ id }) => id)).size !== patches.length) {
+      throw new Error("Duplicate local clone patch ID");
+    }
+    for (const batch of splitBatches(patches)) {
+      const byId = new Map(batch.map(({ id, update }) => [id, update]));
+      await measureOperation("sdk.scene.local.updateClonePatches", () =>
+        sdk.scene.local.updateItems(batch.map(({ id }) => id), (drafts) => {
+          for (const draft of drafts) {
+            const patch = byId.get(draft.id);
+            if (patch) Object.assign(draft, structuredClone(patch));
+          }
+        })
+      );
+    }
+  };
+
   return {
     getSceneMetadata: () => measureOperation("sdk.scene.getMetadata", () => sdk.scene.getMetadata()),
     patchSceneMetadata: (update) => measureOperation("sdk.scene.setMetadata", () => sdk.scene.setMetadata(update)),
@@ -470,6 +493,7 @@ export function createOwlbearAdapter(
     getLocalItems: allLocalItems,
     addLocalItem: async (item) => addLocalItems([item]),
     addLocalItems,
+    updateLocalItemPatches,
     updateLocalItem: (id, update) => updateCollectionItem(sdk.scene.local, id, update),
     updateLocalItems,
     deleteLocalItems: (ids) => sendBatches(ids, batch => sdk.scene.local.deleteItems(batch)),
