@@ -2458,6 +2458,9 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
       cellTerrainLookup.invalidate();
       gridErrors.reset();
       engine.invalidateOverlayCaches();
+      // Cosmetic cleanup cannot block a legitimate command. Actual authority
+      // is still checked against the persisted lease and active coordinator.
+      commandReady = true;
       lease.start();
       try {
         const retiredVisionOverlayIds = (await port.getLocalItems())
@@ -2469,9 +2472,6 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
       } catch {
         // Retired local fog is cosmetic; a cleanup failure must not block the scene.
       }
-      // A stale tool queue must not make every command return
-      // BACKGROUND_NOT_READY. The cleanup remains best effort and is bounded.
-      commandReady = true;
       await settleSceneToolCleanup([
         removeRouteTool.cancelSession(),
         removeShipRouteTool.cancelSession(),
