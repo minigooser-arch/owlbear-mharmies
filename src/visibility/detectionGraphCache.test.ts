@@ -112,7 +112,7 @@ describe("detection graph cache", () => {
   it("bypasses caching entirely when grid identity or numeric geometry is unknown", async () => {
     const cache = new DetectionGraphCache();
     const input = fixture();
-    input.squareGridDpi = undefined;
+    delete input.squareGridDpi;
     await cache.resolve(input);
     await cache.resolve(input);
     expect(input.distancePort.distance).toHaveBeenCalledTimes(4);
