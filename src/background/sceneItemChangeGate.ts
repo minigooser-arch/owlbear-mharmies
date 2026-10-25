@@ -38,12 +38,12 @@ export class SceneItemChangeGate {
     this.signature = undefined;
   }
 
-  shouldRefresh(items: readonly SceneItemRecord[]): boolean {
+  shouldRefresh<T extends Pick<SceneItemRecord, "type" | "metadata">>(items: readonly T[]): boolean {
     let next: string;
     try {
       // Preserve all fields and IDs on every non-cosmetic item, including
       // untagged images (which can represent naval units).
-      const tracked: SceneItemRecord[] = [];
+      const tracked: T[] = [];
       for (const item of items) {
         if (!isGeneratedCosmetic(item)) tracked.push(item);
       }
