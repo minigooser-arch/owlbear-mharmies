@@ -346,6 +346,55 @@ describe("ProductionEngine overlay performance", () => {
     expect(localReads - firstFrameReads).toBe(1);
   });
 
+  it("reuses the actual engine detection graph across HP-only changes, but not movement or grid changes", async () => {
+    const red: ArmyState = {
+      version: 4, registered: true, sideId: "red", status: "READY",
+      overrides: {}, route: [],
+      plannedRoute: {
+        startCell: { x: 0, y: 0 }, executeOnTurn: 1, cells: [],
+        totalCostUnits: 0, validatedRevision: 1, requiresReplan: false
+      },
+      movement: { maxUnits: 10, remainingUnits: 10, enteredRouteCellCount: 0 },
+      health: { hp: 50, maxHp: 50 },
+      supply: { supplied: true, checkedOnTurn: 1 },
+      disband: { pending: false, requestedOnTurn: null, requestedByPlayerId: null },
+      currentWaypointIndex: 0, segmentProgressCells: 0,
+      ignoresMovementBarriers: false, ignoresVisionBarriers: false, revision: 1
+    };
+    const blue = { ...structuredClone(red), sideId: "blue" };
+    const items: SceneItemRecord[] = [
+      { id: "red-unit", type: "IMAGE", position: { x: 0, y: 0 }, metadata: { [METADATA_KEYS.army]: red } },
+      { id: "blue-unit", type: "IMAGE", position: { x: 200, y: 0 }, metadata: { [METADATA_KEYS.army]: blue } }
+    ];
+    const measured = vi.fn(async (from: { x: number; y: number }, to: { x: number; y: number }) =>
+      Math.hypot(to.x - from.x, to.y - from.y) / 100);
+    const fixture = commandPort(items, measured);
+    fixture.port.getGridType = async () => "SQUARE";
+    const engine = new ProductionEngine(fixture.port);
+
+    await engine.visibilityTick("GM", "gm");
+    expect(measured).toHaveBeenCalledTimes(2);
+    const first = fixture.items[0];
+    if (!first) throw new Error("Army missing");
+    const updated = first.metadata[METADATA_KEYS.army] as ArmyState;
+    first.metadata[METADATA_KEYS.army] = {
+      ...updated, health: { hp: 20, maxHp: 50 }, revision: updated.revision + 1
+    };
+    await engine.visibilityTick("GM", "gm");
+    expect(measured).toHaveBeenCalledTimes(2);
+
+    first.position = { x: 400, y: 0 };
+    await engine.visibilityTick("GM", "gm");
+    expect(measured).toHaveBeenCalledTimes(4);
+
+    engine.invalidateDetectionCache();
+    await engine.visibilityTick("GM", "gm");
+    expect(measured).toHaveBeenCalledTimes(6);
+    engine.invalidateOverlayCaches(); // New scene lifecycle.
+    await engine.visibilityTick("GM", "gm");
+    expect(measured).toHaveBeenCalledTimes(8);
+  });
+
   it("removes local terrain after a GM-to-PLAYER role switch without adding impassable emoji", async () => {
     const fixture = commandPort();
     fixture.scene.gridMap.cells["0,0"] = {
