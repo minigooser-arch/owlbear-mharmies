@@ -267,6 +267,43 @@ describe("BackgroundRuntime", () => {
     await runtime.stop();
   });
 
+  it("drains an in-flight visibility tick before deleting local overlays and opening the next scene", async () => {
+    const port = new RuntimePort();
+    const runtime = new BackgroundRuntime(port);
+    let releaseVisibility: (() => void) | undefined;
+    let enteredVisibility: (() => void) | undefined;
+    const inFlight = new Promise<void>(resolve => { releaseVisibility = resolve; });
+    const entered = new Promise<void>(resolve => { enteredVisibility = resolve; });
+
+    try {
+      runtime.start();
+      await runtime.whenIdle();
+      expect(port.opened).toBe(1);
+      port.visibility.mockImplementation(async () => {
+        enteredVisibility?.();
+        await inFlight;
+      });
+
+      runtime.requestVisibilityTick();
+      await entered;
+      port.sceneReady?.(false);
+      port.sceneReady?.(true);
+      await vi.waitFor(() => expect(port.closed).toBe(1));
+
+      // Neither cleanup nor the next scene can run while a stale visibility
+      // operation still might publish hidden local clones.
+      expect(port.deleted).toBe(0);
+      expect(port.opened).toBe(1);
+      releaseVisibility?.();
+      await runtime.whenIdle();
+      expect(port.deleted).toBe(1);
+      expect(port.opened).toBe(2);
+    } finally {
+      releaseVisibility?.();
+      await runtime.stop();
+    }
+  });
+
   it("pauses moving armies when coordinator ownership is lost", async () => {
     const port = new RuntimePort();
     const runtime = new BackgroundRuntime(port);
