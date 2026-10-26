@@ -17,6 +17,7 @@ export type NotificationCode =
   | "BACKGROUND_NOT_READY"
   | "PROTOCOL_MISMATCH"
   | "INVALID_COMMAND"
+  | "INVALID_EXPERIENCE_AWARD"
   | "INVALID_HP"
   | "INVALID_BATTLE_NAME"
   | "BATTLE_NOT_FOUND"
@@ -116,6 +117,7 @@ const RUSSIAN_MESSAGES: Readonly<Record<NotificationCode, string>> = {
   BACKGROUND_NOT_READY: "Фоновая часть расширения ещё загружается. Повторите попытку.",
   PROTOCOL_MISMATCH: "Версии интерфейса и фоновой части не совпадают. Перезапустите расширение.",
   INVALID_COMMAND: "Команда не распознана. Обновите расширение и повторите действие.",
+  INVALID_EXPERIENCE_AWARD: "Можно начислить от 0,5 до 100 XP с шагом 0,5; проверьте общий опыт армии.",
   INVALID_HP: "Укажите допустимое целое значение HP корабля.",
   INVALID_BATTLE_NAME: "Название боя должно содержать от 1 до 80 символов.",
   BATTLE_NOT_FOUND: "Указанный бой не найден.",
