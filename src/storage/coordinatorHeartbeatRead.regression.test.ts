@@ -101,6 +101,17 @@ describe("coordinator heartbeat and storage snapshot isolation", () => {
     expect(scene.coordinatorLease?.connectionId).toBe("gm-a");
   });
 
+  it("keeps scene writes strictly fenced during concurrent GM handover", async () => {
+    const { port, repository } = await fixture();
+    const original = await repository.readScene();
+    const writeCount = port.requests.length;
+    changingLease(port, n => n % 2 === 0 ? "gm-b" : "gm-a");
+    await expect(repository.writeScene({
+      ...original, revision: original.revision + 1
+    }, original.revision)).rejects.toThrow("GRID_CHUNK_MISSING");
+    expect(port.requests).toHaveLength(writeCount);
+  });
+
   it("rejects missing chunks even if the GM lease changes continually", async () => {
     const { port, repository } = await fixture();
     port.items = [];
