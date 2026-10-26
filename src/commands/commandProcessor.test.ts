@@ -164,6 +164,15 @@ describe("CommandProcessor", () => {
     }
   );
 
+  it("rejects inherited army properties when directly invoked with a forged payload", () => {
+    const current = state();
+    const result = processor.execute(context("GM", "gm", current), command({
+      type: "AWARD_ARMY_EXPERIENCE", armyId: "constructor", amount: 1
+    }));
+    expect(result).toEqual({ status: "REJECTED", reason: "ARMY_NOT_FOUND" });
+    expect(Object.hasOwn(current.armies, "constructor")).toBe(false);
+  });
+
   it("prevents awarding XP beyond the supported accumulator limit", () => {
     const current = state();
     const existing = current.armies["army-red"];
