@@ -14,6 +14,7 @@ import type {
 import { COMMAND_PROTOCOL_VERSION } from "../shared/types";
 import { parseArmyTokenAsset } from "../shared/armyTokenAsset";
 import { MILITARY_INFLUENCE_DELTAS, type MilitaryInfluenceReasonCode } from "../sheets/militaryInfluence";
+import { isValidArmyXpAward } from "../shared/experienceAwards";
 
 type UnknownRecord = Record<string, unknown>;
 type CommandType = ArmyCommandPayload["type"];
