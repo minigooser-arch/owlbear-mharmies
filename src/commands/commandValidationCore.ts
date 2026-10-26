@@ -341,7 +341,7 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
       ? { type: "PURCHASE_ARMY_UPGRADE", armyId: value.armyId, branch: value.branch, level: value.level, variant: value.variant } as ArmyCommandPayload
       : undefined,
   AWARD_ARMY_EXPERIENCE: (value) =>
-    boundedString(value.armyId) && isValidArmyXpAward(value.amount)
+    sideId(value.armyId) && isValidArmyXpAward(value.amount)
       ? { type: "AWARD_ARMY_EXPERIENCE", armyId: value.armyId, amount: value.amount }
       : undefined,
   RESOLVE_LAND_BATTLE: (value) => {
