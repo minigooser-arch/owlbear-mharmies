@@ -61,6 +61,31 @@ describe("validateArmyCommand", () => {
     }
   );
 
+  it("accepts valid GM experience awards and strips unrecognized fields", () => {
+    expect(validateArmyCommand(envelope({
+      type: "AWARD_ARMY_EXPERIENCE", armyId: "army-red", amount: 0.5, ignored: "field"
+    }))).toEqual({
+      ok: true,
+      command: {
+        ...envelope({}),
+        type: "AWARD_ARMY_EXPERIENCE",
+        armyId: "army-red",
+        amount: 0.5
+      }
+    });
+    expect(validateArmyCommand(envelope({
+      type: "AWARD_ARMY_EXPERIENCE", armyId: "army-red", amount: 100
+    }))).toMatchObject({ ok: true });
+  });
+
+  it.each([undefined, null, "1", 0, -0.5, 0.1, 0.75, 1.25, 100.5, Number.NaN, Infinity])(
+    "rejects invalid GM experience amount %s", amount => {
+      expect(validateArmyCommand(envelope({
+        type: "AWARD_ARMY_EXPERIENCE", armyId: "army-red", amount
+      }))).toMatchObject({ ok: false, reason: "INVALID_COMMAND" });
+    }
+  );
+
   it("recovers a valid request id from a malformed payload", () => {
     expect(validateArmyCommand(envelope({ type: "CREATE_SIDE" }))).toEqual({
       ok: false,
