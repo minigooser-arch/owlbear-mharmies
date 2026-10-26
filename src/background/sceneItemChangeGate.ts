@@ -29,6 +29,7 @@ export class SceneItemChangeGate {
     try {
       const sourceById = new Map(items.map(item => [item.id, item]));
       const validProxySources = new Set<string>();
+      let needsProxyRepair = false;
       nextProxyIds = new Set<string>();
       const tracked: T[] = [];
       for (const item of items) {
@@ -50,11 +51,18 @@ export class SceneItemChangeGate {
             nextProxyIds.add(item.id);
             continue;
           }
-          // Damaged, orphaned, or duplicated proxies need reconciliation.
+          // Always retry reconciliation when a malformed/duplicate proxy remains.
+          // A failed first repair must not become a permanent cosmetic-only skip.
+          needsProxyRepair = true;
         }
         tracked.push(item);
       }
       next = JSON.stringify(tracked);
+      if (needsProxyRepair) {
+        this.signature = next;
+        this.proxyIds = nextProxyIds;
+        return true;
+      }
       if (next.length > this.maxChars) {
         this.reset();
         return true;
