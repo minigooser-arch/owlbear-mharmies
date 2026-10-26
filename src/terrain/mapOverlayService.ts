@@ -12,8 +12,8 @@ import type {
   StateEntity,
   TerrainRegistryState
 } from "../shared/types";
-import { buildStateBoundarySegmentsForFields, compactBoundarySegments } from "../states/stateBoundaryOverlay";
-import { compactCellRectangles, type CellRectangle, type StyledCell } from "./compactOverlayGeometry";
+import { type CellRectangle, type StyledCell } from "./compactOverlayGeometry";
+import { MapOverlayGeometryCache } from "./mapOverlayGeometryCache";
 
 export type MapOverlayPort = LocalOverlayBatchPort;
 
@@ -76,7 +76,10 @@ function rectanglePoints(rectangle: CellRectangle, dpi: number) {
 }
 
 export class MapOverlayService {
-  constructor(private readonly port: MapOverlayPort) {}
+  constructor(
+    private readonly port: MapOverlayPort,
+    private readonly geometryCache: MapOverlayGeometryCache = new MapOverlayGeometryCache()
+  ) {}
 
   async reconcile(source: MapOverlaySource | undefined): Promise<void> {
     if (!source) {
@@ -89,7 +92,8 @@ export class MapOverlayService {
     const terrainCells: StyledCell[] = [];
     const recognizedStateCells: StyledCell[] = [];
 
-    for (const [rawCellKey, cell] of Object.entries(source.gridMap.cells).sort(([a], [b]) => a.localeCompare(b))) {
+    const sortedCells = Object.entries(source.gridMap.cells).sort(([a], [b]) => a.localeCompare(b));
+    for (const [rawCellKey, cell] of sortedCells) {
       let coordinate;
       try {
         coordinate = parseCellKey(rawCellKey);
@@ -112,7 +116,7 @@ export class MapOverlayService {
 
     }
 
-    for (const rectangle of compactCellRectangles(terrainCells)) {
+    for (const rectangle of this.geometryCache.rectangles("terrain", terrainCells)) {
       const terrain = source.terrain.types[rectangle.styleKey];
       if (!terrain) continue;
       const marker = rectangleMetadata("TERRAIN", terrain.id, rectangle);
@@ -134,7 +138,7 @@ export class MapOverlayService {
       });
     }
 
-    for (const rectangle of compactCellRectangles(recognizedStateCells)) {
+    for (const rectangle of this.geometryCache.rectangles("recognized", recognizedStateCells)) {
       const state = statesById.get(rectangle.styleKey);
       if (!state) continue;
       const marker = rectangleMetadata("RECOGNIZED_STATE_FILL", state.id, rectangle);
@@ -157,9 +161,9 @@ export class MapOverlayService {
       });
     }
 
-    const boundaries = buildStateBoundarySegmentsForFields(source.gridMap, source.states, source.dpi);
+    const boundaries = this.geometryCache.stateBoundaries(source.gridMap, source.states, source.dpi, sortedCells);
     for (const [segments, boundaryKind] of [[boundaries.recognized, "STATE_BOUNDARY"], [boundaries.deFacto, "DEFACTO_BOUNDARY"]] as const) {
-      for (const segment of compactBoundarySegments(segments)) {
+      for (const segment of segments) {
         const marker = boundaryMetadata(
           boundaryKind,
           segment.stateId,

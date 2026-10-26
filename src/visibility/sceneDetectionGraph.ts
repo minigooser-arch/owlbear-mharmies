@@ -15,6 +15,7 @@ export async function buildSceneDetectionGraph(input: {
   sceneItems: readonly SceneItemRecord[];
   distancePort: GridDistancePort;
   visionBarriers: readonly BarrierSegment[];
+  squareGridDpi?: number;
 }): Promise<DetectionGraph> {
   const sceneItemById = new Map(input.sceneItems.map((item) => [item.id, item]));
   const armyDetectionUnits = input.armies.map(({ item, state }) => ({
@@ -46,7 +47,8 @@ export async function buildSceneDetectionGraph(input: {
     mode: input.scene.settings.detectionMode,
     units: [...armyDetectionUnits, ...shipDetectionUnits],
     distancePort: input.distancePort,
-    visionBarriers: input.visionBarriers
+    visionBarriers: input.visionBarriers,
+    ...(input.squareGridDpi !== undefined ? { squareGridDpi: input.squareGridDpi } : {})
   });
 }
 

@@ -211,6 +211,53 @@ it("patches one scene-item metadata key without overwriting unrelated metadata",
   });
 });
 
+it("reads only the requested item when applying an individual scene update", async () => {
+  const fetchedIds: Array<string[] | undefined> = [];
+  const source: SceneItemRecord = {
+    id: "target",
+    type: "IMAGE",
+    position: { x: 0, y: 0 },
+    metadata: {}
+  };
+  const collection = {
+    getItems: async (ids?: string[]) => {
+      fetchedIds.push(ids);
+      return [structuredClone(source)];
+    },
+    updateItems: async (_ids: unknown[], update: (drafts: SceneItemRecord[]) => void) => {
+      const drafts = [structuredClone(source)];
+      update(drafts);
+      Object.assign(source, drafts[0]);
+    },
+    addItems: async () => undefined,
+    deleteItems: async () => undefined
+  };
+  const adapter = createOwlbearAdapter({
+    scene: {
+      getMetadata: async () => ({}),
+      setMetadata: async () => undefined,
+      items: collection,
+      local: collection,
+      grid: {
+        getDistance: async () => 0,
+        getDpi: async () => 100,
+        snapPosition: async (point) => point,
+        onChange: () => () => undefined
+      }
+    },
+    broadcast: {
+      sendMessage: async () => undefined,
+      onMessage: () => () => undefined
+    },
+    notification: { show: async () => undefined }
+  });
+
+  await adapter.updateSceneItem("target", { position: { x: 10, y: 20 } });
+
+  expect(fetchedIds).toEqual([["target"]]);
+  expect(source.position).toEqual({ x: 10, y: 20 });
+});
+
 it("builds valid Owlbear curve and label items for local overlays", () => {
   const builders = fakeOverlayBuilders();
   const curve = createSdkLocalItem({

@@ -81,6 +81,55 @@ describe("BackgroundRuntime", () => {
     }
   });
 
+  it("runs atomic movement on scene events instead of polling five times per second", async () => {
+    vi.useFakeTimers();
+    const port = new RuntimePort();
+    const runtime = new BackgroundRuntime(port);
+
+    try {
+      runtime.start();
+      await runtime.whenIdle();
+      expect(port.movement).toHaveBeenCalledTimes(0);
+
+      // The old 200 ms timer would have performed 45 unnecessary reads here.
+      await vi.advanceTimersByTimeAsync(9_000);
+      await runtime.whenIdle();
+      expect(port.movement).toHaveBeenCalledTimes(0);
+
+      port.sceneItemsChange?.();
+      await runtime.whenIdle();
+      expect(port.movement).toHaveBeenCalledTimes(1);
+
+      port.sceneMetadataChange?.();
+      await runtime.whenIdle();
+      expect(port.movement).toHaveBeenCalledTimes(2);
+
+      // A missed notification is still recovered by the slow timer.
+      await vi.advanceTimersByTimeAsync(1_000);
+      await runtime.whenIdle();
+      expect(port.movement).toHaveBeenCalledTimes(3);
+    } finally {
+      await runtime.stop();
+      vi.useRealTimers();
+    }
+  });
+
+  it("checks movement immediately when taking over GM coordination", async () => {
+    const port = new RuntimePort();
+    const runtime = new BackgroundRuntime(port);
+    try {
+      runtime.start();
+      await runtime.whenIdle();
+      port.movement.mockClear();
+
+      port.coordinator?.(true);
+      await runtime.whenIdle();
+      expect(port.movement).toHaveBeenCalledTimes(1);
+    } finally {
+      await runtime.stop();
+    }
+  });
+
   it("requests turn reconciliation when scene metadata changes", async () => {
     const port = new RuntimePort();
     const runtime = new BackgroundRuntime(port);
@@ -216,6 +265,43 @@ describe("BackgroundRuntime", () => {
     await runtime.whenIdle();
     expect(port.opened).toBe(2);
     await runtime.stop();
+  });
+
+  it("drains an in-flight visibility tick before deleting local overlays and opening the next scene", async () => {
+    const port = new RuntimePort();
+    const runtime = new BackgroundRuntime(port);
+    let releaseVisibility: (() => void) | undefined;
+    let enteredVisibility: (() => void) | undefined;
+    const inFlight = new Promise<void>(resolve => { releaseVisibility = resolve; });
+    const entered = new Promise<void>(resolve => { enteredVisibility = resolve; });
+
+    try {
+      runtime.start();
+      await runtime.whenIdle();
+      expect(port.opened).toBe(1);
+      port.visibility.mockImplementation(async () => {
+        enteredVisibility?.();
+        await inFlight;
+      });
+
+      runtime.requestVisibilityTick();
+      await entered;
+      port.sceneReady?.(false);
+      port.sceneReady?.(true);
+      await vi.waitFor(() => expect(port.closed).toBe(1));
+
+      // Neither cleanup nor the next scene can run while a stale visibility
+      // operation still might publish hidden local clones.
+      expect(port.deleted).toBe(0);
+      expect(port.opened).toBe(1);
+      releaseVisibility?.();
+      await runtime.whenIdle();
+      expect(port.deleted).toBe(1);
+      expect(port.opened).toBe(2);
+    } finally {
+      releaseVisibility?.();
+      await runtime.stop();
+    }
   });
 
   it("pauses moving armies when coordinator ownership is lost", async () => {

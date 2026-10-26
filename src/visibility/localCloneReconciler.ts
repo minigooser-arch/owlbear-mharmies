@@ -4,29 +4,52 @@ import type { ItemUpdate, SceneItemRecord } from "../shared/types";
 export type UpdateOrigin = "RECONCILIATION" | "INTERPOLATION";
 
 export class UpdateOriginGuard {
-  private readonly origins = new Map<string, Set<UpdateOrigin>>();
+  // Count references rather than using a Set so overlapping reconciliation work
+  // cannot prematurely clear an origin owned by another asynchronous operation.
+  private readonly origins = new Map<string, Map<UpdateOrigin, number>>();
 
   isInternal(itemId: string): boolean {
-    return (this.origins.get(itemId)?.size ?? 0) > 0;
+    return this.origins.has(itemId);
   }
 
   async run<T>(itemId: string, origin: UpdateOrigin, operation: () => Promise<T>): Promise<T> {
-    const origins = this.origins.get(itemId) ?? new Set<UpdateOrigin>();
-    origins.add(origin);
-    this.origins.set(itemId, origins);
+    return this.runMany([itemId], origin, operation);
+  }
+
+  async runMany<T>(
+    itemIds: readonly string[],
+    origin: UpdateOrigin,
+    operation: () => Promise<T>
+  ): Promise<T> {
+    const ids = [...new Set(itemIds)];
+    for (const id of ids) {
+      const counts = this.origins.get(id) ?? new Map<UpdateOrigin, number>();
+      counts.set(origin, (counts.get(origin) ?? 0) + 1);
+      this.origins.set(id, counts);
+    }
     try {
       return await operation();
     } finally {
-      origins.delete(origin);
-      if (origins.size === 0) this.origins.delete(itemId);
+      for (const id of ids) {
+        const counts = this.origins.get(id);
+        if (!counts) continue;
+        const remaining = (counts.get(origin) ?? 1) - 1;
+        if (remaining > 0) counts.set(origin, remaining);
+        else counts.delete(origin);
+        if (counts.size === 0) this.origins.delete(id);
+      }
     }
   }
 }
 
+export interface LocalClonePatch { id: string; update: ItemUpdate; }
+
 export interface LocalClonePort {
   getLocalItems(): Promise<SceneItemRecord[]>;
   addLocalItem(item: SceneItemRecord): Promise<void>;
+  addLocalItems?(items: readonly SceneItemRecord[]): Promise<void>;
   updateLocalItem(id: string, update: ItemUpdate): Promise<void>;
+  updateLocalItemPatches?(patches: readonly LocalClonePatch[]): Promise<void>;
   deleteLocalItems(ids: readonly string[]): Promise<void>;
   createClone(source: SceneItemRecord): SceneItemRecord;
 }
@@ -120,11 +143,12 @@ export class LocalCloneReconciler {
   async reconcile(
     visibleSourceIds: ReadonlySet<string>,
     sources: readonly SceneItemRecord[],
-    viewer: LocalCloneViewer = { isGM: false, leaderSideIds: new Set() }
+    viewer: LocalCloneViewer = { isGM: false, leaderSideIds: new Set() },
+    localItemSnapshot?: readonly SceneItemRecord[]
   ): Promise<void> {
     const sourceById = new Map(sources.map((source) => [source.id, source]));
     const clonesBySource = new Map<string, SceneItemRecord[]>();
-    for (const item of await this.port.getLocalItems()) {
+    for (const item of localItemSnapshot ?? await this.port.getLocalItems()) {
       const sourceItemId = cloneSourceId(item);
       if (!sourceItemId) continue;
       const clones = clonesBySource.get(sourceItemId) ?? [];
@@ -132,33 +156,53 @@ export class LocalCloneReconciler {
       clonesBySource.set(sourceItemId, clones);
     }
 
+    // Decide all changes from the same local snapshot, then send bounded SDK
+    // batches. Process removals first to prevent stale hidden units lingering.
+    const deletions: string[] = [];
+    const additions: SceneItemRecord[] = [];
+    const patches: LocalClonePatch[] = [];
+    const desiredSourceIds = [...visibleSourceIds].filter(id => sourceById.has(id)).sort();
+    const desired = new Set(desiredSourceIds);
+
     for (const [sourceItemId, clones] of clonesBySource) {
-      if (!visibleSourceIds.has(sourceItemId) || !sourceById.has(sourceItemId)) {
-        await this.port.deleteLocalItems(clones.map((clone) => clone.id));
+      clones.sort((left, right) => left.id.localeCompare(right.id));
+      if (!desired.has(sourceItemId)) {
+        deletions.push(...clones.map((clone) => clone.id));
+      } else {
+        deletions.push(...clones.slice(1).map((clone) => clone.id));
       }
     }
 
-    for (const sourceItemId of [...visibleSourceIds].sort()) {
+    for (const sourceItemId of desiredSourceIds) {
       const source = sourceById.get(sourceItemId);
       if (!source) continue;
-      const clones = (clonesBySource.get(sourceItemId) ?? []).sort((left, right) =>
-        left.id.localeCompare(right.id)
-      );
-      let survivor = clones[0];
+      const survivor = clonesBySource.get(sourceItemId)?.[0];
       if (!survivor) {
         const created = this.port.createClone(source);
-        await this.guard.run(created.id, "RECONCILIATION", () => this.port.addLocalItem(created));
-        survivor = created;
+        // Newly created clones must have correct permissions and route state
+        // immediately; do not add an unprivileged clone and patch it later.
+        Object.assign(created, changedRenderFields(source, created, viewer));
+        additions.push(created);
+      } else {
+        const update = changedRenderFields(source, survivor, viewer);
+        if (Object.keys(update).length > 0) {
+          patches.push({ id: survivor.id, update });
+        }
       }
-      const survivorItem = survivor;
-      const duplicates = clones.slice(1).map((clone) => clone.id);
-      if (duplicates.length > 0) await this.port.deleteLocalItems(duplicates);
-      const update = changedRenderFields(source, survivorItem, viewer);
-      if (Object.keys(update).length > 0) {
-        await this.guard.run(survivorItem.id, "RECONCILIATION", () =>
-          this.port.updateLocalItem(survivorItem.id, update)
-        );
-      }
+    }
+
+    if (deletions.length) await this.port.deleteLocalItems(deletions);
+    if (additions.length) {
+      await this.guard.runMany(additions.map(item => item.id), "RECONCILIATION", async () => {
+        if (this.port.addLocalItems) await this.port.addLocalItems(additions);
+        else for (const item of additions) await this.port.addLocalItem(item);
+      });
+    }
+    if (patches.length) {
+      await this.guard.runMany(patches.map(patch => patch.id), "RECONCILIATION", async () => {
+        if (this.port.updateLocalItemPatches) await this.port.updateLocalItemPatches(patches);
+        else for (const patch of patches) await this.port.updateLocalItem(patch.id, patch.update);
+      });
     }
   }
 }

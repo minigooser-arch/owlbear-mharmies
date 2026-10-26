@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { DEFAULT_SETTINGS, DEFAULT_TERRAIN, DEFAULT_TURN_STATE, METADATA_KEYS } from "../shared/constants";
 import { COMMAND_PROTOCOL_VERSION, type SceneState } from "../shared/types";
 import type { OwlbearPort } from "../owlbear/sdkAdapter";
@@ -53,6 +53,58 @@ function fixture() {
   } as unknown as OwlbearPort;
   return { port, sent, get scene() { return scene; } };
 }
+
+it("renews the coordinator lease without hydrating or rewriting grid chunks", async () => {
+  const state = fixture();
+  const originalGetSceneMetadata = state.port.getSceneMetadata.bind(state.port);
+  state.port.getSceneMetadata = async () => ({
+    ...(await originalGetSceneMetadata()),
+    [METADATA_KEYS.gridManifest]: { version: 1, revision: 0, chunks: { "0,0": "missing" } }
+  });
+  const getSceneItems = vi.fn(async () => {
+    throw new Error("Grid items must not be read for a heartbeat");
+  });
+  state.port.getSceneItems = getSceneItems;
+  const engine = new ProductionEngine(state.port, () => new Date(10_000));
+
+  await engine.writeCoordinatorHeartbeat({
+    connectionId: "gm-a", epoch: 1, expiresAt: 30_000
+  });
+
+  expect(getSceneItems).not.toHaveBeenCalled();
+  expect(state.scene.coordinatorLease).toEqual({
+    connectionId: "gm-a", epoch: 1, expiresAt: 30_000
+  });
+  expect(state.scene.revision).toBe(2);
+});
+
+it("does not overwrite a newer game revision during a heartbeat renewal", async () => {
+  const state = fixture();
+  const originalRead = state.port.getSceneMetadata.bind(state.port);
+  let reads = 0;
+  state.port.getSceneMetadata = async () => {
+    const metadata = await originalRead();
+    reads++;
+    if (reads === 2) {
+      return {
+        ...metadata,
+        [METADATA_KEYS.scene]: {
+          ...(metadata[METADATA_KEYS.scene] as SceneState),
+          revision: 3
+        }
+      };
+    }
+    return metadata;
+  };
+  const patchSceneMetadata = vi.fn(state.port.patchSceneMetadata.bind(state.port));
+  state.port.patchSceneMetadata = patchSceneMetadata;
+  const engine = new ProductionEngine(state.port, () => new Date(10_000));
+
+  await expect(engine.writeCoordinatorHeartbeat({
+    connectionId: "gm-a", epoch: 1, expiresAt: 30_000
+  })).rejects.toThrow("Revision conflict");
+  expect(patchSceneMetadata).not.toHaveBeenCalled();
+});
 
 it("reads the coordinator lease without hydrating missing grid chunks", async () => {
   const { port, scene } = fixture();

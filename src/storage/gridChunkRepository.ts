@@ -1,4 +1,5 @@
 import { METADATA_KEYS } from "../shared/constants";
+import { recordPerformance } from "../performance/metrics";
 import type { GridMapState, SceneItemRecord } from "../shared/types";
 import type { MetadataPort } from "./metadataRepository";
 import {
@@ -78,8 +79,68 @@ function partRecord(part: GridManifestPart): SceneItemRecord {
   };
 }
 
+/**
+ * Per-MetadataRepository, bounded cache of validated chunk decoding.
+ *
+ * Item IDs and manifest revisions alone are not sufficient cache keys:
+ * external edits or a reopened scene may reuse them. Every hit requires an
+ * exact match of the current serialized chunk payload, and caller-visible
+ * grid maps receive fresh copies.
+ */
+export class GridChunkDecodeCache {
+  private static readonly MAX_ENTRIES = 192;
+  private readonly entries = new Map<string, {
+    signature: string;
+    cells: GridMapState["cells"];
+  }>();
+
+  clear(): void {
+    this.entries.clear();
+  }
+
+  /** Avoid pathological full-cache churn on scenes larger than capacity. */
+  canCacheAll(chunkCount: number): boolean {
+    if (chunkCount > GridChunkDecodeCache.MAX_ENTRIES) {
+      this.clear();
+      return false;
+    }
+    return true;
+  }
+
+  decode(id: string, chunk: GridChunk, manifestRevision: number): GridMapState["cells"] {
+    const signature = JSON.stringify(chunk);
+    const cached = this.entries.get(id);
+    if (cached && cached.signature === signature &&
+      Number.isSafeInteger(chunk.revision) && chunk.revision <= manifestRevision) {
+      this.entries.delete(id);
+      this.entries.set(id, cached);
+      recordPerformance("storage.grid.chunkCacheHit", 0);
+      return cached.cells;
+    }
+    // Validation on every miss is identical to the original codec (including
+    // chunk size, cell types, range, indices and revision checks).
+    const started = performance.now();
+    let cells: GridMapState["cells"];
+    try {
+      cells = decodeGridChunks([chunk], manifestRevision).cells;
+    } finally {
+      recordPerformance("storage.grid.chunkDecode", performance.now() - started);
+    }
+    this.entries.delete(id);
+    this.entries.set(id, { signature, cells });
+    if (this.entries.size > GridChunkDecodeCache.MAX_ENTRIES) {
+      const oldest = this.entries.keys().next().value;
+      if (oldest !== undefined) this.entries.delete(oldest);
+    }
+    return cells;
+  }
+}
+
 export class GridChunkRepository {
-  constructor(private readonly port: MetadataPort) {}
+  constructor(
+    private readonly port: MetadataPort,
+    private readonly decodeCache?: GridChunkDecodeCache
+  ) {}
 
   private async sourceItems(sceneItems?: readonly SceneItemRecord[]): Promise<readonly SceneItemRecord[]> {
     return sceneItems ?? await this.port.getSceneItems();
@@ -113,7 +174,20 @@ export class GridChunkRepository {
       if (!chunk || `${chunk.x},${chunk.y}` !== key) throw new GridStorageError("GRID_CHUNK_INVALID");
       chunks.push(chunk);
     }
-    return decodeGridChunks(chunks, manifest.revision);
+    // Standalone callers preserve the original codec path.
+    if (!this.decodeCache || !this.decodeCache.canCacheAll(chunks.length)) {
+      return decodeGridChunks(chunks, manifest.revision);
+    }
+
+    const cells: GridMapState["cells"] = {};
+    for (const [index, id] of Object.values(chunkIds).entries()) {
+      const chunk = chunks[index];
+      if (!chunk) throw new GridStorageError("GRID_CHUNK_MISSING");
+      Object.assign(cells, this.decodeCache.decode(id, chunk, manifest.revision));
+    }
+    // No mutable cached CellState or faction arrays may escape to game commands,
+    // which routinely edit returned scene snapshots before saving them.
+    return { version: 1, revision: manifest.revision, cells: structuredClone(cells) };
   }
 
   async stage(

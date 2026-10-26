@@ -9,7 +9,7 @@ import type {
   ValidationResult
 } from "../shared/types";
 import { migrateArmyState, migrateBarrierState, migrateSceneState, migrateShipState } from "./migrations";
-import { GridChunkRepository, readGridManifest, type StagedGrid } from "./gridChunkRepository";
+import { GridChunkDecodeCache, GridChunkRepository, readGridManifest, type StagedGrid } from "./gridChunkRepository";
 import { GridStorageError, utf8Size } from "./gridChunkCodec";
 import { compactDefaultTerrain } from "../terrain/gridMap";
 import { sendBatches } from "../owlbear/boundedBatches";
@@ -21,6 +21,7 @@ export interface MetadataPort {
   getSceneMetadata(): Promise<Record<string, unknown>>;
   patchSceneMetadata(update: Record<string, unknown>): Promise<void>;
   getSceneItems(): Promise<SceneItemRecord[]>;
+  getSceneItem?(id: string): Promise<SceneItemRecord | undefined>;
   addSceneItems?(items: readonly SceneItemRecord[]): Promise<void>;
   deleteSceneItems?(ids: readonly string[]): Promise<void>;
   updateSceneItem(id: string, update: ItemUpdate): Promise<void>;
@@ -120,7 +121,21 @@ function sameSceneAndManifest(left: Record<string, unknown>, right: Record<strin
 }
 
 export class MetadataRepository {
+  private readonly gridDecodeCache = new GridChunkDecodeCache();
   constructor(private readonly port: MetadataPort) {}
+
+  clearReadCaches(): void {
+    this.gridDecodeCache.clear();
+  }
+
+  /** Read scene revision without hydrating any grid, ledger, or audit item. */
+  async readSceneRevision(): Promise<number> {
+    const metadata = await this.port.getSceneMetadata();
+    return requireValid(
+      migrateSceneState(metadata[METADATA_KEYS.scene] ?? { version: 5 }),
+      METADATA_KEYS.scene
+    ).revision;
+  }
 
   async readScene(): Promise<SceneState> {
     return (await this.readSnapshot()).state;
@@ -132,6 +147,64 @@ export class MetadataRepository {
       migrateSceneState(metadata[METADATA_KEYS.scene] ?? { version: 5 }),
       METADATA_KEYS.scene
     ).coordinatorLease;
+  }
+
+  /**
+   * Persist a coordinator heartbeat without loading grid, ledger or audit items.
+   * Re-read metadata to reject a known-stale scene or a competing live lease.
+   * Owlbear metadata has no atomic compare-and-swap: the final narrow race
+   * remains subject to the same fencing limitations as writeScene().
+   */
+  async writeCoordinatorLease(
+    heartbeat: NonNullable<SceneState["coordinatorLease"]>,
+    now: number,
+    canCommit: () => boolean
+  ): Promise<void> {
+    const read = async () => {
+      const metadata = await this.port.getSceneMetadata();
+      const raw = metadata[METADATA_KEYS.scene] ?? { version: 5 };
+      const state = requireValid(migrateSceneState(raw), METADATA_KEYS.scene);
+      return { raw, state };
+    };
+    const claimable = (lease: SceneState["coordinatorLease"]) =>
+      lease === undefined ||
+      lease.connectionId === heartbeat.connectionId ||
+      lease.expiresAt <= now;
+    const withoutLease = (raw: unknown) => {
+      if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return raw;
+      const { coordinatorLease: _ignored, ...gameState } = raw as Record<string, unknown>;
+      void _ignored;
+      return gameState;
+    };
+
+    if (!canCommit()) return;
+    const first = await read();
+    if (!canCommit()) return;
+    if (!claimable(first.state.coordinatorLease)) {
+      throw new Error("Coordinator lease is held by another live connection");
+    }
+
+    const latest = await read();
+    if (!canCommit()) return;
+    assertRevision(latest.state.revision, first.state.revision);
+    if (JSON.stringify(withoutLease(first.raw)) !== JSON.stringify(withoutLease(latest.raw))) {
+      throw new CommitPreconditionFailed();
+    }
+    if (!claimable(latest.state.coordinatorLease)) {
+      throw new Error("Coordinator lease is held by another live connection");
+    }
+
+    // Preserve exactly the current stored state; never re-encode the grid
+    // manifest or normalize unrelated gameplay fields for a mere heartbeat.
+    const stored = typeof latest.raw === "object" && latest.raw !== null && !Array.isArray(latest.raw)
+      ? latest.raw as Record<string, unknown>
+      : latest.state;
+    const update = {
+      [METADATA_KEYS.scene]: { ...stored, coordinatorLease: heartbeat }
+    };
+    if (utf8Size(update) > 48 * 1024) throw new GridStorageError("GRID_METADATA_TOO_LARGE");
+    if (!canCommit()) return;
+    await this.port.patchSceneMetadata(update);
   }
 
   private async readSnapshot(): Promise<{ state: SceneState; metadata: Record<string, unknown> }> {
@@ -152,7 +225,7 @@ export class MetadataRepository {
       let lrTransactions: SceneState["lrTransactions"] | undefined;
       let demographyAudit: SceneState["demographyAudit"] | undefined;
       try {
-        grid = await new GridChunkRepository(this.port).read(metadata, sceneItems);
+        grid = await new GridChunkRepository(this.port, this.gridDecodeCache).read(metadata, sceneItems);
         lrTransactions = await new LRLedgerRepository(this.port).read(metadata, sceneItems);
         demographyAudit = await new DemographyAuditRepository(this.port).read(metadata, sceneItems);
       } catch (error) { failure = error; }
@@ -231,7 +304,7 @@ export class MetadataRepository {
       let grid: SceneState["gridMap"] | undefined;
       let failure: unknown;
       try {
-        grid = await new GridChunkRepository(this.port).read(
+        grid = await new GridChunkRepository(this.port, this.gridDecodeCache).read(
           items.sceneMetadata as Record<string, unknown>, items.items
         );
       } catch (error) { failure = error; }
@@ -245,18 +318,13 @@ export class MetadataRepository {
         (!grid || grid.revision !== items.baseScene.gridMap.revision)) {
         throw new GridStorageError("GRID_CHUNK_INVALID");
       }
-      const lrTransactions = await new LRLedgerRepository(this.port).read(
-        items.sceneMetadata as Record<string, unknown>, items.items
-      );
-      const demographyAudit = await new DemographyAuditRepository(this.port).read(
-        items.sceneMetadata as Record<string, unknown>, items.items
-      );
+      // readItemFrame() has already decoded the LR and demography data from
+      // this very item snapshot. The metadata stability check above covers
+      // their manifests; decoding them again only duplicates CPU work.
       return {
         items,
         scene: {
-          ...(grid ? { ...items.baseScene, gridMap: grid } : items.baseScene),
-          ...(lrTransactions !== undefined ? { lrTransactions } : {}),
-          ...(demographyAudit !== undefined ? { demographyAudit } : {})
+          ...(grid ? { ...items.baseScene, gridMap: grid } : items.baseScene)
         }
       };
     }
@@ -479,7 +547,9 @@ export class MetadataRepository {
   }
 
   private async findItem(itemId: string): Promise<SceneItemRecord> {
-    const item = (await this.port.getSceneItems()).find((candidate) => candidate.id === itemId);
+    const item = this.port.getSceneItem
+      ? await this.port.getSceneItem(itemId)
+      : (await this.port.getSceneItems()).find((candidate) => candidate.id === itemId);
     if (!item) throw new InvalidMetadataError(`item:${itemId}`);
     return item;
   }

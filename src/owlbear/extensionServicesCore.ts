@@ -76,6 +76,9 @@ import { DiagnosticsService, type DiagnosticsPort } from "./diagnostics";
 import { notifyRussian } from "./notifications";
 import { GridStorageError } from "../storage/gridChunkCodec";
 import { createRefreshCoordinator } from "./refreshCoordinator";
+import { uiMetadataSignature } from "./uiMetadataSignature";
+import { SceneItemChangeGate } from "../background/sceneItemChangeGate";
+import { measureOperation } from "../performance/metrics";
 import {
   buildSelectedShipRegistrationPayload,
   RegistrationError,
@@ -603,9 +606,9 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
     getSelectedSource: async () => {
       const selected = await OBR.player.getSelection();
       if (!selected?.[0]) return undefined;
-      return (await adapter.getSceneItems()).find((item) => item.id === selected[0]);
+      return adapter.getSceneItem ? adapter.getSceneItem(selected[0]) : (await adapter.getSceneItems()).find((item) => item.id === selected[0]);
     },
-    getSource: async (id) => (await adapter.getSceneItems()).find((item) => item.id === id),
+    getSource: async (id) => adapter.getSceneItem ? adapter.getSceneItem(id) : (await adapter.getSceneItems()).find((item) => item.id === id),
     createTemporaryLocal: async (source) => {
       const clone = adapter.createClone(source);
       await adapter.addLocalItem(clone);
@@ -676,7 +679,8 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
   cityCellPicker.start();
 
   let observedLocalCloneSourceIds = new Set<string>();
-  const loadSnapshot = async (): Promise<RawExtensionSnapshot> => {
+  let observedMetadataSignature: string | undefined;
+  const loadSnapshot = (): Promise<RawExtensionSnapshot> => measureOperation("ui.loadSnapshot", async () => {
     const [sceneReady, role, playerId, playerName, playerColor, party, playerMetadata] = await Promise.all([
       OBR.scene.isReady(),
       OBR.player.getRole(),
@@ -702,6 +706,7 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
       return { ...LOADING_SNAPSHOT, ready: true, role, playerId, players };
     }
     const metadata = await adapter.getSceneMetadata();
+    observedMetadataSignature = uiMetadataSignature(metadata);
     const rawScene = metadata[METADATA_KEYS.scene] ?? { version: 3 };
     const migrated = migrateSceneState(rawScene);
     if (!migrated.ok) {
@@ -750,14 +755,21 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
         cityCellPick: { sessionId: cityCellPick.sessionId, cells: cityCellPick.cells.map((cell) => ({ ...cell })) }
       } : {})
     };
-  };
+  });
   const refreshCoordinator = createRefreshCoordinator(
     loadSnapshot,
     publish,
     semanticSnapshotEqual
   );
 
+  const sceneItemChangeGate = new SceneItemChangeGate();
   const triggerRefresh = () => refreshCoordinator.request();
+  const triggerMetadataRefresh = (metadata: Record<string, unknown>) => {
+    const nextSignature = uiMetadataSignature(metadata);
+    if (observedMetadataSignature === nextSignature) return;
+    observedMetadataSignature = nextSignature;
+    refreshCoordinator.request();
+  };
   const triggerLocalRefresh = (items: readonly Pick<SceneItemRecord, "metadata">[]) => {
     const nextSourceIds = localCloneSourceIds(items);
     if (semanticValueEqual(observedLocalCloneSourceIds, nextSourceIds)) return;
@@ -765,10 +777,15 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
     refreshCoordinator.request();
   };
   unsubscribers.push(
-    OBR.scene.onReadyChange(triggerRefresh),
-    OBR.scene.items.onChange(triggerRefresh),
+    OBR.scene.onReadyChange(() => {
+      sceneItemChangeGate.reset();
+      triggerRefresh();
+    }),
+    OBR.scene.items.onChange((items) => {
+      if (sceneItemChangeGate.shouldRefresh(items)) triggerRefresh();
+    }),
     OBR.scene.local.onChange(triggerLocalRefresh),
-    OBR.scene.onMetadataChange(triggerRefresh),
+    OBR.scene.onMetadataChange(triggerMetadataRefresh),
     OBR.player.onChange(triggerRefresh),
     OBR.party.onChange(triggerRefresh),
     adapter.on(NAVAL_BATTLE_AREA_DRAFT_CHANNEL, (event) => {

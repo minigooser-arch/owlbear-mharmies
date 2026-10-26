@@ -45,6 +45,11 @@ if (!indexHtml.includes("Загрузка интерфейса…")) {
 }
 
 const manifest = JSON.parse(await readFile(resolve(distDir, "manifest.json"), "utf8"));
+const releasePackage = JSON.parse(await readFile(resolve("package.json"), "utf8"));
+if (manifest.version !== releasePackage.version) {
+  failures.push(`manifest version ${manifest.version} differs from package version ${releasePackage.version}`);
+}
+const cacheTokens = new Set();
 for (const [label, value] of [
   ["action.popover", manifest.action?.popover],
   ["background_url", manifest.background_url]
@@ -65,8 +70,12 @@ for (const [label, value] of [
   }
   if (!url.searchParams.get("v")) {
     failures.push(`manifest.json: ${label} has no cache-busting v parameter`);
+  } else {
+    cacheTokens.add(url.searchParams.get("v"));
   }
 }
+
+if (cacheTokens.size !== 1) failures.push("manifest popover/background use different cache-busting versions");
 
 for (const names of Object.values(HISTORICAL_PAGE_ASSETS)) {
   for (const name of names) {

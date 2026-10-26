@@ -27,6 +27,7 @@ import { findStrategicConflictEdges } from "../movement/movementIntent";
 import { applyCellPatchBatch, readCell, type CellPatchOperation } from "../terrain/gridMap";
 import { annexingStateForEntry } from "../annexation/annexationRules";
 import { MapOverlayService } from "../terrain/mapOverlayService";
+import { MapOverlayGeometryCache, mapOverlayRenderSignature } from "../terrain/mapOverlayGeometryCache";
 import { CachedCellTerrainLookup } from "../terrain/cellTerrainLookup";
 import { HealthOverlayService } from "../health/healthOverlayService";
 import { NavalShipOverlayService } from "../naval/ships/navalShipOverlayService";
@@ -71,6 +72,9 @@ import { registerMapBrushTool, type MapBrushToolRegistration } from "../owlbear/
 import { registerCellCoordinateTool, type CellCoordinateToolRegistration } from "../owlbear/cellCoordinateTool";
 import { registerNavalBattleAreaTool, type NavalBattleAreaToolRegistration } from "../owlbear/navalBattleAreaTool";
 import { METADATA_KEYS } from "../shared/constants";
+import { uiMetadataSignature } from "../owlbear/uiMetadataSignature";
+import { SceneItemChangeGate } from "./sceneItemChangeGate";
+import { recordPerformance } from "../performance/metrics";
 import {
   COMMAND_PROTOCOL_VERSION,
   type ArmyState,
@@ -101,7 +105,7 @@ import {
   sheetWritebackConfigured,
   sheetWritebackRuntimeEnabled
 } from "../sheets/writebackClient";
-import { buildDetectionGraph } from "../visibility/detectionGraph";
+import { DetectionGraphCache } from "../visibility/detectionGraphCache";
 import { buildSceneDetectionGraph, detectedShipIdsForSide } from "../visibility/sceneDetectionGraph";
 import { LocalCloneReconciler, UpdateOriginGuard } from "../visibility/localCloneReconciler";
 import {
@@ -202,6 +206,9 @@ export async function dispatchBackgroundCommand(
     return;
   }
   if (!input.ready || !input.active) {
+    recordPerformance(input.ready
+      ? "background.commandNotReady.coordinatorInactive"
+      : "background.commandNotReady.sceneInitializing", 0);
     await input.sendAck({
       requestId,
       status: "REJECTED",
@@ -347,11 +354,13 @@ export class ProductionEngine {
   private readonly repository: MetadataRepository;
   private readonly grid: GridDistanceService;
   private readonly cloneReconciler: LocalCloneReconciler;
+  private readonly detectionCache = new DetectionGraphCache();
   private coordinator = false;
   private coordinatorGeneration = 0;
   private activeCoordinatorConnectionId: string | undefined;
   private mutationTail: Promise<void> = Promise.resolve();
   private lastMapOverlaySignature: string | undefined;
+  private readonly mapOverlayGeometryCache = new MapOverlayGeometryCache();
   private clearedLegacyMapOverlays = false;
   private clearedSharedMapOverlays = false;
   private sheetWritebackFallback: SheetWritebackEvent | undefined;
@@ -372,6 +381,7 @@ export class ProductionEngine {
 
   setCoordinator(active: boolean, connectionId?: string): void {
     this.coordinatorGeneration += 1;
+    this.detectionCache.invalidate();
     this.coordinator = active;
     this.activeCoordinatorConnectionId = active ? connectionId : undefined;
     if (!active && this.sheetWritebackRetryTimer !== undefined) {
@@ -481,9 +491,20 @@ export class ProductionEngine {
   }
 
   invalidateOverlayCaches(): void {
+    this.detectionCache.invalidate();
+    this.repository.clearReadCaches();
     this.lastMapOverlaySignature = undefined;
+    this.mapOverlayGeometryCache.clear();
     this.clearedLegacyMapOverlays = false;
     this.clearedSharedMapOverlays = false;
+  }
+
+  invalidateDetectionCache(): void {
+    this.detectionCache.invalidate();
+  }
+
+  readSceneRevision(): Promise<number> {
+    return this.repository.readSceneRevision();
   }
 
   async readCoordinatorLease(): Promise<HeartbeatLease | undefined> {
@@ -536,11 +557,13 @@ export class ProductionEngine {
         ignoresVisionBarriers: false
       }];
     });
-    const graph = await buildDetectionGraph({
+    const squareGridDpi = await this.grid.getSquareGridDpi();
+    const graph = await this.detectionCache.resolve({
       mode: scene.settings.detectionMode,
       units: [...armyDetectionUnits, ...shipDetectionUnits],
       distancePort: this.grid,
-      visionBarriers: extractBarrierSegments(barriers, "vision")
+      visionBarriers: extractBarrierSegments(barriers, "vision"),
+      ...(squareGridDpi !== undefined ? { squareGridDpi } : {})
     });
     const memberSideIds = scene.sides
       .filter((side) => side.playerIds.includes(playerId))
@@ -595,9 +618,14 @@ export class ProductionEngine {
       }
     }
     const visibleSourceIds = new Set([...visible, ...visibleShips]);
+    // Clone reconciliation and overlays use disjoint local metadata keys.
+    // One snapshot can serve both without holding it across scene/role changes.
+    const localItemFrame = await this.port.getLocalItems();
     await this.cloneReconciler.reconcile(
       visibleSourceIds,
-      unitSources
+      unitSources,
+      undefined,
+      localItemFrame
     );
     await this.reconcileOverlays(
       scene,
@@ -609,7 +637,8 @@ export class ProductionEngine {
       visible,
       hpVisibleArmyIds,
       sceneItems,
-      visibleShips
+      visibleShips,
+      localItemFrame
     );
   }
 
@@ -642,6 +671,7 @@ export class ProductionEngine {
 
     const writes: Promise<void>[] = [];
     const creates: SceneItemRecord[] = [];
+    const proxyPatches: Array<{ id: string; update: import("../shared/types").ItemUpdate }> = [];
 
     for (const [sourceId, proxy] of proxyBySourceId) {
       const source = sourceById.get(sourceId);
@@ -651,7 +681,7 @@ export class ProductionEngine {
       }
       if (!entityInteractionProxyMatchesSource(proxy, source)) {
         const desired = createEntityInteractionProxy(source, () => proxy.id);
-        writes.push(this.port.updateSceneItem(proxy.id, {
+        proxyPatches.push({ id: proxy.id, update: {
           position: desired.position,
           rotation: desired.rotation,
           scale: desired.scale,
@@ -668,7 +698,7 @@ export class ProductionEngine {
           height: desired.height,
           shapeType: desired.shapeType,
           style: desired.style
-        }).catch(() => undefined));
+        } });
       }
     }
 
@@ -678,6 +708,16 @@ export class ProductionEngine {
       }
     }
 
+    if (proxyPatches.length) {
+      if (this.port.updateSceneItemPatches) {
+        // One bounded SDK request per batch instead of one request per proxy.
+        writes.push(this.port.updateSceneItemPatches(proxyPatches).catch(() => undefined));
+      } else {
+        for (const { id, update } of proxyPatches) {
+          writes.push(this.port.updateSceneItem(id, update).catch(() => undefined));
+        }
+      }
+    }
     await Promise.allSettled(writes);
     if (creates.length > 0) {
       await this.port.addSceneItems(creates).catch(() => undefined);
@@ -1386,12 +1426,14 @@ export class ProductionEngine {
       (command.type === "START_NAVAL_BATTLE" && command.navalRequestId !== null)
     ) {
       try {
+        const squareGridDpi = await this.grid.getSquareGridDpi();
         const detectionGraph = await buildSceneDetectionGraph({
           scene,
           armies: armyRecords,
           sceneItems,
           distancePort: this.grid,
-          visionBarriers: extractBarrierSegments(barrierRecords, "vision")
+          visionBarriers: extractBarrierSegments(barrierRecords, "vision"),
+          ...(squareGridDpi !== undefined ? { squareGridDpi } : {})
         });
         detectedNavalTargetsForSide = (sideId) =>
           detectedShipIdsForSide(detectionGraph, scene.ships ?? {}, sideId);
@@ -2021,29 +2063,13 @@ export class ProductionEngine {
       const claimIsCurrent = () =>
         this.coordinatorGeneration === generation &&
         (!this.coordinator || this.activeCoordinatorConnectionId === heartbeat.connectionId);
-      const leaseIsClaimable = (current: SceneState) => {
-        const lease = current.coordinatorLease;
-        return lease === undefined ||
-          lease.connectionId === heartbeat.connectionId ||
-          lease.expiresAt <= this.wallClock().getTime();
-      };
-
-      if (!claimIsCurrent()) return;
-      const scene = await this.repository.readScene();
-      if (!claimIsCurrent()) return;
-      if (!leaseIsClaimable(scene)) {
-        throw new Error("Coordinator lease is held by another live connection");
-      }
-      try {
-        await this.repository.writeScene(
-          { ...scene, coordinatorLease: heartbeat },
-          scene.revision,
-          (current) => claimIsCurrent() && leaseIsClaimable(current)
-        );
-      } catch (error) {
-        if (!claimIsCurrent()) return;
-        throw error;
-      }
+      // Lease renewal is transport-level metadata, not a world state mutation.
+      // No grid/ledger item loading or re-staging is required.
+      await this.repository.writeCoordinatorLease(
+        heartbeat,
+        this.wallClock().getTime(),
+        claimIsCurrent
+      );
     });
   }
 
@@ -2070,17 +2096,14 @@ export class ProductionEngine {
     visibleArmyIds: ReadonlySet<string>,
     hpVisibleArmyIds: ReadonlySet<string>,
     sceneItems: readonly SceneItemRecord[],
-    visibleShipIds: ReadonlySet<string>
+    visibleShipIds: ReadonlySet<string>,
+    localItemFrame: readonly SceneItemRecord[]
   ): Promise<void> {
-    let localItemsSnapshot: Promise<SceneItemRecord[]> | undefined;
+    let localItemsSnapshot: Promise<SceneItemRecord[]> = Promise.resolve([...localItemFrame]);
     const overlayPort = {
-      // Overlay types use disjoint metadata keys. A single immutable snapshot is enough
-      // for all reconciliation passes in this visibility frame and avoids repeatedly
-      // transferring a potentially huge scene.local collection through the SDK.
-      getLocalItems: () => {
-        localItemsSnapshot ??= this.port.getLocalItems();
-        return localItemsSnapshot;
-      },
+      // Overlay types use disjoint metadata keys; share the snapshot already
+      // loaded for clones. Refresh only after one-time legacy map cleanup.
+      getLocalItems: () => localItemsSnapshot,
       addLocalItems: (items: readonly SceneItemRecord[]) => this.port.addLocalItems(items),
       updateLocalItems: (items: readonly SceneItemRecord[]) => this.port.updateLocalItems(items),
       deleteLocalItems: (ids: readonly string[]) => this.port.deleteLocalItems(ids),
@@ -2242,22 +2265,34 @@ export class ProductionEngine {
       // Remove legacy local overlays before rebuilding them for this client.
       await new MapOverlayService(overlayPort).reconcile(undefined);
       this.clearedLegacyMapOverlays = true;
+      // The old map overlays are now deleted: do not feed their stale IDs to
+      // the subsequent map rebuild, which may otherwise try to update deleted items.
+      localItemsSnapshot = this.port.getLocalItems();
     }
-    const mapOverlayService = new MapOverlayService(overlayPort);
+    const mapOverlayService = new MapOverlayService(overlayPort, this.mapOverlayGeometryCache);
     try {
       const dpi = await this.grid.getDpi();
-      const signature = JSON.stringify([
-        role,
+      const contentSignature = mapOverlayRenderSignature({
+        viewerRole: role,
         dpi,
-        scene.gridMap.revision,
-        Object.values(scene.terrain.types)
-          .map((terrain) => [terrain.id, terrain.enabled, terrain.color ?? null])
-          .sort(([left], [right]) => String(left).localeCompare(String(right))),
-        scene.states
-          .map((state) => [state.id, state.name, state.color ?? null])
-          .sort(([left], [right]) => String(left).localeCompare(String(right)))
-      ]);
-      if (this.lastMapOverlaySignature !== signature) {
+        gridMap: scene.gridMap,
+        terrain: scene.terrain,
+        states: scene.states
+      });
+      // For extremely large scenes, keep the previous bounded-revision
+      // behavior rather than triggering a costly full redraw every tick.
+      // Ordinary-sized scenes use exact rendered cell content and also catch
+      // same-revision edits made by external integrations.
+      const signature = contentSignature ?? (Number.isFinite(dpi) && dpi > 0
+        ? JSON.stringify([
+            "large-grid-revision-fallback", role, dpi, scene.gridMap.revision,
+            Object.values(scene.terrain.types)
+              .map(terrain => [terrain.id, terrain.enabled, terrain.color ?? null])
+              .sort(([left], [right]) => String(left).localeCompare(String(right))),
+            scene.states.map(state => [state.id, state.color ?? null])
+          ])
+        : undefined);
+      if (signature === undefined || this.lastMapOverlaySignature !== signature) {
         await mapOverlayService.reconcile({
           viewerRole: role,
           dpi,
@@ -2334,7 +2369,7 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
       ]);
       return { id, role, connectionId: currentConnectionId };
     },
-    getSceneRevision: async () => (await new MetadataRepository(port).readScene()).revision,
+    getSceneRevision: () => engine.readSceneRevision(),
     describeCell: (cell: GridCellCoord) => cellTerrainLookup.describeCell(cell),
     createId: () => crypto.randomUUID(),
     activateTool: (toolId: string) => OBR.tool.activateTool(toolId)
@@ -2450,13 +2485,18 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
     }
   });
 
+  const sceneItemChangeGate = new SceneItemChangeGate();
   const runtimePort: BackgroundRuntimePort = {
     isSceneReady: () => OBR.scene.isReady(),
     onSceneReady: (callback) => OBR.scene.onReadyChange(callback),
     onSceneOpen: async () => {
+      sceneItemChangeGate.reset();
       cellTerrainLookup.invalidate();
       gridErrors.reset();
       engine.invalidateOverlayCaches();
+      // Cosmetic cleanup cannot block a legitimate command. Actual authority
+      // is still checked against the persisted lease and active coordinator.
+      commandReady = true;
       lease.start();
       try {
         const retiredVisionOverlayIds = (await port.getLocalItems())
@@ -2468,9 +2508,6 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
       } catch {
         // Retired local fog is cosmetic; a cleanup failure must not block the scene.
       }
-      // A stale tool queue must not make every command return
-      // BACKGROUND_NOT_READY. The cleanup remains best effort and is bounded.
-      commandReady = true;
       await settleSceneToolCleanup([
         removeRouteTool.cancelSession(),
         removeShipRouteTool.cancelSession(),
@@ -2480,6 +2517,7 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
       ]);
     },
     onSceneClose: async () => {
+      sceneItemChangeGate.reset();
       cellTerrainLookup.invalidate();
       commandReady = false;
       engine.invalidateOverlayCaches();
@@ -2498,16 +2536,25 @@ export async function startBackgroundApplication(): Promise<BackgroundApplicatio
       coordinatorListeners.add(callback);
       return () => coordinatorListeners.delete(callback);
     },
-    onSceneItemsChange: (callback) => OBR.scene.items.onChange(() => {
+    onSceneItemsChange: (callback) => OBR.scene.items.onChange((items) => {
+      if (!sceneItemChangeGate.shouldRefresh(items)) return;
       cellTerrainLookup.invalidate();
       callback();
     }),
     onLocalItemsChange: (callback) => OBR.scene.local.onChange(callback),
-    onSceneMetadataChange: (callback) => OBR.scene.onMetadataChange(() => {
-      cellTerrainLookup.invalidate();
-      callback();
-    }),
+    onSceneMetadataChange: (callback) => {
+      let lastSignature: string | undefined;
+      return OBR.scene.onMetadataChange((metadata) => {
+        // Lease heartbeats should not rehydrate the entire world every five seconds.
+        const signature = uiMetadataSignature(metadata);
+        if (signature === lastSignature) return;
+        lastSignature = signature;
+        cellTerrainLookup.invalidate();
+        callback();
+      });
+    },
     onGridChange: (callback) => OBR.scene.grid.onChange(() => {
+      engine.invalidateDetectionCache();
       cellTerrainLookup.invalidate();
       callback();
     }),

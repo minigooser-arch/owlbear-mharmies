@@ -15,10 +15,12 @@ import type { ItemUpdate, SceneItemRecord, Vector2 } from "../shared/types";
 import type { MetadataPort } from "../storage/metadataRepository";
 import {
   localCloneMetadataForSource,
+  type LocalClonePatch,
   type LocalClonePort
 } from "../visibility/localCloneReconciler";
 import type { NotificationPort } from "./notifications";
 import { sendBatches, splitBatches } from "./boundedBatches";
+import { measureOperation } from "../performance/metrics";
 
 export interface OwlbearPort
   extends MetadataPort,
@@ -27,6 +29,7 @@ export interface OwlbearPort
     GridSdkPort,
     NotificationPort {
   addSceneItems(items: readonly SceneItemRecord[]): Promise<void>;
+  updateSceneItemPatches?(patches: readonly { id: string; update: ItemUpdate }[]): Promise<void>;
   deleteSceneItems(ids: readonly string[]): Promise<void>;
   addLocalItems(items: readonly SceneItemRecord[]): Promise<void>;
   updateLocalItems(items: readonly SceneItemRecord[]): Promise<void>;
@@ -41,7 +44,7 @@ export interface OwlbearPort
 }
 
 interface SceneCollectionLike {
-  getItems(): Promise<unknown[]>;
+  getItems(ids?: string[]): Promise<unknown[]>;
   updateItems(items: unknown[], update: (drafts: SceneItemRecord[]) => void): Promise<void>;
   addItems(items: unknown[]): Promise<void>;
   deleteItems(ids: string[]): Promise<void>;
@@ -56,6 +59,7 @@ interface OwlbearSdkLike {
     grid: {
       getDistance(from: Vector2, to: Vector2): Promise<number>;
       getDpi(): Promise<number>;
+      getType?(): Promise<string>;
       snapPosition(
         position: Vector2,
         snappingSensitivity?: number,
@@ -366,17 +370,17 @@ export function createOwlbearAdapter(
   sdk: OwlbearSdkLike = OBR as unknown as OwlbearSdkLike,
   overlayBuilders: LocalOverlayBuilderFactory = DEFAULT_OVERLAY_BUILDERS
 ): OwlbearPort {
-  const allSceneItems = async () => (await sdk.scene.items.getItems()).map(asRecord);
-  const allLocalItems = async () => (await sdk.scene.local.getItems())
-    .map(asRecord)
-    .map(normalizeSdkLocalItem);
+  const allSceneItems = () => measureOperation("sdk.scene.items.getItems", async () =>
+    (await sdk.scene.items.getItems()).map(asRecord));
+  const allLocalItems = () => measureOperation("sdk.scene.local.getItems", async () =>
+    (await sdk.scene.local.getItems()).map(asRecord).map(normalizeSdkLocalItem));
 
   const updateCollectionItem = async (
     collection: SceneCollectionLike,
     id: string,
     update: ItemUpdate
   ): Promise<void> => {
-    const item = (await collection.getItems()).map(asRecord).find((candidate) => candidate.id === id);
+    const item = (await collection.getItems([id])).map(asRecord).find((candidate) => candidate.id === id);
     if (!item) throw new Error(`Item not found: ${id}`);
     await collection.updateItems([item], (drafts) => {
       const draft = drafts[0];
@@ -430,7 +434,8 @@ export function createOwlbearAdapter(
   const updateLocalItems = async (items: readonly SceneItemRecord[]): Promise<void> => {
     if (items.length === 0) return;
     const updateById = new Map(items.map((item) => [item.id, item]));
-    const existing = new Map((await sdk.scene.local.getItems()).map(asRecord).map(item => [item.id, item]));
+    const existing = new Map((await sdk.scene.local.getItems(items.map(item => item.id)))
+      .map(asRecord).map(item => [item.id, item]));
     const rendered = items.map(item => {
       const previous = existing.get(item.id);
       if (!previous) return createSdkLocalItem(item, overlayBuilders);
@@ -448,10 +453,58 @@ export function createOwlbearAdapter(
     }
   };
 
+
+  // Clone reconciliation already has a current local-item snapshot. Apply only
+  // the changed fields in one SDK callback per bounded batch, avoiding a second
+  // full scene.local.getItems() for every changed clone.
+  const updateLocalItemPatches = async (patches: readonly LocalClonePatch[]): Promise<void> => {
+    if (patches.length === 0) return;
+    if (new Set(patches.map(({ id }) => id)).size !== patches.length) {
+      throw new Error("Duplicate local clone patch ID");
+    }
+    for (const batch of splitBatches(patches)) {
+      const byId = new Map(batch.map(({ id, update }) => [id, update]));
+      await measureOperation("sdk.scene.local.updateClonePatches", () =>
+        sdk.scene.local.updateItems(batch.map(({ id }) => id), (drafts) => {
+          for (const draft of drafts) {
+            const patch = byId.get(draft.id);
+            if (patch) Object.assign(draft, structuredClone(patch));
+          }
+        })
+      );
+    }
+  };
+
+
+  // Interaction proxies are cosmetic, so they can be updated together without
+  // the single-army revision preconditions used for authoritative metadata.
+  const updateSceneItemPatches = async (
+    patches: readonly { id: string; update: ItemUpdate }[]
+  ): Promise<void> => {
+    if (patches.length === 0) return;
+    if (new Set(patches.map(({ id }) => id)).size !== patches.length) {
+      throw new Error("Duplicate scene item patch ID");
+    }
+    for (const batch of splitBatches(patches)) {
+      const byId = new Map(batch.map(({ id, update }) => [id, update]));
+      await measureOperation("sdk.scene.items.updateProxyPatches", () =>
+        sdk.scene.items.updateItems(batch.map(({ id }) => id), (drafts) => {
+          for (const draft of drafts) {
+            const update = byId.get(draft.id);
+            if (update) Object.assign(draft, structuredClone(update));
+          }
+        })
+      );
+    }
+  };
+
   return {
-    getSceneMetadata: () => sdk.scene.getMetadata(),
-    patchSceneMetadata: (update) => sdk.scene.setMetadata(update),
+    getSceneMetadata: () => measureOperation("sdk.scene.getMetadata", () => sdk.scene.getMetadata()),
+    patchSceneMetadata: (update) => measureOperation("sdk.scene.setMetadata", () => sdk.scene.setMetadata(update)),
     getSceneItems: allSceneItems,
+    getSceneItem: (id) => measureOperation("sdk.scene.items.getItemById", async () =>
+      (await sdk.scene.items.getItems([id])).map(asRecord).find((item) => item.id === id)),
+    updateSceneItemPatches,
     addSceneItems: async (items) => {
       await sendBatches(items.map(item => createSdkLocalItem(item, overlayBuilders)), batch => sdk.scene.items.addItems(batch));
     },
@@ -469,6 +522,7 @@ export function createOwlbearAdapter(
     getLocalItems: allLocalItems,
     addLocalItem: async (item) => addLocalItems([item]),
     addLocalItems,
+    updateLocalItemPatches,
     updateLocalItem: (id, update) => updateCollectionItem(sdk.scene.local, id, update),
     updateLocalItems,
     deleteLocalItems: (ids) => sendBatches(ids, batch => sdk.scene.local.deleteItems(batch)),
@@ -477,6 +531,7 @@ export function createOwlbearAdapter(
     on: (channel, listener) => sdk.broadcast.onMessage(channel, listener),
     getGridDistance: (from, to) => sdk.scene.grid.getDistance(from, to),
     getGridDpi: () => sdk.scene.grid.getDpi(),
+    getGridType: () => sdk.scene.grid.getType?.() ?? Promise.resolve("UNKNOWN"),
     getViewportScale: async () => sdk.viewport ? sdk.viewport.getScale() : 1,
     snapGridCenter: (position) => sdk.scene.grid.snapPosition(position, 1, false, true),
     onGridChange: (callback) => sdk.scene.grid.onChange(callback),
