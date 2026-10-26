@@ -106,18 +106,66 @@ export interface MetadataReadFrame {
   readonly scene: SceneState;
 }
 
-function sameSceneAndManifest(left: Record<string, unknown>, right: Record<string, unknown>): boolean {
+/**
+ * Ignore only a renewal of epoch/expiry by the same coordinator when
+ * validating READ-ONLY grid/item snapshots. A new lease owner, lease loss,
+ * gameplay changes and manifest changes must still restart the read.
+ *
+ * Mutation paths keep strict heartbeat comparison and authority fencing.
+ */
+function sameSceneAndManifest(
+  left: Record<string, unknown>,
+  right: Record<string, unknown>,
+  ignoreSameOwnerHeartbeat = false
+): boolean {
+  const leftScene = left[METADATA_KEYS.scene];
+  const rightScene = right[METADATA_KEYS.scene];
+  const leaseOwner = (scene: unknown): string | undefined => {
+    if (typeof scene !== "object" || scene === null || Array.isArray(scene)) return undefined;
+    const lease = (scene as Record<string, unknown>).coordinatorLease;
+    if (typeof lease !== "object" || lease === null || Array.isArray(lease)) return undefined;
+    const owner = (lease as Record<string, unknown>).connectionId;
+    return typeof owner === "string" && owner.length > 0 ? owner : undefined;
+  };
+  const owner = leaseOwner(leftScene);
+  const canIgnoreHeartbeat = ignoreSameOwnerHeartbeat && owner !== undefined &&
+    owner === leaseOwner(rightScene);
+  const normalizeScene = (scene: unknown): unknown => {
+    if (!canIgnoreHeartbeat || typeof scene !== "object" || scene === null || Array.isArray(scene)) {
+      return scene;
+    }
+    const record = scene as Record<string, unknown>;
+    const lease = record.coordinatorLease as Record<string, unknown>;
+    const { epoch: _epoch, expiresAt: _expiry, ...stableLease } = lease;
+    void _epoch;
+    void _expiry;
+    return { ...record, coordinatorLease: stableLease };
+  };
   return JSON.stringify([
-    left[METADATA_KEYS.scene],
+    normalizeScene(leftScene),
     left[METADATA_KEYS.gridManifest],
     left[METADATA_KEYS.lrLedgerManifest],
     left[METADATA_KEYS.demographyAuditManifest]
   ]) === JSON.stringify([
-    right[METADATA_KEYS.scene],
+    normalizeScene(rightScene),
     right[METADATA_KEYS.gridManifest],
     right[METADATA_KEYS.lrLedgerManifest],
     right[METADATA_KEYS.demographyAuditManifest]
   ]);
+}
+
+/** Carry the most recent validated lease without mixing in newer game state. */
+function withLatestCoordinatorLease(scene: SceneState, metadata: Record<string, unknown>): SceneState {
+  const latest = requireValid(
+    migrateSceneState(metadata[METADATA_KEYS.scene] ?? { version: 5 }),
+    METADATA_KEYS.scene
+  );
+  const { coordinatorLease: _oldLease, ...rest } = scene;
+  void _oldLease;
+  return {
+    ...rest,
+    ...(latest.coordinatorLease ? { coordinatorLease: latest.coordinatorLease } : {})
+  };
 }
 
 export class MetadataRepository {
@@ -138,7 +186,7 @@ export class MetadataRepository {
   }
 
   async readScene(): Promise<SceneState> {
-    return (await this.readSnapshot()).state;
+    return (await this.readSnapshot(true)).state;
   }
 
   async readCoordinatorLease(): Promise<SceneState["coordinatorLease"]> {
@@ -207,7 +255,7 @@ export class MetadataRepository {
     await this.port.patchSceneMetadata(update);
   }
 
-  private async readSnapshot(): Promise<{ state: SceneState; metadata: Record<string, unknown> }> {
+  private async readSnapshot(ignoreSameOwnerHeartbeat = false): Promise<{ state: SceneState; metadata: Record<string, unknown> }> {
     for (let attempt = 0; attempt < 3; attempt++) {
       const metadata = await this.port.getSceneMetadata();
       const baseState = requireValid(
@@ -230,19 +278,20 @@ export class MetadataRepository {
         demographyAudit = await new DemographyAuditRepository(this.port).read(metadata, sceneItems);
       } catch (error) { failure = error; }
       const latest = await this.port.getSceneMetadata();
-      if (!sameSceneAndManifest(metadata, latest)) continue;
+      if (!sameSceneAndManifest(metadata, latest, ignoreSameOwnerHeartbeat)) continue;
       if (failure) throw failure;
       if (readGridManifest(metadata) && (!grid || grid.revision !== baseState.gridMap.revision)) {
         throw new GridStorageError("GRID_CHUNK_INVALID");
       }
+      const hydrated = {
+        ...baseState,
+        ...(grid ? { gridMap: grid } : {}),
+        ...(lrTransactions !== undefined ? { lrTransactions } : {}),
+        ...(demographyAudit !== undefined ? { demographyAudit } : {})
+      };
       return {
-        state: {
-          ...baseState,
-          ...(grid ? { gridMap: grid } : {}),
-          ...(lrTransactions !== undefined ? { lrTransactions } : {}),
-          ...(demographyAudit !== undefined ? { demographyAudit } : {})
-        },
-        metadata
+        state: ignoreSameOwnerHeartbeat ? withLatestCoordinatorLease(hydrated, latest) : hydrated,
+        metadata: ignoreSameOwnerHeartbeat ? latest : metadata
       };
     }
     throw new GridStorageError("GRID_CHUNK_MISSING");
@@ -257,7 +306,7 @@ export class MetadataRepository {
       );
       const items = await this.port.getSceneItems();
       const latest = await this.port.getSceneMetadata();
-      if (!sameSceneAndManifest(sceneMetadata, latest)) continue;
+      if (!sameSceneAndManifest(sceneMetadata, latest, true)) continue;
 
       const armies: ArmyRecord[] = [];
       const ships: ShipRecord[] = [];
@@ -286,12 +335,12 @@ export class MetadataRepository {
         armies,
         ships,
         barriers,
-        sceneMetadata,
-        baseScene: {
+        sceneMetadata: latest,
+        baseScene: withLatestCoordinatorLease({
           ...baseScene,
           ...(lrTransactions !== undefined ? { lrTransactions } : {}),
           ...(demographyAudit !== undefined ? { demographyAudit } : {})
-        }
+        }, latest)
       };
     }
     throw new GridStorageError("GRID_CHUNK_MISSING");
@@ -309,7 +358,7 @@ export class MetadataRepository {
         );
       } catch (error) { failure = error; }
       const latest = await this.port.getSceneMetadata();
-      if (!sameSceneAndManifest(items.sceneMetadata as Record<string, unknown>, latest)) {
+      if (!sameSceneAndManifest(items.sceneMetadata as Record<string, unknown>, latest, true)) {
         items = undefined;
         continue;
       }
@@ -323,9 +372,10 @@ export class MetadataRepository {
       // their manifests; decoding them again only duplicates CPU work.
       return {
         items,
-        scene: {
-          ...(grid ? { ...items.baseScene, gridMap: grid } : items.baseScene)
-        }
+        scene: withLatestCoordinatorLease(
+          grid ? { ...items.baseScene, gridMap: grid } : items.baseScene,
+          latest
+        )
       };
     }
     throw new GridStorageError("GRID_CHUNK_MISSING");
