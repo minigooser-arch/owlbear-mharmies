@@ -13,6 +13,26 @@ function envelope(payload: Record<string, unknown>): Record<string, unknown> {
   };
 }
 
+describe("GM experience award payload", () => {
+  it("parses an award and discards unrecognized fields", () => {
+    expect(validateArmyCommand(envelope({
+      type: "AWARD_ARMY_EXPERIENCE", armyId: "army-1", amount: 1.5, forged: true
+    }))).toMatchObject({
+      ok: true, command: {
+        type: "AWARD_ARMY_EXPERIENCE", armyId: "army-1", amount: 1.5
+      }
+    });
+  });
+
+  it.each([0, -1, 0.2, 100.5, "1", null, Infinity, NaN])(
+    "rejects invalid XP amount %s", amount => {
+      expect(validateArmyCommand(envelope({
+        type: "AWARD_ARMY_EXPERIENCE", armyId: "army-1", amount
+      }))).toMatchObject({ ok: false, reason: "INVALID_COMMAND" });
+    }
+  );
+});
+
 describe("validateArmyCommand", () => {
   it("accepts and sanitizes a complete side command", () => {
     expect(validateArmyCommand(envelope({

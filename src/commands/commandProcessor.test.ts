@@ -111,6 +111,62 @@ function context(
   };
 }
 
+describe("GM army experience awards", () => {
+  const processor = new CommandProcessor();
+
+  it("adds XP, retains improvements, bumps revision and leaves HP unchanged", () => {
+    const current = state();
+    const oldArmy = current.armies["army-red"];
+    if (!oldArmy) throw new Error("missing fixture army");
+    oldArmy.experience = 1.5;
+    const response = processor.execute(
+      context("GM", "gm", current),
+      command({ type: "AWARD_ARMY_EXPERIENCE", armyId: "army-red", amount: 2.5 })
+    );
+    expect(response.status).toBe("ACCEPTED");
+    if (response.status !== "ACCEPTED") return;
+    expect(response.state.armies["army-red"]?.experience).toBe(4);
+    expect(response.state.armies["army-red"]?.revision).toBe(oldArmy.revision + 1);
+    expect(response.state.armies["army-red"]?.health).toEqual(oldArmy.health);
+  });
+
+  it("denies both a faction leader and an ordinary player", () => {
+    for (const playerId of ["leader", "member"]) {
+      const result = processor.execute(
+        context("PLAYER", playerId),
+        command({ type: "AWARD_ARMY_EXPERIENCE", armyId: "army-red", amount: 1 }, playerId)
+      );
+      expect(result).toMatchObject({ status: "REJECTED", reason: "GM_ONLY" });
+    }
+  });
+
+  it("rejects zero, negative, non-half-point, non-finite and oversized awards", () => {
+    for (const amount of [0, -1, 0.25, 0.1, Number.NaN, Number.POSITIVE_INFINITY, 100.5]) {
+      const result = processor.execute(
+        context("GM", "gm"),
+        command({ type: "AWARD_ARMY_EXPERIENCE", armyId: "army-red", amount })
+      );
+      expect(result).toMatchObject({ status: "REJECTED", reason: "INVALID_EXPERIENCE" });
+    }
+  });
+
+  it("rejects awards for absent armies and experience exceeding the safety cap", () => {
+    expect(processor.execute(
+      context("GM", "gm"),
+      command({ type: "AWARD_ARMY_EXPERIENCE", armyId: "missing", amount: 1 })
+    )).toMatchObject({ status: "REJECTED", reason: "ARMY_NOT_FOUND" });
+
+    const current = state();
+    const army = current.armies["army-red"];
+    if (!army) throw new Error("missing fixture army");
+    army.experience = 9999.5;
+    expect(processor.execute(
+      context("GM", "gm", current),
+      command({ type: "AWARD_ARMY_EXPERIENCE", armyId: "army-red", amount: 1 })
+    )).toMatchObject({ status: "REJECTED", reason: "INVALID_EXPERIENCE" });
+  });
+});
+
 describe("CommandProcessor", () => {
   const processor = new CommandProcessor();
   it("applies a five-OP forced march once and blocks healing for the effective turn", () => {

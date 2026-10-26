@@ -655,6 +655,14 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
         }
       : undefined,
   SET_DEFACTO_STATE_CELLS: (value) => { const cells = parseCells(value.cells); return cells && (value.stateId === null || sideId(value.stateId)) ? { type: "SET_DEFACTO_STATE_CELLS", cells, stateId: value.stateId as string | null } : undefined; },
+  AWARD_ARMY_EXPERIENCE: (value) =>
+    boundedString(value.armyId) &&
+    typeof value.amount === "number" &&
+    Number.isFinite(value.amount) &&
+    value.amount > 0 && value.amount <= 100 &&
+    Number.isInteger(value.amount * 2)
+      ? { type: "AWARD_ARMY_EXPERIENCE", armyId: value.armyId, amount: value.amount }
+      : undefined,
   SET_ARMY_HP: (value) => {
     if (!boundedString(value.armyId) || !nonNegativeInteger(value.hp)) return undefined;
     if (value.maxHp !== undefined && (!nonNegativeInteger(value.maxHp) || value.maxHp <= 0)) return undefined;
