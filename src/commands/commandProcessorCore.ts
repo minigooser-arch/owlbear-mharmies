@@ -25,6 +25,7 @@ import { occupiedByOtherLiveShip } from "../naval/ships/shipCellOccupancy";
 import { cellSupportsDomain } from "../terrain/movementDomains";
 import { authorizeArmyCommand } from "../shared/permissions";
 import { FORCED_MARCH_BONUS_UNITS, METADATA_KEYS } from "../shared/constants";
+import { canAwardArmyXp } from "../shared/experienceAwards";
 import type {
   ArmyCommand,
   ArmyState,
