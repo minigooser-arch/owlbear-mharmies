@@ -78,6 +78,12 @@ describe("validateArmyCommand", () => {
     }))).toMatchObject({ ok: true });
   });
 
+  it.each(["__proto__", "constructor", "toString"])("rejects an inherited army id %s in XP awards", armyId => {
+    expect(validateArmyCommand(envelope({
+      type: "AWARD_ARMY_EXPERIENCE", armyId, amount: 1
+    }))).toMatchObject({ ok: false, reason: "INVALID_COMMAND" });
+  });
+
   it.each([undefined, null, "1", 0, -0.5, 0.1, 0.75, 1.25, 100.5, Number.NaN, Infinity])(
     "rejects invalid GM experience amount %s", amount => {
       expect(validateArmyCommand(envelope({
