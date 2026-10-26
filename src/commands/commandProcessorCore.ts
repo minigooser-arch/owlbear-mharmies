@@ -2049,6 +2049,19 @@ export class CommandProcessor {
         if (command.stateId !== null && !state.scene.states.some((candidate) => candidate.id === command.stateId)) return "STATE_NOT_FOUND";
         state.scene.gridMap = applyCellPatchBatch(state.scene.gridMap, command.cells.map((cell) => ({ cell, patch: { deFactoStateId: command.stateId } })));
         return undefined;
+      case "AWARD_ARMY_EXPERIENCE": {
+        const army = state.armies[command.armyId];
+        if (!army) return "ARMY_NOT_FOUND";
+        // All experience is stored in half-point increments.
+        if (!Number.isFinite(command.amount) || command.amount <= 0 ||
+          command.amount > 100 || !Number.isInteger(command.amount * 2)) {
+          return "INVALID_EXPERIENCE";
+        }
+        const next = (army.experience ?? 0) + command.amount;
+        if (!Number.isFinite(next) || next > 10000) return "INVALID_EXPERIENCE";
+        state.armies[command.armyId] = bumpArmy(army, { experience: next });
+        return undefined;
+      }
       case "SET_ARMY_HP": {
         const army = state.armies[command.armyId];
         if (!army) return "ARMY_NOT_FOUND";
