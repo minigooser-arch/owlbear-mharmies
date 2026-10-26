@@ -54,15 +54,30 @@ describe("scene item change gate", () => {
 
     // A manually deleted hitbox must be recreated by reconciliation.
     expect(gate.shouldRefresh([army])).toBe(true);
+    // If SDK restoration failed, a second event must not suppress repair.
+    expect(gate.shouldRefresh([army])).toBe(true);
     expect(gate.shouldRefresh([army, healthy])).toBe(false);
 
     const dragged = { ...healthy, position: { x: 1000, y: 1000 } };
+    expect(gate.shouldRefresh([army, dragged])).toBe(true);
     expect(gate.shouldRefresh([army, dragged])).toBe(true);
     expect(gate.shouldRefresh([army, healthy])).toBe(true);
 
     // A second proxy for the same source is not a valid cosmetic-only event.
     expect(gate.shouldRefresh([army, healthy, proxy("duplicate", army)])).toBe(true);
+    expect(gate.shouldRefresh([army, healthy, proxy("duplicate", army)])).toBe(true);
     expect(gate.shouldRefresh([army, healthy])).toBe(true);
+  });
+
+  it("forgets pending proxy repairs when the source itself disappears", () => {
+    const gate = new SceneItemChangeGate();
+    const army = item("army", { [METADATA_KEYS.army]: { revision: 1 } });
+    const hitbox = proxy("hitbox", army);
+    expect(gate.shouldRefresh([army, hitbox])).toBe(true);
+    expect(gate.shouldRefresh([army])).toBe(true);
+    expect(gate.shouldRefresh([army])).toBe(true);
+    expect(gate.shouldRefresh([])).toBe(true);
+    expect(gate.shouldRefresh([])).toBe(false);
   });
 
   it("keeps all untagged scene images because ship registration is stored separately", () => {
