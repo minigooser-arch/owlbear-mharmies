@@ -532,6 +532,7 @@ export class CommandProcessor {
         return undefined;
       }
       case "AWARD_ARMY_EXPERIENCE": {
+        if (!Object.hasOwn(state.armies, command.armyId)) return "ARMY_NOT_FOUND";
         const army = state.armies[command.armyId];
         if (!army) return "ARMY_NOT_FOUND";
         const existing = army.experience ?? 0;
