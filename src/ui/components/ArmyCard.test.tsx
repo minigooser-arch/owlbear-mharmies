@@ -79,6 +79,45 @@ describe("ArmyCard capabilities", () => {
     expect(screen.getByRole("button", { name: "Снять регистрацию" })).toBeInTheDocument();
   });
 
+  it("lets GM award XP from army management and reflects the new balance", () => {
+    const onAction = vi.fn();
+    const { rerender } = render(
+      <ArmyCard army={{ ...redArmy, experience: 1.5 }} isGM canEditRoute canRequestDisband onAction={onAction} />
+    );
+    fireEvent.click(screen.getByText("Управление"));
+    expect(screen.getByText("Сейчас: 1.5 XP")).toBeInTheDocument();
+    const amount = screen.getByRole("spinbutton", { name: "Количество XP для Первая армия" });
+    fireEvent.change(amount, { target: { value: "2.5" } });
+    fireEvent.click(screen.getByRole("button", { name: "Выдать опыт" }));
+    expect(onAction).toHaveBeenCalledWith({
+      type: "AWARD_ARMY_EXPERIENCE", armyId: "army-red", amount: 2.5
+    });
+    rerender(<ArmyCard army={{ ...redArmy, experience: 4 }} isGM canEditRoute canRequestDisband onAction={onAction} />);
+    expect(screen.getByText("Сейчас: 4 XP")).toBeInTheDocument();
+  });
+
+  it("hides XP grant controls from players, including faction leaders", () => {
+    render(<ArmyCard army={redArmy} isGM={false} canEditRoute canRequestDisband onAction={vi.fn()} />);
+    expect(screen.queryByRole("spinbutton", { name: "Количество XP для Первая армия" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Выдать опыт" })).not.toBeInTheDocument();
+  });
+
+  it("disables XP grants for empty, fractional-step, negative and excessive amounts", () => {
+    const onAction = vi.fn();
+    render(<ArmyCard army={redArmy} isGM canEditRoute canRequestDisband onAction={onAction} />);
+    fireEvent.click(screen.getByText("Управление"));
+    const input = screen.getByRole("spinbutton", { name: "Количество XP для Первая армия" });
+    const grant = screen.getByRole("button", { name: "Выдать опыт" });
+    for (const value of ["", "0", "-1", "0.25", "1.25", "100.5", "101"]) {
+      fireEvent.change(input, { target: { value } });
+      expect(grant).toBeDisabled();
+    }
+    fireEvent.change(input, { target: { value: "0.5" } });
+    expect(grant).toBeEnabled();
+    fireEvent.click(grant);
+    expect(onAction).toHaveBeenCalledOnce();
+  });
+
   it("lets the GM relocate an army to a cell without completing the turn", () => {
     const onAction = vi.fn();
     render(<ArmyCard army={{ ...redArmy, cell: { x: 1, y: 2 } }} isGM canEditRoute canRequestDisband onAction={onAction} />);
