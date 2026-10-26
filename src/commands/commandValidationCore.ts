@@ -14,6 +14,7 @@ import type {
 import { COMMAND_PROTOCOL_VERSION } from "../shared/types";
 import { parseArmyTokenAsset } from "../shared/armyTokenAsset";
 import { MILITARY_INFLUENCE_DELTAS, type MilitaryInfluenceReasonCode } from "../sheets/militaryInfluence";
+import { isValidArmyXpAward } from "../shared/experienceAwards";
 
 type UnknownRecord = Record<string, unknown>;
 type CommandType = ArmyCommandPayload["type"];
@@ -338,6 +339,10 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
     (value.level === 1 || value.level === 2 || value.level === 3) &&
     (value.variant === "A" || value.variant === "B")
       ? { type: "PURCHASE_ARMY_UPGRADE", armyId: value.armyId, branch: value.branch, level: value.level, variant: value.variant } as ArmyCommandPayload
+      : undefined,
+  AWARD_ARMY_EXPERIENCE: (value) =>
+    sideId(value.armyId) && isValidArmyXpAward(value.amount)
+      ? { type: "AWARD_ARMY_EXPERIENCE", armyId: value.armyId, amount: value.amount }
       : undefined,
   RESOLVE_LAND_BATTLE: (value) => {
     if (!boundedString(value.battleId) || !denseArray(value.results) || value.results.length === 0) return undefined;

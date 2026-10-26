@@ -615,6 +615,7 @@ export type ArmyCommandPayload =
     | { type: "FORM_ARMY"; armyId: string; hp: number }
     | { type: "UNREGISTER_ARMY"; armyId: string }
     | { type: "PURCHASE_ARMY_UPGRADE"; armyId: string; branch: ArmyUpgradeBranch; level: UpgradeLevel; variant: UpgradeVariant }
+    | { type: "AWARD_ARMY_EXPERIENCE"; armyId: string; amount: number }
     | { type: "RESOLVE_LAND_BATTLE"; battleId: string; results: Array<{ armyId: string; outcome: LandBattleOutcome }> }
     | { type: "REGISTER_SHIP"; itemId: string; sideId: string; classId: ShipClassId; facing: ShipFacing }
     | { type: "REGISTER_CITY_SHIP"; itemId: string; cityId: string; sideId: string; classId: ShipClassId; facing: ShipFacing }

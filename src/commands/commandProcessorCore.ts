@@ -25,6 +25,7 @@ import { occupiedByOtherLiveShip } from "../naval/ships/shipCellOccupancy";
 import { cellSupportsDomain } from "../terrain/movementDomains";
 import { authorizeArmyCommand } from "../shared/permissions";
 import { FORCED_MARCH_BONUS_UNITS, METADATA_KEYS } from "../shared/constants";
+import { canAwardArmyXp } from "../shared/experienceAwards";
 import type {
   ArmyCommand,
   ArmyState,
@@ -528,6 +529,20 @@ export class CommandProcessor {
         const result = purchaseArmyUpgrade(army, command.branch, command.level, command.variant);
         if (!result.ok) return result.reason;
         state.armies[command.armyId] = result.army;
+        return undefined;
+      }
+      case "AWARD_ARMY_EXPERIENCE": {
+        if (!Object.hasOwn(state.armies, command.armyId)) return "ARMY_NOT_FOUND";
+        const army = state.armies[command.armyId];
+        if (!army) return "ARMY_NOT_FOUND";
+        const existing = army.experience ?? 0;
+        if (!canAwardArmyXp(existing, command.amount)) return "INVALID_EXPERIENCE_AWARD";
+        // Keep unrelated army state (routes, HP, upgrades) untouched.
+        state.armies[command.armyId] = {
+          ...army,
+          experience: existing + command.amount,
+          revision: army.revision + 1
+        };
         return undefined;
       }
       case "RESOLVE_LAND_BATTLE": {

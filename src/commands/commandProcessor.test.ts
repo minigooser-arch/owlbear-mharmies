@@ -113,6 +113,77 @@ function context(
 
 describe("CommandProcessor", () => {
   const processor = new CommandProcessor();
+  it("allows GM to award half-point XP while leaving health, routes and upgrades unchanged", () => {
+    const current = state();
+    const original = current.armies["army-red"];
+    if (!original) throw new Error("Missing army fixture");
+    const first = processor.execute(context("GM", "gm", current), command({
+      type: "AWARD_ARMY_EXPERIENCE", armyId: "army-red", amount: 1.5
+    }));
+    expect(first.status).toBe("ACCEPTED");
+    if (first.status !== "ACCEPTED") return;
+    expect(first.state.armies["army-red"]).toMatchObject({
+      experience: 1.5, revision: original.revision + 1,
+      health: original.health, movement: original.movement, plannedRoute: original.plannedRoute
+    });
+    expect(first.state.scene.revision).toBe(current.scene.revision + 1);
+    expect(current.armies["army-red"]?.experience).toBeUndefined();
+
+    const second = processor.execute(context("GM", "gm", first.state), command({
+      type: "AWARD_ARMY_EXPERIENCE", armyId: "army-red", amount: 0.5,
+      expectedRevision: first.state.scene.revision
+    }));
+    expect(second.status).toBe("ACCEPTED");
+    if (second.status !== "ACCEPTED") return;
+    expect(second.state.armies["army-red"]?.experience).toBe(2);
+    expect(second.state.armies["army-red"]?.revision).toBe(original.revision + 2);
+  });
+
+  it("blocks XP grants from players, including leaders, and to absent armies", () => {
+    const candidate = command({ type: "AWARD_ARMY_EXPERIENCE", armyId: "army-red", amount: 1 }, "leader");
+    expect(processor.execute(context("PLAYER", "leader"), candidate)).toEqual({
+      status: "REJECTED", reason: "GM_ONLY"
+    });
+    expect(processor.execute(context("PLAYER", "member"), command({
+      type: "AWARD_ARMY_EXPERIENCE", armyId: "army-red", amount: 1
+    }, "member"))).toEqual({ status: "REJECTED", reason: "GM_ONLY" });
+    expect(processor.execute(context("GM", "gm"), command({
+      type: "AWARD_ARMY_EXPERIENCE", armyId: "not-found", amount: 1
+    }))).toEqual({ status: "REJECTED", reason: "ARMY_NOT_FOUND" });
+  });
+
+  it.each([0, -0.5, 0.25, 1.25, 100.5, Number.NaN, Infinity, -Infinity])(
+    "rejects an unsafe XP award of %s even when directly invoking the processor",
+    amount => {
+      const before = state();
+      const result = processor.execute(context("GM", "gm", before), command({
+        type: "AWARD_ARMY_EXPERIENCE", armyId: "army-red", amount
+      }));
+      expect(result).toEqual({ status: "REJECTED", reason: "INVALID_EXPERIENCE_AWARD" });
+      expect(before.armies["army-red"]?.experience).toBeUndefined();
+    }
+  );
+
+  it("rejects inherited army properties when directly invoked with a forged payload", () => {
+    const current = state();
+    const result = processor.execute(context("GM", "gm", current), command({
+      type: "AWARD_ARMY_EXPERIENCE", armyId: "constructor", amount: 1
+    }));
+    expect(result).toEqual({ status: "REJECTED", reason: "ARMY_NOT_FOUND" });
+    expect(Object.hasOwn(current.armies, "constructor")).toBe(false);
+  });
+
+  it("prevents awarding XP beyond the supported accumulator limit", () => {
+    const current = state();
+    const existing = current.armies["army-red"];
+    if (!existing) throw new Error("Missing army fixture");
+    existing.experience = 999_999.5;
+    expect(processor.execute(context("GM", "gm", current), command({
+      type: "AWARD_ARMY_EXPERIENCE", armyId: "army-red", amount: 1
+    }))).toEqual({ status: "REJECTED", reason: "INVALID_EXPERIENCE_AWARD" });
+    expect(existing.experience).toBe(999_999.5);
+  });
+
   it("applies a five-OP forced march once and blocks healing for the effective turn", () => {
     const current = state();
     current.scene.turn.turnNumber = 4;
