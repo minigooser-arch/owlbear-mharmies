@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { ArmyView, UiCommand } from "../state/useExtensionState";
 import type { ArmyUpgradeBranch, GridCellCoord, UpgradeLevel, UpgradeVariant } from "../../shared/types";
 import { formatMovementUnits, movementDenialMessage } from "../presentation/movement";
+import { canAwardArmyXp, MAX_ARMY_XP_AWARD } from "../../shared/experienceAwards";
 
 const STATUS: Record<ArmyView["status"], string> = {
   READY: "Готова",
@@ -156,6 +157,44 @@ function ArmyHealthEditor({ army, onAction }: { army: ArmyView; onAction(command
   );
 }
 
+function ArmyExperienceEditor({ army, onAction }: { army: ArmyView; onAction(command: UiCommand): void }) {
+  const [amountDraft, setAmountDraft] = useState("1");
+  useEffect(() => setAmountDraft("1"), [army.id]);
+  const amount = Number(amountDraft);
+  const current = army.experience ?? 0;
+  const valid = amountDraft.trim().length > 0 && canAwardArmyXp(current, amount);
+  return (
+    <div className="hp-editor" aria-label="Начисление опыта армии">
+      <div className="hp-editor-heading">
+        <strong>Опыт армии</strong>
+        <span>Сейчас: {current} XP</span>
+      </div>
+      <label>Начислить XP
+        <input
+          aria-label={`Количество XP для ${army.name}`}
+          type="number"
+          min="0.5"
+          max={MAX_ARMY_XP_AWARD}
+          step="0.5"
+          value={amountDraft}
+          onChange={(event) => setAmountDraft(event.target.value)}
+        />
+      </label>
+      <p className="helper-text">Только GM · от 0,5 до {MAX_ARMY_XP_AWARD} XP за раз, шаг 0,5.</p>
+      <button
+        className="button subtle wide"
+        type="button"
+        disabled={!valid}
+        onClick={() => {
+          if (valid) onAction({ type: "AWARD_ARMY_EXPERIENCE", armyId: army.id, amount });
+        }}
+      >
+        Выдать опыт
+      </button>
+    </div>
+  );
+}
+
 function ArmyImmediateMoveEditor({ army, onAction }: { army: ArmyView; onAction(command: UiCommand): void }) {
   const [xDraft, setXDraft] = useState(String(army.cell?.x ?? 0));
   const [yDraft, setYDraft] = useState(String(army.cell?.y ?? 0));
@@ -284,6 +323,7 @@ export function ArmyCard({ army, sideColor = "#687F91", isGM, canEditRoute, canR
           <summary>Управление</summary>
           <div className="army-control-groups">
             {isGM && <ArmyHealthEditor army={army} onAction={onAction} />}
+            {isGM && <ArmyExperienceEditor army={army} onAction={onAction} />}
             {isGM && <ArmyImmediateMoveEditor army={army} onAction={onAction} />}
             {isGM && (army.status === "MOVING" || army.status === "PAUSED") && <div className="card-actions" aria-label="Движение армии">{army.status === "MOVING" ? <button type="button" onClick={() => onAction({ type: "PAUSE_ARMY", armyId: army.id })}>Пауза</button> : army.route.length > 0 ? <button type="button" onClick={() => onAction({ type: "RESUME_ARMY", armyId: army.id })}>Продолжить</button> : null}<button type="button" onClick={() => onAction({ type: "STOP_ARMY", armyId: army.id })}>Стоп</button></div>}
             {canRequestDisband && !army.disbandPending && <div className="card-actions"><button className="button danger subtle" type="button" onClick={() => onAction({ type: "REQUEST_ARMY_DISBAND", armyId: army.id })}>Распустить армию</button></div>}
