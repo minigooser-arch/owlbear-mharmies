@@ -109,6 +109,36 @@ function ArmyUpgradePanel({
   );
 }
 
+function ArmyExperienceEditor({ army, onAction }: { army: ArmyView; onAction(command: UiCommand): void }) {
+  const [draft, setDraft] = useState("1");
+  const amount = Number(draft);
+  const valid = draft.trim() !== "" && Number.isFinite(amount) &&
+    amount > 0 && amount <= 100 && Number.isInteger(amount * 2);
+
+  return (
+    <div className="hp-editor" aria-label="Начисление опыта армии">
+      <div className="hp-editor-heading">
+        <strong>Выдать опыт</strong><span>Сейчас: {army.experience ?? 0} XP</span>
+      </div>
+      <label>Количество XP
+        <input
+          aria-label={`Начислить опыт ${army.name}`}
+          type="number"
+          min="0.5"
+          max="100"
+          step="0.5"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+        />
+      </label>
+      <button className="button subtle wide" type="button" disabled={!valid}
+        onClick={() => onAction({ type: "AWARD_ARMY_EXPERIENCE", armyId: army.id, amount })}>
+        Начислить XP
+      </button>
+    </div>
+  );
+}
+
 interface ArmyCardProps {
   army: ArmyView;
   sideColor?: string;
@@ -284,6 +314,7 @@ export function ArmyCard({ army, sideColor = "#687F91", isGM, canEditRoute, canR
           <summary>Управление</summary>
           <div className="army-control-groups">
             {isGM && <ArmyHealthEditor army={army} onAction={onAction} />}
+            {isGM && <ArmyExperienceEditor army={army} onAction={onAction} />}
             {isGM && <ArmyImmediateMoveEditor army={army} onAction={onAction} />}
             {isGM && (army.status === "MOVING" || army.status === "PAUSED") && <div className="card-actions" aria-label="Движение армии">{army.status === "MOVING" ? <button type="button" onClick={() => onAction({ type: "PAUSE_ARMY", armyId: army.id })}>Пауза</button> : army.route.length > 0 ? <button type="button" onClick={() => onAction({ type: "RESUME_ARMY", armyId: army.id })}>Продолжить</button> : null}<button type="button" onClick={() => onAction({ type: "STOP_ARMY", armyId: army.id })}>Стоп</button></div>}
             {canRequestDisband && !army.disbandPending && <div className="card-actions"><button className="button danger subtle" type="button" onClick={() => onAction({ type: "REQUEST_ARMY_DISBAND", armyId: army.id })}>Распустить армию</button></div>}
