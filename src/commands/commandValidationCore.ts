@@ -340,6 +340,10 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
     (value.variant === "A" || value.variant === "B")
       ? { type: "PURCHASE_ARMY_UPGRADE", armyId: value.armyId, branch: value.branch, level: value.level, variant: value.variant } as ArmyCommandPayload
       : undefined,
+  AWARD_ARMY_EXPERIENCE: (value) =>
+    boundedString(value.armyId) && isValidArmyXpAward(value.amount)
+      ? { type: "AWARD_ARMY_EXPERIENCE", armyId: value.armyId, amount: value.amount }
+      : undefined,
   RESOLVE_LAND_BATTLE: (value) => {
     if (!boundedString(value.battleId) || !denseArray(value.results) || value.results.length === 0) return undefined;
     const results: Array<{ armyId: string; outcome: "FULL_VICTORY" | "VICTORY" | "RETREAT" | "DEFEAT" }> = [];
