@@ -66,3 +66,29 @@ it("disables the finish button during automatic completion", () => {
   expect(screen.getByRole("status")).toHaveTextContent("Новый ход начнётся автоматически");
   expect(action).not.toHaveBeenCalled();
 });
+
+it("lists the exact blockers when turn completion is waiting", () => {
+  render(<TurnStatusCard turn={{ ...DEFAULT_TURN_STATE, phase: "POST_MOVEMENT",
+    completionPending: { source: "MANUAL" } }} role="GM"
+    onAction={() => undefined} turnCompletionBlockers={[
+      "LAND_BATTLE_ACTIVE", "NAVAL_REQUESTS_PENDING", "MOVEMENT_RESOLUTION_PENDING"
+    ]} battleCount={2} navalRequestCount={1} pendingTurnArmyNames={["Армия Британии"]} />);
+  expect(screen.getByRole("status")).toHaveTextContent("Незавершённые сухопутные бои: 2");
+  expect(screen.getByRole("status")).toHaveTextContent("Необработанные заявки на морской бой: 1");
+  expect(screen.getByRole("status")).toHaveTextContent("Не завершили движение: Армия Британии");
+});
+
+it("distinguishes waiting on background processing from real battle blockers", () => {
+  render(<TurnStatusCard turn={{ ...DEFAULT_TURN_STATE, phase: "POST_MOVEMENT",
+    completionPending: { source: "MANUAL" } }} role="GM"
+    onAction={() => undefined} turnCompletionBlockers={[]} />);
+  expect(screen.getByRole("status")).toHaveTextContent("Игровых блокировок в текущей сцене нет");
+  expect(screen.getByRole("status")).toHaveTextContent("Google Sheets");
+});
+
+it("does not leak GM-only turn blockers into player UI", () => {
+  render(<TurnStatusCard turn={{ ...DEFAULT_TURN_STATE, phase: "POST_MOVEMENT",
+    completionPending: { source: "MANUAL" } }} role="PLAYER"
+    onAction={() => undefined} turnCompletionBlockers={["LAND_BATTLE_ACTIVE"]} battleCount={1} />);
+  expect(screen.queryByText(/Незавершённые сухопутные бои/)).not.toBeInTheDocument();
+});

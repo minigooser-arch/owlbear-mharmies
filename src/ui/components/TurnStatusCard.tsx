@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { TurnState } from "../../shared/types";
+import type { TurnBlocker } from "../../turns/turnCompletionGuard";
 import { moscowLocalInputToIso, turnStatusPresentation } from "../presentation/turns";
 import type { UiCommand } from "../state/useExtensionState";
 
@@ -7,12 +8,23 @@ export function TurnStatusCard({
   turn,
   role,
   onAction,
-  now = new Date()
+  now = new Date(),
+  battleCount = 0,
+  navalBattleActive = false,
+  navalRequestCount = 0,
+  turnCompletionBlockers,
+  pendingTurnArmyNames = []
 }: {
   turn: TurnState;
   role: "GM" | "PLAYER";
   onAction(command: UiCommand): void;
   now?: Date;
+  battleCount?: number;
+  navalBattleActive?: boolean;
+  navalRequestCount?: number;
+  /** Exact server-side blockers, provided only to GM. */
+  turnCompletionBlockers?: readonly TurnBlocker[];
+  pendingTurnArmyNames?: readonly string[];
 }) {
   const [deferValue, setDeferValue] = useState("");
   const [turnNumberValue, setTurnNumberValue] = useState(String(turn.turnNumber));
@@ -24,6 +36,17 @@ export function TurnStatusCard({
   };
   const parsedTurnNumber = Number(turnNumberValue);
   const validTurnNumber = Number.isInteger(parsedTurnNumber) && parsedTurnNumber >= 1;
+  const blockingReasons = (turnCompletionBlockers ?? []).map((blocker) => {
+    switch (blocker) {
+      case "LAND_BATTLE_ACTIVE": return `Незавершённые сухопутные бои: ${battleCount}.`;
+      case "NAVAL_BATTLE_ACTIVE": return navalBattleActive ? "Активный морской бой." : "Морской бой не завершён.";
+      case "NAVAL_REQUESTS_PENDING": return `Необработанные заявки на морской бой: ${navalRequestCount}.`;
+      case "MOVEMENT_RESOLUTION_PENDING": return pendingTurnArmyNames.length > 0
+        ? `Не завершили движение: ${pendingTurnArmyNames.join(", ")}.`
+        : "Фаза перемещения ещё не завершена.";
+      default: return `Ожидается контрольная операция: ${blocker}.`;
+    }
+  });
 
   return (
     <article className={`turn-card turn-${presentation.kind.toLowerCase()}`}>
@@ -40,7 +63,14 @@ export function TurnStatusCard({
               onClick={() => onAction({ type: "COMPLETE_TURN_NOW" })}>
               {turn.completionPending ? "Завершение хода выполняется…" : "Завершить ход"}
             </button>
-            {turn.completionPending && <p role="status">Ожидаем завершения перемещения и обязательных боёв. Новый ход начнётся автоматически.</p>}
+            {turn.completionPending && <div role="status">
+              <p>Ожидаем завершения перемещения и обязательных боёв. Новый ход начнётся автоматически.</p>
+              {role === "GM" && turnCompletionBlockers && (
+                blockingReasons.length > 0
+                  ? <p>Сейчас блокируют ход: {blockingReasons.join(" ")}</p>
+                  : <p>Игровых блокировок в текущей сцене нет. Если ход не меняется, проверьте активность GM-координатора и ошибки фонового процесса, в частности доступность Google Sheets.</p>
+              )}
+            </div>}
             {turn.autoTurnsPaused && <button type="button" onClick={() => onAction({ type: "RESUME_AUTO_TURNS" })}>Возобновить ходы</button>}
           </div>
           <details className="turn-more">
