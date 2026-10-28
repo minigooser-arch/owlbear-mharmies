@@ -23,7 +23,7 @@ function createHarness() {
   context.applyStateShipCounts_ = () => { calls.push("ships"); };
   context.adjustMilitaryInfluenceBatch_ = () => { calls.push("influence"); };
   const sync = context.syncState_ as (value: unknown) => void;
-  return { properties, calls, sync };
+  return { properties, calls, sync, context };
 }
 
 describe("Apps Script sync snapshot fencing", () => {
@@ -63,4 +63,33 @@ describe("Apps Script sync snapshot fencing", () => {
     expect(() => test.sync({ sourceRevision: 4, stateShips: [{ country: "X", ships: 1 }] }))
       .toThrow("SYNC_SOURCE_ID_REQUIRED");
   });
+  it("cancels applied LR exactly once and fences a delayed replay", () => {
+    const test = createHarness();
+    const headers = ["requestId", "operationType", "reasonCode", "status"];
+    const rows = [
+      [...headers],
+      ["request-1", "LR", "LR_V2", "APPLIED"]
+    ];
+    const sheet = {
+      getLastRow: () => rows.length,
+      getRange: (row: number, col: number, count = 1, width = 1) => ({
+        getValues: () => rows.slice(row - 1, row - 1 + count)
+          .map((line) => line.slice(col - 1, col - 1 + width)),
+        setValue: (value: string) => { rows[row - 1]![col - 1] = value; },
+        setValues: (values: string[][]) => {
+          for (const [index, value] of values.entries()) rows[row - 1 + index] = [...value];
+        }
+      })
+    };
+    test.context.lrLogSheet_ = () => ({ sheet, headers });
+    const cancel = test.context.cancelLRBatch_ as (ids: string[]) => { cancelled: string[] };
+    expect(cancel(["request-1"]).cancelled).toEqual(["request-1"]);
+    expect(rows[1]?.[3]).toBe("CANCELLED");
+    expect(cancel(["request-1"]).cancelled).toEqual(["request-1"]);
+    expect(rows).toHaveLength(2);
+    expect(cancel(["request-2"]).cancelled).toEqual(["request-2"]);
+    expect(rows[2]?.[0]).toBe("request-2");
+    expect(rows[2]?.[3]).toBe("CANCELLED");
+  });
+
 });
