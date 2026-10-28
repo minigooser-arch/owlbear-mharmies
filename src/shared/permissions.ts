@@ -42,6 +42,12 @@ export function authorizeArmyCommand(
     return { allowed: false, reason: "SENDER_MISMATCH" };
   }
 
+  if (command.type === "FORCE_SHEET_SYNC") {
+    return context.role === "GM"
+      ? { allowed: true }
+      : { allowed: false, reason: "GM_ONLY" };
+  }
+
   if (
     command.type === "DELETE_TERRAIN_TYPE" &&
     command.terrainId === "sea"

@@ -221,7 +221,7 @@ export class CommandGateway {
       status: raw.status as CommandAck["status"],
       coordinatorConnectionId: event.connectionId,
       recipientConnectionId: pending.senderConnectionId,
-      ...(raw.status === "REJECTED" ? { reason: raw.reason as string } : {}),
+      ...(typeof raw.reason === "string" ? { reason: raw.reason } : {}),
       ...(raw.status === "CONFLICT" ? { actualRevision: raw.actualRevision as number } : {})
     };
     if (pending.timeoutId !== undefined) clearTimeout(pending.timeoutId);

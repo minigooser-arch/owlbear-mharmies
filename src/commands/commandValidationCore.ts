@@ -697,6 +697,7 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
   SET_TURN_NUMBER: (value) => Number.isInteger(value.turnNumber) && (value.turnNumber as number) >= 1
     ? { type: "SET_TURN_NUMBER", turnNumber: value.turnNumber as number }
     : undefined,
+  FORCE_SHEET_SYNC: () => ({ type: "FORCE_SHEET_SYNC" }),
   COMPLETE_TURN_NOW: () => ({ type: "COMPLETE_TURN_NOW" })
 };
 

@@ -366,6 +366,7 @@ export class ProductionEngine {
   private sheetWritebackFallback: SheetWritebackEvent | undefined;
   private sheetWritebackRetryAt = 0;
   private lastVerifiedDailySheetSyncDate: string | undefined;
+  private lastDemographyRefreshAt = 0;
   private sheetWritebackBackoffMs = 0;
   private sheetWritebackRetryTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -383,6 +384,7 @@ export class ProductionEngine {
     this.coordinatorGeneration += 1;
     this.detectionCache.invalidate();
     this.coordinator = active;
+    if (active) this.lastDemographyRefreshAt = 0;
     this.activeCoordinatorConnectionId = active ? connectionId : undefined;
     if (!active && this.sheetWritebackRetryTimer !== undefined) {
       clearTimeout(this.sheetWritebackRetryTimer);
@@ -399,15 +401,101 @@ export class ProductionEngine {
           this.coordinatorGeneration === generation
         ) {
           void this.enqueueMutation(async () => {
+            await this.reconcileLrInflight();
             await this.queueSheetWritebackSnapshot();
             await this.flushSheetWriteback();
-          });
+          }).catch((error) => this.reportOperationalError(error, "sheet-writeback-startup"));
         }
       });
     }
   }
 
-  private async queueSheetWritebackSnapshot(): Promise<void> {
+  /**
+   * Rebuilds the public aggregate projection and sends it immediately from
+   * the authoritative coordinator. The sheet token is intentionally read
+   * only in this background runtime, where it is kept in GM local storage.
+   */
+  async forceSheetSync(): Promise<"SHEET_SYNC_COMPLETED" | "SHEET_SYNC_NO_CHANGES"> {
+    if (!this.coordinator) throw new SheetWritebackError("SHEET_SYNC_NOT_COORDINATOR");
+    const scene = await this.repository.readScene();
+    if (!scene.settings.sheetWritebackUrl?.trim()) {
+      throw new SheetWritebackError("SHEET_WRITEBACK_URL_MISSING");
+    }
+    if (!readSheetWritebackToken()) {
+      throw new SheetWritebackError("SHEET_WRITEBACK_TOKEN_MISSING");
+    }
+    await this.queueSheetWritebackSnapshot(false);
+    const written = await this.flushSheetWriteback({ throwOnFailure: true, ignoreRetryAt: true });
+    return written ? "SHEET_SYNC_COMPLETED" : "SHEET_SYNC_NO_CHANGES";
+  }
+
+  private readonly lrInflightKey = `${METADATA_KEYS.scene}/lr-inflight`;
+
+  /** Persist intent before sending an irreversible expense to Google Sheets. */
+  private async recordLrInflight(requestIds: readonly string[]): Promise<void> {
+    if (requestIds.length === 0) return;
+    const metadata = await this.port.getSceneMetadata();
+    const current = metadata[this.lrInflightKey] as { requestIds?: unknown } | undefined;
+    if (current?.requestIds && Array.isArray(current.requestIds) && current.requestIds.length > 0) {
+      throw new SheetWritebackError("SHEET_LR_INFLIGHT_UNRESOLVED");
+    }
+    await this.port.patchSceneMetadata({
+      [this.lrInflightKey]: {
+        version: 1,
+        createdAt: this.wallClock().toISOString(),
+        requestIds: [...requestIds]
+      }
+    });
+  }
+
+  /** A committed Owlbear LR transaction stays charged; otherwise the expense
+   * must be cancelled (or fenced with a tombstone) on the authoritative sheet.
+   * A failed repair leaves the durable intent in scene metadata for retry.
+   */
+  private async reconcileLrInflight(): Promise<void> {
+    if (!this.coordinator) return;
+    const metadata = await this.port.getSceneMetadata();
+    const inflight = metadata[this.lrInflightKey] as { version?: unknown; requestIds?: unknown } | undefined;
+    if (!inflight) return;
+    if (inflight.version !== 1 || !Array.isArray(inflight.requestIds) ||
+      inflight.requestIds.some((id) => typeof id !== "string" || !id)) {
+      throw new SheetWritebackError("SHEET_LR_INFLIGHT_CORRUPT");
+    }
+    const ids = inflight.requestIds as string[];
+    const scene = await this.repository.readScene();
+    const committed = new Set((scene.lrTransactions ?? []).map((transaction) => transaction.requestId));
+    const orphans = ids.filter((id) => !committed.has(id));
+    if (orphans.length > 0) {
+      const token = readSheetWritebackToken();
+      const url = scene.settings.sheetWritebackUrl?.trim();
+      if (!url || !token) throw new SheetWritebackError("SHEET_LR_CANCEL_UNAUTHORIZED");
+      const client = new SheetWritebackClient(url, token);
+      for (let start = 0; start < orphans.length; start += 64) {
+        await client.cancelLR(orphans.slice(start, start + 64));
+      }
+    }
+    if (!this.coordinator) return;
+    // Only clear the exact intent that was reconciled.
+    const latest = await this.port.getSceneMetadata();
+    if (JSON.stringify(latest[this.lrInflightKey]) === JSON.stringify(inflight)) {
+      await this.port.patchSceneMetadata({ [this.lrInflightKey]: undefined });
+    }
+  }
+
+  /** Stable source identity prevents an unrelated Owlbear scene from silently
+   * replacing another scene's country/HP data in the same spreadsheet.
+   */
+  private async getSheetSyncSourceId(): Promise<string> {
+    const key = `${METADATA_KEYS.scene}/sheet-source-id`;
+    const metadata = await this.port.getSceneMetadata();
+    const existing = metadata[key];
+    if (typeof existing === "string" && existing.trim()) return existing;
+    const id = crypto.randomUUID();
+    await this.port.patchSceneMetadata({ [key]: id });
+    return id;
+  }
+
+  private async queueSheetWritebackSnapshot(hydrateInfluence = true): Promise<void> {
     if (!this.coordinator) return;
     const metadata = await this.port.getSceneMetadata();
     const rawScene = metadata[METADATA_KEYS.scene] as Partial<SceneState> | undefined;
@@ -422,13 +510,16 @@ export class ProductionEngine {
       positions: Object.fromEntries(frame.items.map((item) => [item.id, item.position]))
     };
     let hydratedState = state;
-    try {
-      hydratedState = await this.hydrateMilitaryInfluenceFromSheet(state);
-    } catch (error) {
-      this.reportOperationalError(error, "sheet-influence-bootstrap");
+    if (hydrateInfluence) {
+      try {
+        hydratedState = await this.hydrateMilitaryInfluenceFromSheet(state);
+      } catch (error) {
+        this.reportOperationalError(error, "sheet-influence-bootstrap");
+      }
     }
     const event = buildSheetWritebackSnapshotEvent(hydratedState, this.wallClock().toISOString());
     if (!event) return;
+    event.sourceId = await this.getSheetSyncSourceId();
     const writebackQueue = SheetWritebackClient.mergeQueue(metadata, event);
     await this.port.patchSceneMetadata({ [METADATA_KEYS.sheetWritebackQueue]: writebackQueue });
   }
@@ -765,12 +856,46 @@ export class ProductionEngine {
   turnTick(): Promise<void> {
     return this.enqueueMutation(async () => {
       try {
+        await this.reconcileLrInflight();
+      } catch (error) {
+        this.reportOperationalError(error, "periodic-lr-recovery");
+      }
+      try {
+        await this.refreshSheetDemographyIfStale();
+      } catch (error) {
+        this.reportOperationalError(error, "periodic-sheet-demography");
+      }
+      try {
         await this.dailySheetSyncIfDue();
       } catch (error) {
         this.reportOperationalError(error, "daily-sheet-sync");
       }
       await this.turnTickNow();
     });
+  }
+
+  /** Refresh the Sheets-owned population, available LR (AO), and capacity (AW)
+   * every five minutes while an authorized GM is online. Never calculate growth
+   * locally when Sheets is configured and the GM token is available.
+   */
+  private async refreshSheetDemographyIfStale(): Promise<void> {
+    if (!this.coordinator || this.wallClock().getTime() - this.lastDemographyRefreshAt < 300_000) return;
+    const guard = this.captureCoordinatorGuard();
+    const scene = await this.repository.readScene();
+    if (!sheetWritebackRuntimeEnabled(scene.settings) || !guard()) return;
+    // Throttle repeated failures; the next attempt is automatic.
+    this.lastDemographyRefreshAt = this.wallClock().getTime();
+    const countries = scene.states.map((state) => state.backendCountry?.trim())
+      .filter((country): country is string => Boolean(country));
+    if (countries.length === 0) return;
+    const refreshed = await this.refreshDemographyForCountries(scene, countries);
+    if (!guard()) return;
+    if (JSON.stringify(scene.demographics) === JSON.stringify(refreshed.demographics)) return;
+    await this.repository.writeScene(
+      { ...refreshed, revision: scene.revision + 1 },
+      scene.revision,
+      (current) => guard() && current.revision === scene.revision
+    );
   }
 
   private async dailySheetSyncIfDue(): Promise<void> {
@@ -1351,6 +1476,48 @@ export class ProductionEngine {
       return;
     }
     const command = validation.command;
+    if (command.type === "FORCE_SHEET_SYNC") {
+      const coordinatorConnectionId = await this.currentConnectionId();
+      if (command.senderPlayerId !== sender.playerId || command.senderConnectionId !== sender.connectionId) {
+        await sendCommandAck(this.port, {
+          requestId: command.requestId,
+          status: "REJECTED",
+          reason: "SENDER_MISMATCH",
+          coordinatorConnectionId,
+          recipientConnectionId: sender.connectionId
+        });
+        return;
+      }
+      if (sender.role !== "GM") {
+        await sendCommandAck(this.port, {
+          requestId: command.requestId,
+          status: "REJECTED",
+          reason: "GM_ONLY",
+          coordinatorConnectionId,
+          recipientConnectionId: sender.connectionId
+        });
+        return;
+      }
+      try {
+        const result = await this.forceSheetSync();
+        await sendCommandAck(this.port, {
+          requestId: command.requestId,
+          status: "ACCEPTED",
+          reason: result,
+          coordinatorConnectionId,
+          recipientConnectionId: sender.connectionId
+        });
+      } catch (error) {
+        await sendCommandAck(this.port, {
+          requestId: command.requestId,
+          status: "REJECTED",
+          reason: error instanceof SheetWritebackError ? error.code : "SHEET_SYNC_FAILED",
+          coordinatorConnectionId,
+          recipientConnectionId: sender.connectionId
+        });
+      }
+      return;
+    }
     const frame = await this.repository.readFrame();
     let scene = sheetWritebackRuntimeEnabled(frame.scene.settings)
       ? frame.scene
@@ -1758,18 +1925,25 @@ export class ProductionEngine {
     }
   }
 
-  private async flushSheetWriteback(): Promise<void> {
-    if (Date.now() < this.sheetWritebackRetryAt) return;
+  private async flushSheetWriteback(options: {
+    throwOnFailure?: boolean;
+    ignoreRetryAt?: boolean;
+  } = {}): Promise<boolean> {
+    const fail = (error: unknown): never | boolean => {
+      if (options.throwOnFailure) throw error;
+      return false;
+    };
+    if (!options.ignoreRetryAt && Date.now() < this.sheetWritebackRetryAt) return false;
     let metadata: Record<string, unknown>;
     try {
       metadata = await this.port.getSceneMetadata();
     } catch (error) {
       this.scheduleSheetWritebackRetry(5_000);
       this.reportOperationalError(error, "sheet-writeback-read-metadata");
-      return;
+      return fail(error);
     }
     const durable = SheetWritebackClient.readQueue(metadata);
-    if (!durable && !this.sheetWritebackFallback) return;
+    if (!durable && !this.sheetWritebackFallback) return false;
 
     let scene: SceneState;
     try {
@@ -1777,13 +1951,15 @@ export class ProductionEngine {
     } catch (error) {
       this.scheduleSheetWritebackRetry(5_000);
       this.reportOperationalError(error, "sheet-writeback-read-scene");
-      return;
+      return fail(error);
     }
-    if (!sheetWritebackConfigured(scene.settings)) return;
+    if (!sheetWritebackConfigured(scene.settings)) {
+      return fail(new SheetWritebackError("SHEET_WRITEBACK_URL_MISSING"));
+    }
     const token = readSheetWritebackToken();
     if (!token) {
       this.scheduleSheetWritebackRetry(30_000);
-      return;
+      return fail(new SheetWritebackError("SHEET_WRITEBACK_TOKEN_MISSING"));
     }
     const merged = durable
       ? this.sheetWritebackFallback
@@ -1792,7 +1968,7 @@ export class ProductionEngine {
       : this.sheetWritebackFallback
         ? { version: 1 as const, pending: this.sheetWritebackFallback }
         : undefined;
-    if (!merged) return;
+    if (!merged) return false;
     const event = {
         ...merged.pending,
         // Individual army HP and ship counts are private to Owlbear. Keep only
@@ -1801,19 +1977,40 @@ export class ProductionEngine {
         removedArmyIds: [],
         states: [],
         factions: [...(merged.pending.factions ?? [])],
-        stateArmies: [...(merged.pending.stateArmies ?? [])]
+        stateArmies: [...(merged.pending.stateArmies ?? [])],
+        stateShips: [...(merged.pending.stateShips ?? [])],
+        removedFactionIds: [...(merged.pending.removedFactionIds ?? [])]
       };
     if (event.armies.length === 0 && event.removedArmyIds.length === 0 && event.states.length === 0 &&
       (event.factions?.length ?? 0) === 0 && (event.stateArmies?.length ?? 0) === 0 &&
+      (event.stateShips?.length ?? 0) === 0 && (event.removedFactionIds?.length ?? 0) === 0 &&
       (event.militaryInfluenceOperations?.length ?? 0) === 0) {
       this.sheetWritebackFallback = undefined;
-      return;
+      return false;
     }
     const url = scene.settings.sheetWritebackUrl?.trim();
-    if (!url) return;
+    if (!url) return fail(new SheetWritebackError("SHEET_WRITEBACK_URL_MISSING"));
     const client = new SheetWritebackClient(url, token);
     try {
-      await client.syncState(event);
+      // Ship/HP snapshots and influence are separate deliveries. Large influence
+      // backlogs cannot exceed the 64-operation Apps Script batch limit.
+      const hasSnapshot = event.factions.length > 0 ||
+        event.stateArmies.length > 0 || event.stateShips.length > 0 ||
+        event.removedFactionIds.length > 0;
+      if (hasSnapshot) {
+        await client.syncState({ ...event, militaryInfluenceOperations: [] });
+      }
+      const influence = event.militaryInfluenceOperations ?? [];
+      for (let start = 0; start < influence.length; start += 64) {
+        await client.syncState({
+          ...event,
+          factions: [],
+          stateArmies: [],
+          stateShips: [],
+          removedFactionIds: [],
+          militaryInfluenceOperations: influence.slice(start, start + 64)
+        });
+      }
       const latestMetadata = await this.port.getSceneMetadata();
       const latestQueue = SheetWritebackClient.readQueue(latestMetadata);
       const queueIdsSafeToClear = new Set([
@@ -1830,12 +2027,14 @@ export class ProductionEngine {
         clearTimeout(this.sheetWritebackRetryTimer);
         this.sheetWritebackRetryTimer = undefined;
       }
+      return true;
     } catch (error) {
       this.sheetWritebackBackoffMs = this.sheetWritebackBackoffMs === 0
         ? 5_000
         : Math.min(60_000, this.sheetWritebackBackoffMs * 2);
       this.scheduleSheetWritebackRetry(this.sheetWritebackBackoffMs);
       this.reportOperationalError(error, "sheet-writeback-sync");
+      return fail(error);
     }
   }
 
@@ -1862,11 +2061,13 @@ export class ProductionEngine {
     const writebackEvent = sheetWritebackConfigured(next.scene.settings)
       ? buildSheetWritebackEvent(previous, next, this.wallClock().toISOString())
       : undefined;
+    if (writebackEvent) writebackEvent.sourceId = await this.getSheetSyncSourceId();
     const itemById = new Map(items.map((item) => [item.id, item]));
     const createdItemIds: string[] = [];
     const applied: AppliedMetadataWrite[] = [];
     const expectedCoordinatorConnectionId = this.activeCoordinatorConnectionId;
     const canCommit = this.captureCoordinatorGuard(expectedCoordinatorConnectionId);
+    let inflightRecorded = false;
     try {
       const newItems = Object.values(next.items).filter((item) => previous.items[item.id] === undefined);
       const newlyCreatedItemIds = new Set(newItems.map((item) => item.id));
@@ -1992,6 +2193,8 @@ export class ProductionEngine {
       if (sheetWritebackConfigured(next.scene.settings)) {
         const spendOperations = pendingLRTransactions(previous, next);
         if (spendOperations.length > 0) {
+          await this.recordLrInflight(spendOperations.map((operation) => operation.requestId));
+          inflightRecorded = true;
           await this.commitExternalLRSpends(previous, next);
           externalSpendCommitted = true;
         }
@@ -2029,6 +2232,14 @@ export class ProductionEngine {
           throw error;
         }
       }
+      if (inflightRecorded) {
+        // The scene write has returned successfully. Do not re-read and risk
+        // treating a transiently stale Owlbear read as a failed transaction.
+        // If this cleanup fails, the next coordinator will reconcile the intent.
+        await this.port.patchSceneMetadata({ [this.lrInflightKey]: undefined }).catch((error) => {
+          this.reportOperationalError(error, "sheet-lr-intent-cleanup");
+        });
+      }
       void this.enqueueMutation(() => this.flushSheetWriteback());
     } catch (error) {
       for (const write of applied.reverse()) {
@@ -2050,6 +2261,11 @@ export class ProductionEngine {
         } catch {
           // A failed compensation is reported by the original persistence error.
         }
+      }
+      if (inflightRecorded) {
+        // Keep the intent durable. The serialized recovery tick will verify
+        // the post-failure scene before issuing a cancellation tombstone.
+        this.reportOperationalError(error, "sheet-lr-recovery-pending");
       }
       throw error;
     }

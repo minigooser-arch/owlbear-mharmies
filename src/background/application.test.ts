@@ -489,6 +489,81 @@ it("loads one command input item frame before fresh persistence checks", async (
 });
 
 describe("ProductionEngine command boundary", () => {
+  it("lets the GM force the authoritative coordinator to write a fresh sheet snapshot", async () => {
+    const army: ArmyState = {
+      version: 4,
+      registered: true,
+      sideId: "red",
+      status: "READY",
+      overrides: {},
+      route: [],
+      plannedRoute: { startCell: { x: 0, y: 0 }, executeOnTurn: 0, cells: [], totalCostUnits: 0, validatedRevision: 0, requiresReplan: false },
+      movement: { maxUnits: 10, remainingUnits: 10, enteredRouteCellCount: 0 },
+      health: { hp: 25, maxHp: 40 },
+      supply: { supplied: true, checkedOnTurn: 1 },
+      disband: { pending: false, requestedOnTurn: null, requestedByPlayerId: null },
+      currentWaypointIndex: 0,
+      segmentProgressCells: 0,
+      ignoresMovementBarriers: false,
+      ignoresVisionBarriers: false,
+      revision: 1
+    };
+    const fixture = commandPort([{
+      id: "army",
+      type: "IMAGE",
+      position: { x: 50, y: 50 },
+      metadata: { [METADATA_KEYS.army]: army }
+    }]);
+    fixture.scene.settings.sheetWritebackUrl = "https://sheet.test/writeback";
+    fixture.scene.sides = [{ id: "red", name: "Красные", color: "#f00", playerIds: [], leaderPlayerIds: [], stateId: "red-state", militaryInfluence: 5 }];
+    fixture.scene.states = [{ id: "red-state", name: "Греция", backendCountry: "greece", rulingFactionId: "red", active: true }];
+    const storage = new Map<string, string>([["com.letopis.army-control/sheet-writeback-token", "secret"]]);
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => { storage.set(key, value); },
+      removeItem: (key: string) => { storage.delete(key); }
+    });
+    const requests: Array<{ action?: string; event?: { factions?: unknown[] } }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { action?: string; event?: { factions?: unknown[] } };
+      requests.push(body);
+      return {
+        ok: true,
+        json: async () => body.action === "GET_FACTIONS"
+          ? { ok: true, result: { factions: [{ factionId: "red", factionName: "Красные", country: "greece", militaryInfluence: 5 }] } }
+          : { ok: true, result: null }
+      } as Response;
+    }));
+
+    const engine = new ProductionEngine(fixture.port);
+    engine.setCoordinator(true, "coordinator");
+    await engine.processCommand({
+      connectionId: "gm-connection",
+      data: {
+        protocolVersion: COMMAND_PROTOCOL_VERSION,
+        requestId: "force-sheet-sync",
+        senderPlayerId: "gm",
+        senderConnectionId: "gm-connection",
+        expectedRevision: fixture.scene.revision,
+        type: "FORCE_SHEET_SYNC"
+      }
+    }, {
+      role: "GM",
+      playerId: "gm",
+      connectionId: "gm-connection",
+      connectedPlayerIds: new Set(["gm"])
+    });
+
+    expect(requests.map((request) => request.action)).toContain("SYNC_STATE");
+    expect(requests.find((request) => request.action === "SYNC_STATE")?.event?.factions).toEqual([
+      { factionId: "red", factionName: "Красные", country: "greece", hp: 25, maxHp: 40, militaryInfluence: 5 }
+    ]);
+    expect(fixture.sent.at(-1)).toMatchObject({
+      data: { status: "ACCEPTED", reason: "SHEET_SYNC_COMPLETED" }
+    });
+    vi.unstubAllGlobals();
+  });
+
   it("recalculates army supply when a port is added through the background command path", async () => {
     const army: ArmyState = {
       version: 4,

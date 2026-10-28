@@ -37,6 +37,10 @@ export type NotificationCode =
   | "INVALID_AMOUNT"
   | "SHEET_WRITEBACK_TOKEN_MISSING"
   | "SHEET_WRITEBACK_URL_MISSING"
+  | "SHEET_SYNC_COMPLETED"
+  | "SHEET_SYNC_NO_CHANGES"
+  | "SHEET_SYNC_NOT_COORDINATOR"
+  | "SHEET_SYNC_FAILED"
   | "ALREADY_REGISTERED"
   | "PERSISTENCE_FAILED"
   | "SCENE_ITEM_CREATION_UNAVAILABLE"
@@ -136,6 +140,10 @@ const RUSSIAN_MESSAGES: Readonly<Record<NotificationCode, string>> = {
   INVALID_AMOUNT: "Указана недопустимая сумма людского ресурса.",
   SHEET_WRITEBACK_TOKEN_MISSING: "Для синхронизации с таблицей не задан writeback-токен GM. Откройте «Управление → Настройки» и сохраните токен.",
   SHEET_WRITEBACK_URL_MISSING: "Для синхронизации с таблицей не задан URL Apps Script. Откройте «Управление → Настройки» и сохраните URL.",
+  SHEET_SYNC_COMPLETED: "Таблица принудительно синхронизирована с текущим состоянием карты.",
+  SHEET_SYNC_NO_CHANGES: "В таблице уже было актуальное состояние; новых данных для записи нет.",
+  SHEET_SYNC_NOT_COORDINATOR: "Текущая вкладка не является координатором. Команду должен выполнить активный GM-координатор.",
+  SHEET_SYNC_FAILED: "Координатор не смог синхронизировать таблицу. Проверьте URL, токен и журнал выполнений Apps Script.",
   ALREADY_REGISTERED: "Выбранное изображение уже зарегистрировано как армия.",
   PERSISTENCE_FAILED: "Армия сформирована, но не удалось сохранить её токен в сцене. Проверьте выбранный ассет армии и повторите действие.",
   SCENE_ITEM_CREATION_UNAVAILABLE: "В этой сцене нельзя создать токен армии. Перезагрузите расширение и повторите действие.",

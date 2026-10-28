@@ -1069,6 +1069,11 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
       } else if (acknowledgement.status === "CONFLICT") {
         await notifyRussian(adapter, "REVISION_CONFLICT");
       } else {
+        if (command.type === "FORCE_SHEET_SYNC") {
+          await notifyRussian(adapter, acknowledgement.reason === "SHEET_SYNC_NO_CHANGES"
+            ? "SHEET_SYNC_NO_CHANGES"
+            : "SHEET_SYNC_COMPLETED");
+        }
         if (command.type === "START_NAVAL_BATTLE_FROM_REQUEST" && navalBattleAreaReturnToolId) {
           await OBR.tool.activateTool(navalBattleAreaReturnToolId);
           navalBattleAreaReturnToolId = undefined;

@@ -36,7 +36,11 @@ export function SettingsPage({ settings, onAction }: { settings: SceneSettings; 
           saveSheetWritebackToken(sheetWritebackToken);
           onAction({ type: "UPDATE_SETTINGS", settings: { sheetWritebackUrl: sheetWritebackUrl.trim() } });
         }}>Сохранить writeback</button>
+        <button className="button primary" type="button" onClick={() => onAction({ type: "FORCE_SHEET_SYNC" })}>
+          Синхронизировать таблицу сейчас
+        </button>
       </div>
+      <small>Команда отправляется активному координатору. Если удалённый компьютер выключен или расширение там не запущено, будет показана ошибка ожидания координатора.</small>
     </section>
   );
 }

@@ -254,7 +254,8 @@ describe("validateArmyCommand", () => {
     { type: "CANCEL_TURN_DEFERRAL" },
     { type: "PAUSE_AUTO_TURNS" },
     { type: "RESUME_AUTO_TURNS" },
-    { type: "COMPLETE_TURN_NOW" }
+    { type: "COMPLETE_TURN_NOW" },
+    { type: "FORCE_SHEET_SYNC" }
   ])("accepts supported command $type", (payload) => {
     expect(validateArmyCommand(envelope(payload))).toMatchObject({ ok: true });
   });

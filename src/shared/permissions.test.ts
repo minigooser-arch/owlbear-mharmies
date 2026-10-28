@@ -155,6 +155,15 @@ describe("command authorization", () => {
     ).toEqual({ allowed: false, reason: "GM_ONLY" });
   });
 
+  it("keeps forced sheet synchronization GM-only", () => {
+    expect(
+      authorizeArmyCommand(
+        playerContext("leader"),
+        command("FORCE_SHEET_SYNC", "leader")
+      )
+    ).toEqual({ allowed: false, reason: "GM_ONLY" });
+  });
+
   it("ignores legacy direct ownership for authorization", () => {
     expect(
       authorizeArmyCommand(

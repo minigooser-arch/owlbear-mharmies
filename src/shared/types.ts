@@ -751,6 +751,7 @@ export type ArmyCommandPayload =
     | { type: "PAUSE_AUTO_TURNS" }
     | { type: "RESUME_AUTO_TURNS" }
     | { type: "SET_TURN_NUMBER"; turnNumber: number }
+    | { type: "FORCE_SHEET_SYNC" }
     | { type: "COMPLETE_TURN_NOW" }
   );
 

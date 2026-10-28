@@ -57,6 +57,10 @@ function doPost(e) {
         return json_({ ok: true, result: withScriptLock_(function() {
           return spendLRBatch_(body.operations, body.batchRequestId);
         }) });
+      case "CANCEL_LR_BATCH":
+        return json_({ ok: true, result: withScriptLock_(function() {
+          return cancelLRBatch_(body.requestIds);
+        }) });
       case "SYNC_STATE":
         return json_({ ok: true, result: withScriptLock_(function() {
           syncState_(body.event);
@@ -531,6 +535,68 @@ function spendLRBatch_(operations, batchRequestId) {
   return { operations: results, states: states };
 }
 
+/**
+ * Compensate an LR_V2 expense for an Owlbear operation that did not commit.
+ * A CANCELLED tombstone also fences off a delayed spend using the same ID.
+ * Called only after the GM has verified absence of the committed transaction.
+ */
+function cancelLRBatch_(rawRequestIds) {
+  if (!Array.isArray(rawRequestIds) || rawRequestIds.length === 0 || rawRequestIds.length > 64) {
+    throw new Error("INVALID_CANCEL_BATCH");
+  }
+  const ids = [...new Set(rawRequestIds.map(function(id) { return String(id || "").trim(); }))];
+  if (ids.length !== rawRequestIds.length || ids.some(function(id) { return !id; })) {
+    throw new Error("INVALID_CANCEL_REQUEST_ID");
+  }
+  const schema = lrLogSheet_();
+  const idx = headerIndex_(schema.headers);
+  const values = schema.sheet.getLastRow() < 2 ? [] :
+    schema.sheet.getRange(2, 1, schema.sheet.getLastRow() - 1, schema.headers.length).getValues();
+  const byId = new Map();
+  for (let i = 0; i < values.length; i++) {
+    const row = values[i];
+    const requestId = String(cell_(row, idx, "requestId") || "").trim();
+    if (!ids.includes(requestId)) continue;
+    if (String(cell_(row, idx, "operationType") || "").trim() !== "LR" ||
+      String(cell_(row, idx, "reasonCode") || "").trim() !== "LR_V2") {
+      throw new Error("CANCEL_NOT_LR_V2:" + requestId);
+    }
+    if (byId.has(requestId)) throw new Error("CANCEL_DUPLICATE_REQUEST_ID:" + requestId);
+    const status = String(cell_(row, idx, "status") || "").trim();
+    if (status !== "APPLIED" && status !== "CANCELLED") {
+      throw new Error("CANCEL_INVALID_STATUS:" + requestId);
+    }
+    byId.set(requestId, { row: i + 2, status: status });
+  }
+  const touched = [];
+  const missing = ids.filter(function(id) { return !byId.has(id); });
+  let startRow = 0;
+  try {
+    for (const id of ids) {
+      const current = byId.get(id);
+      if (!current || current.status === "CANCELLED") continue;
+      schema.sheet.getRange(current.row, idx.status + 1).setValue("CANCELLED");
+      touched.push(current);
+    }
+    if (missing.length > 0) {
+      const rows = missing.map(function(requestId) {
+        const record = { requestId: requestId, createdAt: new Date().toISOString(),
+          operationType: "LR", reasonCode: "LR_V2", kind: "CANCELLATION", status: "CANCELLED" };
+        return schema.headers.map(function(name) { return record[name] == null ? "" : record[name]; });
+      });
+      startRow = schema.sheet.getLastRow() + 1;
+      schema.sheet.getRange(startRow, 1, rows.length, schema.headers.length).setValues(rows);
+    }
+    SpreadsheetApp.flush();
+    return { cancelled: ids };
+  } catch (error) {
+    for (const row of touched) schema.sheet.getRange(row.row, idx.status + 1).setValue(row.status);
+    if (startRow > 0) try { schema.sheet.deleteRows(startRow, missing.length); } catch (rollbackError) { console.error(rollbackError); }
+    SpreadsheetApp.flush();
+    throw error;
+  }
+}
+
 function normalizeKey_(value) {
   return String(value == null ? "" : value).normalize("NFKC").replace(/[\\u00A0\\u2007\\u202F]/g, " ")
     .trim().toLocaleLowerCase("ru-RU").replace(/\\s+/g, " ");
@@ -577,7 +643,8 @@ function resolveFactionTarget_(input, rows) {
 function applyFactionAndStateArmy_(event, index) {
   const factions = Array.isArray(event.factions) ? event.factions : [];
   const stateArmies = Array.isArray(event.stateArmies) ? event.stateArmies : [];
-  if (factions.length === 0 && stateArmies.length === 0) return;
+  const removedFactionIds = Array.isArray(event.removedFactionIds) ? event.removedFactionIds : [];
+  if (factions.length === 0 && stateArmies.length === 0 && removedFactionIds.length === 0) return;
   const sheet = factionSheet_();
   const rows = factionRows_();
   const targets = [];
@@ -588,14 +655,30 @@ function applyFactionAndStateArmy_(event, index) {
     const country = String(faction.country || "").trim();
     const hp = Number(faction.hp);
     const maxHp = Number(faction.maxHp);
+    const militaryInfluence = faction.militaryInfluence === undefined ? null : Number(faction.militaryInfluence);
     if (!factionId || !factionName || !country || !Number.isInteger(hp) || hp < 0 ||
-        !Number.isInteger(maxHp) || maxHp < 0 || hp > maxHp || seenFactions.has(factionId)) {
+        !Number.isInteger(maxHp) || maxHp < 0 || hp > maxHp ||
+        (militaryInfluence !== null && (!Number.isInteger(militaryInfluence) || militaryInfluence < 0)) ||
+        seenFactions.has(factionId)) {
       throw new Error("INVALID_FACTION_SYNC");
     }
     if (!index.has(country)) throw new Error("COUNTRY_NOT_FOUND:" + country);
     const target = resolveFactionTarget_({ factionId, factionName, country }, rows);
-    targets.push({ target, factionId, country, hp });
+    targets.push({ target, factionId, country, hp, militaryInfluence });
     seenFactions.add(factionId);
+  }
+  const removedTargets = [];
+  const seenRemoved = new Set();
+  for (const rawId of removedFactionIds) {
+    const factionId = String(rawId || "").trim();
+    if (!factionId || seenFactions.has(factionId) || seenRemoved.has(factionId)) {
+      throw new Error("INVALID_REMOVED_FACTION_SYNC");
+    }
+    seenRemoved.add(factionId);
+    const matches = rows.filter(function(row) { return row.id === factionId; });
+    if (matches.length > 1) throw new Error("FACTION_AMBIGUOUS:" + factionId);
+    if (matches.length === 1) removedTargets.push({ target: matches[0] });
+    // A missing row means the faction has already been removed from the sheet.
   }
   const stateTargets = [];
   const seenCountries = new Set();
@@ -610,9 +693,10 @@ function applyFactionAndStateArmy_(event, index) {
     stateTargets.push({ country, hp, row: index.get(country).stateRow });
     seenCountries.add(country);
   }
-  const oldFaction = targets.map(function(entry) {
+  const oldFaction = targets.concat(removedTargets).map(function(entry) {
     return { row: entry.target.row, id: sheet.getRange(entry.target.row, 53).getValue(),
-      country: sheet.getRange(entry.target.row, 54).getValue(), hp: sheet.getRange(entry.target.row, 45).getValue() };
+      country: sheet.getRange(entry.target.row, 54).getValue(), hp: sheet.getRange(entry.target.row, 45).getValue(),
+      militaryInfluence: sheet.getRange(entry.target.row, 35).getValue() };
   });
   const stateSheet = stateSheet_();
   const oldState = stateTargets.map(function(entry) {
@@ -623,13 +707,16 @@ function applyFactionAndStateArmy_(event, index) {
     for (const entry of targets) {
       sheet.getRange(entry.target.row, 53, 1, 2).setValues([[entry.factionId, entry.country]]);
       sheet.getRange(entry.target.row, 45).setValue(entry.hp);
+      if (entry.militaryInfluence !== null) sheet.getRange(entry.target.row, 35).setValue(entry.militaryInfluence);
     }
+    for (const entry of removedTargets) sheet.getRange(entry.target.row, 45).setValue(0);
     for (const entry of stateTargets) stateSheet.getRange(entry.row, 40).setValue(entry.hp);
     SpreadsheetApp.flush();
   } catch (error) {
     for (const entry of oldFaction) {
       sheet.getRange(entry.row, 53, 1, 2).setValues([[entry.id, entry.country]]);
       sheet.getRange(entry.row, 45).setValue(entry.hp);
+      sheet.getRange(entry.row, 35).setValue(entry.militaryInfluence);
     }
     for (const entry of oldState) {
       const cell = stateSheet.getRange(entry.row, 40);
@@ -772,11 +859,33 @@ function applyStateShipCounts_(event, index) {
 
 function syncState_(event) {
   if (!event || typeof event !== "object") throw new Error("INVALID_SYNC_EVENT");
-  // Individual army state remains private to Owlbear. Aggregate faction/state
-  // HP is public and is written to the existing ЖИЗНИ columns.
   const index = backendIndex_();
-  applyFactionAndStateArmy_(event, index);
-  applyStateShipCounts_(event, index);
+  const factions = Array.isArray(event.factions) ? event.factions : [];
+  const stateArmies = Array.isArray(event.stateArmies) ? event.stateArmies : [];
+  const stateShips = Array.isArray(event.stateShips) ? event.stateShips : [];
+  const removedFactionIds = Array.isArray(event.removedFactionIds) ? event.removedFactionIds : [];
+  const isSnapshot = factions.length > 0 || stateArmies.length > 0 ||
+    stateShips.length > 0 || removedFactionIds.length > 0;
+  const props = PropertiesService.getScriptProperties();
+  const sourceId = String(event.sourceId || "").trim();
+  const revision = Number(event.sourceRevision);
+  const boundSourceId = String(props.getProperty("OWLBEAR_SYNC_SOURCE_ID") || "").trim();
+  if (!sourceId) throw new Error("SYNC_SOURCE_ID_REQUIRED");
+  if (boundSourceId && boundSourceId !== sourceId) throw new Error("SYNC_FOREIGN_SOURCE");
+  if (isSnapshot && (!Number.isSafeInteger(revision) || revision < 0)) {
+    throw new Error("SYNC_REVISION_REQUIRED");
+  }
+  const lastRevision = Number(props.getProperty("OWLBEAR_SYNC_LAST_REVISION") || -1);
+  // Only apply the most recent scene snapshot. Older network retries cannot
+  // overwrite current HP/ship cells. Influence operations are independently
+  // deduplicated by requestId, even when their snapshot revision is old.
+  if (isSnapshot && revision >= lastRevision) {
+    applyFactionAndStateArmy_(event, index);
+    applyStateShipCounts_(event, index);
+    SpreadsheetApp.flush();
+    if (!boundSourceId) props.setProperty("OWLBEAR_SYNC_SOURCE_ID", sourceId);
+    props.setProperty("OWLBEAR_SYNC_LAST_REVISION", String(revision));
+  }
   const operations = Array.isArray(event.militaryInfluenceOperations)
     ? event.militaryInfluenceOperations
     : [];

@@ -88,7 +88,8 @@ export class SheetWritebackClient {
     private readonly url: string,
     private readonly token: string,
     private readonly fetcher: typeof fetch = globalThis.fetch.bind(globalThis),
-    private readonly timeoutMs = 8_000
+    // Apps Script may wait up to 30s for ScriptLock before executing the request.
+    private readonly timeoutMs = 45_000
   ) {}
 
   private async request<T>(payload: Record<string, unknown>): Promise<T> {
@@ -155,11 +156,29 @@ export class SheetWritebackClient {
     });
   }
 
+  cancelLR(requestIds: readonly string[]): Promise<void> {
+    return this.request<{ cancelled: string[] }>({
+      action: "CANCEL_LR_BATCH",
+      requestIds: [...requestIds]
+    }).then((response) => {
+      const actual = new Set(response.cancelled);
+      if (actual.size !== requestIds.length || requestIds.some((id) => !actual.has(id))) {
+        throw new SheetWritebackError("SHEET_CANCEL_RESPONSE_INCOMPLETE");
+      }
+    });
+  }
+
   syncState(event: SheetWritebackEvent): Promise<void> {
-    return this.request<null>({
+    return this.request<null | { status: "QUEUED" | "APPLIED" }>({
       action: "SYNC_STATE",
       event
-    }).then(() => undefined);
+    }).then((result) => {
+      // The optional durable bridge ACKs acceptance before Google Sheets has
+      // applied the event. Keep Owlbear's queue until it reports APPLIED.
+      if (result && result.status === "QUEUED") {
+        throw new SheetWritebackError("SHEET_WRITEBACK_QUEUED");
+      }
+    });
   }
 
   adjustMilitaryInfluence(

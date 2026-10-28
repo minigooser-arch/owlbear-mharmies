@@ -92,6 +92,25 @@ describe("CommandGateway", () => {
     gateway.stop();
   });
 
+  it("preserves an accepted result code from the coordinator", async () => {
+    const port = new MemoryBroadcast();
+    const gateway = new CommandGateway(port, 1_000);
+    gateway.start();
+
+    const pending = gateway.send(command());
+    await vi.waitFor(() => expect(port.sent).toHaveLength(1));
+    port.emit(CommandGateway.ACK_CHANNEL, {
+      connectionId: "real",
+      data: { ...accepted(), reason: "SHEET_SYNC_NO_CHANGES" }
+    });
+
+    await expect(pending).resolves.toMatchObject({
+      status: "ACCEPTED",
+      reason: "SHEET_SYNC_NO_CHANGES"
+    });
+    gateway.stop();
+  });
+
   it("reports and ignores an untrusted legacy acknowledgement", async () => {
     const port = new MemoryBroadcast();
     const rejections: AckRejectionReason[] = [];

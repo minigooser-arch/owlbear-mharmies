@@ -246,7 +246,7 @@ describe("sheet writeback projection", () => {
       } as never
     });
     const event = buildSheetWritebackSnapshotEvent(next, "2026-10-01T00:00:00Z");
-    expect(event?.factions).toEqual([{ factionId: "side-a", factionName: "A", country: "STATE_A", hp: 30, maxHp: 80 }]);
+    expect(event?.factions).toEqual([{ factionId: "side-a", factionName: "A", country: "STATE_A", hp: 30, maxHp: 80, militaryInfluence: 0 }]);
     expect(event?.stateArmies).toEqual([{ country: "STATE_A", hp: 30, maxHp: 80 }]);
     expect(event?.militaryInfluenceOperations).toEqual([]);
     expect(event?.armies).toEqual([]);
@@ -340,6 +340,65 @@ describe("sheet writeback projection", () => {
     const full = buildSheetWritebackSnapshotEvent(next);
     expect(full?.stateShips).toEqual([{ country: "STATE_A", ships: 1 }]);
     const queue = mergeSheetWritebackQueue(undefined, full ?? (() => { throw new Error('Missing snapshot'); })());
+    expect(queue.pending.stateShips).toEqual([{ country: "STATE_A", ships: 1 }]);
+  });
+
+  it("generates a tombstone when a mapped faction is deleted", () => {
+    const previous = makeState({ armies: { "army-a": army(12) } });
+    const next = makeState({
+      scene: { revision: 2, sides: [] } as never,
+      armies: {}
+    });
+    const event = buildSheetWritebackEvent(previous, next);
+    expect(event?.removedFactionIds).toEqual(["side-a"]);
+    expect(event?.stateArmies).toEqual([{ country: "STATE_A", hp: 0, maxHp: 0 }]);
+    expect(event?.sourceRevision).toBe(2);
+  });
+
+  it("updates faction country even when HP is unchanged", () => {
+    const previous = makeState({ armies: { "army-a": army(12) } });
+    const next = makeState({
+      scene: {
+        revision: 2,
+        states: [
+          { id: "state-a", name: "State A", backendCountry: "STATE_B" }
+        ]
+      } as never,
+      armies: { "army-a": army(12) }
+    });
+    const event = buildSheetWritebackEvent(previous, next);
+    expect(event?.factions).toEqual([{
+      factionId: "side-a", factionName: "A", country: "STATE_B", hp: 12, maxHp: 40
+    }]);
+  });
+
+  it("merges faction tombstones and cancels them on recreation", () => {
+    const deleted: SheetWritebackEvent = {
+      version: 1, eventId: "delete", createdAt: "a",
+      armies: [], removedArmyIds: [], states: [],
+      removedFactionIds: ["f1"], sourceId: "scene-1", sourceRevision: 3
+    };
+    const restored: SheetWritebackEvent = {
+      version: 1, eventId: "restore", createdAt: "b",
+      armies: [], removedArmyIds: [], states: [],
+      factions: [{ factionId: "f1", factionName: "A", country: "STATE_A", hp: 10, maxHp: 20 }],
+      sourceId: "scene-1", sourceRevision: 4
+    };
+    const queue = mergeSheetWritebackQueue(mergeSheetWritebackQueue(undefined, deleted), restored);
+    expect(queue.pending.removedFactionIds).toEqual([]);
+    expect(queue.pending.factions).toHaveLength(1);
+    expect(queue.pending.sourceId).toBe("scene-1");
+    expect(queue.pending.sourceRevision).toBe(4);
+  });
+
+  it("does not lose ship-only changes in a merged queue", () => {
+    const previous = makeState();
+    const next = makeState({ scene: { revision: 2, ships: { "private-ship": ship } } as never });
+    const event = buildSheetWritebackEvent(previous, next);
+    expect(event?.factions).toEqual([]);
+    expect(event?.stateArmies).toEqual([]);
+    if (!event) throw new Error("Missing ship-only event");
+    const queue = mergeSheetWritebackQueue(undefined, event);
     expect(queue.pending.stateShips).toEqual([{ country: "STATE_A", ships: 1 }]);
   });
 

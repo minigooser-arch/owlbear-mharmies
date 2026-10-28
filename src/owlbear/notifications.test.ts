@@ -57,7 +57,11 @@ describe("notificationMessage", () => {
     ["TARGET_NOT_IN_NAVAL_BATTLE", "Цель не участвует в текущем морском бою."],
     ["NAVAL_BATTLE_ACTIVE", "Сначала завершите текущий морской бой."],
     ["SHEET_WRITEBACK_TOKEN_MISSING", "Для синхронизации с таблицей не задан writeback-токен GM. Откройте «Управление → Настройки» и сохраните токен."],
-    ["SHEET_WRITEBACK_URL_MISSING", "Для синхронизации с таблицей не задан URL Apps Script. Откройте «Управление → Настройки» и сохраните URL."]
+    ["SHEET_WRITEBACK_URL_MISSING", "Для синхронизации с таблицей не задан URL Apps Script. Откройте «Управление → Настройки» и сохраните URL."],
+    ["SHEET_SYNC_COMPLETED", "Таблица принудительно синхронизирована с текущим состоянием карты."],
+    ["SHEET_SYNC_NO_CHANGES", "В таблице уже было актуальное состояние; новых данных для записи нет."],
+    ["SHEET_SYNC_NOT_COORDINATOR", "Текущая вкладка не является координатором. Команду должен выполнить активный GM-координатор."],
+    ["SHEET_SYNC_FAILED", "Координатор не смог синхронизировать таблицу. Проверьте URL, токен и журнал выполнений Apps Script."]
   ])("translates %s into Russian", (code, message) => {
     expect(notificationMessage(code)).toBe(message);
   });
