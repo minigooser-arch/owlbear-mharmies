@@ -327,6 +327,32 @@ export function hasEligibleArmyMovement(armies: readonly ArmyRecord[], scene: Sc
   return armies.some((record) => isArmyMovementEligible(record, scene));
 }
 
+/**
+ * At a turn boundary only armies being automatically formed can debit LR.
+ * Do not serialize GET_STATES for every nation on every pending-turn retry:
+ * that read holds Apps Script's global ScriptLock and can starve the turn.
+ * The next normal background demography refresh still updates all countries.
+ */
+export function countriesNeedingTurnFormationLr(
+  scene: SceneState,
+  armies: readonly ArmyRecord[]
+): string[] {
+  const countries = new Set<string>();
+  const sides = new Map(scene.sides.map((side) => [side.id, side]));
+  const states = new Map(scene.states.map((state) => [state.id, state]));
+  const existingTransactions = new Set((scene.lrTransactions ?? []).map((tx) => tx.requestId));
+  const nextTurn = scene.turn.turnNumber + 1;
+  for (const { item, state: army } of armies) {
+    if (!army.formation?.active || army.status === "IN_BATTLE" ||
+        army.health.hp >= army.health.maxHp ||
+        existingTransactions.has(`auto-formation-${nextTurn}-${item.id}`)) continue;
+    const side = sides.get(army.sideId);
+    const country = side?.stateId ? states.get(side.stateId)?.backendCountry?.trim() : undefined;
+    if (country) countries.add(country);
+  }
+  return [...countries];
+}
+
 function relation(scene: SceneState, left: string, right: string): SideRelation {
   return scene.relations[left]?.[right] ?? "NEUTRAL";
 }
@@ -860,6 +886,13 @@ export class ProductionEngine {
       } catch (error) {
         this.reportOperationalError(error, "periodic-lr-recovery");
       }
+      // A pending turn is more important than the unrelated periodic / daily
+      // synchronization jobs. Those can acquire the same Apps Script lock for
+      // long enough to starve the checkpoint, so finish or retry it first.
+      await this.turnTickNow();
+      if (!this.coordinator) return;
+      const afterTurn = await this.repository.readScene();
+      if (afterTurn.turn.completionPending) return;
       try {
         await this.refreshSheetDemographyIfStale();
       } catch (error) {
@@ -870,7 +903,6 @@ export class ProductionEngine {
       } catch (error) {
         this.reportOperationalError(error, "daily-sheet-sync");
       }
-      await this.turnTickNow();
     });
   }
 
@@ -965,10 +997,10 @@ export class ProductionEngine {
     let authoritativeScene = scene;
     if (sheetWritebackRuntimeEnabled(scene.settings)) {
       try {
-        const countries = scene.states
-          .map((state) => state.backendCountry?.trim())
-          .filter((country): country is string => Boolean(country));
-        authoritativeScene = await this.refreshDemographyForCountries(scene, countries);
+        const countries = countriesNeedingTurnFormationLr(scene, armyRecords);
+        if (countries.length > 0) {
+          authoritativeScene = await this.refreshDemographyForCountries(scene, countries);
+        }
       } catch (error) {
         this.reportOperationalError(error, "turn-sheet-demography");
         return;
@@ -1853,11 +1885,7 @@ export class ProductionEngine {
   ): string[] {
     const countries = new Set<string>();
     if (commandType === "COMPLETE_TURN_NOW") {
-      for (const state of scene.states) {
-        const country = state.backendCountry?.trim();
-        if (country) countries.add(country);
-      }
-      return [...countries];
+      return countriesNeedingTurnFormationLr(scene, armyRecords);
     }
     if (commandType === "CREATE_CITY_ARMY") {
       const side = scene.sides.find((candidate) => candidate.id === creationSideId);
