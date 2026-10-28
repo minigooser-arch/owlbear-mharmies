@@ -378,3 +378,53 @@ it("exposes land battle and movement blockers before running a checkpoint", () =
 });
 
 
+
+it("uses a fresh LR request ID after a cancelled automatic-formation attempt", () => {
+  const current = scene();
+  current.demographics = [{
+    stateId: "red-state", population: 46_084, populationGrowthFactor: 1.003,
+    humanResource: 584, conscriptionLawId: "URGENT_CONSCRIPTION", conscriptionRate: 0.04,
+    humanResourceCapacity: 1_843.36, lastPopulationCalculationDate: "2026-09-29"
+  }];
+  const forming: ArmyState = {
+    ...army(0), health: { hp: 5, maxHp: 40 },
+    formation: { active: true, cityId: null, hpAddedThisTurn: 0, checkedOnTurn: 1 }
+  };
+  const execute = (formationRetryEpoch: number) => completeTurn(current, { one: forming }, {
+    source: "MANUAL", completedAt: new Date("2026-10-28T12:00:00.000Z"),
+    armyCells: { one: { x: 0, y: 0 } }, formationRetryEpoch
+  });
+  const original = execute(0);
+  const retry = execute(1);
+  expect(original.changed).toBe(true);
+  expect(retry.changed).toBe(true);
+  if (!original.changed || !retry.changed) return;
+  expect(original.scene.lrTransactions?.map(tx => tx.requestId)).toContain("auto-formation-2-one");
+  expect(retry.scene.lrTransactions?.map(tx => tx.requestId)).toContain("auto-formation-2-one:1");
+  expect(retry.armies.one?.health.hp).toBe(original.armies.one?.health.hp);
+  expect(retry.scene.demographics?.[0]?.humanResource).toBe(original.scene.demographics?.[0]?.humanResource);
+});
+
+it("does not charge a formation twice if the turn's earlier-generation transaction is already recorded", () => {
+  const current = scene();
+  current.demographics = [{
+    stateId: "red-state", population: 46_084, populationGrowthFactor: 1.003,
+    humanResource: 584, conscriptionLawId: "URGENT_CONSCRIPTION", conscriptionRate: 0.04,
+    humanResourceCapacity: 1_843.36, lastPopulationCalculationDate: "2026-09-29"
+  }];
+  current.lrTransactions = [{
+    requestId: "auto-formation-2-one", status: "RECORDED"
+  }] as NonNullable<SceneState["lrTransactions"]>;
+  const forming: ArmyState = {
+    ...army(0), health: { hp: 5, maxHp: 40 },
+    formation: { active: true, cityId: null, hpAddedThisTurn: 0, checkedOnTurn: 1 }
+  };
+  const result = completeTurn(current, { one: forming }, {
+    source: "MANUAL", completedAt: new Date("2026-10-28T12:00:00.000Z"),
+    armyCells: { one: { x: 0, y: 0 } }, formationRetryEpoch: 5
+  });
+  expect(result.changed).toBe(true);
+  if (!result.changed) return;
+  expect(result.scene.lrTransactions).toHaveLength(1);
+  expect(result.armies.one?.health.hp).toBe(5);
+});

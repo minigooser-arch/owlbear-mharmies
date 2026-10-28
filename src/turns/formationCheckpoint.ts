@@ -22,15 +22,21 @@ export function applyAutomaticArmyFormation(
   scene: SceneState,
   armies: Readonly<Record<string, ArmyState>>,
   turnNumber: number,
-  at: string
+  at: string,
+  retryEpoch = 0
 ): Record<string, ArmyState> {
   const nextArmies = structuredClone(armies) as Record<string, ArmyState>;
   const configuredRate = scene.settings.armyFormationCostPerHp ?? 10000;
 
   for (const [armyId, army] of Object.entries(nextArmies)) {
     if (!army.formation?.active || army.status === "IN_BATTLE") continue;
-    const requestId = `auto-formation-${turnNumber}-${armyId}`;
-    if ((scene.lrTransactions ?? []).some((transaction) => transaction.requestId === requestId)) continue;
+    const requestBase = `auto-formation-${turnNumber}-${armyId}`;
+    // A cancelled LR spend reserves its old request ID permanently in Sheets.
+    // A retry after successful cancellation needs a new durable generation.
+    const requestId = retryEpoch > 0 ? `${requestBase}:${retryEpoch}` : requestBase;
+    if ((scene.lrTransactions ?? []).some((transaction) =>
+      transaction.requestId === requestBase || transaction.requestId.startsWith(`${requestBase}:`)
+    )) continue;
     const city = army.formation.cityId
       ? (scene.strategicCities ?? []).find((candidate) => candidate.id === army.formation?.cityId)
       : undefined;
