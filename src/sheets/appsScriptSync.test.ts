@@ -18,12 +18,13 @@ function createHarness() {
   };
   const source = readFileSync(new URL("../../apps-script/LetopisSheetWriteback.gs", import.meta.url), "utf8");
   runInNewContext(source, context);
+  const actualApplyFactionAndStateArmy = context.applyFactionAndStateArmy_;
   context.backendIndex_ = () => new Map();
   context.applyFactionAndStateArmy_ = () => { calls.push("factions"); };
   context.applyStateShipCounts_ = () => { calls.push("ships"); };
   context.adjustMilitaryInfluenceBatch_ = () => { calls.push("influence"); };
   const sync = context.syncState_ as (value: unknown) => void;
-  return { properties, calls, sync, context };
+  return { properties, calls, sync, context, actualApplyFactionAndStateArmy };
 }
 
 describe("Apps Script sync snapshot fencing", () => {
@@ -141,7 +142,7 @@ describe("Apps Script sync snapshot fencing", () => {
     test.context.factionSheet_ = () => sheet;
     test.context.factionRows_ = () => [{ row: 25, id: "italian-faction", name: "Либеральная коалиция", country: "italy" }];
     test.context.stateSheet_ = () => sheet;
-    const apply = test.context.applyFactionAndStateArmy_ as (
+    const apply = test.actualApplyFactionAndStateArmy as (
       event: unknown,
       index: Map<string, { stateRow: number }>
     ) => void;
