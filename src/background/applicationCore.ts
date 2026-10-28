@@ -366,6 +366,7 @@ export class ProductionEngine {
   private sheetWritebackFallback: SheetWritebackEvent | undefined;
   private sheetWritebackRetryAt = 0;
   private lastVerifiedDailySheetSyncDate: string | undefined;
+  private lastDemographyRefreshAt = 0;
   private sheetWritebackBackoffMs = 0;
   private sheetWritebackRetryTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -383,6 +384,7 @@ export class ProductionEngine {
     this.coordinatorGeneration += 1;
     this.detectionCache.invalidate();
     this.coordinator = active;
+    if (active) this.lastDemographyRefreshAt = 0;
     this.activeCoordinatorConnectionId = active ? connectionId : undefined;
     if (!active && this.sheetWritebackRetryTimer !== undefined) {
       clearTimeout(this.sheetWritebackRetryTimer);
@@ -401,7 +403,7 @@ export class ProductionEngine {
           void this.enqueueMutation(async () => {
             await this.queueSheetWritebackSnapshot();
             await this.flushSheetWriteback();
-          });
+          }).catch((error) => this.reportOperationalError(error, "sheet-writeback-startup"));
         }
       });
     }
@@ -765,12 +767,41 @@ export class ProductionEngine {
   turnTick(): Promise<void> {
     return this.enqueueMutation(async () => {
       try {
+        await this.refreshSheetDemographyIfStale();
+      } catch (error) {
+        this.reportOperationalError(error, "periodic-sheet-demography");
+      }
+      try {
         await this.dailySheetSyncIfDue();
       } catch (error) {
         this.reportOperationalError(error, "daily-sheet-sync");
       }
       await this.turnTickNow();
     });
+  }
+
+  /** Refresh the Sheets-owned population, available LR (AO), and capacity (AW)
+   * every five minutes while an authorized GM is online. Never calculate growth
+   * locally when Sheets is configured and the GM token is available.
+   */
+  private async refreshSheetDemographyIfStale(): Promise<void> {
+    if (!this.coordinator || this.wallClock().getTime() - this.lastDemographyRefreshAt < 300_000) return;
+    const guard = this.captureCoordinatorGuard();
+    const scene = await this.repository.readScene();
+    if (!sheetWritebackRuntimeEnabled(scene.settings) || !guard()) return;
+    // Throttle repeated failures; the next attempt is automatic.
+    this.lastDemographyRefreshAt = this.wallClock().getTime();
+    const countries = scene.states.map((state) => state.backendCountry?.trim())
+      .filter((country): country is string => Boolean(country));
+    if (countries.length === 0) return;
+    const refreshed = await this.refreshDemographyForCountries(scene, countries);
+    if (!guard()) return;
+    if (JSON.stringify(scene.demographics) === JSON.stringify(refreshed.demographics)) return;
+    await this.repository.writeScene(
+      { ...refreshed, revision: scene.revision + 1 },
+      scene.revision,
+      (current) => guard() && current.revision === scene.revision
+    );
   }
 
   private async dailySheetSyncIfDue(): Promise<void> {
@@ -1801,10 +1832,13 @@ export class ProductionEngine {
         removedArmyIds: [],
         states: [],
         factions: [...(merged.pending.factions ?? [])],
-        stateArmies: [...(merged.pending.stateArmies ?? [])]
+        stateArmies: [...(merged.pending.stateArmies ?? [])],
+        stateShips: [...(merged.pending.stateShips ?? [])],
+        removedFactionIds: [...(merged.pending.removedFactionIds ?? [])]
       };
     if (event.armies.length === 0 && event.removedArmyIds.length === 0 && event.states.length === 0 &&
       (event.factions?.length ?? 0) === 0 && (event.stateArmies?.length ?? 0) === 0 &&
+      (event.stateShips?.length ?? 0) === 0 && (event.removedFactionIds?.length ?? 0) === 0 &&
       (event.militaryInfluenceOperations?.length ?? 0) === 0) {
       this.sheetWritebackFallback = undefined;
       return;
@@ -1813,7 +1847,25 @@ export class ProductionEngine {
     if (!url) return;
     const client = new SheetWritebackClient(url, token);
     try {
-      await client.syncState(event);
+      // Ship/HP snapshots and influence are separate deliveries. Large influence
+      // backlogs cannot exceed the 64-operation Apps Script batch limit.
+      const hasSnapshot = event.factions.length > 0 ||
+        event.stateArmies.length > 0 || event.stateShips.length > 0 ||
+        event.removedFactionIds.length > 0;
+      if (hasSnapshot) {
+        await client.syncState({ ...event, militaryInfluenceOperations: [] });
+      }
+      const influence = event.militaryInfluenceOperations ?? [];
+      for (let start = 0; start < influence.length; start += 64) {
+        await client.syncState({
+          ...event,
+          factions: [],
+          stateArmies: [],
+          stateShips: [],
+          removedFactionIds: [],
+          militaryInfluenceOperations: influence.slice(start, start + 64)
+        });
+      }
       const latestMetadata = await this.port.getSceneMetadata();
       const latestQueue = SheetWritebackClient.readQueue(latestMetadata);
       const queueIdsSafeToClear = new Set([
