@@ -2159,9 +2159,10 @@ export class ProductionEngine {
         }
       }
       if (inflightRecorded) {
-        // A failed cleanup is safe: startup reconciliation sees the committed
-        // transaction in Owlbear and removes the leftover intent.
-        await this.reconcileLrInflight().catch((error) => {
+        // The scene write has returned successfully. Do not re-read and risk
+        // treating a transiently stale Owlbear read as a failed transaction.
+        // If this cleanup fails, the next coordinator will reconcile the intent.
+        await this.port.patchSceneMetadata({ [this.lrInflightKey]: undefined }).catch((error) => {
           this.reportOperationalError(error, "sheet-lr-intent-cleanup");
         });
       }
@@ -2188,9 +2189,9 @@ export class ProductionEngine {
         }
       }
       if (inflightRecorded) {
-        await this.reconcileLrInflight().catch((recoveryError) => {
-          this.reportOperationalError(recoveryError, "sheet-lr-compensation");
-        });
+        // Keep the intent durable. The serialized recovery tick will verify
+        // the post-failure scene before issuing a cancellation tombstone.
+        this.reportOperationalError(error, "sheet-lr-recovery-pending");
       }
       throw error;
     }
