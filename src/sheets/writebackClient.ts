@@ -155,6 +155,18 @@ export class SheetWritebackClient {
     });
   }
 
+  cancelLR(requestIds: readonly string[]): Promise<void> {
+    return this.request<{ cancelled: string[] }>({
+      action: "CANCEL_LR_BATCH",
+      requestIds: [...requestIds]
+    }).then((response) => {
+      const actual = new Set(response.cancelled);
+      if (actual.size !== requestIds.length || requestIds.some((id) => !actual.has(id))) {
+        throw new SheetWritebackError("SHEET_CANCEL_RESPONSE_INCOMPLETE");
+      }
+    });
+  }
+
   syncState(event: SheetWritebackEvent): Promise<void> {
     return this.request<null | { status: "QUEUED" | "APPLIED" }>({
       action: "SYNC_STATE",
