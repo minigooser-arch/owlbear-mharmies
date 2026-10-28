@@ -397,7 +397,8 @@ describe("sheet writeback projection", () => {
     const event = buildSheetWritebackEvent(previous, next);
     expect(event?.factions).toEqual([]);
     expect(event?.stateArmies).toEqual([]);
-    const queue = mergeSheetWritebackQueue(undefined, event!);
+    if (!event) throw new Error("Missing ship-only event");
+    const queue = mergeSheetWritebackQueue(undefined, event);
     expect(queue.pending.stateShips).toEqual([{ country: "STATE_A", ships: 1 }]);
   });
 
