@@ -1,12 +1,3 @@
-describe("GM manual influence balance payload", () => {
-  it("parses exact numeric balance and ignores extraneous fields", () => {
-    expect(validateArmyCommand(envelope({
-      type: "SET_MILITARY_INFLUENCE", factionId: "red", value: 14, injected: "ignored"
-    }))).toMatchObject({
-      ok: true, command: { type: "SET_MILITARY_INFLUENCE", factionId: "red", value: 14 }
-    });
-  });
-
   it.each([-1, 0.5, "8", null, NaN, Infinity, 9007199254740992])(
     "rejects invalid manual balance %s", value => {
       expect(validateArmyCommand(envelope({
@@ -321,5 +312,14 @@ describe("validateArmyCommand", () => {
     });
   });
 });
+
+describe("GM manual influence balance payload", () => {
+  it("parses exact numeric balance and ignores extraneous fields", () => {
+    expect(validateArmyCommand(envelope({
+      type: "SET_MILITARY_INFLUENCE", factionId: "red", value: 14, injected: "ignored"
+    }))).toMatchObject({
+      ok: true, command: { type: "SET_MILITARY_INFLUENCE", factionId: "red", value: 14 }
+    });
+  });
 
 
