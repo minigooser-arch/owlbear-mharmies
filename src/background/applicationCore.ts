@@ -346,7 +346,8 @@ export function countriesNeedingTurnFormationLr(
   for (const { item, state: army } of armies) {
     if (!army.formation?.active || army.status === "IN_BATTLE" ||
         army.health.hp >= army.health.maxHp ||
-        existingTransactions.has(`auto-formation-${nextTurn}-${item.id}`)) continue;
+        [...existingTransactions].some((requestId) => requestId === `auto-formation-${nextTurn}-${item.id}` ||
+          requestId.startsWith(`auto-formation-${nextTurn}-${item.id}:`))) continue;
     const side = sides.get(army.sideId);
     const country = side?.stateId ? states.get(side.stateId)?.backendCountry?.trim() : undefined;
     if (country) countries.add(country);
@@ -457,6 +458,7 @@ export class ProductionEngine {
   }
 
   private readonly lrInflightKey = `${METADATA_KEYS.scene}/lr-inflight`;
+  private readonly lrRetryEpochKey = `${METADATA_KEYS.scene}/lr-retry-epoch`;
 
   /** Persist intent before sending an irreversible expense to Google Sheets. */
   private async recordLrInflight(requestIds: readonly string[]): Promise<void> {
@@ -505,7 +507,16 @@ export class ProductionEngine {
     // Only clear the exact intent that was reconciled.
     const latest = await this.port.getSceneMetadata();
     if (JSON.stringify(latest[this.lrInflightKey]) === JSON.stringify(inflight)) {
-      await this.port.patchSceneMetadata({ [this.lrInflightKey]: undefined });
+      const oldEpoch = latest[this.lrRetryEpochKey];
+      const retryEpoch = typeof oldEpoch === "number" && Number.isSafeInteger(oldEpoch) && oldEpoch >= 0
+        ? oldEpoch : 0;
+      // An orphan is compensated with a permanent CANCELLED tombstone in Sheets.
+      // Advance the generation only after cancellation succeeded, so the next
+      // automatic formation never reuses that forbidden request ID.
+      await this.port.patchSceneMetadata({
+        [this.lrInflightKey]: undefined,
+        ...(orphans.length > 0 ? { [this.lrRetryEpochKey]: retryEpoch + 1 } : {})
+      });
     }
   }
 
@@ -1083,6 +1094,10 @@ export class ProductionEngine {
       const position = next.positions?.[shipId] ?? next.items[shipId]?.position;
       return position ? [[shipId, strategicGrid.sceneToCell(position)]] : [];
     }));
+    const retryMetadata = await this.port.getSceneMetadata();
+    const rawRetryEpoch = retryMetadata[this.lrRetryEpochKey];
+    const formationRetryEpoch = typeof rawRetryEpoch === "number" &&
+      Number.isSafeInteger(rawRetryEpoch) && rawRetryEpoch >= 0 ? rawRetryEpoch : 0;
     const source = pending?.source ?? "SCHEDULE";
     const boundaryId = pending?.boundaryId ?? boundary?.id;
     let completion: ReturnType<typeof completeTurn>;
@@ -1093,7 +1108,8 @@ export class ProductionEngine {
         ...(source === "SCHEDULE" && boundaryId ? { boundaryId } : {}),
         positionForCell,
         armyCells,
-        shipCells
+        shipCells,
+        formationRetryEpoch
       });
     } catch (error) {
       this.reportOperationalError(error, "turn-checkpoint");
