@@ -123,7 +123,7 @@ export default {
         ).first();
         return json({ ok: true, result: status }, request, env);
       }
-      if (!["GET_STATES", "GET_FACTIONS", "SPEND_LR_BATCH", "ADJUST_MILITARY_INFLUENCE_BATCH"].includes(payload.action)) {
+      if (!["GET_STATES", "GET_FACTIONS", "SPEND_LR_BATCH", "CANCEL_LR_BATCH", "ADJUST_MILITARY_INFLUENCE_BATCH"].includes(payload.action)) {
         return json({ ok: false, error: "UNKNOWN_ACTION" }, request, env, 400);
       }
       // Spending must receive the authoritative result synchronously.
