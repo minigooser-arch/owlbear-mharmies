@@ -136,6 +136,7 @@ export default {
     }
   },
   async scheduled(_controller, env, ctx) {
+    void _controller;
     ctx.waitUntil(drainOutbox(env, 100));
   }
 };
