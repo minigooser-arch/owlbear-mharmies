@@ -409,6 +409,19 @@ export class ProductionEngine {
     }
   }
 
+  /** Stable source identity prevents an unrelated Owlbear scene from silently
+   * replacing another scene's country/HP data in the same spreadsheet.
+   */
+  private async getSheetSyncSourceId(): Promise<string> {
+    const key = `${METADATA_KEYS.scene}/sheet-source-id`;
+    const metadata = await this.port.getSceneMetadata();
+    const existing = metadata[key];
+    if (typeof existing === "string" && existing.trim()) return existing;
+    const id = crypto.randomUUID();
+    await this.port.patchSceneMetadata({ [key]: id });
+    return id;
+  }
+
   private async queueSheetWritebackSnapshot(): Promise<void> {
     if (!this.coordinator) return;
     const metadata = await this.port.getSceneMetadata();
@@ -431,6 +444,7 @@ export class ProductionEngine {
     }
     const event = buildSheetWritebackSnapshotEvent(hydratedState, this.wallClock().toISOString());
     if (!event) return;
+    event.sourceId = await this.getSheetSyncSourceId();
     const writebackQueue = SheetWritebackClient.mergeQueue(metadata, event);
     await this.port.patchSceneMetadata({ [METADATA_KEYS.sheetWritebackQueue]: writebackQueue });
   }
@@ -1914,6 +1928,7 @@ export class ProductionEngine {
     const writebackEvent = sheetWritebackConfigured(next.scene.settings)
       ? buildSheetWritebackEvent(previous, next, this.wallClock().toISOString())
       : undefined;
+    if (writebackEvent) writebackEvent.sourceId = await this.getSheetSyncSourceId();
     const itemById = new Map(items.map((item) => [item.id, item]));
     const createdItemIds: string[] = [];
     const applied: AppliedMetadataWrite[] = [];
