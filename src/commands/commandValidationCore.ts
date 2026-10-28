@@ -310,15 +310,17 @@ const armyIdOnly = (value: UnknownRecord): string | undefined => boundedString(v
 const sidePlayer = (value: UnknownRecord): { sideId: string; playerId: string } | undefined =>
   sideId(value.sideId) && boundedString(value.playerId) ? { sideId: value.sideId, playerId: value.playerId } : undefined;
 
-function demographyPatch(value: unknown): Partial<Pick<StateDemography, "population" | "populationGrowthFactor" | "humanResource" | "conscriptionLawId" | "conscriptionRate">> | undefined {
+function demographyPatch(value: unknown): Partial<Pick<StateDemography, "population" | "populationGrowthFactor" | "humanResource" | "humanResourceCapacity" | "conscriptionLawId" | "conscriptionRate">> | undefined {
   if (!isRecord(value)) return undefined;
   const patch: Record<string, unknown> = {};
   if ("population" in value) { if (!finiteAtLeast(value.population, 0)) return undefined; patch.population = value.population; }
   if ("populationGrowthFactor" in value) { if (!finiteAtLeast(value.populationGrowthFactor, 0, false)) return undefined; patch.populationGrowthFactor = value.populationGrowthFactor; }
   if ("humanResource" in value) { if (!finiteAtLeast(value.humanResource, 0)) return undefined; patch.humanResource = value.humanResource; }
+  if ("humanResourceCapacity" in value) { if (!finiteAtLeast(value.humanResourceCapacity, 0)) return undefined; patch.humanResourceCapacity = value.humanResourceCapacity; }
+  if (typeof patch.humanResource === "number" && typeof patch.humanResourceCapacity === "number" && patch.humanResource > patch.humanResourceCapacity + 1e-9) return undefined;
   if ("conscriptionLawId" in value) { if (!sideId(value.conscriptionLawId)) return undefined; patch.conscriptionLawId = value.conscriptionLawId; }
   if ("conscriptionRate" in value) { if (!finiteAtLeast(value.conscriptionRate, 0) || value.conscriptionRate > 1) return undefined; patch.conscriptionRate = value.conscriptionRate; }
-  return Object.keys(patch).length > 0 ? patch as Partial<Pick<StateDemography, "population" | "populationGrowthFactor" | "humanResource" | "conscriptionLawId" | "conscriptionRate">> : undefined;
+  return Object.keys(patch).length > 0 ? patch as Partial<Pick<StateDemography, "population" | "populationGrowthFactor" | "humanResource" | "humanResourceCapacity" | "conscriptionLawId" | "conscriptionRate">> : undefined;
 }
 
 const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {

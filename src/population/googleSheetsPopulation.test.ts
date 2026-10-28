@@ -49,4 +49,41 @@ describe("Google Sheets population CSV", () => {
       { stateName: "ВЕЛИКОБРИТАНИЯ", category: "СРОЧНЫЙ ПРИЗЫВ", population: 46084, humanResource: 584 }
     ]);
   });
+  it("reads AO current LR and AW authoritative capacity from the same 49-column state row", () => {
+    const cells = Array.from({ length: 49 }, () => "");
+    cells[10] = "ЧЕРНОГОРИЯ";
+    cells[15] = "285";
+    cells[40] = "41,4704719588";
+    cells[48] = "41,4704719588";
+    const factionCells = Array.from({ length: 49 }, () => "");
+    factionCells[40] = "СРОЧНЫЙ ПРИЗЫВ";
+    const csv = [cells.join(";"), factionCells.join(";")].join("\n");
+    expect(parseConscriptionCategoryCsv(csv)).toEqual([{
+      stateName: "ЧЕРНОГОРИЯ",
+      category: "СРОЧНЫЙ ПРИЗЫВ",
+      population: 285,
+      humanResource: 41.4704719588,
+      humanResourceCapacity: 41.4704719588
+    }]);
+  });
+
+  it("parses paired direct headers and does not invent AW for a legacy 44-column CSV", () => {
+    expect(parseConscriptionCategoryCsv(
+      "state_name,category,human_resource,human_resource_capacity\nЧЕРНОГОРИЯ,СРОЧНЫЙ ПРИЗЫВ,41.47,50.12\n"
+    )).toEqual([{
+      stateName: "ЧЕРНОГОРИЯ", category: "СРОЧНЫЙ ПРИЗЫВ",
+      humanResource: 41.47, humanResourceCapacity: 50.12
+    }]);
+    const old = Array.from({ length: 44 }, () => "");
+    old[10] = "ГОСУДАРСТВО";
+    old[15] = "46084";
+    old[40] = "584";
+    const category = Array.from({ length: 44 }, () => "");
+    category[40] = "СРОЧНЫЙ ПРИЗЫВ";
+    expect(parseConscriptionCategoryCsv([old.join(","), category.join(",")].join("\n"))).toEqual([{
+      stateName: "ГОСУДАРСТВО", category: "СРОЧНЫЙ ПРИЗЫВ",
+      population: 46084, humanResource: 584
+    }]);
+  });
+
 });

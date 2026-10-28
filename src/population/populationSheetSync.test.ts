@@ -6,6 +6,7 @@ const states: StateEntity[] = [
   { id: "state-1", name: "Государство", rulingFactionId: null, active: true, backendCountry: "country-a" },
   { id: "state-2", name: "Без соответствия", rulingFactionId: null, active: true, backendCountry: "missing" }
 ];
+const authoritativeStateCsv = "state_name,category,human_resource,human_resource_capacity\nГосударство,СРОЧНЫЙ ПРИЗЫВ,41.4704719588,41.4704719588\n";
 const matchedState = states[0];
 if (!matchedState) throw new Error("Test fixture is empty");
 
@@ -38,16 +39,19 @@ describe("population sheet sync", () => {
     const applyCorrection = vi.fn().mockResolvedValue(undefined);
     const result = await syncPopulationFromPublicSheet({
       csvUrl: "https://example.test/backend.csv",
+      conscriptionCsvUrl: "https://example.test/states.csv",
       states: [matchedState],
       demographics: [],
-      fetcher: vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => "country,population,growth_rate\ncountry-a,3000000,1.02\n" }),
+      fetcher: vi.fn().mockImplementation(async (url: string) => ({ ok: true, status: 200, text: async () => url.includes("backend") ? "country,population,growth_rate\ncountry-a,3000000,1.02\n" : authoritativeStateCsv })),
       applyCorrection
     });
 
     expect(result).toMatchObject({ applied: 1, unmatchedStates: [], errors: [] });
     expect(applyCorrection).toHaveBeenCalledWith("state-1", {
       population: 3_000_000,
-      populationGrowthFactor: 1.02
+      populationGrowthFactor: 1.02,
+      humanResource: 41.4704719588,
+      humanResourceCapacity: 41.4704719588
     });
   });
 
@@ -55,9 +59,10 @@ describe("population sheet sync", () => {
     const applyCorrection = vi.fn().mockRejectedValue(new Error("write failed"));
     const result = await syncPopulationFromPublicSheet({
       csvUrl: "https://example.test/backend.csv",
+      conscriptionCsvUrl: "https://example.test/states.csv",
       states: [matchedState],
       demographics: [],
-      fetcher: vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => "country,population,growth_rate\ncountry-a,3000000,1.02\ncountry-a,4000000,1.03\n" }),
+      fetcher: vi.fn().mockImplementation(async (url: string) => ({ ok: true, status: 200, text: async () => url.includes("backend") ? "country,population,growth_rate\ncountry-a,3000000,1.02\ncountry-a,4000000,1.03\n" : authoritativeStateCsv })),
       applyCorrection
     });
 
@@ -87,7 +92,7 @@ describe("population sheet sync", () => {
       status: 200,
       text: async () => url.includes("backend")
         ? "country,population,growth_rate\ncountry-a,3000000,1.02\n"
-        : "state_name,category\nГосударство,СРОЧНЫЙ ПРИЗЫВ\n"
+        : authoritativeStateCsv
     }));
 
     const result = await syncPopulationFromPublicSheet({
@@ -104,6 +109,8 @@ describe("population sheet sync", () => {
     expect(applyCorrection).toHaveBeenCalledWith("state-1", {
       population: 3_000_000,
       populationGrowthFactor: 1.02,
+      humanResource: 41.4704719588,
+      humanResourceCapacity: 41.4704719588,
       conscriptionLawId: "URGENT_CONSCRIPTION",
       conscriptionRate: 0.04
     });
@@ -139,7 +146,7 @@ describe("population sheet sync", () => {
     const laws: ConscriptionLaw[] = [{ id: "URGENT_CONSCRIPTION", name: "Срочный призыв", rate: 0.04, active: true }];
     const applyCorrection = vi.fn().mockResolvedValue(undefined);
     const row = (values: Record<number, string>) => {
-      const cells = Array.from({ length: 41 }, () => "");
+      const cells = Array.from({ length: 49 }, () => "");
       for (const [index, value] of Object.entries(values)) cells[Number(index)] = value;
       return cells.join(",");
     };
@@ -148,7 +155,7 @@ describe("population sheet sync", () => {
       status: 200,
       text: async () => url.includes("backend")
         ? "country,population,growth_rate\ncountry-a,46084,1.003\n"
-        : [row({ 10: "Государство", 15: "46084", 40: "0М. 584Т." }), row({ 10: "🏳️", 40: "СРОЧНЫЙ ПРИЗЫВ" })].join("\n")
+        : [row({ 10: "Государство", 15: "46084", 40: "0М. 584Т.", 48: "0М. 800Т." }), row({ 10: "🏳️", 40: "СРОЧНЫЙ ПРИЗЫВ" })].join("\n")
     }));
 
     const result = await syncPopulationFromPublicSheet({
@@ -165,19 +172,111 @@ describe("population sheet sync", () => {
       population: 46_084,
       populationGrowthFactor: 1.003,
       humanResource: 584,
+      humanResourceCapacity: 800,
       conscriptionLawId: "URGENT_CONSCRIPTION",
       conscriptionRate: 0.04
     });
     expect(result.humanResourceApplied).toBe(1);
   });
 
+  it("fails closed for an old export without AW, without writing any states", async () => {
+    const applyCorrection = vi.fn();
+    const result = await syncPopulationFromPublicSheet({
+      csvUrl: "https://example.test/backend.csv",
+      conscriptionCsvUrl: "https://example.test/states.csv",
+      states: [matchedState],
+      demographics: [],
+      fetcher: vi.fn().mockImplementation(async (url: string) => ({
+        ok: true, status: 200,
+        text: async () => url.includes("backend")
+          ? "country,population,growth_rate\ncountry-a,285,1.003\n"
+          : "state_name,category,human_resource\nГосударство,СРОЧНЫЙ ПРИЗЫВ,41.47\n"
+      })),
+      applyCorrection
+    });
+    expect(result.applied).toBe(0);
+    expect(result.errors.join(" ")).toContain("AO");
+    expect(result.errors.join(" ")).toContain("AW");
+    expect(applyCorrection).not.toHaveBeenCalled();
+  });
+
+  it("rejects any state with AO greater than AW before a batch starts", async () => {
+    const applyCorrections = vi.fn();
+    const result = await syncPopulationFromPublicSheet({
+      csvUrl: "https://example.test/backend.csv",
+      conscriptionCsvUrl: "https://example.test/states.csv",
+      states: [matchedState],
+      demographics: [],
+      fetcher: vi.fn().mockImplementation(async (url: string) => ({
+        ok: true, status: 200,
+        text: async () => url.includes("backend")
+          ? "country,population,growth_rate\ncountry-a,285,1.003\n"
+          : "state_name,category,human_resource,human_resource_capacity\nГосударство,СРОЧНЫЙ ПРИЗЫВ,41.47,11.4\n"
+      })),
+      applyCorrection: vi.fn(), applyCorrections
+    });
+    expect(result.applied).toBe(0);
+    expect(result.errors.length).toBeGreaterThan(0);
+    expect(applyCorrections).not.toHaveBeenCalled();
+  });
+
+  it("overrides rounded CSV with exact authoritative AO/AW from Apps Script", async () => {
+    const applyCorrections = vi.fn().mockResolvedValue(undefined);
+    const readAuthoritativeStates = vi.fn().mockResolvedValue([{
+      country: "country-a", population: 285,
+      humanResource: 41.470471958801284,
+      humanResourceCapacity: 41.470471958801284
+    }]);
+    const result = await syncPopulationFromPublicSheet({
+      csvUrl: "https://example.test/backend.csv",
+      conscriptionCsvUrl: "https://example.test/states.csv",
+      states: [matchedState], demographics: [],
+      fetcher: vi.fn().mockImplementation(async (url: string) => ({
+        ok: true, status: 200,
+        text: async () => url.includes("backend")
+          ? "country,population,growth_rate\ncountry-a,285,1.003\n"
+          : "state_name,category,human_resource,human_resource_capacity\nГосударство,СРОЧНЫЙ ПРИЗЫВ,41,41\n"
+      })),
+      readAuthoritativeStates,
+      applyCorrection: vi.fn(), applyCorrections
+    });
+    expect(result).toMatchObject({ applied: 1, humanResourceApplied: 1, errors: [] });
+    expect(readAuthoritativeStates).toHaveBeenCalledWith(["country-a"]);
+    expect(applyCorrections).toHaveBeenCalledWith([{
+      stateId: "state-1",
+      patch: {
+        population: 285,
+        populationGrowthFactor: 1.003,
+        humanResource: 41.470471958801284,
+        humanResourceCapacity: 41.470471958801284
+      }
+    }]);
+  });
+
+  it("aborts without applying data if the authoritative Apps Script read fails", async () => {
+    const applyCorrections = vi.fn();
+    const result = await syncPopulationFromPublicSheet({
+      csvUrl: "https://example.test/backend.csv",
+      states: [matchedState], demographics: [],
+      fetcher: vi.fn().mockResolvedValue({
+        ok: true, status: 200, text: async () => "country,population,growth_rate\ncountry-a,285,1.003\n"
+      }),
+      readAuthoritativeStates: vi.fn().mockRejectedValue(new Error("SHEET_WRITEBACK_TIMEOUT")),
+      applyCorrection: vi.fn(), applyCorrections
+    });
+    expect(result).toMatchObject({ applied: 0 });
+    expect(result.errors.join(" ")).toContain("SHEET_WRITEBACK_TIMEOUT");
+    expect(applyCorrections).not.toHaveBeenCalled();
+  });
+
   it("can apply the complete sheet plan as one correction package", async () => {
     const applyCorrections = vi.fn().mockResolvedValue(undefined);
     const result = await syncPopulationFromPublicSheet({
       csvUrl: "https://example.test/backend.csv",
+      conscriptionCsvUrl: "https://example.test/states.csv",
       states: [matchedState],
       demographics: [],
-      fetcher: vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => "country,population,growth_rate\ncountry-a,3000000,1.02\n" }),
+      fetcher: vi.fn().mockImplementation(async (url: string) => ({ ok: true, status: 200, text: async () => url.includes("backend") ? "country,population,growth_rate\ncountry-a,3000000,1.02\n" : authoritativeStateCsv })),
       applyCorrection: vi.fn(),
       applyCorrections
     });
@@ -186,7 +285,7 @@ describe("population sheet sync", () => {
     expect(applyCorrections).toHaveBeenCalledTimes(1);
     expect(applyCorrections.mock.calls[0]?.[0]).toEqual([{
       stateId: "state-1",
-      patch: { population: 3_000_000, populationGrowthFactor: 1.02 }
+      patch: { population: 3_000_000, populationGrowthFactor: 1.02, humanResource: 41.4704719588, humanResourceCapacity: 41.4704719588 }
     }]);
   });
 });

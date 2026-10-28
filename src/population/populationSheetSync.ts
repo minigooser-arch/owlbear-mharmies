@@ -1,4 +1,5 @@
 import type { ConscriptionLaw, StateDemography, StateEntity } from "../shared/types";
+import type { SheetStateSnapshot } from "../sheets/writeback";
 import { parseBackendPopulationCsv, parseConscriptionCategoryCsv, type BackendPopulationRow, type StateConscriptionRow } from "./googleSheetsPopulation";
 
 export interface PopulationSyncPlanEntry {
@@ -7,12 +8,13 @@ export interface PopulationSyncPlanEntry {
   population: number;
   populationGrowthFactor: number;
   humanResource?: number;
+  humanResourceCapacity?: number;
   conscriptionLawId?: string;
   conscriptionRate?: number;
 }
 
 export type PopulationCorrectionPatch = Pick<StateDemography, "population" | "populationGrowthFactor"> &
-  Partial<Pick<StateDemography, "humanResource" | "conscriptionLawId" | "conscriptionRate">>;
+  Partial<Pick<StateDemography, "humanResource" | "humanResourceCapacity" | "conscriptionLawId" | "conscriptionRate">>;
 
 export interface PopulationCorrection {
   stateId: string;
@@ -46,6 +48,8 @@ export interface PopulationSyncInput {
   demographics: readonly StateDemography[];
   conscriptionLaws?: readonly ConscriptionLaw[];
   fetcher?: (url: string) => Promise<PopulationFetchResponse>;
+  /** Exact, unformatted AO/AW values from Apps Script (preferred over rounded public CSV). */
+  readAuthoritativeStates?: (countries: readonly string[]) => Promise<readonly SheetStateSnapshot[]>;
   applyCorrection: (stateId: string, patch: PopulationCorrectionPatch) => Promise<unknown>;
   /** Optional atomic path used by the Owlbear adapter to persist one sync package. */
   applyCorrections?: (corrections: readonly PopulationCorrection[]) => Promise<unknown>;
@@ -151,7 +155,15 @@ export function buildPopulationSyncPlan(
         // same thousand-person unit.
         ?? categoriesByPopulation.get(row.population);
       const law = category ? lawsByName.get(normalizeLabel(category.category)) : undefined;
-      if (category?.humanResource !== undefined) entry.humanResource = category.humanResource;
+      // Only import a balanced, complete AO/AW pair; never infer the maximum
+      // from population × conscription, which differs from the Sheets formula.
+      if (category?.humanResource !== undefined &&
+          category.humanResourceCapacity !== undefined &&
+          category.humanResource >= 0 &&
+          category.humanResourceCapacity >= category.humanResource) {
+        entry.humanResource = category.humanResource;
+        entry.humanResourceCapacity = category.humanResourceCapacity;
+      }
       if (law) {
         entry.conscriptionLawId = law.id;
         entry.conscriptionRate = law.rate;
@@ -216,12 +228,63 @@ export async function syncPopulationFromPublicSheet(input: PopulationSyncInput):
   summary.unmatchedStates = plan.unmatchedStates;
   summary.unmatchedConscriptionStates = plan.unmatchedConscriptionStates;
   summary.skippedRows = plan.skippedRows;
+  if (input.readAuthoritativeStates && plan.entries.length > 0) {
+    let snapshots: readonly SheetStateSnapshot[];
+    try {
+      snapshots = await input.readAuthoritativeStates(plan.entries.map((entry) => entry.country));
+    } catch (error) {
+      summary.errors.push(`Не удалось проверить точные AO/AW через Apps Script: ${error instanceof Error ? error.message : String(error)}. Изменения не применены.`);
+      return summary;
+    }
+    if (!Array.isArray(snapshots)) {
+      summary.errors.push("Apps Script не вернул список государств. Изменения не применены.");
+      return summary;
+    }
+    const byCountry = new Map<string, SheetStateSnapshot>();
+    for (const snapshot of snapshots) {
+      if (!snapshot || typeof snapshot.country !== "string") {
+        summary.errors.push("Apps Script вернул некорректное государство. Изменения не применены.");
+        return summary;
+      }
+      const key = normalizeBackendCountryKey(snapshot.country);
+      if (!key || byCountry.has(key)) {
+        summary.errors.push(`Apps Script вернул повторяющийся ключ государства: ${snapshot.country}. Изменения не применены.`);
+        return summary;
+      }
+      byCountry.set(key, snapshot);
+    }
+    for (const entry of plan.entries) {
+      const snapshot = byCountry.get(normalizeBackendCountryKey(entry.country));
+      const capacity = snapshot?.humanResourceCapacity;
+      if (!snapshot || !Number.isFinite(snapshot.humanResource) ||
+          typeof capacity !== "number" || !Number.isFinite(capacity) ||
+          snapshot.humanResource < 0 || capacity < snapshot.humanResource ||
+          !Number.isFinite(snapshot.population) || snapshot.population < 0) {
+        summary.errors.push(`Apps Script вернул неполный или некорректный AO/AW для ${entry.country}. Изменения не применены.`);
+        return summary;
+      }
+      entry.population = snapshot.population;
+      entry.humanResource = snapshot.humanResource;
+      entry.humanResourceCapacity = capacity;
+    }
+  }
+  // A partial public CSV (or a missing AW column) is unsafe: the ordinary
+  // demographic correction handler would otherwise recompute capacity and
+  // silently clamp current LR. Fail before writing ANY state.
+  const incomplete = plan.entries.filter((entry) =>
+    entry.humanResource === undefined || entry.humanResourceCapacity === undefined
+  );
+  if (incomplete.length > 0) {
+    summary.errors.push(`Не удалось получить корректные AO (текущий ЛР) и AW (максимальный ЛР) для: ${incomplete.map((entry) => entry.country).join(", ")}. Синхронизация отменена без изменений.`);
+    return summary;
+  }
   const corrections: PopulationCorrection[] = plan.entries.map((entry) => {
       const patch: PopulationCorrectionPatch = {
         population: entry.population,
         populationGrowthFactor: entry.populationGrowthFactor
       };
       if (entry.humanResource !== undefined) patch.humanResource = entry.humanResource;
+      if (entry.humanResourceCapacity !== undefined) patch.humanResourceCapacity = entry.humanResourceCapacity;
       if (entry.conscriptionLawId && entry.conscriptionRate !== undefined) {
         patch.conscriptionLawId = entry.conscriptionLawId;
         patch.conscriptionRate = entry.conscriptionRate;

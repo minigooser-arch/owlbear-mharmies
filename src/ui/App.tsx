@@ -11,6 +11,7 @@ import { OverviewPage } from "./pages/OverviewPage";
 import { SidesPage } from "./pages/SidesPage";
 import { useExtensionState, type ExtensionServices, type UiCommand } from "./state/useExtensionState";
 import { syncPopulationFromPublicSheet } from "../population/populationSheetSync";
+import { SheetWritebackClient, readSheetWritebackToken } from "../sheets/writebackClient";
 import { DEFAULT_CONSCRIPTION_SHEET_CSV_URL, DEFAULT_POPULATION_SHEET_CSV_URL } from "../shared/constants";
 
 type PlayerTab = "DASHBOARD" | "ARMIES" | "BATTLES";
@@ -103,11 +104,43 @@ export function App({ services }: { services: ExtensionServices }) {
           </section>
         )}
         {tab === "BATTLES" && <BattlesPage battles={state.battleGroups} armies={state.armies} ships={state.ships} pendingNavalBattleRequests={state.pendingNavalBattleRequests} territorialScores={state.territorialScores} {...(state.navalBattleAreaDraft ? { navalBattleAreaDraft: state.navalBattleAreaDraft } : {})} {...(state.activeNavalBattle ? { activeNavalBattle: state.activeNavalBattle } : {})} isGM={isGM} onAction={send} />}
-        {tab === "MANAGEMENT" && isGM && <ManagementPage section={managementSection} onSectionChange={setManagementSection} playerId={state.playerId} sides={state.sides} states={state.states} armies={state.armies} strategicCities={state.strategicCities} rebellionStatuses={state.rebellionStatuses} lrTransactions={state.lrTransactions ?? []} demographics={state.demographics ?? []} conscriptionLaws={state.conscriptionLaws ?? []} players={state.players} relations={state.relations} stateRelations={state.stateRelations ?? {}} settings={state.settings} leaderSideIds={state.leaderSideIds} onAction={send} onSyncPopulation={() => syncPopulationFromPublicSheet({ csvUrl: state.settings.populationSheetCsvUrl ?? DEFAULT_POPULATION_SHEET_CSV_URL, conscriptionCsvUrl: state.settings.conscriptionSheetCsvUrl ?? DEFAULT_CONSCRIPTION_SHEET_CSV_URL, states: state.states, demographics: state.demographics ?? [], conscriptionLaws: state.conscriptionLaws ?? [], applyCorrection: async (stateId, patch) => {
+        {tab === "MANAGEMENT" && isGM && <ManagementPage section={managementSection} onSectionChange={setManagementSection} playerId={state.playerId} sides={state.sides} states={state.states} armies={state.armies} strategicCities={state.strategicCities} rebellionStatuses={state.rebellionStatuses} lrTransactions={state.lrTransactions ?? []} demographics={state.demographics ?? []} conscriptionLaws={state.conscriptionLaws ?? []} players={state.players} relations={state.relations} stateRelations={state.stateRelations ?? {}} settings={state.settings} leaderSideIds={state.leaderSideIds} onAction={send} onSyncPopulation={() => syncPopulationFromPublicSheet({ csvUrl: state.settings.populationSheetCsvUrl ?? DEFAULT_POPULATION_SHEET_CSV_URL, conscriptionCsvUrl: state.settings.conscriptionSheetCsvUrl ?? DEFAULT_CONSCRIPTION_SHEET_CSV_URL, states: state.states, demographics: state.demographics ?? [], conscriptionLaws: state.conscriptionLaws ?? [],
+            readAuthoritativeStates: async (countries) => {
+              const url = state.settings.sheetWritebackUrl?.trim();
+              const token = readSheetWritebackToken();
+              if (!url || !token) throw new Error("Настройте Apps Script writeback URL и токен GM, чтобы безопасно импортировать точный ЛР");
+              return new SheetWritebackClient(url, token).getStates(countries);
+            },
+            applyCorrection: async (stateId, patch) => {
             let lastRejection: { status: string; reason?: string; actualRevision?: number } | undefined;
             let missingAcknowledgement = false;
             for (let attempt = 0; attempt < 5; attempt += 1) {
               const acknowledgement = await state.send({ type: "UPDATE_STATE_DEMOGRAPHY", stateId, patch, reason: "Импорт из Google Sheets" });
+              if (acknowledgement && typeof acknowledgement === "object" && "status" in acknowledgement) {
+                const status = acknowledgement as { status: string; reason?: string; actualRevision?: number };
+                if (status.status === "ACCEPTED") return;
+                lastRejection = status;
+                const retryable = status.status === "CONFLICT" ||
+                  (status.status === "REJECTED" && status.reason === "BACKGROUND_NOT_READY");
+                if (!retryable) break;
+              } else {
+                missingAcknowledgement = true;
+              }
+              if (attempt < 4) await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
+            }
+            if (lastRejection) throw new Error(`${lastRejection.status}: ${lastRejection.reason ?? lastRejection.actualRevision ?? "команда отклонена"}`);
+            if (missingAcknowledgement) throw new Error("NO_COMMAND_ACK");
+          },
+          applyCorrections: async (corrections) => {
+            // Commit the complete import in one scene revision.
+            let lastRejection: { status: string; reason?: string; actualRevision?: number } | undefined;
+            let missingAcknowledgement = false;
+            for (let attempt = 0; attempt < 5; attempt += 1) {
+              const acknowledgement = await state.send({
+                type: "UPDATE_STATES_DEMOGRAPHY",
+                updates: corrections.map(({ stateId, patch }) => ({ stateId, patch })),
+                reason: "Импорт из Google Sheets"
+              });
               if (acknowledgement && typeof acknowledgement === "object" && "status" in acknowledgement) {
                 const status = acknowledgement as { status: string; reason?: string; actualRevision?: number };
                 if (status.status === "ACCEPTED") return;

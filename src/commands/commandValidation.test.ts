@@ -33,6 +33,35 @@ describe("GM experience award payload", () => {
   );
 });
 
+describe("GM demography Sheets capacity payload", () => {
+  it("allows explicit AO/AW and preserves every field", () => {
+    const result = validateArmyCommand(envelope({
+      type: "UPDATE_STATES_DEMOGRAPHY",
+      reason: "Импорт из Google Sheets",
+      updates: [{ stateId: "montenegro", patch: {
+        population: 285, populationGrowthFactor: 1.003, conscriptionRate: 0.04,
+        humanResource: 41.4704719588, humanResourceCapacity: 41.4704719588
+      }}]
+    }));
+    expect(result).toMatchObject({ ok: true, command: {
+      updates: [{ patch: {
+        humanResource: 41.4704719588, humanResourceCapacity: 41.4704719588
+      }}]
+    }});
+  });
+  it("rejects negative, non-finite and inverted capacity", () => {
+    for (const humanResourceCapacity of [-1, Infinity, NaN, 40]) {
+      const result = validateArmyCommand(envelope({
+        type: "UPDATE_STATE_DEMOGRAPHY",
+        stateId: "montenegro",
+        reason: "Импорт",
+        patch: { humanResource: 41.47, humanResourceCapacity }
+      }));
+      expect(result).toMatchObject({ ok: false, reason: "INVALID_COMMAND" });
+    }
+  });
+});
+
 describe("validateArmyCommand", () => {
   it("accepts and sanitizes a complete side command", () => {
     expect(validateArmyCommand(envelope({

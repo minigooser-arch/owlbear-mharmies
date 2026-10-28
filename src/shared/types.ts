@@ -679,14 +679,14 @@ export type ArmyCommandPayload =
         type: "UPDATE_STATES_DEMOGRAPHY";
         updates: Array<{
           stateId: string;
-          patch: Partial<Pick<StateDemography, "population" | "populationGrowthFactor" | "humanResource" | "conscriptionLawId" | "conscriptionRate">>;
+          patch: Partial<Pick<StateDemography, "population" | "populationGrowthFactor" | "humanResource" | "humanResourceCapacity" | "conscriptionLawId" | "conscriptionRate">>;
         }>;
         reason: string;
       }
     | {
         type: "UPDATE_STATE_DEMOGRAPHY";
         stateId: string;
-        patch: Partial<Pick<StateDemography, "population" | "populationGrowthFactor" | "humanResource" | "conscriptionLawId" | "conscriptionRate">>;
+        patch: Partial<Pick<StateDemography, "population" | "populationGrowthFactor" | "humanResource" | "humanResourceCapacity" | "conscriptionLawId" | "conscriptionRate">>;
         reason: string;
       }
     | { type: "UPSERT_CONSCRIPTION_LAW"; law: ConscriptionLaw; reason: string }

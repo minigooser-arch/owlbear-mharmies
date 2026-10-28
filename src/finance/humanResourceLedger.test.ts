@@ -93,6 +93,25 @@ describe("human resource ledger", () => {
     expect(repeated).toMatchObject({ ok: true, demography: { humanResource: 75 }, transaction: { id: "lr-request-1" } });
   });
 
+  it("keeps AO and AW exactly as supplied, even when population × conscription is lower", () => {
+    const record = demography({ population: 285, conscriptionRate: 0.04,
+      humanResource: 11.4, humanResourceCapacity: 11.4 });
+    const result = applyDemographyCorrection(record, {
+      population: 285,
+      conscriptionRate: 0.04,
+      humanResource: 41.4704719588,
+      humanResourceCapacity: 41.4704719588
+    }, "Импорт из Google Sheets", "gm", "2026-10-28T08:00:00.000Z");
+    expect(result.record.humanResource).toBe(41.4704719588);
+    expect(result.record.humanResourceCapacity).toBe(41.4704719588);
+    expect(result.entry.changes.humanResource).toEqual({ before: 11.4, after: 41.4704719588 });
+    expect(result.entry.changes.humanResourceCapacity).toEqual({ before: 11.4, after: 41.4704719588 });
+    // Normal manual edits without AW preserve existing recalculation behavior.
+    const manual = applyDemographyCorrection(result.record, { conscriptionRate: 0.08 },
+      "Ручная смена призыва", "gm", "2026-10-28T08:00:00.000Z");
+    expect(manual.record.humanResourceCapacity).toBeCloseTo(22.8, 8);
+  });
+
   it("returns a separately auditable administrative correction", () => {
     const result = applyDemographyCorrection(demography(), {
       humanResource: 150,
