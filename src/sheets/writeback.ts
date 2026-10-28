@@ -59,6 +59,8 @@ export interface SheetWritebackEvent {
   removedFactionIds?: string[];
   /** Monotonic scene revision for rejecting stale external snapshots. */
   sourceRevision?: number;
+  /** Stable ID persisted in Owlbear scene metadata. */
+  sourceId?: string;
   militaryInfluenceOperations?: SheetMilitaryInfluenceOperation[];
 }
 
@@ -123,6 +125,7 @@ function compactEvent(event: SheetWritebackEvent): SheetWritebackEvent {
     stateShips: [...(event.stateShips ?? [])].sort((a, b) => a.country.localeCompare(b.country)),
     removedFactionIds: [...new Set(event.removedFactionIds ?? [])].sort(),
     ...(event.sourceRevision !== undefined ? { sourceRevision: event.sourceRevision } : {}),
+    ...(event.sourceId !== undefined ? { sourceId: event.sourceId } : {}),
     militaryInfluenceOperations: [...(event.militaryInfluenceOperations ?? [])].sort((a, b) => a.requestId.localeCompare(b.requestId))
   };
 }
@@ -322,6 +325,7 @@ export function mergeSheetWritebackQueue(
       stateShips: [...stateShips.values()],
       removedFactionIds: [...removedFactionIds],
       sourceRevision: incoming.sourceRevision ?? pending?.sourceRevision,
+      sourceId: incoming.sourceId ?? pending?.sourceId,
       militaryInfluenceOperations: [...militaryInfluenceOperations.values()]
     })
   };
@@ -348,6 +352,7 @@ export function readSheetWritebackQueue(metadata: Record<string, unknown>, key: 
       stateShips: Array.isArray(pending.stateShips) ? pending.stateShips as SheetStateShipSnapshot[] : [],
       removedFactionIds: Array.isArray(pending.removedFactionIds) ? pending.removedFactionIds.filter((v): v is string => typeof v === 'string') : [],
       sourceRevision: typeof pending.sourceRevision === 'number' ? pending.sourceRevision : undefined,
+      sourceId: typeof pending.sourceId === 'string' ? pending.sourceId : undefined,
       militaryInfluenceOperations: Array.isArray(pending.militaryInfluenceOperations)
         ? pending.militaryInfluenceOperations as SheetMilitaryInfluenceOperation[]
         : []
