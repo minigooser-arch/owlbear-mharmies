@@ -9,11 +9,12 @@ import {
   type SceneItemRecord,
   type SceneState
 } from "../shared/types";
-import type { BarrierRecord } from "../storage/metadataRepository";
+import type { ArmyRecord, BarrierRecord } from "../storage/metadataRepository";
 import type { OwlbearPort } from "../owlbear/sdkAdapter";
 import {
   extractBarrierSegments,
   dispatchBackgroundCommand,
+  countriesNeedingTurnFormationLr,
   localOverlayIds,
   mergeCurrentParticipant,
   ProductionEngine,
