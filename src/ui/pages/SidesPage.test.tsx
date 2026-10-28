@@ -217,5 +217,61 @@ describe("SidesPage", () => {
       reason: "Победа в бою"
     });
   });
+  it("allows a GM to enter an exact influence value without a Sheets operation", () => {
+    const onAction = vi.fn().mockResolvedValue({ status: "ACCEPTED" });
+    render(
+      <SidesPage
+        role="GM"
+        playerId="gm"
+        sides={[frenchRed]}
+        players={players}
+        leaderSideIds={new Set()}
+        onAction={onAction}
+      />
+    );
+    fireEvent.change(screen.getByLabelText("Военное влияние вручную для Красные"), {
+      target: { value: "25" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Установить военное влияние для Красные" }));
+    expect(onAction).toHaveBeenCalledWith({
+      type: "SET_MILITARY_INFLUENCE", factionId: "red", value: 25
+    });
+  });
+
+  it("does not show the manual military influence form to players", () => {
+    render(
+      <SidesPage
+        role="PLAYER"
+        playerId="leader"
+        sides={[frenchRed]}
+        players={players}
+        leaderSideIds={new Set(["red"])}
+        onAction={vi.fn()}
+      />
+    );
+    expect(screen.queryByLabelText("Военное влияние вручную для Красные")).toBeNull();
+  });
+
+  it("prevents fractional and negative military influence from being sent", () => {
+    const onAction = vi.fn();
+    render(
+      <SidesPage
+        role="GM"
+        playerId="gm"
+        sides={[frenchRed]}
+        players={players}
+        leaderSideIds={new Set()}
+        onAction={onAction}
+      />
+    );
+    const input = screen.getByLabelText("Военное влияние вручную для Красные");
+    fireEvent.change(input, { target: { value: "-3" } });
+    fireEvent.submit(input.closest("form")!);
+    expect(onAction).not.toHaveBeenCalled();
+    fireEvent.change(input, { target: { value: "1.5" } });
+    fireEvent.submit(input.closest("form")!);
+    expect(onAction).not.toHaveBeenCalled();
+  });
+
 });
 
