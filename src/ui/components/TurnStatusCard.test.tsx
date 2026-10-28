@@ -90,5 +90,5 @@ it("does not leak GM-only turn blockers into player UI", () => {
   render(<TurnStatusCard turn={{ ...DEFAULT_TURN_STATE, phase: "POST_MOVEMENT",
     completionPending: { source: "MANUAL" } }} role="PLAYER"
     onAction={() => undefined} turnCompletionBlockers={["LAND_BATTLE_ACTIVE"]} battleCount={1} />);
-  expect(screen.getByRole("status")).not.toHaveTextContent("Незавершённые сухопутные бои");
+  expect(screen.queryByText(/Незавершённые сухопутные бои/)).not.toBeInTheDocument();
 });
