@@ -22,5 +22,18 @@ export default tseslint.config(
         URL: "readonly"
       }
     }
+  },
+  {
+    files: ["sync-service/**/*.mjs"],
+    languageOptions: {
+      globals: {
+        Headers: "readonly",
+        Response: "readonly",
+        TextEncoder: "readonly",
+        Uint8Array: "readonly",
+        crypto: "readonly",
+        fetch: "readonly"
+      }
+    }
   }
 );
