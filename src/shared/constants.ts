@@ -62,6 +62,7 @@ export const METADATA_KEYS = {
   gridChunk: `${EXTENSION_ID}/grid-chunk`,
   lrLedgerManifest: `${EXTENSION_ID}/lr-ledger-manifest`,
   sheetWritebackQueue: `${EXTENSION_ID}/sheet-writeback-queue`,
+  turnFailureDiagnostic: `${EXTENSION_ID}/turn-failure-diagnostic`,
   lrLedgerPart: `${EXTENSION_ID}/lr-ledger-part`,
   demographyAuditManifest: `${EXTENSION_ID}/demography-audit-manifest`,
   demographyAuditPart: `${EXTENSION_ID}/demography-audit-part`,
