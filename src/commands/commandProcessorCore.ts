@@ -1584,6 +1584,15 @@ export class CommandProcessor {
         side.armyTokenAsset = structuredClone(command.asset);
         return undefined;
       }
+      case "SET_MILITARY_INFLUENCE": {
+        const side = state.scene.sides.find((candidate) => candidate.id === command.factionId);
+        if (!side) return "SIDE_NOT_FOUND";
+        if (!Number.isSafeInteger(command.value) || command.value < 0) return "INVALID_MILITARY_INFLUENCE";
+        // Manual reconciliation is intentionally local: no balance delta,
+        // Sheets expense or militaryInfluenceAudit entry is generated.
+        side.militaryInfluence = command.value;
+        return undefined;
+      }
       case "ADJUST_MILITARY_INFLUENCE": {
         const side = state.scene.sides.find((candidate) => candidate.id === command.factionId);
         if (!side) return "SIDE_NOT_FOUND";
