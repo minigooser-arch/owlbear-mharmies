@@ -1964,12 +1964,14 @@ describe("selective Sheets LR fetch at turn boundary", () => {
       army("c", "french", 5, true, "IN_BATTLE")
     ])).toEqual(["united_kingdom"]);
   });
-  it("does not reprocess a turn's recorded formation debit", () => {
+  it("does not reprocess a turn's recorded formation debit, including retried generations", () => {
     const scene = makeScene();
-    scene.lrTransactions = [{ requestId: "auto-formation-9-a" }] as NonNullable<SceneState["lrTransactions"]>;
-    expect(countriesNeedingTurnFormationLr(scene, [
-      army("a", "british", 5, true)
-    ])).toEqual([]);
+    for (const requestId of ["auto-formation-9-a", "auto-formation-9-a:3"]) {
+      scene.lrTransactions = [{ requestId }] as NonNullable<SceneState["lrTransactions"]>;
+      expect(countriesNeedingTurnFormationLr(scene, [
+        army("a", "british", 5, true)
+      ])).toEqual([]);
+    }
   });
 });
 
