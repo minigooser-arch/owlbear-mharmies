@@ -101,10 +101,10 @@ describe("sheet writeback transport", () => {
     } as Response));
     const client = new SheetWritebackClient("https://example.test", "secret", fetcher as typeof fetch);
     const event = {
-      version: 1, eventId: "event-1", createdAt: "2026-10-28T00:00:00Z",
+      version: 1 as const, eventId: "event-1", createdAt: "2026-10-28T00:00:00Z",
       armies: [], removedArmyIds: [], states: [], stateShips: [{ country: "STATE_A", ships: 2 }],
       sourceId: "scene-1", sourceRevision: 2
-    } as const;
+    };
     await expect(client.syncState(event)).rejects.toMatchObject({ code: "SHEET_WRITEBACK_QUEUED" });
     status = "APPLIED";
     await expect(client.syncState(event)).resolves.toBeUndefined();
