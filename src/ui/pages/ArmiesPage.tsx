@@ -135,6 +135,7 @@ export function ArmiesPage({
             <span className="registration-kicker">Городское формирование</span>
             <strong>Создать армию из ассета фракции</strong>
             <small>Выберите город с действующим Военным ведомством. Токен армии появится в центре города.</small>
+            <small>Создание армии (5 HP) оплачивается сразу по тарифу формирования — обычно 50 000 ЛР. При нехватке ресурса армия не создаётся.</small>
             <small role="status" aria-live="polite">
               {creationOnCooldown
                 ? `Кулдаун Военного ведомства: в ${selectedCreationCity?.name ?? "этом городе"} новую армию можно создать с хода №${nextCreationTurn}. Текущий ход: №${turnNumber}.`
