@@ -324,8 +324,8 @@ export function mergeSheetWritebackQueue(
       stateArmies: [...stateArmies.values()],
       stateShips: [...stateShips.values()],
       removedFactionIds: [...removedFactionIds],
-      sourceRevision: incoming.sourceRevision ?? pending?.sourceRevision,
-      sourceId: incoming.sourceId ?? pending?.sourceId,
+      ...((incoming.sourceRevision ?? pending?.sourceRevision) !== undefined ? { sourceRevision: incoming.sourceRevision ?? pending?.sourceRevision } : {}),
+      ...((incoming.sourceId ?? pending?.sourceId) !== undefined ? { sourceId: incoming.sourceId ?? pending?.sourceId } : {}),
       militaryInfluenceOperations: [...militaryInfluenceOperations.values()]
     })
   };
@@ -351,8 +351,8 @@ export function readSheetWritebackQueue(metadata: Record<string, unknown>, key: 
       stateArmies: Array.isArray(pending.stateArmies) ? pending.stateArmies as SheetStateArmySnapshot[] : [],
       stateShips: Array.isArray(pending.stateShips) ? pending.stateShips as SheetStateShipSnapshot[] : [],
       removedFactionIds: Array.isArray(pending.removedFactionIds) ? pending.removedFactionIds.filter((v): v is string => typeof v === 'string') : [],
-      sourceRevision: typeof pending.sourceRevision === 'number' ? pending.sourceRevision : undefined,
-      sourceId: typeof pending.sourceId === 'string' ? pending.sourceId : undefined,
+      ...(typeof pending.sourceRevision === 'number' ? { sourceRevision: pending.sourceRevision } : {}),
+      ...(typeof pending.sourceId === 'string' ? { sourceId: pending.sourceId } : {}),
       militaryInfluenceOperations: Array.isArray(pending.militaryInfluenceOperations)
         ? pending.militaryInfluenceOperations as SheetMilitaryInfluenceOperation[]
         : []
