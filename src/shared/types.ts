@@ -652,6 +652,8 @@ export type ArmyCommandPayload =
     | { type: "CREATE_SIDE"; side: Side }
     | { type: "RENAME_SIDE"; sideId: string; name: string }
     | { type: "SET_SIDE_ARMY_TOKEN"; sideId: string; asset: ArmyTokenAsset }
+    /** GM-only scene balance correction. Never creates a Sheets influence delta. */
+    | { type: "SET_MILITARY_INFLUENCE"; factionId: string; value: number }
     | {
         type: "ADJUST_MILITARY_INFLUENCE";
         factionId: string;

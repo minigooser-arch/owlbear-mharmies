@@ -47,6 +47,36 @@ export function SidesPage({
   const [creating, setCreating] = useState(false);
   const [influenceReasons, setInfluenceReasons] = useState<Record<string, string>>({});
   const [influenceCodes, setInfluenceCodes] = useState<Record<string, MilitaryInfluenceReasonCode>>({});
+  const [manualInfluenceValues, setManualInfluenceValues] = useState<Record<string, string>>({});
+  const [manualInfluenceBusy, setManualInfluenceBusy] = useState<Record<string, boolean>>({});
+  const [manualInfluenceErrors, setManualInfluenceErrors] = useState<Record<string, string>>({});
+
+  const setManualInfluence = async (side: Side, event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const input = manualInfluenceValues[side.id] ?? String(side.militaryInfluence ?? 0);
+    const value = Number(input);
+    if (!/^(0|[1-9]\d*)$/.test(input) || !Number.isSafeInteger(value)) {
+      setManualInfluenceErrors((current) => ({ ...current, [side.id]: "Введите целое неотрицательное число." }));
+      return;
+    }
+    if (manualInfluenceBusy[side.id]) return;
+    setManualInfluenceBusy((current) => ({ ...current, [side.id]: true }));
+    setManualInfluenceErrors((current) => ({ ...current, [side.id]: "" }));
+    try {
+      const result = await onAction({ type: "SET_MILITARY_INFLUENCE", factionId: side.id, value });
+      if (result && typeof result === "object" && "status" in result && result.status !== "ACCEPTED") {
+        setManualInfluenceErrors((current) => ({ ...current, [side.id]: "Не удалось сохранить значение." }));
+        return;
+      }
+      setManualInfluenceValues((current) =>
+        Object.fromEntries(Object.entries(current).filter(([id]) => id !== side.id))
+      );
+    } catch {
+      setManualInfluenceErrors((current) => ({ ...current, [side.id]: "Не удалось сохранить значение." }));
+    } finally {
+      setManualInfluenceBusy((current) => ({ ...current, [side.id]: false }));
+    }
+  };
 
   const createSide = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -216,6 +246,29 @@ export function SidesPage({
                   <small>{side.stateId ? "Баланс фракции. Операции записываются в ЛР_ОПЕРАЦИИ." : "Сначала назначьте фракции государство."}</small>
                   <small>Жизни армий: {currentArmyHp} / {maxArmyHp} HP</small>
                 </div>
+                {role === "GM" && (
+                  <form onSubmit={(event) => void setManualInfluence(side, event)}>
+                    <label>
+                      Установить военное влияние вручную
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        aria-label={`Военное влияние вручную для ${side.name}`}
+                        value={manualInfluenceValues[side.id] ?? String(side.militaryInfluence ?? 0)}
+                        onChange={(event) => setManualInfluenceValues((current) => ({
+                          ...current, [side.id]: event.target.value
+                        }))}
+                        required
+                      />
+                    </label>
+                    <button className="button subtle" type="submit" disabled={manualInfluenceBusy[side.id] === true}>
+                      {manualInfluenceBusy[side.id] ? "Сохранение…" : `Установить военное влияние для ${side.name}`}
+                    </button>
+                    <small>Изменяет только значение в Owlbear; Google Sheets и журнал операций не затрагиваются.</small>
+                    {manualInfluenceErrors[side.id] && <small role="alert">{manualInfluenceErrors[side.id]}</small>}
+                  </form>
+                )}
                 {role === "GM" && side.stateId && (
                   <form onSubmit={(event) => {
                     event.preventDefault();

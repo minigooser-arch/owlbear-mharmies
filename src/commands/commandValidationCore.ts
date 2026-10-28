@@ -504,6 +504,11 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
     const asset = parseArmyTokenAsset(value.asset);
     return sideId(value.sideId) && asset ? { type: "SET_SIDE_ARMY_TOKEN", sideId: value.sideId, asset } : undefined;
   },
+  SET_MILITARY_INFLUENCE: (value) =>
+    sideId(value.factionId) && typeof value.value === "number" &&
+    Number.isSafeInteger(value.value) && value.value >= 0
+      ? { type: "SET_MILITARY_INFLUENCE", factionId: value.factionId, value: value.value }
+      : undefined,
   ADJUST_MILITARY_INFLUENCE: (value) =>
     sideId(value.factionId) && militaryInfluenceReasonCode(value.reasonCode) && boundedString(value.reason, 512)
       ? { type: "ADJUST_MILITARY_INFLUENCE", factionId: value.factionId, reasonCode: value.reasonCode, reason: value.reason.trim() }

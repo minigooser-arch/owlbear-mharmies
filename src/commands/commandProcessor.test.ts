@@ -1492,4 +1492,54 @@ it("keeps the fixed five-OP budget when a legacy route-distance override is edit
     }
   });
 
+describe("GM manual military influence control", () => {
+  it("stores a GM-set military influence balance without creating external influence operations", () => {
+    const processor = new CommandProcessor();
+    const current = state();
+    const side = current.scene.sides[0];
+    if (!side) throw new Error("red side missing");
+    side.militaryInfluence = 2;
+    const result = processor.execute(
+      context("GM", "gm", current),
+      command({ type: "SET_MILITARY_INFLUENCE", factionId: "red", value: 22 })
+    );
+    expect(result.status).toBe("ACCEPTED");
+    if (result.status === "ACCEPTED") {
+      expect(result.state.scene.sides[0]?.militaryInfluence).toBe(22);
+      expect(result.state.scene.militaryInfluenceAudit).toBeUndefined();
+      expect(result.state.scene.revision).toBe(current.scene.revision + 1);
+    }
+    expect(current.scene.sides[0]?.militaryInfluence).toBe(2);
+  });
 
+  it("allows a GM to set influence to zero and rejects forged player changes", () => {
+    const processor = new CommandProcessor();
+    const current = state();
+    const side = current.scene.sides[0];
+    if (!side) throw new Error("red side missing");
+    side.militaryInfluence = 10;
+    const zero = processor.execute(context("GM", "gm", current),
+      command({ type: "SET_MILITARY_INFLUENCE", factionId: "red", value: 0 }));
+    expect(zero.status).toBe("ACCEPTED");
+    if (zero.status === "ACCEPTED") expect(zero.state.scene.sides[0]?.militaryInfluence).toBe(0);
+
+    const unauthorized = processor.execute(context("PLAYER", "leader", current),
+      command({ type: "SET_MILITARY_INFLUENCE", factionId: "red", value: 100 }, "leader"));
+    expect(unauthorized).toEqual({ status: "REJECTED", reason: "GM_ONLY" });
+
+    const missing = processor.execute(context("GM", "gm", current),
+      command({ type: "SET_MILITARY_INFLUENCE", factionId: "missing", value: 4 }));
+    expect(missing).toEqual({ status: "REJECTED", reason: "SIDE_NOT_FOUND" });
+  });
+
+  it("does not allow invalid manual influence values even when command validation is bypassed", () => {
+    const processor = new CommandProcessor();
+    const current = state();
+    for (const value of [-1, 1.5, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1]) {
+      const result = processor.execute(context("GM", "gm", current),
+        command({ type: "SET_MILITARY_INFLUENCE", factionId: "red", value }));
+      expect(result).toEqual({ status: "REJECTED", reason: "INVALID_MILITARY_INFLUENCE" });
+    }
+  });
+
+});
