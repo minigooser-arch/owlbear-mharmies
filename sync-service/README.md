@@ -23,6 +23,37 @@ POST requests use the existing JSON protocol and `Content-Type: text/plain;chars
 
 For monitoring, POST `{"action":"SYNC_STATUS","token":"..."}` and examine the pending count and oldest event timestamp. Never log or commit secrets.
 
+## Lock-contention recovery (existing installations)
+
+When D1 `pending` grows and `last_error` contains a Google Apps Script
+`lock.waitLock` timeout, do **not** reset tokens or delete the outbox. Older
+workers may run many `drainOutbox` loops concurrently (one on every SYNC_STATE
+retry, plus cron), exhausting Apps Script's 30-second ScriptLock wait.
+
+1. Pause new gameplay writes and take a **copy of Google Sheets**. Keep the old
+   D1 data; it contains undelivered HP/ship snapshots and may be stale.
+2. First apply the **idempotent schema migration** from this directory:
+   `npx.cmd wrangler d1 execute letopis-sync-outbox --remote --file=./schema.sql`.
+   This creates the `sync_dispatch_lease` singleton. It does not delete queue rows.
+3. Deploy this Worker revision with `npx.cmd wrangler deploy`. It accepts
+   SYNC_STATE into D1 without starting a concurrent upstream writer on each
+   request. Cron takes the global lease and sends at most five packets
+   sequentially per minute. Identical retry payloads (apart from generated
+   event IDs/timestamps) are deduplicated.
+4. In the existing Apps Script, publish a new deployment version of the matching
+   `apps-script/LetopisSheetWriteback.gs` while preserving the /exec URL.
+   Unchanged HP cells are no longer rewritten during every snapshot.
+5. Check pending/error counts with a read-only D1 query:
+   `SELECT COUNT(*) AS pending, MAX(attempts) AS max_attempts FROM sync_outbox WHERE delivered_at IS NULL;`
+   Review stale snapshot ages and reconcile HP/ships against the Owlbear scene
+   after delivery. If a row remains pending, inspect `last_error` and
+   `next_attempt_at` before taking further action.
+
+The global lease has a 10-minute expiry for Worker crashes. Its SQL migration
+must be installed before deployment. `GET_STATES`, `GET_FACTIONS` and LR
+spending still proxy synchronously; they may occasionally contend with the
+scheduled snapshot drainer, but they no longer face a large concurrent D1 drain.
+
 ## Operational limits
 
 - The bridge can deliver previously captured events without a GM, but cannot discover new private Owlbear units without an active client. Truly server-authoritative state requires a different architecture.

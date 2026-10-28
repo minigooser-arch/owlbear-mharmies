@@ -12,3 +12,13 @@ CREATE TABLE IF NOT EXISTS sync_outbox (
 );
 CREATE INDEX IF NOT EXISTS idx_sync_outbox_due
   ON sync_outbox (delivered_at, next_attempt_at, lock_until, created_at);
+
+-- Existing deployments can reapply this schema safely before deploying Worker.
+-- One global lease prevents parallel cron and request handlers from flooding
+-- Apps Script's ScriptLock with concurrent writeback packets.
+CREATE TABLE IF NOT EXISTS sync_dispatch_lease (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  lock_until INTEGER NOT NULL DEFAULT 0,
+  owner TEXT
+);
+INSERT OR IGNORE INTO sync_dispatch_lease (id, lock_until) VALUES (1, 0);
