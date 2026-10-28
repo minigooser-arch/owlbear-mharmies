@@ -834,7 +834,8 @@ describe("CommandProcessor", () => {
     current.scene.states = [{ id: "red-state", name: "Красное государство", rulingFactionId: "red", active: true }];
     current.scene.demographics = [{
       stateId: "red-state", population: 1000, populationGrowthFactor: 1.003, humanResource: 250,
-      conscriptionLawId: "GENERAL_MOBILIZATION", conscriptionRate: 0.24, humanResourceCapacity: 250
+      conscriptionLawId: "GENERAL_MOBILIZATION", conscriptionRate: 0.24, humanResourceCapacity: 250,
+      lastPopulationCalculationDate: "2026-10-28"
     }];
     current.scene.gridMap.cells["0,0"] = {
       terrainId: "plain", impassable: false, factionTerritoryIds: ["red"], recognizedStateId: "red-state", deFactoStateId: "red-state"
@@ -869,7 +870,8 @@ describe("CommandProcessor", () => {
     current.scene.states = [{ id: "red-state", name: "Государство", rulingFactionId: "red", active: true }];
     current.scene.demographics = [{
       stateId: "red-state", population: 1000, populationGrowthFactor: 1.003, humanResource: 250,
-      conscriptionLawId: "GENERAL_MOBILIZATION", conscriptionRate: 0.24, humanResourceCapacity: 250
+      conscriptionLawId: "GENERAL_MOBILIZATION", conscriptionRate: 0.24, humanResourceCapacity: 250,
+      lastPopulationCalculationDate: "2026-10-28"
     }];
     for (const x of [0, 1]) {
       current.scene.gridMap.cells[`${x},0`] = {
