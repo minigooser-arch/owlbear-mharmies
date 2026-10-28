@@ -58,9 +58,9 @@ export interface SheetWritebackEvent {
   /** Tombstones for factions removed from Owlbear; clear their sheet HP. */
   removedFactionIds?: string[];
   /** Monotonic scene revision for rejecting stale external snapshots. */
-  sourceRevision?: number;
+  sourceRevision?: number | undefined;
   /** Stable ID persisted in Owlbear scene metadata. */
-  sourceId?: string;
+  sourceId?: string | undefined;
   militaryInfluenceOperations?: SheetMilitaryInfluenceOperation[];
 }
 
