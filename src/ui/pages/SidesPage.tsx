@@ -55,7 +55,7 @@ export function SidesPage({
     event.preventDefault();
     const input = manualInfluenceValues[side.id] ?? String(side.militaryInfluence ?? 0);
     const value = Number(input);
-    if (!/^(0|[1-9]\\d*)$/.test(input) || !Number.isSafeInteger(value)) {
+    if (!/^(0|[1-9]\d*)$/.test(input) || !Number.isSafeInteger(value)) {
       setManualInfluenceErrors((current) => ({ ...current, [side.id]: "Введите целое неотрицательное число." }));
       return;
     }
