@@ -1,0 +1,20 @@
+name = "letopis-sync-bridge"
+main = "worker.mjs"
+compatibility_date = "2026-10-01"
+
+# Copy to wrangler.toml and replace with the actual created D1 database ID.
+[[d1_databases]]
+binding = "DB"
+database_name = "letopis-sync-outbox"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+
+[vars]
+ALLOWED_ORIGINS = "https://minigooser-arch.github.io,http://localhost:5173"
+
+[triggers]
+crons = ["* * * * *"]
+
+# Set private secrets with wrangler secret put (never commit values):
+# CLIENT_TOKEN
+# APPS_SCRIPT_URL
+# APPS_SCRIPT_TOKEN
