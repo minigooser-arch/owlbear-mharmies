@@ -48,7 +48,13 @@ async function queuedEvent(env, event) {
   }
   // The identity of a delivery includes the payload: a single client queue can
   // be split into independent HP/ship and 64-operation influence envelopes.
-  const id = await hashPayload(event);
+  // Random transport IDs and timestamps must not create a new database entry
+  // every time Owlbear retries identical scene data. Audit requestIds, scene
+  // revisions and all business fields remain part of the identity.
+  const { eventId: _transportId, createdAt: _transportTime, ...businessEvent } = event;
+  void _transportId;
+  void _transportTime;
+  const id = await hashPayload(businessEvent);
   const payload = JSON.stringify({ action: "SYNC_STATE", event });
   if (payload.length > 120_000) throw new Error("SYNC_EVENT_TOO_LARGE");
   await env.DB.prepare(
@@ -59,8 +65,17 @@ async function queuedEvent(env, event) {
   return record.delivered_at == null ? "QUEUED" : "APPLIED";
 }
 
-async function drainOutbox(env, limit = 25) {
-  for (let index = 0; index < limit; index++) {
+async function drainOutbox(env, limit = 5) {
+  // All cron and webhook invocations share one D1 lease, so Apps Script sees
+  // at most one batch-drainer even when Cloudflare runs overlapping Workers.
+  const owner = crypto.randomUUID();
+  const now = Date.now();
+  const lease = await env.DB.prepare(
+    "UPDATE sync_dispatch_lease SET lock_until=?,owner=? WHERE id=1 AND lock_until<=?"
+  ).bind(now + 600_000, owner, now).run();
+  if (lease.meta?.changes !== 1) return;
+  try {
+    for (let index = 0; index < limit; index++) {
     const now = Date.now();
     const candidate = await env.DB.prepare(
       "SELECT id,payload,attempts FROM sync_outbox WHERE delivered_at IS NULL AND next_attempt_at<=? AND lock_until<=? ORDER BY created_at,id LIMIT 1"
@@ -83,11 +98,19 @@ async function drainOutbox(env, limit = 25) {
         "UPDATE sync_outbox SET lock_until=0,next_attempt_at=?,last_error=? WHERE id=?"
       ).bind(Date.now() + delay, String(error instanceof Error ? error.message : error).slice(0, 200), candidate.id).run();
     }
+    }
+  } finally {
+    // Only release our lease; a recovered/expired lease belongs to its new
+    // owner and must not be cleared by a late Worker invocation.
+    await env.DB.prepare(
+      "UPDATE sync_dispatch_lease SET lock_until=0,owner=NULL WHERE id=1 AND owner=?"
+    ).bind(owner).run();
   }
 }
 
 export default {
   async fetch(request, env, ctx) {
+    void ctx;
     const origin = request.headers.get("Origin");
     if (origin && !allowedOrigin(origin, env)) return json({ ok: false, error: "ORIGIN_FORBIDDEN" }, request, env, 403);
     if (request.method === "OPTIONS") {
@@ -114,7 +137,8 @@ export default {
     try {
       if (payload.action === "SYNC_STATE") {
         const status = await queuedEvent(env, payload.event);
-        if (status === "QUEUED") ctx.waitUntil(drainOutbox(env));
+        // Do not start concurrent Apps Script writes from every Owlbear retry.
+        // The scheduled drainer owns delivery, independently of GM presence.
         return json({ ok: true, result: { status } }, request, env);
       }
       if (payload.action === "SYNC_STATUS") {
@@ -137,6 +161,6 @@ export default {
   },
   async scheduled(_controller, env, ctx) {
     void _controller;
-    ctx.waitUntil(drainOutbox(env, 100));
+    ctx.waitUntil(drainOutbox(env, 5));
   }
 };
