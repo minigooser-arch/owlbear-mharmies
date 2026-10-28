@@ -18,12 +18,13 @@ function createHarness() {
   };
   const source = readFileSync(new URL("../../apps-script/LetopisSheetWriteback.gs", import.meta.url), "utf8");
   runInNewContext(source, context);
+  const actualApplyFactionAndStateArmy = context.applyFactionAndStateArmy_;
   context.backendIndex_ = () => new Map();
   context.applyFactionAndStateArmy_ = () => { calls.push("factions"); };
   context.applyStateShipCounts_ = () => { calls.push("ships"); };
   context.adjustMilitaryInfluenceBatch_ = () => { calls.push("influence"); };
   const sync = context.syncState_ as (value: unknown) => void;
-  return { properties, calls, sync, context };
+  return { properties, calls, sync, context, actualApplyFactionAndStateArmy };
 }
 
 describe("Apps Script sync snapshot fencing", () => {
@@ -94,6 +95,88 @@ describe("Apps Script sync snapshot fencing", () => {
     expect(cancel(["request-2"]).cancelled).toEqual(["request-2"]);
     expect(rows[2]?.[0]).toBe("request-2");
     expect(rows[2]?.[3]).toBe("CANCELLED");
+  });
+
+  it("skips only unregistered factions without masking ambiguous matches", () => {
+    const test = createHarness();
+    const resolve = test.context.resolveRegisteredFactionTarget_ as (
+      faction: { factionId: string; factionName: string; country: string },
+      rows: { row: number; id: string; name: string; country: string }[]
+    ) => { row: number } | null;
+    const known = { row: 25, id: "italian-faction", name: "Либеральная коалиция", country: "italy" };
+    const input = { factionId: "unknown-id", factionName: "Дом Габсбургских-Лотарингских", country: "austria_hungary" };
+    expect(resolve(input, [known])).toBeNull();
+    expect(resolve({ factionId: "italian-faction", factionName: "Либеральная коалиция", country: "italy" }, [known]))
+      .toEqual(known);
+    expect(() => resolve(
+      { factionId: "unmapped", factionName: "Двойник", country: "italy" },
+      [
+        { row: 9, id: "", name: "Двойник", country: "italy" },
+        { row: 13, id: "", name: "Двойник", country: "italy" }
+      ]
+    )).toThrow("FACTION_AMBIGUOUS");
+  });
+
+  it("applies HP for a mapped faction but never overwrites manually edited influence", () => {
+    const test = createHarness();
+    const cells = new Map<string, string | number>([
+      ["25:53", "italian-faction"], ["25:54", "italy"],
+      ["25:45", 20], ["25:35", 90]
+    ]);
+    const writes: string[] = [];
+    const sheet = {
+      getRange: (row: number, col: number) => ({
+        getValue: () => cells.get(`${row}:${col}`) ?? "",
+        setValue: (value: string | number) => {
+          writes.push(`${row}:${col}`);
+          cells.set(`${row}:${col}`, value);
+        },
+        setValues: (values: (string | number)[][]) => {
+          values[0]?.forEach((value, index) => {
+            writes.push(`${row}:${col + index}`);
+            cells.set(`${row}:${col + index}`, value);
+          });
+        }
+      })
+    };
+    test.context.factionSheet_ = () => sheet;
+    test.context.factionRows_ = () => [{ row: 25, id: "italian-faction", name: "Либеральная коалиция", country: "italy" }];
+    test.context.stateSheet_ = () => sheet;
+    const apply = test.actualApplyFactionAndStateArmy as (
+      event: unknown,
+      index: Map<string, { stateRow: number }>
+    ) => void;
+    apply({
+      factions: [
+        { factionId: "unknown-id", factionName: "Дом Габсбургских-Лотарингских",
+          country: "austria_hungary", hp: 5, maxHp: 40, militaryInfluence: 2 },
+        { factionId: "italian-faction", factionName: "Либеральная коалиция",
+          country: "italy", hp: 25, maxHp: 40, militaryInfluence: 2 }
+      ]
+    }, new Map([["italy", { stateRow: 29 }], ["austria_hungary", { stateRow: 33 }]]));
+    expect(cells.get("25:45")).toBe(25);
+    expect(cells.get("25:35")).toBe(90);
+    expect(writes).not.toContain("25:35");
+  });
+
+  it("reads military influence for mapped factions while skipping unlisted ones", () => {
+    const test = createHarness();
+    test.context.factionRows_ = () => [
+      { row: 25, id: "italian-faction", name: "Либеральная коалиция", country: "italy" }
+    ];
+    test.context.factionSheet_ = () => ({
+      getRange: () => ({ getValue: () => 47 })
+    });
+    const read = test.context.getFactionInfluenceSnapshots_ as (
+      rows: unknown[]
+    ) => { factionId: string; militaryInfluence: number }[];
+    const result = read([
+      { factionId: "unknown-id", factionName: "Дом Габсбургских-Лотарингских", country: "austria_hungary" },
+      { factionId: "italian-faction", factionName: "Либеральная коалиция", country: "italy" }
+    ]);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.factionId).toBe("italian-faction");
+    expect(result[0]?.militaryInfluence).toBe(47);
   });
 
 });
