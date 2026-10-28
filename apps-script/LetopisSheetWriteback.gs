@@ -717,13 +717,30 @@ function applyFactionAndStateArmy_(event, index) {
     const cell = stateSheet.getRange(entry.row, 40);
     return { row: entry.row, formula: cell.getFormula(), value: cell.getValue() };
   });
+  const oldFactionByRow = new Map(oldFaction.map(function(entry) { return [entry.row, entry]; }));
+  const oldStateByRow = new Map(oldState.map(function(entry) { return [entry.row, entry]; }));
   try {
+    // Read-once/write-only-changes: full snapshots previously made dozens of
+    // redundant Apps Script RPCs while holding ScriptLock, blocking GET_STATES
+    // and concurrent retries for up to the 30-second lock-wait limit.
     for (const entry of targets) {
-      sheet.getRange(entry.target.row, 53, 1, 2).setValues([[entry.factionId, entry.country]]);
-      sheet.getRange(entry.target.row, 45).setValue(entry.hp);
+      const before = oldFactionByRow.get(entry.target.row);
+      if (!before) throw new Error("FACTION_SYNC_PREFLIGHT_MISSING");
+      if (String(before.id || "") !== entry.factionId || String(before.country || "") !== entry.country) {
+        sheet.getRange(entry.target.row, 53, 1, 2).setValues([[entry.factionId, entry.country]]);
+      }
+      if (Number(before.hp) !== entry.hp) sheet.getRange(entry.target.row, 45).setValue(entry.hp);
     }
-    for (const entry of removedTargets) sheet.getRange(entry.target.row, 45).setValue(0);
-    for (const entry of stateTargets) stateSheet.getRange(entry.row, 40).setValue(entry.hp);
+    for (const entry of removedTargets) {
+      const before = oldFactionByRow.get(entry.target.row);
+      if (before && Number(before.hp) !== 0) sheet.getRange(entry.target.row, 45).setValue(0);
+    }
+    for (const entry of stateTargets) {
+      const before = oldStateByRow.get(entry.row);
+      if (!before || before.formula || Number(before.value) !== entry.hp) {
+        stateSheet.getRange(entry.row, 40).setValue(entry.hp);
+      }
+    }
     SpreadsheetApp.flush();
   } catch (error) {
     for (const entry of oldFaction) {
