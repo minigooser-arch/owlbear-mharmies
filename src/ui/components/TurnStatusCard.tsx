@@ -27,7 +27,7 @@ export function TurnStatusCard({
   /** Exact server-side blockers, provided only to GM. */
   turnCompletionBlockers?: readonly TurnBlocker[];
   pendingTurnArmyNames?: readonly string[];
-  turnFailureDiagnostic?: TurnFailureDiagnostic;
+  turnFailureDiagnostic?: TurnFailureDiagnostic | undefined;
 }) {
   const [deferValue, setDeferValue] = useState("");
   const [turnNumberValue, setTurnNumberValue] = useState(String(turn.turnNumber));
