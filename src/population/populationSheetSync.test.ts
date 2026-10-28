@@ -220,6 +220,55 @@ describe("population sheet sync", () => {
     expect(applyCorrections).not.toHaveBeenCalled();
   });
 
+  it("overrides rounded CSV with exact authoritative AO/AW from Apps Script", async () => {
+    const applyCorrections = vi.fn().mockResolvedValue(undefined);
+    const readAuthoritativeStates = vi.fn().mockResolvedValue([{
+      country: "country-a", population: 285,
+      humanResource: 41.470471958801284,
+      humanResourceCapacity: 41.470471958801284
+    }]);
+    const result = await syncPopulationFromPublicSheet({
+      csvUrl: "https://example.test/backend.csv",
+      conscriptionCsvUrl: "https://example.test/states.csv",
+      states: [matchedState], demographics: [],
+      fetcher: vi.fn().mockImplementation(async (url: string) => ({
+        ok: true, status: 200,
+        text: async () => url.includes("backend")
+          ? "country,population,growth_rate\ncountry-a,285,1.003\n"
+          : "state_name,category,human_resource,human_resource_capacity\nГосударство,СРОЧНЫЙ ПРИЗЫВ,41,41\n"
+      })),
+      readAuthoritativeStates,
+      applyCorrection: vi.fn(), applyCorrections
+    });
+    expect(result).toMatchObject({ applied: 1, humanResourceApplied: 1, errors: [] });
+    expect(readAuthoritativeStates).toHaveBeenCalledWith(["country-a"]);
+    expect(applyCorrections).toHaveBeenCalledWith([{
+      stateId: "state-1",
+      patch: {
+        population: 285,
+        populationGrowthFactor: 1.003,
+        humanResource: 41.470471958801284,
+        humanResourceCapacity: 41.470471958801284
+      }
+    }]);
+  });
+
+  it("aborts without applying data if the authoritative Apps Script read fails", async () => {
+    const applyCorrections = vi.fn();
+    const result = await syncPopulationFromPublicSheet({
+      csvUrl: "https://example.test/backend.csv",
+      states: [matchedState], demographics: [],
+      fetcher: vi.fn().mockResolvedValue({
+        ok: true, status: 200, text: async () => "country,population,growth_rate\ncountry-a,285,1.003\n"
+      }),
+      readAuthoritativeStates: vi.fn().mockRejectedValue(new Error("SHEET_WRITEBACK_TIMEOUT")),
+      applyCorrection: vi.fn(), applyCorrections
+    });
+    expect(result).toMatchObject({ applied: 0 });
+    expect(result.errors.join(" ")).toContain("SHEET_WRITEBACK_TIMEOUT");
+    expect(applyCorrections).not.toHaveBeenCalled();
+  });
+
   it("can apply the complete sheet plan as one correction package", async () => {
     const applyCorrections = vi.fn().mockResolvedValue(undefined);
     const result = await syncPopulationFromPublicSheet({
