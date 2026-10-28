@@ -266,10 +266,12 @@ describe("SidesPage", () => {
     );
     const input = screen.getByLabelText("Военное влияние вручную для Красные");
     fireEvent.change(input, { target: { value: "-3" } });
-    fireEvent.submit(input.closest("form")!);
+    const form = input.closest("form");
+    if (!form) throw new Error("manual influence form missing");
+    fireEvent.submit(form);
     expect(onAction).not.toHaveBeenCalled();
     fireEvent.change(input, { target: { value: "1.5" } });
-    fireEvent.submit(input.closest("form")!);
+    fireEvent.submit(form);
     expect(onAction).not.toHaveBeenCalled();
   });
 
