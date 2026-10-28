@@ -11,6 +11,8 @@ export interface StateConscriptionRow {
   population?: number;
   /** Current LR in thousands, as represented by the formatted state row. */
   humanResource?: number;
+  /** Potential/capacity LR from the SAME country row (AW, column 49), in thousands. */
+  humanResourceCapacity?: number;
 }
 
 function delimiterFor(csv: string): "," | ";" {
@@ -100,14 +102,16 @@ export function parseConscriptionCategoryCsv(csv: string): StateConscriptionRow[
   const directCategoryIndex = headers.findIndex((header) => ["category", "conscription", "conscription_category", "draft_law"].includes(header));
   const directPopulationIndex = headers.findIndex((header) => ["population", "население", "население (тыс.)"].includes(header));
   const directHumanResourceIndex = headers.findIndex((header) => ["human_resource", "humanresource", "lr", "человеческий ресурс"].includes(header));
+  const directCapacityIndex = headers.findIndex((header) => ["human_resource_capacity", "lr_capacity", "potential_lr", "capacity_lr", "максимальный лр"].includes(header));
   if (directStateIndex >= 0 && directCategoryIndex >= 0) {
     return records.slice(1).flatMap((record) => {
       const stateName = record[directStateIndex]?.trim();
       const category = record[directCategoryIndex]?.trim();
       const population = directPopulationIndex >= 0 ? parseHumanResource(record[directPopulationIndex]) : undefined;
       const humanResource = directHumanResourceIndex >= 0 ? parseHumanResource(record[directHumanResourceIndex]) : undefined;
+      const humanResourceCapacity = directCapacityIndex >= 0 ? parseHumanResource(record[directCapacityIndex]) : undefined;
       return stateName && isUsableCategory(category)
-        ? [{ stateName, category, ...(population !== undefined ? { population } : {}), ...(humanResource !== undefined ? { humanResource } : {}) }]
+        ? [{ stateName, category, ...(population !== undefined ? { population } : {}), ...(humanResource !== undefined ? { humanResource } : {}), ...(humanResourceCapacity !== undefined ? { humanResourceCapacity } : {}) }]
         : [];
     });
   }
@@ -116,6 +120,7 @@ export function parseConscriptionCategoryCsv(csv: string): StateConscriptionRow[
   let pendingStateName: string | undefined;
   let pendingPopulation: number | undefined;
   let pendingHumanResource: number | undefined;
+  let pendingHumanResourceCapacity: number | undefined;
   for (const record of records) {
     const stateName = record[10]?.trim();
     // The public sheet formats population as e.g. `46М. 084Т.`, not as a
@@ -130,13 +135,16 @@ export function parseConscriptionCategoryCsv(csv: string): StateConscriptionRow[
       // Keep AR (43) as a legacy fallback for older 44-column exports used by existing scenes.
       const currentHumanResource = parseHumanResource(record[40]);
       pendingHumanResource = currentHumanResource ?? parseHumanResource(record[43]);
+      // The original LR formula is retained in AW (zero-based column 48).
+      pendingHumanResourceCapacity = parseHumanResource(record[48]);
     }
     const category = record[40]?.trim();
     if (pendingStateName && isUsableCategory(category) && parseNumber(category) === undefined && parseHumanResource(category) === undefined) {
-      rows.push({ stateName: pendingStateName, category, ...(pendingPopulation !== undefined ? { population: pendingPopulation } : {}), ...(pendingHumanResource !== undefined ? { humanResource: pendingHumanResource } : {}) });
+      rows.push({ stateName: pendingStateName, category, ...(pendingPopulation !== undefined ? { population: pendingPopulation } : {}), ...(pendingHumanResource !== undefined ? { humanResource: pendingHumanResource } : {}), ...(pendingHumanResourceCapacity !== undefined ? { humanResourceCapacity: pendingHumanResourceCapacity } : {}) });
       pendingStateName = undefined;
       pendingPopulation = undefined;
       pendingHumanResource = undefined;
+      pendingHumanResourceCapacity = undefined;
     }
   }
   return rows;
