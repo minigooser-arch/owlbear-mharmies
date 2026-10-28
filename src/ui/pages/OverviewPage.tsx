@@ -1,14 +1,19 @@
 import type { StateEntity, StateRelations, TurnState } from "../../shared/types";
+import type { TurnBlocker } from "../../turns/turnCompletionGuard";
 import { areStatesAtWar } from "../../states/stateRelations";
 import { TurnStatusCard } from "../components/TurnStatusCard";
 import type { ArmyView, UiCommand } from "../state/useExtensionState";
 
-export function OverviewPage({ armies, states, stateRelations, turn, navalRequestCount = 0, onOpenArmy, onOpenBattles, onAction }: {
+export function OverviewPage({ armies, states, stateRelations, turn, battleCount = 0, navalBattleActive = false, turnCompletionBlockers = [], pendingTurnArmyNames = [], navalRequestCount = 0, onOpenArmy, onOpenBattles, onAction }: {
   armies: readonly ArmyView[];
   states: readonly StateEntity[];
   stateRelations: StateRelations;
   turn: TurnState;
   navalRequestCount?: number;
+  battleCount?: number;
+  navalBattleActive?: boolean;
+  turnCompletionBlockers?: readonly TurnBlocker[];
+  pendingTurnArmyNames?: readonly string[];
   onOpenArmy(armyId: string): void;
   onOpenBattles(): void;
   onAction(command: UiCommand): void;
@@ -30,7 +35,12 @@ export function OverviewPage({ armies, states, stateRelations, turn, navalReques
   return (
     <section aria-labelledby="overview-title">
       <div className="section-heading wiki-page-heading"><div><p className="eyebrow">Оперативная сводка</p><h2 id="overview-title">Обзор</h2><p className="page-description">Текущий ход, состояние войск, проблемные маршруты и активные войны в одном месте.</p></div></div>
-      <TurnStatusCard turn={turn} role="GM" onAction={onAction} />
+      <TurnStatusCard turn={turn} role="GM" onAction={onAction}
+        battleCount={battleCount} navalBattleActive={navalBattleActive}
+        navalRequestCount={navalRequestCount}
+        turnCompletionBlockers={turnCompletionBlockers}
+        pendingTurnArmyNames={pendingTurnArmyNames}
+      />
       <div className="overview-metrics" aria-label="Состояние армий">
         <div><strong>{armies.length}</strong><span>армий</span></div>
         <div><strong>{moving}</strong><span>движутся</span></div>
