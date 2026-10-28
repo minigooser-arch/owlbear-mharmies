@@ -1966,7 +1966,7 @@ describe("selective Sheets LR fetch at turn boundary", () => {
   });
   it("does not reprocess a turn's recorded formation debit", () => {
     const scene = makeScene();
-    scene.lrTransactions = [{ requestId: "auto-formation-9-a" }] as SceneState["lrTransactions"];
+    scene.lrTransactions = [{ requestId: "auto-formation-9-a" }] as NonNullable<SceneState["lrTransactions"]>;
     expect(countriesNeedingTurnFormationLr(scene, [
       army("a", "british", 5, true)
     ])).toEqual([]);
