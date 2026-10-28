@@ -255,16 +255,17 @@ export async function syncPopulationFromPublicSheet(input: PopulationSyncInput):
     }
     for (const entry of plan.entries) {
       const snapshot = byCountry.get(normalizeBackendCountryKey(entry.country));
+      const capacity = snapshot?.humanResourceCapacity;
       if (!snapshot || !Number.isFinite(snapshot.humanResource) ||
-          !Number.isFinite(snapshot.humanResourceCapacity) ||
-          snapshot.humanResource < 0 || snapshot.humanResourceCapacity < snapshot.humanResource ||
+          typeof capacity !== "number" || !Number.isFinite(capacity) ||
+          snapshot.humanResource < 0 || capacity < snapshot.humanResource ||
           !Number.isFinite(snapshot.population) || snapshot.population < 0) {
         summary.errors.push(`Apps Script вернул неполный или некорректный AO/AW для ${entry.country}. Изменения не применены.`);
         return summary;
       }
       entry.population = snapshot.population;
       entry.humanResource = snapshot.humanResource;
-      entry.humanResourceCapacity = snapshot.humanResourceCapacity;
+      entry.humanResourceCapacity = capacity;
     }
   }
   // A partial public CSV (or a missing AW column) is unsafe: the ordinary
