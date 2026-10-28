@@ -6,7 +6,7 @@ const states: StateEntity[] = [
   { id: "state-1", name: "Государство", rulingFactionId: null, active: true, backendCountry: "country-a" },
   { id: "state-2", name: "Без соответствия", rulingFactionId: null, active: true, backendCountry: "missing" }
 ];
-const authoritativeStateCsv = "state_name,category,human_resource,human_resource_capacity\\nГосударство,СРОЧНЫЙ ПРИЗЫВ,41.4704719588,41.4704719588\\n";
+const authoritativeStateCsv = "state_name,category,human_resource,human_resource_capacity\nГосударство,СРОЧНЫЙ ПРИЗЫВ,41.4704719588,41.4704719588\n";
 const matchedState = states[0];
 if (!matchedState) throw new Error("Test fixture is empty");
 
@@ -189,8 +189,8 @@ describe("population sheet sync", () => {
       fetcher: vi.fn().mockImplementation(async (url: string) => ({
         ok: true, status: 200,
         text: async () => url.includes("backend")
-          ? "country,population,growth_rate\\ncountry-a,285,1.003\\n"
-          : "state_name,category,human_resource\\nГосударство,СРОЧНЫЙ ПРИЗЫВ,41.47\\n"
+          ? "country,population,growth_rate\ncountry-a,285,1.003\n"
+          : "state_name,category,human_resource\nГосударство,СРОЧНЫЙ ПРИЗЫВ,41.47\n"
       })),
       applyCorrection
     });
@@ -210,8 +210,8 @@ describe("population sheet sync", () => {
       fetcher: vi.fn().mockImplementation(async (url: string) => ({
         ok: true, status: 200,
         text: async () => url.includes("backend")
-          ? "country,population,growth_rate\\ncountry-a,285,1.003\\n"
-          : "state_name,category,human_resource,human_resource_capacity\\nГосударство,СРОЧНЫЙ ПРИЗЫВ,41.47,11.4\\n"
+          ? "country,population,growth_rate\ncountry-a,285,1.003\n"
+          : "state_name,category,human_resource,human_resource_capacity\nГосударство,СРОЧНЫЙ ПРИЗЫВ,41.47,11.4\n"
       })),
       applyCorrection: vi.fn(), applyCorrections
     });
