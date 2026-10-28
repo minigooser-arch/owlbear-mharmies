@@ -1435,7 +1435,9 @@ it("keeps the fixed five-OP budget when a legacy route-distance override is edit
 
   it("stores a GM-set military influence balance without creating external influence operations", () => {
     const current = state();
-    current.scene.sides[0]!.militaryInfluence = 2;
+    const side = current.scene.sides[0];
+    if (!side) throw new Error("red side missing");
+    side.militaryInfluence = 2;
     const result = processor.execute(
       context("GM", "gm", current),
       command({ type: "SET_MILITARY_INFLUENCE", factionId: "red", value: 22 })
@@ -1451,7 +1453,9 @@ it("keeps the fixed five-OP budget when a legacy route-distance override is edit
 
   it("allows a GM to set influence to zero and rejects forged player changes", () => {
     const current = state();
-    current.scene.sides[0]!.militaryInfluence = 10;
+    const side = current.scene.sides[0];
+    if (!side) throw new Error("red side missing");
+    side.militaryInfluence = 10;
     const zero = processor.execute(context("GM", "gm", current),
       command({ type: "SET_MILITARY_INFLUENCE", factionId: "red", value: 0 }));
     expect(zero.status).toBe("ACCEPTED");
