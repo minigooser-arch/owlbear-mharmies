@@ -15,7 +15,7 @@ export function OverviewPage({ armies, states, stateRelations, turn, battleCount
   navalBattleActive?: boolean;
   turnCompletionBlockers?: readonly TurnBlocker[];
   pendingTurnArmyNames?: readonly string[];
-  turnFailureDiagnostic?: TurnFailureDiagnostic;
+  turnFailureDiagnostic?: TurnFailureDiagnostic | undefined;
   onOpenArmy(armyId: string): void;
   onOpenBattles(): void;
   onAction(command: UiCommand): void;
