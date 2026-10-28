@@ -577,7 +577,8 @@ function resolveFactionTarget_(input, rows) {
 function applyFactionAndStateArmy_(event, index) {
   const factions = Array.isArray(event.factions) ? event.factions : [];
   const stateArmies = Array.isArray(event.stateArmies) ? event.stateArmies : [];
-  if (factions.length === 0 && stateArmies.length === 0) return;
+  const removedFactionIds = Array.isArray(event.removedFactionIds) ? event.removedFactionIds : [];
+  if (factions.length === 0 && stateArmies.length === 0 && removedFactionIds.length === 0) return;
   const sheet = factionSheet_();
   const rows = factionRows_();
   const targets = [];
@@ -597,6 +598,19 @@ function applyFactionAndStateArmy_(event, index) {
     targets.push({ target, factionId, country, hp });
     seenFactions.add(factionId);
   }
+  const removedTargets = [];
+  const seenRemoved = new Set();
+  for (const rawId of removedFactionIds) {
+    const factionId = String(rawId || "").trim();
+    if (!factionId || seenFactions.has(factionId) || seenRemoved.has(factionId)) {
+      throw new Error("INVALID_REMOVED_FACTION_SYNC");
+    }
+    seenRemoved.add(factionId);
+    const matches = rows.filter(function(row) { return row.id === factionId; });
+    if (matches.length > 1) throw new Error("FACTION_AMBIGUOUS:" + factionId);
+    if (matches.length === 1) removedTargets.push({ target: matches[0] });
+    // A missing row means the faction has already been removed from the sheet.
+  }
   const stateTargets = [];
   const seenCountries = new Set();
   for (const state of stateArmies) {
@@ -610,7 +624,7 @@ function applyFactionAndStateArmy_(event, index) {
     stateTargets.push({ country, hp, row: index.get(country).stateRow });
     seenCountries.add(country);
   }
-  const oldFaction = targets.map(function(entry) {
+  const oldFaction = targets.concat(removedTargets).map(function(entry) {
     return { row: entry.target.row, id: sheet.getRange(entry.target.row, 53).getValue(),
       country: sheet.getRange(entry.target.row, 54).getValue(), hp: sheet.getRange(entry.target.row, 45).getValue() };
   });
@@ -624,6 +638,7 @@ function applyFactionAndStateArmy_(event, index) {
       sheet.getRange(entry.target.row, 53, 1, 2).setValues([[entry.factionId, entry.country]]);
       sheet.getRange(entry.target.row, 45).setValue(entry.hp);
     }
+    for (const entry of removedTargets) sheet.getRange(entry.target.row, 45).setValue(0);
     for (const entry of stateTargets) stateSheet.getRange(entry.row, 40).setValue(entry.hp);
     SpreadsheetApp.flush();
   } catch (error) {
@@ -772,11 +787,28 @@ function applyStateShipCounts_(event, index) {
 
 function syncState_(event) {
   if (!event || typeof event !== "object") throw new Error("INVALID_SYNC_EVENT");
-  // Individual army state remains private to Owlbear. Aggregate faction/state
-  // HP is public and is written to the existing ЖИЗНИ columns.
   const index = backendIndex_();
-  applyFactionAndStateArmy_(event, index);
-  applyStateShipCounts_(event, index);
+  const factions = Array.isArray(event.factions) ? event.factions : [];
+  const stateArmies = Array.isArray(event.stateArmies) ? event.stateArmies : [];
+  const stateShips = Array.isArray(event.stateShips) ? event.stateShips : [];
+  const removedFactionIds = Array.isArray(event.removedFactionIds) ? event.removedFactionIds : [];
+  const isSnapshot = factions.length > 0 || stateArmies.length > 0 ||
+    stateShips.length > 0 || removedFactionIds.length > 0;
+  const props = PropertiesService.getScriptProperties();
+  const revision = Number(event.sourceRevision);
+  if (isSnapshot && (!Number.isSafeInteger(revision) || revision < 0)) {
+    throw new Error("SYNC_REVISION_REQUIRED");
+  }
+  const lastRevision = Number(props.getProperty("OWLBEAR_SYNC_LAST_REVISION") || -1);
+  // Only apply the most recent scene snapshot. Older network retries cannot
+  // overwrite current HP/ship cells. Influence operations are independently
+  // deduplicated by requestId, even when their snapshot revision is old.
+  if (isSnapshot && revision >= lastRevision) {
+    applyFactionAndStateArmy_(event, index);
+    applyStateShipCounts_(event, index);
+    SpreadsheetApp.flush();
+    props.setProperty("OWLBEAR_SYNC_LAST_REVISION", String(revision));
+  }
   const operations = Array.isArray(event.militaryInfluenceOperations)
     ? event.militaryInfluenceOperations
     : [];
