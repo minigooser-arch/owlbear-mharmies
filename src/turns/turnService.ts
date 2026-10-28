@@ -23,6 +23,8 @@ export interface CompleteTurnInput {
   /** Current strategic cells for registered ships, resolved from authoritative item positions. */
   shipCells?: Readonly<Record<string, GridCellCoord>>;
   positionForCell?: (cell: GridCellCoord) => Vector2;
+  /** Durable generation incremented only after cancelling an orphan LR spend. */
+  formationRetryEpoch?: number;
 }
 
 export type CompleteTurnResult =
@@ -204,7 +206,7 @@ export function completeTurn(
 
   // Newly created armies are formed automatically at the turn boundary. The
   // formation debit is recorded in the same scene transaction as the turn.
-  nextArmies = applyAutomaticArmyFormation(nextScene, nextArmies, nextTurn, input.completedAt.toISOString());
+  nextArmies = applyAutomaticArmyFormation(nextScene, nextArmies, nextTurn, input.completedAt.toISOString(), input.formationRetryEpoch ?? 0);
 
   // Restore each ship's class strategic movement budget without changing its order or combat state.
   if (nextScene.ships) {
