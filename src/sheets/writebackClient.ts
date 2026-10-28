@@ -88,7 +88,8 @@ export class SheetWritebackClient {
     private readonly url: string,
     private readonly token: string,
     private readonly fetcher: typeof fetch = globalThis.fetch.bind(globalThis),
-    private readonly timeoutMs = 8_000
+    // Apps Script may wait up to 30s for ScriptLock before executing the request.
+    private readonly timeoutMs = 45_000
   ) {}
 
   private async request<T>(payload: Record<string, unknown>): Promise<T> {
