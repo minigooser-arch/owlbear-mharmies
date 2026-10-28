@@ -156,10 +156,16 @@ export class SheetWritebackClient {
   }
 
   syncState(event: SheetWritebackEvent): Promise<void> {
-    return this.request<null>({
+    return this.request<null | { status: "QUEUED" | "APPLIED" }>({
       action: "SYNC_STATE",
       event
-    }).then(() => undefined);
+    }).then((result) => {
+      // The optional durable bridge ACKs acceptance before Google Sheets has
+      // applied the event. Keep Owlbear's queue until it reports APPLIED.
+      if (result && result.status === "QUEUED") {
+        throw new SheetWritebackError("SHEET_WRITEBACK_QUEUED");
+      }
+    });
   }
 
   adjustMilitaryInfluence(
