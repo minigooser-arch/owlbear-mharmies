@@ -55,6 +55,10 @@ export interface SheetWritebackEvent {
   factions?: SheetFactionSnapshot[];
   stateArmies?: SheetStateArmySnapshot[];
   stateShips?: SheetStateShipSnapshot[];
+  /** Tombstones for factions removed from Owlbear; clear their sheet HP. */
+  removedFactionIds?: string[];
+  /** Monotonic scene revision for rejecting stale external snapshots. */
+  sourceRevision?: number;
   militaryInfluenceOperations?: SheetMilitaryInfluenceOperation[];
 }
 
@@ -117,6 +121,8 @@ function compactEvent(event: SheetWritebackEvent): SheetWritebackEvent {
     factions: [...(event.factions ?? [])].sort((a, b) => a.factionId.localeCompare(b.factionId)),
     stateArmies: [...(event.stateArmies ?? [])].sort((a, b) => a.country.localeCompare(b.country)),
     stateShips: [...(event.stateShips ?? [])].sort((a, b) => a.country.localeCompare(b.country)),
+    removedFactionIds: [...new Set(event.removedFactionIds ?? [])].sort(),
+    ...(event.sourceRevision !== undefined ? { sourceRevision: event.sourceRevision } : {}),
     militaryInfluenceOperations: [...(event.militaryInfluenceOperations ?? [])].sort((a, b) => a.requestId.localeCompare(b.requestId))
   };
 }
@@ -211,11 +217,16 @@ export function buildSheetWritebackEvent(
   const nextStates = stateHpSnapshots(next.scene, next.armies);
   const previousShips = stateShipSnapshots(previous.scene);
   const nextShips = stateShipSnapshots(next.scene);
-  const factions = changedAggregates(previousFactions, nextFactions, (value) => value.factionId);
+  const factions = nextFactions.filter((value) => {
+    const old = previousFactions.find((previous) => previous.factionId === value.factionId);
+    return !old || old.hp !== value.hp || old.maxHp !== value.maxHp || old.country !== value.country;
+  });
+  const nextFactionIds = new Set(nextFactions.map((item) => item.factionId));
+  const removedFactionIds = previousFactions.filter((item) => !nextFactionIds.has(item.factionId)).map((item) => item.factionId);
   const stateArmies = changedAggregates(previousStates, nextStates, (value) => value.country);
   const stateShips = nextShips.filter((item) => previousShips.find((old) => old.country === item.country)?.ships !== item.ships);
 
-  if (militaryInfluenceOperations.length === 0 && factions.length === 0 && stateArmies.length === 0 && stateShips.length === 0) return undefined;
+  if (militaryInfluenceOperations.length === 0 && factions.length === 0 && removedFactionIds.length === 0 && stateArmies.length === 0 && stateShips.length === 0) return undefined;
 
   return compactEvent({
     version: 1,
@@ -227,6 +238,8 @@ export function buildSheetWritebackEvent(
     factions,
     stateArmies,
     stateShips,
+    removedFactionIds,
+    sourceRevision: next.scene.revision,
     militaryInfluenceOperations
   });
 }
@@ -254,6 +267,8 @@ export function buildSheetWritebackSnapshotEvent(
     factions,
     stateArmies,
     stateShips,
+    removedFactionIds: [],
+    sourceRevision: next.scene.revision,
     militaryInfluenceOperations: []
   });
 }
@@ -272,6 +287,7 @@ export function mergeSheetWritebackQueue(
   const factions = new Map<string, SheetFactionSnapshot>();
   const stateArmies = new Map<string, SheetStateArmySnapshot>();
   const stateShips = new Map<string, SheetStateShipSnapshot>();
+  const removedFactionIds = new Set<string>(pending?.removedFactionIds ?? []);
 
   for (const operation of pending?.militaryInfluenceOperations ?? []) militaryInfluenceOperations.set(operation.requestId, operation);
   for (const faction of pending?.factions ?? []) factions.set(faction.factionId, faction);
@@ -279,7 +295,14 @@ export function mergeSheetWritebackQueue(
   for (const state of pending?.stateShips ?? []) stateShips.set(state.country, state);
 
   for (const operation of incoming.militaryInfluenceOperations ?? []) militaryInfluenceOperations.set(operation.requestId, operation);
-  for (const faction of incoming.factions ?? []) factions.set(faction.factionId, faction);
+  for (const faction of incoming.factions ?? []) {
+    factions.set(faction.factionId, faction);
+    removedFactionIds.delete(faction.factionId);
+  }
+  for (const factionId of incoming.removedFactionIds ?? []) {
+    factions.delete(factionId);
+    removedFactionIds.add(factionId);
+  }
   for (const state of incoming.stateArmies ?? []) stateArmies.set(state.country, state);
   for (const state of incoming.stateShips ?? []) stateShips.set(state.country, state);
 
@@ -297,6 +320,8 @@ export function mergeSheetWritebackQueue(
       factions: [...factions.values()],
       stateArmies: [...stateArmies.values()],
       stateShips: [...stateShips.values()],
+      removedFactionIds: [...removedFactionIds],
+      sourceRevision: incoming.sourceRevision ?? pending?.sourceRevision,
       militaryInfluenceOperations: [...militaryInfluenceOperations.values()]
     })
   };
@@ -321,6 +346,8 @@ export function readSheetWritebackQueue(metadata: Record<string, unknown>, key: 
       factions: Array.isArray(pending.factions) ? pending.factions as SheetFactionSnapshot[] : [],
       stateArmies: Array.isArray(pending.stateArmies) ? pending.stateArmies as SheetStateArmySnapshot[] : [],
       stateShips: Array.isArray(pending.stateShips) ? pending.stateShips as SheetStateShipSnapshot[] : [],
+      removedFactionIds: Array.isArray(pending.removedFactionIds) ? pending.removedFactionIds.filter((v): v is string => typeof v === 'string') : [],
+      sourceRevision: typeof pending.sourceRevision === 'number' ? pending.sourceRevision : undefined,
       militaryInfluenceOperations: Array.isArray(pending.militaryInfluenceOperations)
         ? pending.militaryInfluenceOperations as SheetMilitaryInfluenceOperation[]
         : []
