@@ -1929,3 +1929,46 @@ describe("ProductionEngine strategic movement costs", () => {
   });
 });
 
+
+describe("selective Sheets LR fetch at turn boundary", () => {
+  const makeScene = () => ({
+    states: [
+      { id: "gb", backendCountry: "united_kingdom" },
+      { id: "fr", backendCountry: "france" }
+    ],
+    sides: [
+      { id: "british", stateId: "gb" },
+      { id: "french", stateId: "fr" }
+    ],
+    turn: { turnNumber: 8 },
+    lrTransactions: []
+  }) as unknown as SceneState;
+  const army = (id: string, sideId: string, hp: number, active: boolean,
+    status: ArmyState["status"] = "READY") => ({
+    item: { id }, state: {
+      sideId, status, health: { hp, maxHp: 40 },
+      formation: { active }
+    }
+  }) as unknown as ArmyRecord;
+
+  it("does not read countries when no army needs more formation HP", () => {
+    expect(countriesNeedingTurnFormationLr(makeScene(), [
+      army("one", "british", 40, true),
+      army("two", "french", 5, false)
+    ])).toEqual([]);
+  });
+  it("deduplicates countries and excludes armies blocked by combat", () => {
+    expect(countriesNeedingTurnFormationLr(makeScene(), [
+      army("a", "british", 5, true),
+      army("b", "british", 25, true),
+      army("c", "french", 5, true, "IN_BATTLE")
+    ])).toEqual(["united_kingdom"]);
+  });
+  it("does not reprocess a turn's recorded formation debit", () => {
+    const scene = makeScene();
+    scene.lrTransactions = [{ requestId: "auto-formation-9-a" }] as SceneState["lrTransactions"];
+    expect(countriesNeedingTurnFormationLr(scene, [
+      army("a", "british", 5, true)
+    ])).toEqual([]);
+  });
+});
