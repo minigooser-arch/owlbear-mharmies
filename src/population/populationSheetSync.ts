@@ -1,4 +1,5 @@
 import type { ConscriptionLaw, StateDemography, StateEntity } from "../shared/types";
+import type { SheetStateSnapshot } from "../sheets/writeback";
 import { parseBackendPopulationCsv, parseConscriptionCategoryCsv, type BackendPopulationRow, type StateConscriptionRow } from "./googleSheetsPopulation";
 
 export interface PopulationSyncPlanEntry {
@@ -47,6 +48,8 @@ export interface PopulationSyncInput {
   demographics: readonly StateDemography[];
   conscriptionLaws?: readonly ConscriptionLaw[];
   fetcher?: (url: string) => Promise<PopulationFetchResponse>;
+  /** Exact, unformatted AO/AW values from Apps Script (preferred over rounded public CSV). */
+  readAuthoritativeStates?: (countries: readonly string[]) => Promise<readonly SheetStateSnapshot[]>;
   applyCorrection: (stateId: string, patch: PopulationCorrectionPatch) => Promise<unknown>;
   /** Optional atomic path used by the Owlbear adapter to persist one sync package. */
   applyCorrections?: (corrections: readonly PopulationCorrection[]) => Promise<unknown>;
@@ -225,6 +228,45 @@ export async function syncPopulationFromPublicSheet(input: PopulationSyncInput):
   summary.unmatchedStates = plan.unmatchedStates;
   summary.unmatchedConscriptionStates = plan.unmatchedConscriptionStates;
   summary.skippedRows = plan.skippedRows;
+  if (input.readAuthoritativeStates && plan.entries.length > 0) {
+    let snapshots: readonly SheetStateSnapshot[];
+    try {
+      snapshots = await input.readAuthoritativeStates(plan.entries.map((entry) => entry.country));
+    } catch (error) {
+      summary.errors.push(`Не удалось проверить точные AO/AW через Apps Script: ${error instanceof Error ? error.message : String(error)}. Изменения не применены.`);
+      return summary;
+    }
+    if (!Array.isArray(snapshots)) {
+      summary.errors.push("Apps Script не вернул список государств. Изменения не применены.");
+      return summary;
+    }
+    const byCountry = new Map<string, SheetStateSnapshot>();
+    for (const snapshot of snapshots) {
+      if (!snapshot || typeof snapshot.country !== "string") {
+        summary.errors.push("Apps Script вернул некорректное государство. Изменения не применены.");
+        return summary;
+      }
+      const key = normalizeBackendCountryKey(snapshot.country);
+      if (!key || byCountry.has(key)) {
+        summary.errors.push(`Apps Script вернул повторяющийся ключ государства: ${snapshot.country}. Изменения не применены.`);
+        return summary;
+      }
+      byCountry.set(key, snapshot);
+    }
+    for (const entry of plan.entries) {
+      const snapshot = byCountry.get(normalizeBackendCountryKey(entry.country));
+      if (!snapshot || !Number.isFinite(snapshot.humanResource) ||
+          !Number.isFinite(snapshot.humanResourceCapacity) ||
+          snapshot.humanResource < 0 || snapshot.humanResourceCapacity < snapshot.humanResource ||
+          !Number.isFinite(snapshot.population) || snapshot.population < 0) {
+        summary.errors.push(`Apps Script вернул неполный или некорректный AO/AW для ${entry.country}. Изменения не применены.`);
+        return summary;
+      }
+      entry.population = snapshot.population;
+      entry.humanResource = snapshot.humanResource;
+      entry.humanResourceCapacity = snapshot.humanResourceCapacity;
+    }
+  }
   // A partial public CSV (or a missing AW column) is unsafe: the ordinary
   // demographic correction handler would otherwise recompute capacity and
   // silently clamp current LR. Fail before writing ANY state.
