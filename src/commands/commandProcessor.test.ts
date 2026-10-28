@@ -668,7 +668,7 @@ describe("CommandProcessor", () => {
 
     const create = (source: CommandState) => new CommandProcessor(
       () => new Date(),
-      (position) => ({ x: Math.floor(position.x / 100), y: Math.floor(position.y / 100 })
+      (position) => ({ x: Math.floor(position.x / 100), y: Math.floor(position.y / 100) })
     ).execute(
       context("PLAYER", "leader", source),
       command({ type: "CREATE_CITY_ARMY", itemId: "candidate-image",
