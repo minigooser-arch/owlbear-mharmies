@@ -795,7 +795,11 @@ function syncState_(event) {
   const isSnapshot = factions.length > 0 || stateArmies.length > 0 ||
     stateShips.length > 0 || removedFactionIds.length > 0;
   const props = PropertiesService.getScriptProperties();
+  const sourceId = String(event.sourceId || "").trim();
   const revision = Number(event.sourceRevision);
+  const boundSourceId = String(props.getProperty("OWLBEAR_SYNC_SOURCE_ID") || "").trim();
+  if (!sourceId) throw new Error("SYNC_SOURCE_ID_REQUIRED");
+  if (boundSourceId && boundSourceId !== sourceId) throw new Error("SYNC_FOREIGN_SOURCE");
   if (isSnapshot && (!Number.isSafeInteger(revision) || revision < 0)) {
     throw new Error("SYNC_REVISION_REQUIRED");
   }
@@ -807,6 +811,7 @@ function syncState_(event) {
     applyFactionAndStateArmy_(event, index);
     applyStateShipCounts_(event, index);
     SpreadsheetApp.flush();
+    if (!boundSourceId) props.setProperty("OWLBEAR_SYNC_SOURCE_ID", sourceId);
     props.setProperty("OWLBEAR_SYNC_LAST_REVISION", String(revision));
   }
   const operations = Array.isArray(event.militaryInfluenceOperations)
