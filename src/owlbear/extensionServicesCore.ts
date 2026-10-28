@@ -55,6 +55,7 @@ import { getRebellionCapitalController, getRebellionFactionStrength } from "../r
 import { armyFormationCap, cityForCell, hasActiveCityBuilding, lighthouseDetectionBonusAtCell } from "../cities/cityEffects";
 import { shipEmbarkedArmyIds } from "../naval/transport/transportRules";
 import { territorialCityContributions } from "../wars/territorialScore";
+import { preCheckpointTurnBlockers } from "../turns/turnCompletionGuard";
 import { isFactionStateAtWar } from "../states/stateRules";
 import { readCell } from "../terrain/gridMap";
 import { MetadataRepository, type ArmyRecord, type MetadataReadFrame, type ShipRecord } from "../storage/metadataRepository";
@@ -540,7 +541,17 @@ export function buildRoleSafeSnapshot(input: SnapshotInput): RawExtensionSnapsho
     settings: input.scene.settings,
     terrain: input.scene.terrain,
     wars: input.scene.wars,
-    turn: input.scene.turn
+    turn: input.scene.turn,
+    ...(input.role === "GM" ? {
+      turnCompletionBlockers: preCheckpointTurnBlockers(
+        input.scene,
+        Object.fromEntries(input.armies.map(({ item, state }) => [item.id, state]))
+      ),
+      pendingTurnArmyNames: input.armies
+        .filter(({ state }) => state.status === "MOVING" ||
+          (state.status === "PAUSED" && state.stopReason === "COORDINATOR_GAP"))
+        .map(({ item }) => item.name || item.id)
+    } : {})
   };
 }
 
