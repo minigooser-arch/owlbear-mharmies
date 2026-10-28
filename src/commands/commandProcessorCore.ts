@@ -482,6 +482,27 @@ export class CommandProcessor {
           )
         });
         army.formation = { active: true, cityId: city.id, hpAddedThisTurn: 0, checkedOnTurn: state.scene.turn.turnNumber };
+        // The initial 5 HP are real troops and must be paid for immediately.
+        // Use the existing FORMATION ledger kind so the deployed Apps Script
+        // accepts the debit without any server-side migration.
+        if (!state.scene.demographics) return "STATE_NOT_FOUND";
+        const configuredRate = state.scene.settings.armyFormationCostPerHp ?? 10000;
+        const ratePerHp = humanResourceRateInSceneUnits(state, command.sideId, configuredRate);
+        if (!Number.isFinite(ratePerHp) || ratePerHp <= 0) return "INVALID_AMOUNT";
+        const debitError = this.debitHumanResource(state, command.sideId, army.health.hp * ratePerHp, {
+          requestId: `army-create-${command.requestId}`,
+          actorPlayerId: command.senderPlayerId,
+          kind: "FORMATION",
+          armyId,
+          armyName: existingItem?.name ?? side.armyTokenAsset?.name ?? armyId,
+          cityId: city.id,
+          cityName: city.name,
+          hp: army.health.hp,
+          ratePerHp,
+          turnNumber: currentTurn,
+          createdAt: this.now().toISOString()
+        });
+        if (debitError) return debitError;
         state.armies[armyId] = army;
         if (!existingItem && side.armyTokenAsset) {
           state.items[armyId] = {

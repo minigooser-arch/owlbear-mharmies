@@ -619,12 +619,17 @@ describe("CommandProcessor", () => {
       expect(result.state.armies["candidate-image"]).toMatchObject({ sideId: "red", health: { hp: 5, maxHp: 40 }, formation: { active: true, cityId: "city-red", hpAddedThisTurn: 0 } });
       const demographics = result.state.scene.demographics;
       if (!demographics) throw new Error("demography missing");
-      expect(demographics[0]?.humanResource).toBe(100_000);
-      expect(result.state.scene.lrTransactions ?? []).toEqual([]);
+      expect(demographics[0]?.humanResource).toBe(50_000);
+      expect(result.state.scene.lrTransactions).toEqual([
+        expect.objectContaining({
+          requestId: "army-create-request", armyId: "candidate-image", kind: "FORMATION",
+          hp: 5, ratePerHp: 10_000, amount: 50_000, status: "PENDING"
+        })
+      ]);
     }
   });
 
-  it("does not spend sheet LR until formation HP is actually added", () => {
+  it("spends 50 thousand LR on the initial five HP without charging them again later", () => {
     const current = state();
     current.scene.sides = current.scene.sides.map((side) => side.id === "red" ? { ...side, stateId: "red-state" } : side);
     current.scene.states = [{ id: "red-state", name: "Красное государство", rulingFactionId: "red", active: true }];
@@ -651,9 +656,36 @@ describe("CommandProcessor", () => {
 
     expect(result.status).toBe("ACCEPTED");
     if (result.status === "ACCEPTED") {
-      expect(result.state.scene.demographics?.[0]?.humanResource).toBe(584);
-      expect(result.state.scene.lrTransactions ?? []).toEqual([]);
+      expect(result.state.scene.demographics?.[0]?.humanResource).toBe(534);
+      expect(result.state.scene.lrTransactions).toEqual([
+        expect.objectContaining({
+          requestId: "army-create-request", kind: "FORMATION",
+          hp: 5, ratePerHp: 10, amount: 50, status: "PENDING"
+        })
+      ]);
+      expect(result.state.armies["candidate-image"]?.health.hp).toBe(5);
     }
+
+    const create = (source: CommandState) => new CommandProcessor(
+      () => new Date(),
+      (position) => ({ x: Math.floor(position.x / 100), y: Math.floor(position.y / 100) })
+    ).execute(
+      context("PLAYER", "leader", source),
+      command({ type: "CREATE_CITY_ARMY", itemId: "candidate-image",
+        cityId: "city-red", sideId: "red" }, "leader")
+    );
+    const poor = structuredClone(current);
+    if (!poor.scene.demographics?.[0]) throw new Error("missing fixture demography");
+    poor.scene.demographics[0].humanResource = 49;
+    expect(create(poor)).toEqual({ status: "REJECTED", reason: "INSUFFICIENT_HUMAN_RESOURCE" });
+    expect(poor.scene.strategicCities?.[0]?.nextArmyCreationTurn).toBeUndefined();
+    expect(poor.scene.lrTransactions).toBeUndefined();
+    expect(poor.armies["candidate-image"]).toBeUndefined();
+
+    const missing = structuredClone(current);
+    delete missing.scene.demographics;
+    expect(create(missing)).toEqual({ status: "REJECTED", reason: "STATE_NOT_FOUND" });
+    expect(missing.scene.lrTransactions).toBeUndefined();
   });
 
   it("rejects manual army formation because formation is automatic", () => {
@@ -800,6 +832,11 @@ describe("CommandProcessor", () => {
     current.scene.sides = current.scene.sides.map((side) => side.id === "red" ? { ...side, armyTokenAsset: asset } : side);
     current.scene.sides = current.scene.sides.map((side) => side.id === "red" ? { ...side, stateId: "red-state" } : side);
     current.scene.states = [{ id: "red-state", name: "Красное государство", rulingFactionId: "red", active: true }];
+    current.scene.demographics = [{
+      stateId: "red-state", population: 1000, populationGrowthFactor: 1.003, humanResource: 250,
+      conscriptionLawId: "GENERAL_MOBILIZATION", conscriptionRate: 0.24, humanResourceCapacity: 250,
+      lastPopulationCalculationDate: "2026-10-28"
+    }];
     current.scene.gridMap.cells["0,0"] = {
       terrainId: "plain", impassable: false, factionTerritoryIds: ["red"], recognizedStateId: "red-state", deFactoStateId: "red-state"
     };
@@ -831,6 +868,11 @@ describe("CommandProcessor", () => {
       side.id === "red" ? { ...side, stateId: "red-state", armyTokenAsset: asset } : side
     );
     current.scene.states = [{ id: "red-state", name: "Государство", rulingFactionId: "red", active: true }];
+    current.scene.demographics = [{
+      stateId: "red-state", population: 1000, populationGrowthFactor: 1.003, humanResource: 250,
+      conscriptionLawId: "GENERAL_MOBILIZATION", conscriptionRate: 0.24, humanResourceCapacity: 250,
+      lastPopulationCalculationDate: "2026-10-28"
+    }];
     for (const x of [0, 1]) {
       current.scene.gridMap.cells[`${x},0`] = {
         terrainId: "plain", impassable: false, factionTerritoryIds: ["red"],
@@ -862,13 +904,21 @@ describe("CommandProcessor", () => {
     if (first.status !== "ACCEPTED") return;
     const turn = first.state.scene.turn.turnNumber;
     expect(first.state.scene.strategicCities?.[0]?.nextArmyCreationTurn).toBe(turn + 3);
-    expect(first.state.scene.lrTransactions ?? []).toEqual([]);
+    expect(first.state.scene.demographics?.[0]?.humanResource).toBe(200);
+    expect(first.state.scene.lrTransactions).toEqual([
+      expect.objectContaining({ requestId: "army-create-first", amount: 50, hp: 5 })
+    ]);
 
     expect(createIn(first.state, "city-0", "repeat")).toEqual({
       status: "REJECTED", reason: `ARMY_CREATION_COOLDOWN:${turn + 3}`
     });
     const secondCity = createIn(first.state, "city-1", "another-city");
     expect(secondCity.status).toBe("ACCEPTED");
+    if (secondCity.status === "ACCEPTED") {
+      expect(secondCity.state.scene.demographics?.[0]?.humanResource).toBe(150);
+      expect(secondCity.state.scene.lrTransactions).toHaveLength(2);
+      expect(secondCity.state.scene.lrTransactions?.[1]?.requestId).toBe("army-create-another-city");
+    }
 
     for (const increment of [1, 2]) {
       const duringCooldown = structuredClone(first.state);
@@ -876,7 +926,7 @@ describe("CommandProcessor", () => {
       expect(createIn(duringCooldown, "city-0", `blocked-${increment}`)).toEqual({
         status: "REJECTED", reason: `ARMY_CREATION_COOLDOWN:${turn + 3}`
       });
-      expect(duringCooldown.scene.lrTransactions ?? []).toEqual([]);
+      expect(duringCooldown.scene.lrTransactions).toHaveLength(1);
     }
 
     const unlocked = structuredClone(first.state);
@@ -885,6 +935,8 @@ describe("CommandProcessor", () => {
     expect(afterCooldown.status).toBe("ACCEPTED");
     if (afterCooldown.status === "ACCEPTED") {
       expect(afterCooldown.state.scene.strategicCities?.[0]?.nextArmyCreationTurn).toBe(turn + 6);
+      expect(afterCooldown.state.scene.lrTransactions).toHaveLength(2);
+      expect(afterCooldown.state.scene.demographics?.[0]?.humanResource).toBe(150);
     }
   });
 
