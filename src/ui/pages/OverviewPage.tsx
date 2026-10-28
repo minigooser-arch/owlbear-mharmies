@@ -1,10 +1,11 @@
 import type { StateEntity, StateRelations, TurnState } from "../../shared/types";
 import type { TurnBlocker } from "../../turns/turnCompletionGuard";
+import type { TurnFailureDiagnostic } from "../../turns/turnFailureDiagnostic";
 import { areStatesAtWar } from "../../states/stateRelations";
 import { TurnStatusCard } from "../components/TurnStatusCard";
 import type { ArmyView, UiCommand } from "../state/useExtensionState";
 
-export function OverviewPage({ armies, states, stateRelations, turn, battleCount = 0, navalBattleActive = false, turnCompletionBlockers = [], pendingTurnArmyNames = [], navalRequestCount = 0, onOpenArmy, onOpenBattles, onAction }: {
+export function OverviewPage({ armies, states, stateRelations, turn, battleCount = 0, navalBattleActive = false, turnCompletionBlockers = [], pendingTurnArmyNames = [], turnFailureDiagnostic, navalRequestCount = 0, onOpenArmy, onOpenBattles, onAction }: {
   armies: readonly ArmyView[];
   states: readonly StateEntity[];
   stateRelations: StateRelations;
@@ -14,6 +15,7 @@ export function OverviewPage({ armies, states, stateRelations, turn, battleCount
   navalBattleActive?: boolean;
   turnCompletionBlockers?: readonly TurnBlocker[];
   pendingTurnArmyNames?: readonly string[];
+  turnFailureDiagnostic?: TurnFailureDiagnostic | undefined;
   onOpenArmy(armyId: string): void;
   onOpenBattles(): void;
   onAction(command: UiCommand): void;
@@ -40,6 +42,7 @@ export function OverviewPage({ armies, states, stateRelations, turn, battleCount
         navalRequestCount={navalRequestCount}
         turnCompletionBlockers={turnCompletionBlockers}
         pendingTurnArmyNames={pendingTurnArmyNames}
+        turnFailureDiagnostic={turnFailureDiagnostic}
       />
       <div className="overview-metrics" aria-label="Состояние армий">
         <div><strong>{armies.length}</strong><span>армий</span></div>

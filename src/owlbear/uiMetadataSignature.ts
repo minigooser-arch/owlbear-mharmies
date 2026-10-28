@@ -17,6 +17,7 @@ export function uiMetadataSignature(metadata: Readonly<Record<string, unknown>>)
     scene,
     metadata[METADATA_KEYS.gridManifest],
     metadata[METADATA_KEYS.lrLedgerManifest],
-    metadata[METADATA_KEYS.demographyAuditManifest]
+    metadata[METADATA_KEYS.demographyAuditManifest],
+    metadata[METADATA_KEYS.turnFailureDiagnostic]
   ]);
 }

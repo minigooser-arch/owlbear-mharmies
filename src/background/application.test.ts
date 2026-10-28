@@ -1972,3 +1972,24 @@ describe("selective Sheets LR fetch at turn boundary", () => {
     ])).toEqual([]);
   });
 });
+
+it("persists a pending-turn grid error for the GM when background completion cannot save", async () => {
+  const fixture = commandPort();
+  fixture.scene.turn = {
+    ...fixture.scene.turn,
+    turnNumber: 8,
+    phase: "POST_MOVEMENT",
+    completionPending: { source: "MANUAL" }
+  };
+  fixture.port.getGridDpi = async () => { throw new Error("GRID_DPI_BROKEN"); };
+  const engine = new ProductionEngine(fixture.port);
+  engine.setCoordinator(true, "coordinator");
+  await engine.turnTick();
+
+  const metadata = await fixture.port.getSceneMetadata();
+  expect(metadata[METADATA_KEYS.turnFailureDiagnostic]).toMatchObject({
+    turnNumber: 8, stage: "GRID", code: "GRID_DPI_BROKEN"
+  });
+  expect(fixture.scene.turn.turnNumber).toBe(8);
+  expect(fixture.scene.turn.completionPending).toEqual({ source: "MANUAL" });
+});

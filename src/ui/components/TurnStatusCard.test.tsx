@@ -92,3 +92,22 @@ it("does not leak GM-only turn blockers into player UI", () => {
     onAction={() => undefined} turnCompletionBlockers={["LAND_BATTLE_ACTIVE"]} battleCount={1} />);
   expect(screen.queryByText(/Незавершённые сухопутные бои/)).not.toBeInTheDocument();
 });
+
+it("shows a saved turn failure directly in GM overview without browser console", () => {
+  render(<TurnStatusCard turn={{ ...DEFAULT_TURN_STATE, turnNumber: 8, phase: "POST_MOVEMENT",
+    completionPending: { source: "MANUAL" } }} role="GM" onAction={() => undefined}
+    turnFailureDiagnostic={{
+      turnNumber: 8, stage: "PERSISTENCE", code: "GRID_MANIFEST_WRITE_FAILED",
+      at: "2026-10-28T15:00:00.000Z"
+    }} turnCompletionBlockers={[]} />);
+  expect(screen.getByRole("status")).toHaveTextContent("PERSISTENCE");
+  expect(screen.getByRole("status")).toHaveTextContent("GRID_MANIFEST_WRITE_FAILED");
+});
+
+it("does not show previous-turn errors or leak them to players", () => {
+  render(<TurnStatusCard turn={{ ...DEFAULT_TURN_STATE, turnNumber: 9, phase: "POST_MOVEMENT",
+    completionPending: { source: "MANUAL" } }} role="GM" onAction={() => undefined}
+    turnFailureDiagnostic={{ turnNumber: 8, stage: "GET_STATES", code: "SHEET_WRITEBACK_TIMEOUT",
+      at: "2026-10-28T15:00:00.000Z" }} />);
+  expect(screen.queryByText(/SHEET_WRITEBACK_TIMEOUT/)).not.toBeInTheDocument();
+});

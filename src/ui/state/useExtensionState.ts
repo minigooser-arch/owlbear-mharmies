@@ -1,5 +1,6 @@
 import { useMemo, useSyncExternalStore } from "react";
 import type { StrategicCityCommandPayload } from "../../cities/strategicCityCommands";
+import type { TurnFailureDiagnostic } from "../../turns/turnFailureDiagnostic";
 import type { TurnBlocker } from "../../turns/turnCompletionGuard";
 import type {
   ArmyCommandPayload,
@@ -175,6 +176,7 @@ export interface RawExtensionSnapshot {
   wars: readonly WarState[];
   turn: TurnState;
   /** GM-only authoritative reasons a pending turn cannot yet finish. */
+  turnFailureDiagnostic?: TurnFailureDiagnostic | undefined;
   turnCompletionBlockers?: readonly TurnBlocker[];
   /** Names of armies that still need movement resolution. */
   pendingTurnArmyNames?: readonly string[];

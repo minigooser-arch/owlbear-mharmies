@@ -41,6 +41,7 @@ import { hasNavalBattleLineOfSight } from "../naval/battle/navalBattleLineOfSigh
 import { hasNavalLineOfSight } from "../naval/detection/navalLineOfSight";
 import { getDueTurnBoundary } from "../turns/turnSchedule";
 import { completeTurn } from "../turns/turnService";
+import { describeTurnFailure, readTurnFailureDiagnostic, type TurnFailureStage } from "../turns/turnFailureDiagnostic";
 import { beginMovementResolution } from "../commands/commandProcessorCore";
 import { getDestinationMovementCostUnits } from "../terrain/terrainRegistry";
 import { GridDistanceService } from "../grid/gridDistance";
@@ -879,6 +880,30 @@ export class ProductionEngine {
     return this.enqueueMutation(() => transaction((itemFrame) => this.movementTickNow(itemFrame)));
   }
 
+  /**
+   * A failed checkpoint may not commit any changes to the regular scene.
+   * Persist one small, owner-guarded diagnostic outside the scene document,
+   * so the GM can read the actual error without a browser dev console.
+   */
+  private async recordTurnFailure(error: unknown, stage: TurnFailureStage, expectedTurn?: number): Promise<void> {
+    if (!this.coordinator) return;
+    try {
+      const metadata = await this.port.getSceneMetadata();
+      const current = metadata[METADATA_KEYS.scene] as Partial<SceneState> | undefined;
+      const turn = current?.turn;
+      if (!turn?.completionPending || !Number.isSafeInteger(turn.turnNumber) ||
+          (expectedTurn !== undefined && turn.turnNumber !== expectedTurn)) return;
+      const diagnostic = describeTurnFailure(turn.turnNumber, stage, error, this.wallClock());
+      const old = readTurnFailureDiagnostic(metadata[METADATA_KEYS.turnFailureDiagnostic]);
+      if (old && old.turnNumber === diagnostic.turnNumber &&
+          old.stage === diagnostic.stage && old.code === diagnostic.code) return;
+      if (!this.coordinator) return;
+      await this.port.patchSceneMetadata({ [METADATA_KEYS.turnFailureDiagnostic]: diagnostic });
+    } catch (diagnosticError) {
+      this.reportOperationalError(diagnosticError, "turn-diagnostic-write");
+    }
+  }
+
   turnTick(): Promise<void> {
     return this.enqueueMutation(async () => {
       try {
@@ -889,7 +914,12 @@ export class ProductionEngine {
       // A pending turn is more important than the unrelated periodic / daily
       // synchronization jobs. Those can acquire the same Apps Script lock for
       // long enough to starve the checkpoint, so finish or retry it first.
-      await this.turnTickNow();
+      try {
+        await this.turnTickNow();
+      } catch (error) {
+        await this.recordTurnFailure(error, "TURN_TICK");
+        throw error;
+      }
       if (!this.coordinator) return;
       const afterTurn = await this.repository.readScene();
       if (afterTurn.turn.completionPending) return;
@@ -1003,6 +1033,7 @@ export class ProductionEngine {
         }
       } catch (error) {
         this.reportOperationalError(error, "turn-sheet-demography");
+        await this.recordTurnFailure(error, "GET_STATES", scene.turn.turnNumber);
         return;
       }
     }
@@ -1015,6 +1046,7 @@ export class ProductionEngine {
       });
     } catch (error) {
       this.reportOperationalError(error, "turn-grid-unavailable");
+      await this.recordTurnFailure(error, "GRID", scene.turn.turnNumber);
       return;
     }
     const armyCells = Object.fromEntries(armyRecords.map((record) => [
@@ -1053,14 +1085,21 @@ export class ProductionEngine {
     }));
     const source = pending?.source ?? "SCHEDULE";
     const boundaryId = pending?.boundaryId ?? boundary?.id;
-    const completion = completeTurn(next.scene, next.armies, {
-      source,
-      completedAt: now,
-      ...(source === "SCHEDULE" && boundaryId ? { boundaryId } : {}),
-      positionForCell,
-      armyCells,
-      shipCells
-    });
+    let completion: ReturnType<typeof completeTurn>;
+    try {
+      completion = completeTurn(next.scene, next.armies, {
+        source,
+        completedAt: now,
+        ...(source === "SCHEDULE" && boundaryId ? { boundaryId } : {}),
+        positionForCell,
+        armyCells,
+        shipCells
+      });
+    } catch (error) {
+      this.reportOperationalError(error, "turn-checkpoint");
+      await this.recordTurnFailure(error, "CHECKPOINT", scene.turn.turnNumber);
+      return;
+    }
     if (completion.changed) {
       next.scene = completion.scene;
       next.armies = completion.armies;
@@ -1079,7 +1118,12 @@ export class ProductionEngine {
     }
     next.scene.revision = authoritativeScene.revision + 1;
     if (!canCommit()) return;
-    await this.persistCommandState(next, previous, sceneItems);
+    try {
+      await this.persistCommandState(next, previous, sceneItems);
+    } catch (error) {
+      this.reportOperationalError(error, "turn-persistence");
+      await this.recordTurnFailure(error, "PERSISTENCE", scene.turn.turnNumber);
+    }
   }
 
   private async movementTickNow(initialItemFrame?: MetadataItemFrame): Promise<void> {

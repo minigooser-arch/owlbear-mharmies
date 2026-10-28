@@ -56,6 +56,7 @@ import { armyFormationCap, cityForCell, hasActiveCityBuilding, lighthouseDetecti
 import { shipEmbarkedArmyIds } from "../naval/transport/transportRules";
 import { territorialCityContributions } from "../wars/territorialScore";
 import { preCheckpointTurnBlockers } from "../turns/turnCompletionGuard";
+import { readTurnFailureDiagnostic } from "../turns/turnFailureDiagnostic";
 import { isFactionStateAtWar } from "../states/stateRules";
 import { readCell } from "../terrain/gridMap";
 import { MetadataRepository, type ArmyRecord, type MetadataReadFrame, type ShipRecord } from "../storage/metadataRepository";
@@ -755,6 +756,9 @@ export async function createOwlbearExtensionServices(): Promise<RunningExtension
     );
     return {
       ...nextSnapshot,
+      ...(role === "GM" && readTurnFailureDiagnostic(metadata[METADATA_KEYS.turnFailureDiagnostic])
+        ? { turnFailureDiagnostic: readTurnFailureDiagnostic(metadata[METADATA_KEYS.turnFailureDiagnostic]) }
+        : {}),
       ...(focusedEntityVisible && focusedEntity ? { focusedEntity } : {}),
       ...(keepDraft ? {
         navalBattleAreaDraft: {

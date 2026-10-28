@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { TurnState } from "../../shared/types";
 import type { TurnBlocker } from "../../turns/turnCompletionGuard";
+import type { TurnFailureDiagnostic } from "../../turns/turnFailureDiagnostic";
 import { moscowLocalInputToIso, turnStatusPresentation } from "../presentation/turns";
 import type { UiCommand } from "../state/useExtensionState";
 
@@ -13,7 +14,8 @@ export function TurnStatusCard({
   navalBattleActive = false,
   navalRequestCount = 0,
   turnCompletionBlockers,
-  pendingTurnArmyNames = []
+  pendingTurnArmyNames = [],
+  turnFailureDiagnostic
 }: {
   turn: TurnState;
   role: "GM" | "PLAYER";
@@ -25,6 +27,7 @@ export function TurnStatusCard({
   /** Exact server-side blockers, provided only to GM. */
   turnCompletionBlockers?: readonly TurnBlocker[];
   pendingTurnArmyNames?: readonly string[];
+  turnFailureDiagnostic?: TurnFailureDiagnostic | undefined;
 }) {
   const [deferValue, setDeferValue] = useState("");
   const [turnNumberValue, setTurnNumberValue] = useState(String(turn.turnNumber));
@@ -65,6 +68,9 @@ export function TurnStatusCard({
             </button>
             {turn.completionPending && <div role="status">
               <p>Ожидаем завершения перемещения и обязательных боёв. Новый ход начнётся автоматически.</p>
+              {role === "GM" && turnFailureDiagnostic?.turnNumber === turn.turnNumber && (
+                <p>Последняя ошибка завершения хода: этап {turnFailureDiagnostic.stage}, код {turnFailureDiagnostic.code}. Время: {new Date(turnFailureDiagnostic.at).toLocaleTimeString("ru-RU")}.</p>
+              )}
               {role === "GM" && turnCompletionBlockers && (
                 blockingReasons.length > 0
                   ? <p>Сейчас блокируют ход: {blockingReasons.join(" ")}</p>
