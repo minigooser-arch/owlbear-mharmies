@@ -7,12 +7,13 @@ export interface PopulationSyncPlanEntry {
   population: number;
   populationGrowthFactor: number;
   humanResource?: number;
+  humanResourceCapacity?: number;
   conscriptionLawId?: string;
   conscriptionRate?: number;
 }
 
 export type PopulationCorrectionPatch = Pick<StateDemography, "population" | "populationGrowthFactor"> &
-  Partial<Pick<StateDemography, "humanResource" | "conscriptionLawId" | "conscriptionRate">>;
+  Partial<Pick<StateDemography, "humanResource" | "humanResourceCapacity" | "conscriptionLawId" | "conscriptionRate">>;
 
 export interface PopulationCorrection {
   stateId: string;
@@ -151,7 +152,15 @@ export function buildPopulationSyncPlan(
         // same thousand-person unit.
         ?? categoriesByPopulation.get(row.population);
       const law = category ? lawsByName.get(normalizeLabel(category.category)) : undefined;
-      if (category?.humanResource !== undefined) entry.humanResource = category.humanResource;
+      // Only import a balanced, complete AO/AW pair; never infer the maximum
+      // from population × conscription, which differs from the Sheets formula.
+      if (category?.humanResource !== undefined &&
+          category.humanResourceCapacity !== undefined &&
+          category.humanResource >= 0 &&
+          category.humanResourceCapacity >= category.humanResource) {
+        entry.humanResource = category.humanResource;
+        entry.humanResourceCapacity = category.humanResourceCapacity;
+      }
       if (law) {
         entry.conscriptionLawId = law.id;
         entry.conscriptionRate = law.rate;
@@ -216,12 +225,23 @@ export async function syncPopulationFromPublicSheet(input: PopulationSyncInput):
   summary.unmatchedStates = plan.unmatchedStates;
   summary.unmatchedConscriptionStates = plan.unmatchedConscriptionStates;
   summary.skippedRows = plan.skippedRows;
+  // A partial public CSV (or a missing AW column) is unsafe: the ordinary
+  // demographic correction handler would otherwise recompute capacity and
+  // silently clamp current LR. Fail before writing ANY state.
+  const incomplete = plan.entries.filter((entry) =>
+    entry.humanResource === undefined || entry.humanResourceCapacity === undefined
+  );
+  if (incomplete.length > 0) {
+    summary.errors.push(`Не удалось получить корректные AO (текущий ЛР) и AW (максимальный ЛР) для: ${incomplete.map((entry) => entry.country).join(", ")}. Синхронизация отменена без изменений.`);
+    return summary;
+  }
   const corrections: PopulationCorrection[] = plan.entries.map((entry) => {
       const patch: PopulationCorrectionPatch = {
         population: entry.population,
         populationGrowthFactor: entry.populationGrowthFactor
       };
       if (entry.humanResource !== undefined) patch.humanResource = entry.humanResource;
+      if (entry.humanResourceCapacity !== undefined) patch.humanResourceCapacity = entry.humanResourceCapacity;
       if (entry.conscriptionLawId && entry.conscriptionRate !== undefined) {
         patch.conscriptionLawId = entry.conscriptionLawId;
         patch.conscriptionRate = entry.conscriptionRate;
