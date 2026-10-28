@@ -688,6 +688,36 @@ describe("CommandProcessor", () => {
     }
   });
 
+  it("stores exact Sheets AW even when it exceeds population times conscription rate", () => {
+    const current = state();
+    current.scene.states = [{ id: "red-state", name: "Черногория", rulingFactionId: "red", active: true, backendCountry: "montenegro" }];
+    current.scene.demographics = [{
+      stateId: "red-state", population: 285, populationGrowthFactor: 1.003,
+      humanResource: 11.4, humanResourceCapacity: 11.4,
+      conscriptionLawId: "URGENT_CONSCRIPTION", conscriptionRate: 0.04,
+      lastPopulationCalculationDate: null
+    }];
+    const result = processor.execute(context("GM", "gm", current), command({
+      type: "UPDATE_STATES_DEMOGRAPHY",
+      updates: [{
+        stateId: "red-state",
+        patch: {
+          population: 285, populationGrowthFactor: 1.003,
+          humanResource: 41.4704719588,
+          humanResourceCapacity: 41.4704719588,
+          conscriptionRate: 0.04
+        }
+      }],
+      reason: "Импорт из Google Sheets"
+    }, "gm"));
+    expect(result.status).toBe("ACCEPTED");
+    if (result.status === "ACCEPTED") {
+      expect(result.state.scene.demographics?.[0]).toMatchObject({
+        humanResource: 41.4704719588, humanResourceCapacity: 41.4704719588
+      });
+    }
+  });
+
   it("applies a demographic sync package atomically", () => {
     const current = state();
     current.scene.states = [
