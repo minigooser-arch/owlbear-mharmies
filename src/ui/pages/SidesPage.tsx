@@ -68,11 +68,9 @@ export function SidesPage({
         setManualInfluenceErrors((current) => ({ ...current, [side.id]: "Не удалось сохранить значение." }));
         return;
       }
-      setManualInfluenceValues((current) => {
-        const updated = { ...current };
-        delete updated[side.id];
-        return updated;
-      });
+      setManualInfluenceValues((current) =>
+        Object.fromEntries(Object.entries(current).filter(([id]) => id !== side.id))
+      );
     } catch {
       setManualInfluenceErrors((current) => ({ ...current, [side.id]: "Не удалось сохранить значение." }));
     } finally {
