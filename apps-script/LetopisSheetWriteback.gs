@@ -640,6 +640,20 @@ function resolveFactionTarget_(input, rows) {
   return matches[0];
 }
 
+/** Unlisted Owlbear factions do not have a destination row in the public
+ * faction sheet. Skip only those; keep duplicate/invalid identities fatal.
+ */
+function resolveRegisteredFactionTarget_(input, rows) {
+  try {
+    return resolveFactionTarget_(input, rows);
+  } catch (error) {
+    const message = String(error && error.message || error);
+    if (!message.startsWith("FACTION_NOT_FOUND:")) throw error;
+    console.warn("SHEET_UNMAPPED_FACTION_SKIPPED:" + input.factionName + ":" + input.country);
+    return null;
+  }
+}
+
 function applyFactionAndStateArmy_(event, index) {
   const factions = Array.isArray(event.factions) ? event.factions : [];
   const stateArmies = Array.isArray(event.stateArmies) ? event.stateArmies : [];
@@ -663,9 +677,10 @@ function applyFactionAndStateArmy_(event, index) {
       throw new Error("INVALID_FACTION_SYNC");
     }
     if (!index.has(country)) throw new Error("COUNTRY_NOT_FOUND:" + country);
-    const target = resolveFactionTarget_({ factionId, factionName, country }, rows);
-    targets.push({ target, factionId, country, hp, militaryInfluence });
     seenFactions.add(factionId);
+    const target = resolveRegisteredFactionTarget_({ factionId, factionName, country }, rows);
+    if (!target) continue;
+    targets.push({ target, factionId, country, hp });
   }
   const removedTargets = [];
   const seenRemoved = new Set();
@@ -695,8 +710,7 @@ function applyFactionAndStateArmy_(event, index) {
   }
   const oldFaction = targets.concat(removedTargets).map(function(entry) {
     return { row: entry.target.row, id: sheet.getRange(entry.target.row, 53).getValue(),
-      country: sheet.getRange(entry.target.row, 54).getValue(), hp: sheet.getRange(entry.target.row, 45).getValue(),
-      militaryInfluence: sheet.getRange(entry.target.row, 35).getValue() };
+      country: sheet.getRange(entry.target.row, 54).getValue(), hp: sheet.getRange(entry.target.row, 45).getValue() };
   });
   const stateSheet = stateSheet_();
   const oldState = stateTargets.map(function(entry) {
@@ -707,7 +721,6 @@ function applyFactionAndStateArmy_(event, index) {
     for (const entry of targets) {
       sheet.getRange(entry.target.row, 53, 1, 2).setValues([[entry.factionId, entry.country]]);
       sheet.getRange(entry.target.row, 45).setValue(entry.hp);
-      if (entry.militaryInfluence !== null) sheet.getRange(entry.target.row, 35).setValue(entry.militaryInfluence);
     }
     for (const entry of removedTargets) sheet.getRange(entry.target.row, 45).setValue(0);
     for (const entry of stateTargets) stateSheet.getRange(entry.row, 40).setValue(entry.hp);
@@ -716,7 +729,6 @@ function applyFactionAndStateArmy_(event, index) {
     for (const entry of oldFaction) {
       sheet.getRange(entry.row, 53, 1, 2).setValues([[entry.id, entry.country]]);
       sheet.getRange(entry.row, 45).setValue(entry.hp);
-      sheet.getRange(entry.row, 35).setValue(entry.militaryInfluence);
     }
     for (const entry of oldState) {
       const cell = stateSheet.getRange(entry.row, 40);
@@ -897,20 +909,21 @@ function getFactionInfluenceSnapshots_(factions) {
   const sheet = factionSheet_();
   const rows = factionRows_();
   const seen = new Set();
-  return factions.map(function(raw) {
+  return factions.flatMap(function(raw) {
     const factionId = String(raw && raw.factionId || "").trim();
     const factionName = String(raw && raw.factionName || "").trim();
     const country = String(raw && raw.country || "").trim();
     if (!factionId || !factionName || !country || seen.has(factionId)) {
       throw new Error("INVALID_FACTION_IDENTITY");
     }
-    const target = resolveFactionTarget_({ factionId, factionName, country }, rows);
+    seen.add(factionId);
+    const target = resolveRegisteredFactionTarget_({ factionId, factionName, country }, rows);
+    if (!target) return [];
     const militaryInfluence = Number(sheet.getRange(target.row, 35).getValue());
     if (!Number.isInteger(militaryInfluence) || militaryInfluence < 0) {
       throw new Error("MILITARY_INFLUENCE_BALANCE_INVALID:" + factionId);
     }
-    seen.add(factionId);
-    return { factionId, factionName, country, militaryInfluence };
+    return [{ factionId, factionName, country, militaryInfluence }];
   });
 }
 
