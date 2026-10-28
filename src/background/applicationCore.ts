@@ -401,11 +401,65 @@ export class ProductionEngine {
           this.coordinatorGeneration === generation
         ) {
           void this.enqueueMutation(async () => {
+            await this.reconcileLrInflight();
             await this.queueSheetWritebackSnapshot();
             await this.flushSheetWriteback();
           }).catch((error) => this.reportOperationalError(error, "sheet-writeback-startup"));
         }
       });
+    }
+  }
+
+  private readonly lrInflightKey = `${METADATA_KEYS.scene}/lr-inflight`;
+
+  /** Persist intent before sending an irreversible expense to Google Sheets. */
+  private async recordLrInflight(requestIds: readonly string[]): Promise<void> {
+    if (requestIds.length === 0) return;
+    const metadata = await this.port.getSceneMetadata();
+    const current = metadata[this.lrInflightKey] as { requestIds?: unknown } | undefined;
+    if (current?.requestIds && Array.isArray(current.requestIds) && current.requestIds.length > 0) {
+      throw new SheetWritebackError("SHEET_LR_INFLIGHT_UNRESOLVED");
+    }
+    await this.port.patchSceneMetadata({
+      [this.lrInflightKey]: {
+        version: 1,
+        createdAt: this.wallClock().toISOString(),
+        requestIds: [...requestIds]
+      }
+    });
+  }
+
+  /** A committed Owlbear LR transaction stays charged; otherwise the expense
+   * must be cancelled (or fenced with a tombstone) on the authoritative sheet.
+   * A failed repair leaves the durable intent in scene metadata for retry.
+   */
+  private async reconcileLrInflight(): Promise<void> {
+    if (!this.coordinator) return;
+    const metadata = await this.port.getSceneMetadata();
+    const inflight = metadata[this.lrInflightKey] as { version?: unknown; requestIds?: unknown } | undefined;
+    if (!inflight) return;
+    if (inflight.version !== 1 || !Array.isArray(inflight.requestIds) ||
+      inflight.requestIds.some((id) => typeof id !== "string" || !id)) {
+      throw new SheetWritebackError("SHEET_LR_INFLIGHT_CORRUPT");
+    }
+    const ids = inflight.requestIds as string[];
+    const scene = await this.repository.readScene();
+    const committed = new Set((scene.lrTransactions ?? []).map((transaction) => transaction.requestId));
+    const orphans = ids.filter((id) => !committed.has(id));
+    if (orphans.length > 0) {
+      const token = readSheetWritebackToken();
+      const url = scene.settings.sheetWritebackUrl?.trim();
+      if (!url || !token) throw new SheetWritebackError("SHEET_LR_CANCEL_UNAUTHORIZED");
+      const client = new SheetWritebackClient(url, token);
+      for (let start = 0; start < orphans.length; start += 64) {
+        await client.cancelLR(orphans.slice(start, start + 64));
+      }
+    }
+    if (!this.coordinator) return;
+    // Only clear the exact intent that was reconciled.
+    const latest = await this.port.getSceneMetadata();
+    if (JSON.stringify(latest[this.lrInflightKey]) === JSON.stringify(inflight)) {
+      await this.port.patchSceneMetadata({ [this.lrInflightKey]: undefined });
     }
   }
 
@@ -780,6 +834,11 @@ export class ProductionEngine {
 
   turnTick(): Promise<void> {
     return this.enqueueMutation(async () => {
+      try {
+        await this.reconcileLrInflight();
+      } catch (error) {
+        this.reportOperationalError(error, "periodic-lr-recovery");
+      }
       try {
         await this.refreshSheetDemographyIfStale();
       } catch (error) {
@@ -1934,6 +1993,7 @@ export class ProductionEngine {
     const applied: AppliedMetadataWrite[] = [];
     const expectedCoordinatorConnectionId = this.activeCoordinatorConnectionId;
     const canCommit = this.captureCoordinatorGuard(expectedCoordinatorConnectionId);
+    let inflightRecorded = false;
     try {
       const newItems = Object.values(next.items).filter((item) => previous.items[item.id] === undefined);
       const newlyCreatedItemIds = new Set(newItems.map((item) => item.id));
@@ -2059,6 +2119,8 @@ export class ProductionEngine {
       if (sheetWritebackConfigured(next.scene.settings)) {
         const spendOperations = pendingLRTransactions(previous, next);
         if (spendOperations.length > 0) {
+          await this.recordLrInflight(spendOperations.map((operation) => operation.requestId));
+          inflightRecorded = true;
           await this.commitExternalLRSpends(previous, next);
           externalSpendCommitted = true;
         }
@@ -2096,6 +2158,13 @@ export class ProductionEngine {
           throw error;
         }
       }
+      if (inflightRecorded) {
+        // A failed cleanup is safe: startup reconciliation sees the committed
+        // transaction in Owlbear and removes the leftover intent.
+        await this.reconcileLrInflight().catch((error) => {
+          this.reportOperationalError(error, "sheet-lr-intent-cleanup");
+        });
+      }
       void this.enqueueMutation(() => this.flushSheetWriteback());
     } catch (error) {
       for (const write of applied.reverse()) {
@@ -2117,6 +2186,11 @@ export class ProductionEngine {
         } catch {
           // A failed compensation is reported by the original persistence error.
         }
+      }
+      if (inflightRecorded) {
+        await this.reconcileLrInflight().catch((recoveryError) => {
+          this.reportOperationalError(recoveryError, "sheet-lr-compensation");
+        });
       }
       throw error;
     }
