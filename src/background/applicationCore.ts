@@ -1526,13 +1526,15 @@ export class ProductionEngine {
     const barrierRecords = frame.items.barriers;
     const sceneItems = frame.items.items;
     if (sheetWritebackRuntimeEnabled(scene.settings) &&
-      (command.type === "HEAL_ARMY" || command.type === "COMPLETE_TURN_NOW")) {
+      (command.type === "HEAL_ARMY" || command.type === "COMPLETE_TURN_NOW" ||
+        command.type === "CREATE_CITY_ARMY")) {
       try {
         const targetCountries = this.countriesNeedingAuthoritativeDemography(
           scene,
           armyRecords,
           command.type,
-          command.type === "HEAL_ARMY" ? command.armyId : undefined
+          command.type === "HEAL_ARMY" ? command.armyId : undefined,
+          command.type === "CREATE_CITY_ARMY" ? command.sideId : undefined
         );
         if (targetCountries.length > 0) {
           scene = await this.refreshDemographyForCountries(scene, targetCountries);
@@ -1845,8 +1847,9 @@ export class ProductionEngine {
   private countriesNeedingAuthoritativeDemography(
     scene: SceneState,
     armyRecords: readonly ArmyRecord[],
-    commandType: "HEAL_ARMY" | "COMPLETE_TURN_NOW",
-    armyId?: string
+    commandType: "HEAL_ARMY" | "COMPLETE_TURN_NOW" | "CREATE_CITY_ARMY",
+    armyId?: string,
+    creationSideId?: string
   ): string[] {
     const countries = new Set<string>();
     if (commandType === "COMPLETE_TURN_NOW") {
@@ -1854,6 +1857,15 @@ export class ProductionEngine {
         const country = state.backendCountry?.trim();
         if (country) countries.add(country);
       }
+      return [...countries];
+    }
+    if (commandType === "CREATE_CITY_ARMY") {
+      const side = scene.sides.find((candidate) => candidate.id === creationSideId);
+      const state = side?.stateId
+        ? scene.states.find((candidate) => candidate.id === side.stateId)
+        : undefined;
+      const country = state?.backendCountry?.trim();
+      if (country) countries.add(country);
       return [...countries];
     }
     const sourceArmies = armyRecords.filter((record) => record.item.id === armyId);
