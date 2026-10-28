@@ -130,6 +130,31 @@ export function App({ services }: { services: ExtensionServices }) {
             }
             if (lastRejection) throw new Error(`${lastRejection.status}: ${lastRejection.reason ?? lastRejection.actualRevision ?? "команда отклонена"}`);
             if (missingAcknowledgement) throw new Error("NO_COMMAND_ACK");
+          },
+          applyCorrections: async (corrections) => {
+            // Commit the complete import in one scene revision.
+            let lastRejection: { status: string; reason?: string; actualRevision?: number } | undefined;
+            let missingAcknowledgement = false;
+            for (let attempt = 0; attempt < 5; attempt += 1) {
+              const acknowledgement = await state.send({
+                type: "UPDATE_STATES_DEMOGRAPHY",
+                updates: corrections.map(({ stateId, patch }) => ({ stateId, patch })),
+                reason: "Импорт из Google Sheets"
+              });
+              if (acknowledgement && typeof acknowledgement === "object" && "status" in acknowledgement) {
+                const status = acknowledgement as { status: string; reason?: string; actualRevision?: number };
+                if (status.status === "ACCEPTED") return;
+                lastRejection = status;
+                const retryable = status.status === "CONFLICT" ||
+                  (status.status === "REJECTED" && status.reason === "BACKGROUND_NOT_READY");
+                if (!retryable) break;
+              } else {
+                missingAcknowledgement = true;
+              }
+              if (attempt < 4) await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
+            }
+            if (lastRejection) throw new Error(`${lastRejection.status}: ${lastRejection.reason ?? lastRejection.actualRevision ?? "команда отклонена"}`);
+            if (missingAcknowledgement) throw new Error("NO_COMMAND_ACK");
           } })} runDiagnostic={state.runDiagnostic} />}
       </div>
       <ConfirmDialog open={dangerous !== undefined} title="Подтвердите действие" message={dangerous?.type === "REQUEST_ARMY_DISBAND" ? "Армия будет распущена в начале следующего глобального хода. Отменить роспуск после подтверждения невозможно." : dangerous?.type === "UNREGISTER_SHIP" ? "Корабль будет снят с регистрации. Его токен останется на карте как обычный объект." : dangerous?.type === "REJECT_NAVAL_BATTLE_REQUEST" ? "Заявка на морской бой будет отклонена. Это позволит завершить ход без проведения данного боя. Продолжить?" : dangerous?.type === "COMPLETE_NAVAL_BATTLE" ? "Морской бой будет завершён вручную. Зарегистрированные корабли вернутся на стратегические позиции и курсы, сохранённые при начале боя. Продолжить?" : dangerous?.type === "START_CIVIL_WAR" ? "Будет создано новое государство, повстанческая фракция станет его правителем, а подходящие города перейдут к нему. Начать гражданскую войну?" : dangerous?.type === "SET_ARMY_HP" && dangerous.hp === 0 ? "Установка 0 HP уничтожит армию и удалит её с карты. Продолжить?" : dangerous?.type === "COMPLETE_TURN_NOW" ? "Будут запущены запланированные перемещения. После их окончания и обязательных боёв автоматически рассчитаются снабжение, потери, восстановление ОП и остальные последствия смены хода. Продолжить?" : "Это действие изменит общее состояние сцены."} onCancel={() => setDangerous(undefined)} onConfirm={() => { if (dangerous) void state.send(dangerous); setDangerous(undefined); }} />
