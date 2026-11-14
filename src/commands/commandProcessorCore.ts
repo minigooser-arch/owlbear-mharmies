@@ -2092,6 +2092,15 @@ export class CommandProcessor {
         state.armies[command.armyId] = bumpArmy(army, { experience: next });
         return undefined;
       }
+      case "INTERRUPT_ARMY_FORMATION": {
+        const army = state.armies[command.armyId];
+        if (!army) return "ARMY_NOT_FOUND";
+        if (!army.formation?.active) return "ARMY_NOT_FORMING";
+        if (army.status === "IN_BATTLE") return "ARMY_IN_BATTLE";
+        // Keep the current paid-for HP and end automatic formation permanently.
+        state.armies[command.armyId] = interruptFormation(army);
+        return undefined;
+      }
       case "SET_ARMY_HP": {
         const army = state.armies[command.armyId];
         if (!army) return "ARMY_NOT_FOUND";

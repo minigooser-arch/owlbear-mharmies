@@ -742,6 +742,7 @@ export type ArmyCommandPayload =
         newStateColor: string;
       }
     | { type: "SET_DEFACTO_STATE_CELLS"; cells: GridCellCoord[]; stateId: string | null }
+    | { type: "INTERRUPT_ARMY_FORMATION"; armyId: string }
     | { type: "SET_ARMY_HP"; armyId: string; hp: number; maxHp?: number }
     | { type: "AWARD_ARMY_EXPERIENCE"; armyId: string; amount: number }
     | { type: "HEAL_ARMY"; armyId: string; amount: number; hospitalCityId?: string }

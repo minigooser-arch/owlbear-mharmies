@@ -313,6 +313,7 @@ export function ArmyCard({ army, sideColor = "#687F91", isGM, canEditRoute, canR
         <details className="army-more">
           <summary>Управление</summary>
           <div className="army-control-groups">
+            {isGM && army.formationActive && <div className="card-actions"><button className="button danger subtle wide" type="button" disabled={army.status === "IN_BATTLE"} title="Остановить комплектование, сохранив текущие HP армии. Дальнейшее автоматическое комплектование прекратится." onClick={() => { if (window.confirm(`Принудительно завершить комплектование армии «${army.name}» с ${army.healthHp} HP?`)) onAction({ type: "INTERRUPT_ARMY_FORMATION", armyId: army.id }); }}>Завершить комплектование досрочно</button></div>}
             {isGM && <ArmyHealthEditor army={army} onAction={onAction} />}
             {isGM && <ArmyExperienceEditor army={army} onAction={onAction} />}
             {isGM && <ArmyImmediateMoveEditor army={army} onAction={onAction} />}
