@@ -321,3 +321,17 @@ describe("GM manual influence balance payload", () => {
     }
   });
 });
+
+
+describe("interrupt army formation payload", () => {
+  it("accepts a valid army ID", () => {
+    expect(validateArmyCommand(envelope({ type: "INTERRUPT_ARMY_FORMATION", armyId: "army-red" }))).toMatchObject({
+      ok: true, command: { type: "INTERRUPT_ARMY_FORMATION", armyId: "army-red" }
+    });
+  });
+  it("rejects empty or missing IDs", () => {
+    for (const armyId of ["", "  ", undefined, 42]) {
+      expect(validateArmyCommand(envelope({ type: "INTERRUPT_ARMY_FORMATION", armyId }))).toMatchObject({ ok: false });
+    }
+  });
+});
