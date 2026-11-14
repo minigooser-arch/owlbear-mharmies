@@ -1602,14 +1602,16 @@ describe("GM early army formation interruption", () => {
 
   it("ends formation without adding HP or spending LR and restores movement", () => {
     const current = state();
-    const unit = current.armies["army-red"]!;
+    const unit = current.armies["army-red"];
+    if (!unit) throw new Error("missing fixture army");
     unit.health = { hp: 15, maxHp: 40 };
     unit.movement = { ...unit.movement, maxUnits: 12, remainingUnits: 0 };
     unit.formation = { active: true, cityId: null, hpAddedThisTurn: 10, checkedOnTurn: 1 };
     const response = processor.execute(context("GM", "gm", current), command({ type: "INTERRUPT_ARMY_FORMATION", armyId: "army-red" }));
     expect(response.status).toBe("ACCEPTED");
     if (response.status !== "ACCEPTED") return;
-    const updated = response.state.armies["army-red"]!;
+    const updated = response.state.armies["army-red"];
+    if (!updated) throw new Error("missing updated army");
     expect(updated.formation?.active).toBe(false);
     expect(updated.health).toEqual({ hp: 15, maxHp: 40 });
     expect(updated.movement.remainingUnits).toBe(12);
@@ -1619,7 +1621,9 @@ describe("GM early army formation interruption", () => {
 
   it("denies a player even when that player leads the army's faction", () => {
     const current = state();
-    current.armies["army-red"]!.formation = { active: true, cityId: null, hpAddedThisTurn: 0, checkedOnTurn: 1 };
+    const unit = current.armies["army-red"];
+    if (!unit) throw new Error("missing fixture army");
+    unit.formation = { active: true, cityId: null, hpAddedThisTurn: 0, checkedOnTurn: 1 };
     expect(processor.execute(context("PLAYER", "leader", current), command({ type: "INTERRUPT_ARMY_FORMATION", armyId: "army-red" }, "leader"))).toMatchObject({
       status: "REJECTED", reason: "GM_ONLY"
     });
