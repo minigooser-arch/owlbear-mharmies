@@ -670,6 +670,7 @@ const PAYLOAD_PARSERS: Record<CommandType, PayloadParser> = {
     Number.isInteger(value.amount * 2)
       ? { type: "AWARD_ARMY_EXPERIENCE", armyId: value.armyId, amount: value.amount }
       : undefined,
+  INTERRUPT_ARMY_FORMATION: (value) => { const armyId = armyIdOnly(value); return armyId ? { type: "INTERRUPT_ARMY_FORMATION", armyId } : undefined; },
   SET_ARMY_HP: (value) => {
     if (!boundedString(value.armyId) || !nonNegativeInteger(value.hp)) return undefined;
     if (value.maxHp !== undefined && (!nonNegativeInteger(value.maxHp) || value.maxHp <= 0)) return undefined;
